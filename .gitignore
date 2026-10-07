@@ -1,0 +1,26 @@
+# Build outputs and local run artifacts
+/build/
+/out/
+/dist/
+*.o
+*.obj
+*.a
+*.lib
+*.elf
+*.efi
+*.img
+*.iso
+*.qcow2
+*.log
+
+# Local firmware, private configuration and editor metadata
+/local/
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
