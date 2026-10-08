@@ -1,6 +1,6 @@
 # Musha-OS 0.1.0 アーキテクチャ設計
 
-策定日: 2026-10-07。状態: 基本設計採用、詳細設計継続中。
+策定日: 2026-10-07。更新日: 2026-10-08。状態: 基本設計採用、詳細設計継続中。
 基本方針は [policy-v0.1.md](policy-v0.1.md) を参照する。
 独自コード・文書・設定のライセンスはApache-2.0とする。新規ソースには
 実際の著作権者表示と `SPDX-License-Identifier: Apache-2.0` を付ける。
@@ -9,11 +9,35 @@
 
 ## 1. 実装単位
 
-C17と必要最小限のx86-64アセンブリを使う。Clang / LLDを基本ツールチェーンとし、
-ホストの標準ライブラリに依存しないfreestanding構成とする。
-UEFIエントリだけはUEFIの呼出規約を使用し、内部はSysV AMD64 ABIとする。
-ランタイムはred zoneを無効化する。FPU / SIMDの利用は状態管理を設計するまで禁止する。
-UEFI関連の定義とビルド支援ライブラリは、ライセンス確認後に選定・版固定する。
+主言語はRustとし、必要最小限のx86-64アセンブリを併用する。
+lwIPはCのまま採用し、Clang / LLDでビルドする。独自Cドライバを基本構成にはしない。
+RustはCargo workspaceで管理し、まずstableで実現できる構成を優先する。
+ツールチェーン、依存crate、lwIPの版はビルド詳細設計で選定・固定する。
+
+本体は `#![no_std]` とし、OS・UEFIサービスに依存する標準ライブラリを使わない。
+初期は固定容量バッファと明示的なarena割当てを使い、汎用ヒープへの依存を避ける。
+`alloc` が必要な依存を採用する場合は、自前アロケータとOOM処理を先に設計する。
+UEFI側アロケータやサービスに依存する値はExitBootServices前に処理を終え、
+終了後にそのサービスを呼ぶDrop処理が走らない構成とする。
+
+入口は `x86_64-unknown-uefi`、UEFIとの境界は `extern "efiapi"` を使用する。
+Rust内部ABIは外部契約に使わない。Cとの境界は明示したC ABIと `#[repr(C)]` の
+固定幅構造体を使い、Rustの参照・enum・Vec・trait objectをそのまま渡さない。
+UEFIターゲットのC ABIをSysVと決めつけない。lwIP側も同じABIでコンパイルする。
+外部アプリABIはCPU切替後の構成を踏まえて別途固定し、単一EFI方式では
+ターゲット標準のC ABIを第一候補とする。SysVの導入は自動的に行わない。
+
+MMIO、DMA、ページテーブル、CPU操作、FFIに `unsafe` を限定し、
+各箇所に有効範囲・アラインメント・所有権・寿命・同時アクセスの根拠を記す。
+デバイスが更新するDMAメモリを通常の共有参照として扱わず、CPU / デバイス間の
+所有権遷移、volatileアクセス、必要なbarrierを明示する。volatileだけで
+同期やキャッシュ整合が保証されると考えない。上位層には安全なAPIを提供する。
+
+panicはunwindせず診断後に停止する。FFI境界を越えるunwindを禁止する。
+red zoneは使用しない。FPU / SIMDはコンパイラ生成コードを含め、
+使用するターゲットの前提と整合するCPU状態を起動時に初期化する。
+一律禁止だけではコンパイラ生成命令を排除できないため、ビルド設定と生成コードを確認する。
+UEFI関連crateはライセンスとBoot Services終了後の利用条件を確認して選ぶ。
 
 0.1.0は一つのPE32+ EFI実行ファイルにランタイムと検証アプリを静的リンクする。
 動的ELFロード、プロセス分離、複数アプリ切替は後続版へ送る。
@@ -27,7 +51,8 @@ core/              メモリ、診断、協調実行
  usb/              列挙、HID、Mass Storage
  fs/               FAT32読出し
  net/              lwIP接続、アプリ向け通信
- include/musha/    内部契約とアプリAPI
+ api/              Rustの安全なラッパーとFFI契約
+ include/musha/    C向けAPIヘッダー（契約確定後）
  apps/             検証アプリ
  tests/            ホスト側試験、QEMU試験
  tools/            イメージ作成、試験補助
@@ -92,7 +117,9 @@ TSCをCPU周波数から推測して時間源にしない。カウンタのwrap�
 
 静的リンクされたapp_init(context)、app_step(context)、app_shutdown(context)を呼ぶ。
 contextは版、サイズ、arena、画面情報、APIテーブルを持つ。
-ヘッダー化前に構造体サイズ、呼出規約、整数幅を固定する。
+Rust検証アプリには安全なラッパーを提供し、C ABIで同等機能を利用可能にする。
+ヘッダー化前に構造体サイズ、呼出規約、整数幅を固定する。arenaは唯一の所有者へ
+可変sliceとして渡し、ランタイム側に同じ領域の可変参照を残さない。
 APIは内部ランタイムとの契約で、0.1.0時点で将来版とのバイナリ互換を保証しない。
 
 | API群 | 0.1.0の契約 |
@@ -136,6 +163,8 @@ BAR、bus mastering、reset、MAC取得、PHY/link、descriptor ring、送受信
 機種別に確認する。I218 / I219の処理を82574のレジスタ設定だけで代用しない。
 未対応revisionは診断し、誤ったドライバを適用しない。
 
+lwIPはC実装を版固定し、小さなC shimを介してRustと接続する。
+pbufやcallbackの所有権を接続層で管理し、Rust側の借用をCが保存しない契約にする。
 lwIPはNO_SYS=1、raw APIを内部で使用し、同一ループから入力と
 sys_check_timeoutsを呼ぶ。socket / netconn APIは使用しない。
 アプリにはlwIPのpbufを公開せず、受信コピーと上限付きキューを使う。
@@ -151,6 +180,9 @@ sys_check_timeoutsを呼ぶ。socket / netconn APIは使用しない。
 実機でシリアルがないことを前提とする。書込専用USBログには依存しない。
 
 ## 9. 参照仕様
+
+- [RustのUEFIターゲットと呼出規約](https://doc.rust-lang.org/rustc/platform-support/unknown-uefi.html)
+- [Rust FFIの契約](https://doc.rust-lang.org/nomicon/ffi.html)
 
 - [UEFI仕様](https://uefi.org/specs/UEFI/2.11/)
 - [Intel xHCI仕様・初期化手順](https://cdrdv2-public.intel.com/625472/625472_xHCI_Rev1_2b.pdf)

@@ -1,16 +1,17 @@
 # Musha-OS 0.1.0 実装計画と設計完了条件
 
-2026-10-07時点: 基本方針とアーキテクチャは文書化済み。
+2026-10-08時点: 基本方針とアーキテクチャは文書化済み。
 詳細設計、実装、QEMU試験、実機試験は未完了。0.1.0タグはまだ作らない。
 
 ## 設計状況
 
 | 領域 | 決定済み | 実装前に残る設計 |
 |---|---|---|
-| 起動 | 単一EFI、静的リンク、UEFI終了後自主管理 | ライブラリ選定、boot_infoヘッダー、切替アセンブリ |
+| 言語 / ビルド | Rust no_std、C版lwIP、最小限のアセンブリ | ツール版、crate選定、CとのABI、CPU機能設定 |
+| 起動 | 単一EFI、静的リンク、UEFI終了後自主管理 | ライブラリ選定、boot_infoのRust型・FFI定義、切替アセンブリ |
 | メモリ | 恒等マップ、予約範囲除外、単一arena | PAT / MTRR、DMA容量、arena最低容量 |
 | CPU / 時間 | BSPのみ、ポーリング、例外診断 | IDT形式、PM timer / HPET手順とtimeout |
-| アプリ | 協調step、非同期I/O、版付きcontext | APIヘッダー、handle・バッファ上限 |
+| アプリ | 協調step、非同期I/O、版付きcontext | Rust APIとCヘッダー、handle・バッファ上限 |
 | USB | xHCI、boot keyboard、BOT | リング/context仕様、状態機械、復旧手順 |
 | FAT32 | 読出し専用、8.3名 | BPB制約、GPT検証、破損時の処理 |
 | 有線LAN | 機種別初期化、lwIP NO_SYS、固定IPv4 | 各NICのregister / PHY仕様、PCI allowlist |
@@ -55,3 +56,15 @@ QEMUではUEFI + xHCI + USB disk + USB keyboard + e1000e構成を版固定する
 起動・ビルド詳細設計を先に完成させ、次にAPIヘッダーとメモリ配置を確定する。
 USB / NICのレジスタ仕様は一次資料に照合し、実機PCI診断情報を集める。
 設計ブランチで文書を更新し、実装可能になった単位から実装へ進む。
+
+## 利用者の希望を確認する項目
+
+- 最初の検証アプリの用途。未指定の場合は画面・入力・arena・ファイル・UDPを
+  一画面で確認する診断アプリを初期案とする。
+- NUC5 / NUC8の入手・検証予定。実機試験前に機種・RAM・USB機器を確定する。
+- GitHubリポジトリの所有者、URL、公開範囲。remoteは未設定。
+
+以下は担当者が詳細設計で確定でき、すべてを利用者に選択してもらう必要はない。
+Rust版、UEFI crate、lwIP版、crate構成、CPU切替、メモリ属性、DMA配置、
+APIの型、ドライバ状態機械、timeoutとキュー容量、QEMUとイメージ生成手順。
+API / 容量 / CPU要件に変更が生じた場合は文書へ理由と検証条件を記録する。
