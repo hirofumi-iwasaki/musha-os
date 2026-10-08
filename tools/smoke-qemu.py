@@ -14,7 +14,7 @@ shutil.copyfile(firmware/'edk2-i386-vars.fd',out/'vars.fd')
 log=out/'debug.log';log.write_text('')
 qmp_path=out/'qmp.sock'
 if qmp_path.exists(): qmp_path.unlink()
-cmd=[args.qemu,'-machine','q35,accel=tcg','-m','256M','-net','none',
+cmd=[args.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev','user,id=net0','-device','e1000e,netdev=net0',
  '-drive',f'if=pflash,format=raw,readonly=on,file={firmware / "edk2-x86_64-code.fd"}',
  '-drive',f'if=pflash,format=raw,file={out / "vars.fd"}',
  '-drive',f'if=none,id=esp,format=raw,file=fat:rw:{root / "out/esp"}',
@@ -36,6 +36,10 @@ with (out/'qemu.log').open('w') as err:
   while time.monotonic()<deadline:
    text=log.read_text()
    if marker in text and text.endswith('\n'):
+    if args.case=='normal':
+     if 'CLASS=00000000000C0330' not in text or 'ID=0000000010D38086 CLASS=0000000000020000' not in text:
+      raise RuntimeError('Expected xHCI and Intel 82574 missing: '+text)
+     if 'MUSHA: PCI_ENUMERATION_OK' not in text:raise RuntimeError('PCI enumeration incomplete')
     if args.case!='normal':
      import re
      match=re.search(r'RIP=([0-9A-F]{16}) CR2=([0-9A-F]{16})',text)

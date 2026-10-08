@@ -5,6 +5,7 @@
 
 mod cpu;
 mod memory;
+mod pci;
 
 const _: () = assert!(
     (cfg!(feature = "fault-ud") as usize)
@@ -143,6 +144,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     }
     #[cfg(not(feature = "fault-nx"))]
     let _ = arena_base;
+    pci::diagnose(info.framebuffer);
     debug(b"MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK\n");
     #[cfg(feature = "fault-ud")]
     unsafe {
