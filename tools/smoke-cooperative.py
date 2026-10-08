@@ -72,13 +72,16 @@ with (out/'qemu.log').open('w') as err:
    if a.case=='link-down':control('set_link',{'name':'net0','up':False})
    reason='LINK DOWN' if a.case=='link-down' else 'TX TIMEOUT'
    wait_marker('NET_FAILED '+reason);wait_marker('NET_QUIESCED DMA_DISABLED')
+   if image_hash:wait_marker('APP_FILE_RECHECK_OK')
    control('send-key',{'keys':[{'type':'qcode','data':'a'}],'hold-time':50})
    wait_marker('APP_KEY_DOWN=0000000000000004');wait_marker('APP_KEY_UP=0000000000000004')
    control('send-key',{'keys':[{'type':'qcode','data':'esc'}],'hold-time':50})
    wait_marker('EXIT_BOOT_SERVICES_OK')
    text=log.read_text();assert 'XHCI_QUIESCED DMA_DISABLED' in text and 'RUNTIME_COOPERATIVE_OK' in text
    assert text.index('NET_QUIESCED')<text.index('APP_KEY_DOWN=0000000000000004')
-   if image_hash:assert hash_image()==image_hash and 'APP_FILE_OK' in text
+   if image_hash:
+    assert hash_image()==image_hash and 'APP_FILE_OK' in text
+    assert text.index('NET_QUIESCED')<text.index('APP_FILE_RECHECK_OK')
    control('quit');proc.wait(timeout=5)
    print('PASS:',a.case,'isolated; input/file progress and both DMA stop')
    raise SystemExit(0)

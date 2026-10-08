@@ -12,6 +12,7 @@ struct Diagnostic {
     file_done: bool,
     file_expected: Option<(u64, u64)>,
     file_checks: u64,
+    recheck_after_error: bool,
 }
 impl Diagnostic {
     fn request_file_recheck(&mut self) {
@@ -93,6 +94,10 @@ impl Application for Diagnostic {
         #[cfg(feature = "app-step-error")]
         if self.file_checks > 1 {
             return Err(Error::Io);
+        }
+        if self.recheck_after_error && self.file_done {
+            self.recheck_after_error = false;
+            self.request_file_recheck();
         }
         self.file_step(ctx)?;
         while let Some(event) = ctx.next_key() {
@@ -207,6 +212,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         file_done: false,
         file_expected: None,
         file_checks: 0,
+        recheck_after_error: false,
     };
     app.init(&mut ctx)?;
     let mut network = None;
@@ -255,6 +261,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     if let Err(error) = session.poll(before) {
                         crate::net::failed(error);
                         network = None;
+                        app.recheck_after_error = true;
                     }
                 }
                 if let Some(session) = network.as_ref() {
@@ -314,6 +321,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 if let Err(error) = session.poll(before) {
                     crate::net::failed(error);
                     network = None;
+                    app.recheck_after_error = true;
                 }
             }
             if let Some(session) = network.as_ref() {
