@@ -40,6 +40,8 @@ See [development and build instructions](docs/development.md).
 
 ### Policy documents
 
+- [Work plan before hardware arrival](docs/pre-hardware-work-plan.md)
+
 - [Musha-OS baseline policy 0.1.0](docs/policy-v0.1.md)
 - [0.1.0 architecture design](docs/design-0.1.0.md)
 - [0.1.0 implementation plan and design completion criteria](docs/implementation-plan-0.1.0.md)
@@ -105,6 +107,8 @@ USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済み
 [開発・ビルド手順](docs/development.md)を参照してください。
 
 ### 方針書
+
+- [実機到着前の作業方針](docs/pre-hardware-work-plan.md)
 
 - [Musha-OS 基本方針 0.1.0](docs/policy-v0.1.md)
 
