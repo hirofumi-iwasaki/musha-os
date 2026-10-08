@@ -282,3 +282,4 @@ mod event_tests {
 }
 
 pub mod keyboard;
+pub mod storage;

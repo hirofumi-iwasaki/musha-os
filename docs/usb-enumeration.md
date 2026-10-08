@@ -33,7 +33,8 @@ Success、residual 0を検査する。Short Packetや未知イベントは失敗
 DMA領域は途中失敗でも解放・再利用しない。診断後にアプリのRAM試験へ進む。
 
 [Boot Keyboard診断](usb-keyboard.md)でConfiguration DescriptorとSet Configuration、
-Interrupt INを追加した。Mass Storage BOT、ハブ、動的な接続・切断への対応は未実装。機器情報の確認をもって
+Interrupt INを追加した。[Mass Storage BOT読出し診断](usb-storage.md)も追加した。
+ハブ、動的な接続・切断への対応は未実装。機器情報の確認をもって
 キーボード入力やストレージ読出しが動くとは判定しない。
 
 ## 検証

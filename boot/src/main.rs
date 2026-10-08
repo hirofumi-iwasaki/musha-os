@@ -21,6 +21,7 @@ const _: () = assert!(
         + (cfg!(feature = "xhci-timeout") as usize)
         + (cfg!(feature = "xhci-command-timeout") as usize)
         + (cfg!(feature = "usb-descriptor-timeout") as usize)
+        + (cfg!(feature = "storage-timeout") as usize)
         <= 1,
     "Select only one injected fault"
 );

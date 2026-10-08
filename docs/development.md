@@ -12,7 +12,7 @@ GDT / IDT / TSSと4段ページテーブルは自前設定へ切り替える。
 予約領域を除外したRAM arenaを診断アプリへ渡し、各ページの両端を読書きする。
 CPU例外は診断後に停止し、復帰しない。
 ACPIのPM timer情報を引継ぎ、100msの経過とPCI機器の検出を診断する。
-xHCIは停止・リセットに加え、専用DMA / ringとNo-Op 600回の診断まで実装済み。Device DescriptorまでのUSB列挙を追加済み。Boot Keyboardの起動時入力診断も追加済み。ストレージ入出力、NIC、lwIP、
+xHCIは停止・リセットに加え、専用DMA / ringとNo-Op 600回の診断まで実装済み。Device DescriptorまでのUSB列挙を追加済み。Boot Keyboardの起動時入力診断も追加済み。ストレージは読出し診断まで追加済み。NIC、lwIP、
 HPET、panicの画面診断は未実装。アプリは64ページずつRAMを試験する協調step方式。
 BootInfoとメモリマップは専用LoaderDataページに保存し、回収しない。
 現在はRGB / BGRの32bit GOPだけに対応し、bitmask / BLT-onlyは拒否する。
@@ -73,7 +73,7 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ## 次の実装
 
-キー入力をAPI版2のFIFOへ接続済み。次はUSB Mass Storage BOTへ進む。
+キー入力をAPI版2のFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。次はpartition / FAT32読出しへ進む。
 [HID入力診断](usb-keyboard.md)と[NUC5試験準備](nuc5-bringup.md)を参照。
 [USB列挙仕様](usb-enumeration.md)を参照。
 [DMA / ring仕様](xhci-rings.md)を参照。
@@ -153,3 +153,13 @@ controller停止、BME解除、アプリ完了と起動完了まで確認する�
 継続入力のsmokeは `--features qemu-debug,input-persistent` でビルドし、
 `--keyboard-exit` を指定する。`--keyboard-wrap` を併用すると160回の押下・解放と
 ring周回を確認してからEscを送る。
+
+## USBストレージの試験
+
+通常smokeはUSBストレージの読出し成功も検査する。
+`--storage-fixture 512` または `--storage-fixture 4096` で4MiBの試験raw USBを追加し、
+容量、先頭・末尾セクタhash、試験ファイルのSHA-256不変を確認する。
+`--storage-high-speed` を併用するとUSB 2.0側の直結ポートでストレージを検査する。
+`--features qemu-debug,storage-timeout` でビルドし、smokeへ
+`--case storage-timeout` を渡すと読出しData INの応答停止を検査する。
+[ストレージ仕様と制約](usb-storage.md)を参照。

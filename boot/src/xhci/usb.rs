@@ -1,5 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
+mod storage;
 use super::{Host, Registers, TRBS, dma_u64, event, publish, wait};
 
 #[derive(Clone, Copy)]
@@ -403,6 +404,19 @@ fn keyboard(
     )?;
     for (i, b) in bytes[..length].iter_mut().enumerate() {
         *b = unsafe { (buffer as *const u8).add(i).read_volatile() };
+    }
+    if let Some(disk) = musha_xhci::storage::configuration(&bytes[..length], speed)? {
+        return storage::probe(
+            host,
+            pool,
+            slot,
+            input,
+            output,
+            stride,
+            control_ring,
+            buffer,
+            disk,
+        );
     }
     let Some(kbd) = musha_xhci::keyboard::configuration(&bytes[..length], speed)? else {
         return Ok(());

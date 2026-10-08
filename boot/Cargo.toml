@@ -34,3 +34,5 @@ xhci-command-timeout = ["qemu-debug"]
 usb-descriptor-timeout = ["qemu-debug"]
 
 input-persistent = ["qemu-debug"]
+
+storage-timeout = ["qemu-debug"]
