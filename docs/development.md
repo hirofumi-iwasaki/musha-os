@@ -12,7 +12,7 @@ GDT / IDT / TSSと4段ページテーブルは自前設定へ切り替える。
 予約領域を除外したRAM arenaを診断アプリへ渡し、各ページの両端を読書きする。
 CPU例外は診断後に停止し、復帰しない。
 ACPIのPM timer情報を引継ぎ、100msの経過とPCI機器の検出を診断する。
-xHCIは停止・リセットに加え、専用DMA / ringとNo-Op 600回の診断まで実装済み。USB機器の列挙・入出力、NIC、lwIP、
+xHCIは停止・リセットに加え、専用DMA / ringとNo-Op 600回の診断まで実装済み。Device DescriptorまでのUSB列挙を追加済み。USB入出力、NIC、lwIP、
 HPET、panicの画面診断は未実装。アプリは64ページずつRAMを試験する協調step方式。
 BootInfoとメモリマップは専用LoaderDataページに保存し、回収しない。
 現在はRGB / BGRの32bit GOPだけに対応し、bitmask / BLT-onlyは拒否する。
@@ -57,12 +57,12 @@ cp target/x86_64-unknown-uefi/release/musha-boot.efi out/esp/EFI/BOOT/BOOTX64.EF
 python3 tools/smoke-qemu.py --qemu /opt/homebrew/bin/qemu-system-x86_64 --firmware-dir /opt/homebrew/share/qemu
 ```
 
-スクリプトはq35 / TCG、256MiB、xHCI接続USBストレージ、標準VGAで起動し、
+スクリプトはq35 / TCG、256MiB、xHCI接続USBストレージとキーボード、標準VGAで起動し、
 ExitBootServices、専用stack、CPUテーブル、自前CR3への切替、arena試験と
 描画を終えたマーカーを確認する。
 45秒以内に確認できなければ失敗とする。成功時の画面はout/qemu-normal/screen.ppm。
 QEMU終了時に試験プロセスを停止し、内部ディスクや実機にはアクセスしない。
-この試験は自前xHCIドライバを確認するものではない。
+自前xHCIドライバのリング周回と2機器の列挙、停止・DMA無効化も検査する。
 
 2026-10-08: QEMU 11.1.2 / Rust 1.99.0で起動試験に成功し、保存画面を目視確認した。
 描画レイアウト、境界とpadding、算術overflow、RGB / BGRの4試験が成功。
@@ -73,7 +73,8 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ## 次の実装
 
-次はport reset、Enable Slot、Address DeviceとUSB列挙を進める。
+次はConfiguration Descriptorの解析、Set Configuration、HID入力へ進む。
+[USB列挙仕様](usb-enumeration.md)を参照。
 [DMA / ring仕様](xhci-rings.md)を参照。
 [RustアプリAPI](app-api.md)と[xHCI初期化](xhci.md)を参照。
 [ACPIと時間源の契約](acpi-timer.md)を参照。
@@ -132,3 +133,12 @@ controller停止、BME解除、アプリ完了と起動完了まで確認する�
 試験後は `sh tools/build-esp.sh` で通常版へ戻す。
 
 今回の検証: ホスト20テスト、QEMUの通常600 No-Op・command timeout・null書込のページ保護が成功。
+
+## USB列挙の試験
+
+通常smokeでUSBストレージとHigh-speedキーボードを列挙する。
+同じ通常ビルドで `--keyboard-usb-version 1` を指定するとFull-speedを確認できる。
+`qemu-debug,usb-descriptor-timeout` featureでビルドし、smokeへ
+`--case usb-descriptor-timeout` を渡すと、18byte転送のdoorbellを省略する。
+20msの期限切れ、controller停止、DMA無効化、アプリ完了を確認する。
+通常ビルドには応答停止の注入を含めない。

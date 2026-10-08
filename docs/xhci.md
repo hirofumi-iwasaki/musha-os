@@ -45,7 +45,7 @@ QEMU qemu-xhciで8portを検出し、reset完了とDMA無効状態を確認し�
 BIOS-ownedからOS-ownedへ実際に譲渡される待機経路は、実機での確認が必要。
 NUC5のIntel USB routing / EHCI handoff、NUC8固有差、実機errataも未検証。
 
-DMA / ring診断はNo-Op 600回と停止まで確認済み。次はport resetとUSB列挙へ進む。
+DMA / ring診断はNo-Op 600回と停止まで確認済み。Device Descriptorまでの[USB列挙](usb-enumeration.md)も確認済み。
 
 一次資料: [Intel xHCI 1.2b](https://cdrdv2-public.intel.com/625472/625472_xHCI_Rev1_2b.pdf)
 §4.2、4.22.1、5.4.1、5.4.2、7.1、

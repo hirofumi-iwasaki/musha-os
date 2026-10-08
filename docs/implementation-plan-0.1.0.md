@@ -58,7 +58,8 @@ QEMUではUEFI + xHCI + USB disk + USB keyboard + e1000e構成を版固定する
 
 ## 直近の次作業
 
-port reset、Enable Slot、Address Device、control transferでUSB列挙を進める。
+port reset、Enable Slot、Address Device、Device Descriptor転送まで実装済み。
+次はConfiguration Descriptor、Set Configuration、HID入力へ進める。
 アプリのC ABI、入力・ファイル・UDP APIも未完了。
 PM timer非対応機向けのHPET fallbackも残る。
 USB / NICのレジスタ仕様は一次資料に照合し、実機PCI診断情報を集める。

@@ -5,7 +5,8 @@ import argparse, json, os, pathlib, shutil, socket, subprocess, time
 parser=argparse.ArgumentParser()
 parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
-parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','xhci-timeout','xhci-command-timeout'],default='normal')
+parser.add_argument('--keyboard-usb-version',type=int,choices=[1,2],default=2)
+parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout'],default='normal')
 args=parser.parse_args()
 root=pathlib.Path(__file__).resolve().parent.parent
 out=root/'out'/('qemu-'+args.case);out.mkdir(parents=True,exist_ok=True)
@@ -18,14 +19,14 @@ cmd=[args.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev','user,id=net0','
  '-drive',f'if=pflash,format=raw,readonly=on,file={firmware / "edk2-x86_64-code.fd"}',
  '-drive',f'if=pflash,format=raw,file={out / "vars.fd"}',
  '-drive',f'if=none,id=esp,format=raw,file=fat:rw:{root / "out/esp"}',
- '-device','qemu-xhci','-device','usb-storage,drive=esp','-vga','std','-display','none',
+ '-device','qemu-xhci','-device','usb-storage,drive=esp','-device',f'usb-kbd,usb_version={args.keyboard_usb_version}','-vga','std','-display','none',
  '-debugcon',f'file:{log}','-global','isa-debugcon.iobase=0xe9',
  '-qmp',f'unix:{qmp_path},server=on,wait=off','-no-reboot']
 with (out/'qemu.log').open('w') as err:
  proc=subprocess.Popen(cmd,stdout=err,stderr=err)
  try:
   deadline=time.monotonic()+45
-  marker={'xhci-command-timeout':'MUSHA: XHCI_FAILED COMMAND TIMEOUT', 'xhci-timeout':'MUSHA: XHCI_FAILED TIMEOUT', 'normal':'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK',
+  marker={'usb-descriptor-timeout':'MUSHA: XHCI_FAILED TRANSFER TIMEOUT', 'xhci-command-timeout':'MUSHA: XHCI_FAILED COMMAND TIMEOUT', 'xhci-timeout':'MUSHA: XHCI_FAILED TIMEOUT', 'normal':'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK',
    'ud':'MUSHA: EXCEPTION VECTOR=0000000000000006 ERROR=0000000000000000',
    'df':'MUSHA: EXCEPTION VECTOR=0000000000000008 ERROR=0000000000000000',
    'guard':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000002',
@@ -37,6 +38,8 @@ with (out/'qemu.log').open('w') as err:
    text=log.read_text()
    if marker in text and text.endswith('\n'):
     if args.case=='normal':
+     if 'MUSHA: USB_ENUMERATION_OK COUNT=0000000000000002' not in text:raise RuntimeError('USB enumeration failed: '+text)
+     if 'VID=00000000000046F4 PID=0000000000000001' not in text or 'VID=0000000000000627 PID=0000000000000001' not in text:raise RuntimeError('Expected USB disk and keyboard missing: '+text)
      if 'MUSHA: XHCI_NOOP_OK COUNT=0000000000000258 COMMAND_WRAP_OK EVENT_WRAP_OK' not in text or 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('Command ring probe failed: '+text)
      if 'MUSHA: APP_LIFECYCLE_OK STEPS=' not in text:raise RuntimeError('App lifecycle failed: '+text)
      if 'MUSHA: XHCI_RESET_OK PORTS=' not in text or 'DMA_DISABLED' not in text:raise RuntimeError('xHCI reset failed: '+text)
@@ -44,15 +47,15 @@ with (out/'qemu.log').open('w') as err:
      if 'CLASS=00000000000C0330' not in text or 'ID=0000000010D38086 CLASS=0000000000020000' not in text:
       raise RuntimeError('Expected xHCI and Intel 82574 missing: '+text)
      if 'MUSHA: PCI_ENUMERATION_OK' not in text:raise RuntimeError('PCI enumeration incomplete')
-    if args.case not in ['normal','xhci-timeout','xhci-command-timeout']:
+    if args.case not in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout']:
      import re
      match=re.search(r'RIP=([0-9A-F]{16}) CR2=([0-9A-F]{16})',text)
      if not match or (args.case!='nx' and int(match.group(1),16)==0):raise RuntimeError('Invalid exception frame: '+text)
      if args.case=='pf' and int(match.group(2),16)!=0:raise RuntimeError('Unexpected CR2')
      if args.case in ['ro','nx','guard'] and int(match.group(2),16)==0:raise RuntimeError('Missing fault address')
-    if args.case in ['xhci-timeout','xhci-command-timeout'] and 'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK' not in text:
+    if args.case in ['xhci-timeout','xhci-command-timeout','usb-descriptor-timeout'] and 'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK' not in text:
      time.sleep(0.1);continue
-    if args.case=='xhci-command-timeout' and 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('DMA cleanup missing: '+text)
+    if args.case in ['xhci-command-timeout','usb-descriptor-timeout'] and 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('DMA cleanup missing: '+text)
     break
    if proc.poll() is not None:raise RuntimeError((out/'qemu.log').read_text())
    time.sleep(0.1)

@@ -18,7 +18,8 @@ QEMUと両実機で同一のUSBイメージを起動する構成を目標とし�
 QEMUで64MiB arenaとページ保護を確認済みです。
 PM timer、PCI列挙、xHCI所有権移行・リセット・DMA / ring診断とRustアプリのstep実行を追加しました。
 QEMUでNo-Op 600回の完了、リング周回と停止を確認済みです。
-USB機器の列挙・入出力とLAN通信は未実装です。最初の診断アプリは `Hello Musha-OS!` と表示し、
+USBポートをリセットし、USBメモリとキーボードのDevice Descriptor読出しを確認済みです。
+[USB列挙の範囲と制約](docs/usb-enumeration.md)を参照。入力・ファイル操作とLAN通信は未実装です。最初の診断アプリは `Hello Musha-OS!` と表示し、
 画面・入力・RAM・ファイル・UDPの状態を確認する構成です。
 [開発・ビルド手順](docs/development.md)を参照してください。
 

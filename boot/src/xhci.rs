@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Own/reset, build permanent DMA rings, probe commands, then quiesce.
 use crate::{BootInfo, acpi, pci};
+mod usb;
 struct Registers {
     base: usize,
     bytes: usize,
@@ -155,7 +156,7 @@ fn reset(info: &BootInfo) -> Result<(), &'static str> {
 }
 pub(crate) fn diagnose(info: &BootInfo) {
     let (label, color) = match reset(info).and_then(|()| command_probe(info)) {
-        Ok(()) => ("XHCI COMMAND OK", info.framebuffer.color(0, 240, 100)),
+        Ok(()) => ("USB ENUMERATED", info.framebuffer.color(0, 240, 100)),
         Err(error) => {
             crate::debug(b"MUSHA: XHCI_FAILED ");
             crate::debug(error.as_bytes());
@@ -198,8 +199,12 @@ fn event(
     ac64: bool,
     expected: usize,
     ports: u32,
-) -> Result<(), &'static str> {
-    let limit = if cfg!(feature = "xhci-command-timeout") {
+    expected_slot: u8,
+    transfer: bool,
+) -> Result<[u32; 4], &'static str> {
+    let limit = if cfg!(feature = "xhci-command-timeout")
+        || (transfer && cfg!(feature = "usb-descriptor-timeout"))
+    {
         20
     } else {
         1000
@@ -228,8 +233,20 @@ fn event(
             let kind = (control >> 10) & 63;
             let done = match kind {
                 33 => {
-                    if !musha_xhci::completion(words, expected) {
+                    let slot = if expected_slot == 255 {
+                        None
+                    } else {
+                        Some(expected_slot)
+                    };
+                    if transfer || !musha_xhci::command_completion(words, expected, slot, 8) {
                         return Err("BAD COMPLETION");
+                    }
+                    true
+                }
+                32 => {
+                    if !transfer || !musha_xhci::transfer_completion(words, expected, expected_slot)
+                    {
+                        return Err("BAD TRANSFER");
                     }
                     true
                 }
@@ -246,11 +263,15 @@ fn event(
             regs.address(runtime + 0x38, (base + cursor.index * 16) as u64 | 8, ac64)?; // ERDP + EHB W1C
             regs.write(runtime + 0x20, (regs.read(runtime + 0x20)? & !3) | 1)?; // IP ack, IE stays off
             if done {
-                return Ok(());
+                return Ok(words);
             }
         }
         if clock.now()? >= deadline {
-            return Err("COMMAND TIMEOUT");
+            return Err(if transfer {
+                "TRANSFER TIMEOUT"
+            } else {
+                "COMMAND TIMEOUT"
+            });
         }
         core::hint::spin_loop();
     }
@@ -318,7 +339,10 @@ fn command_probe(info: &BootInfo) -> Result<(), &'static str> {
         }
         regs.address(op + 0x30, dcbaa as u64, ac64)?;
         regs.address(op + 0x18, command as u64 | 1, ac64)?;
-        regs.write(op + 0x38, (regs.read(op + 0x38)? & !255) | 1)?; // one slot available, none enabled
+        regs.write(
+            op + 0x38,
+            (regs.read(op + 0x38)? & !255) | (regs.read(4)? & 255).min(8),
+        )?;
         regs.write(runtime + 0x20, (regs.read(runtime + 0x20)? & !3) | 1)?;
         regs.write(runtime + 0x24, 0)?;
         regs.write(runtime + 0x28, (regs.read(runtime + 0x28)? & !0xffff) | 1)?;
@@ -352,12 +376,27 @@ fn command_probe(info: &BootInfo) -> Result<(), &'static str> {
                 ac64,
                 address,
                 ports,
+                0,
+                false,
             )?;
             producer.advance();
         }
         crate::debug(b"MUSHA: XHCI_NOOP_OK COUNT=");
         crate::debug(&crate::cpu::hex(COMMANDS as u64));
         crate::debug(b" COMMAND_WRAP_OK EVENT_WRAP_OK\n");
+        let mut host = Host {
+            regs: &regs,
+            clock: &mut clock,
+            command,
+            events,
+            producer: &mut producer,
+            consumer: &mut consumer,
+            runtime,
+            doorbell,
+            ac64,
+            ports,
+        };
+        usb::enumerate(&mut host, &mut pool, dcbaa)?;
         Ok(())
     })();
     let halted = (|| {
@@ -375,4 +414,71 @@ fn command_probe(info: &BootInfo) -> Result<(), &'static str> {
     }
     crate::debug(b"MUSHA: XHCI_QUIESCED DMA_DISABLED\n");
     result
+}
+
+struct Host<'a> {
+    regs: &'a Registers,
+    clock: &'a mut acpi::Time,
+    command: usize,
+    events: usize,
+    producer: &'a mut musha_xhci::Cursor,
+    consumer: &'a mut musha_xhci::Cursor,
+    runtime: usize,
+    doorbell: usize,
+    ac64: bool,
+    ports: u32,
+}
+impl Host<'_> {
+    fn command(
+        &mut self,
+        parameter: usize,
+        control: u32,
+        slot: u8,
+    ) -> Result<[u32; 4], &'static str> {
+        let address = self.command + self.producer.index * 16;
+        if self.producer.index == TRBS - 2 {
+            unsafe {
+                publish(
+                    self.command + (TRBS - 1) * 16,
+                    [
+                        self.command as u32,
+                        0,
+                        0,
+                        (6 << 10) | 2 | self.producer.cycle,
+                    ],
+                );
+            }
+        }
+        unsafe {
+            publish(
+                address,
+                [parameter as u32, 0, 0, control | self.producer.cycle],
+            );
+        }
+        self.regs.write(self.doorbell, 0)?;
+        let result = event(
+            self.regs,
+            self.clock,
+            self.events,
+            self.consumer,
+            self.runtime,
+            self.ac64,
+            address,
+            self.ports,
+            slot,
+            false,
+        )?;
+        self.producer.advance();
+        Ok(result)
+    }
+    fn delay(&mut self, ms: u64) -> Result<(), &'static str> {
+        let end = self.clock.now()?.checked_add(ms).ok_or("CLOCK OVERFLOW")?;
+        for _ in 0..5_000_000 {
+            if self.clock.now()? >= end {
+                return Ok(());
+            }
+            core::hint::spin_loop();
+        }
+        Err("CLOCK STALLED")
+    }
 }

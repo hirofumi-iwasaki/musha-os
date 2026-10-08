@@ -30,3 +30,5 @@ fault-guard = ["qemu-debug"]
 xhci-timeout = ["qemu-debug"]
 
 xhci-command-timeout = ["qemu-debug"]
+
+usb-descriptor-timeout = ["qemu-debug"]

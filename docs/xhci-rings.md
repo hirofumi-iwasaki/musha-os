@@ -28,8 +28,8 @@ IOMMU設定とDMA mapping APIは未提供で、物理アドレスの直接DMAを
 | Scratchpad array | HCSPARAMS2に従う、64byte alignment |
 | Scratchpad buffer | 各4096byte・alignment、最大128個 |
 
-上限超過・不足時はDMAを開始せず失敗する。CONFIGはMaxSlotsEn=1とし、
-この診断ではslotをEnableしない。DCBAAのslot 0だけに必要scratchpad arrayを設定する。
+上限超過・不足時はDMAを開始せず失敗する。CONFIGはMaxSlotsEn=min(機器上限, 8)とする。
+No-Op診断に続きUSB列挙でslotをEnableする。DCBAAのslot 0だけに必要scratchpad arrayを設定する。
 AC64対応なら64bitアドレスregisterへaligned Qword write、非対応ならlow Dwordのみ。
 すべてのDMAアドレスを4GiB未満に置くため、どちらでも上位アドレスは0となる。
 
@@ -49,8 +49,9 @@ cycle bitを含むcontrolのvolatile write、MFENCE、doorbell 0へのwriteの�
 Event ringはcontrolのcycleがconsumer cycleに合うことを確認してから、LFENCEと
 compiler acquire barrierの後にpayloadを読む。pointer、type、completion codeを検査する。
 消費後はcursorを進め、ERDPを次entryへ更新してEHBをackする。IMAN.IPもackしIEは無効に保つ。
-Command Completionはtype 33、Success、正確な提出TRB address、slot / VFが0であることを要求する。
-Port Status Changeはtype 34、port範囲とSuccessを検査して消費するが、USB処理は始めない。
+Command Completionはtype 33、Success、正確な提出TRB address、VFが0で、slotはcommandごとの期待値に一致することを要求する。
+Enable Slotのみ、返されたslotが1からMaxSlotsEnの範囲内であることを要求する。
+Port Status Changeはtype 34、port範囲とSuccessを検査して消費するが、接続処理は起動時の順次走査で行う。
 未知イベント、host error、壊れた完了は診断失敗とする。
 
 ## 診断と終了
@@ -58,7 +59,7 @@ Port Status Changeはtype 34、port範囲とSuccessを検査して消費する�
 通常診断はNo-Opを600回発行する。Command ringの255 usable entriesと
 Event ringの256 entriesをそれぞれ複数回周回し、cycle反転を実機相当のDMAで検査する。
 各完了待ちは最大1000ms、かつ500万poll回。時計は毎周回でsampleする。
-成功時はXHCI COMMAND OKを表示する。
+続いてUSB列挙を行い、成功時はUSB ENUMERATEDを表示する。
 
 BME有効化以降のすべての復帰経路でR/Sを解除し、最大100msでHCHaltedを確認する。
 停止待ちが失敗した場合もBMEを解除し、DMA poolは予約したまま保持する。
@@ -75,8 +76,7 @@ haltedとBME無効の両方を確認できた場合だけQUIESCEDを記録する
 
 QEMUで上記を確認した。scratchpad必須controller、AC64=0、IOMMU有効環境、
 BIOS ownership譲渡とNUC5 / NUC8の実機試験は未実施。
-次はSupported Protocol capabilityに基づくport選択、port reset、Enable Slotと
-Address Device、control transferの順にUSB列挙を進める。
+[USB列挙仕様](usb-enumeration.md)に続く処理・試験結果を記載する。
 
 一次資料: [Intel xHCI 1.2b](https://cdrdv2-public.intel.com/625472/625472_xHCI_Rev1_2b.pdf)
 §4.2、4.6.2、4.9、4.20、5.3.4、5.5.2、6.4.2、6.4.3、6.5、6.6、
