@@ -28,3 +28,7 @@
 # Rust build and project-local toolchain
 /target/
 /.local-tools/
+
+# Python tool caches
+__pycache__/
+*.pyc

@@ -12,10 +12,12 @@ parser.add_argument('--keyboard-exit',action='store_true')
 parser.add_argument('--keyboard-wrap',action='store_true')
 parser.add_argument('--storage-fixture',type=int,choices=[512,4096])
 parser.add_argument('--storage-high-speed',action='store_true')
-parser.add_argument('--fat-fixture',choices=['mbr','superfloppy'])
+parser.add_argument('--fat-fixture',choices=['mbr','superfloppy','gpt'])
+parser.add_argument('--usb-image',type=pathlib.Path,help='Boot an actual GPT/FAT32 USB image read-only')
 args=parser.parse_args()
 if args.storage_fixture and args.fat_fixture:parser.error('Choose one fixture type')
 if args.case=='fat-corrupt' and not args.fat_fixture:parser.error('fat-corrupt requires --fat-fixture')
+if args.usb_image and args.case != 'normal':parser.error('--usb-image requires a normal diagnostic build')
 root=pathlib.Path(__file__).resolve().parent.parent
 out=root/'out'/('qemu-'+args.case);out.mkdir(parents=True,exist_ok=True)
 firmware=pathlib.Path(args.firmware_dir)
@@ -30,8 +32,21 @@ cmd=[args.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev','user,id=net0','
  '-device',('qemu-xhci,p3=1' if args.storage_high_speed else 'qemu-xhci'),'-device',('usb-storage,drive=esp,port=2' if args.storage_high_speed else 'usb-storage,drive=esp'),'-device',f'usb-kbd,usb_version={args.keyboard_usb_version}'+(',port=3' if args.storage_high_speed else ''),'-vga','std','-display','none',
  '-debugcon',f'file:{log}','-global','isa-debugcon.iobase=0xe9',
  '-qmp',f'unix:{qmp_path},server=on,wait=off','-no-reboot']
+def sha256_file(path):
+ digest=hashlib.sha256()
+ with path.open('rb') as source:
+  for chunk in iter(lambda:source.read(1024*1024),b''):digest.update(chunk)
+ return digest.hexdigest()
+image_hash=None
+if args.usb_image:
+ args.usb_image=args.usb_image.resolve()
+ if not args.usb_image.is_file():parser.error('USB image must be a regular file')
+ image_hash=sha256_file(args.usb_image)
+ index=next(i for i,arg in enumerate(cmd) if arg.startswith('if=none,id=esp,'))
+ cmd[index]=f'if=none,id=esp,format=raw,readonly=on,file={args.usb_image}'
 fixture=None
 fixture_hash=None
+boot_payload=b'Hello Musha-OS!\n'
 def fnv(data):
  value=0xcbf29ce484222325
  for byte in data:value=((value^byte)*0x100000001b3)&0xffffffffffffffff
@@ -116,6 +131,7 @@ with (out/'qemu.log').open('w') as err:
        for direction in ['DOWN','UP']:
         if 'MUSHA: HID_KEY_'+direction+'='+key not in text or 'MUSHA: APP_KEY_'+direction+'='+key not in text:raise RuntimeError('HID/app key transition missing: '+text)
      if 'MUSHA: STORAGE_PROBE_OK READ_ONLY' not in text:raise RuntimeError('Storage probe missing: '+text)
+     if args.usb_image and f'MUSHA: FAT32_FILE_OK BYTES={len(boot_payload):016X} HASH={fnv(boot_payload):016X}' not in text:raise RuntimeError('Boot image file read missing: '+text)
      if args.fat_fixture and fat_marker not in text:raise RuntimeError('FAT32 file differs: '+text)
      if args.storage_fixture:
       for expected in fixture_markers:
@@ -149,6 +165,7 @@ with (out/'qemu.log').open('w') as err:
   command('quit');sock.close()
   proc.wait(timeout=5)
   if fixture is not None and hashlib.sha256(fixture.read_bytes()).hexdigest()!=fixture_hash:raise RuntimeError('Fixture changed')
+  if args.usb_image and sha256_file(args.usb_image)!=image_hash:raise RuntimeError('Boot image changed')
   print(marker);print('Screenshot:',out/'screen.ppm')
  finally:
   if proc.poll() is None:

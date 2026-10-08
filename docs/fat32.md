@@ -10,17 +10,18 @@ It connects to USB BOT READ(10) and reads the short-name root file MUSHA.TXT for
 
 - FAT32 superfloppy (the disk starts with a volume boot sector).
 - MBR primary partition type 0Bh / 0Ch; exactly one target FAT32 partition.
+- GPT revision 1.0 with one ESP; see [GPT validation and images](usb-image.md).
 - A BPB matching 512 / 4096-byte block sectors, with one / two FATs.
 - 8.3 short names, fragmented root-directory and file chains, and partial reads of the last sector.
 
-GPT, extended partitions, FAT12 / FAT16 / exFAT, subdirectory traversal,
+Extended partitions, FAT12 / FAT16 / exFAT, subdirectory traversal,
 long-name resolution, application open / read / close, and writes are unsupported.
 Long File Name entries are skipped, so their short-name aliases can be specified.
 
 ### Validation and boundaries
 
 Check the MBR signature, boot indicators, partition start / length, and disk boundaries.
-Treat GPT protective MBRs as Unsupported.
+Validate GPT protective MBRs and both GPT copies; malformed metadata is rejected.
 Validate BPB sector size, power-of-two sectors per cluster, reserved sectors,
 FAT count, total sectors, FAT length, root cluster, FAT32 version, and active FAT.
 Determine FAT type from the data-cluster count; do not mount as FAT32 if it is below 65525.
@@ -48,7 +49,7 @@ Initially use a single line containing `Hello Musha-OS!`.
 On sufficiently tall screens, display FAT32 READ OK;
 record byte count and FNV-1a 64-bit hash in debug output.
 If the file is absent, report FAT32_FILE_MISSING and continue boot, input, and RAM diagnostics.
-GPT, FAT16, and similar media produce FAT32_UNSUPPORTED.
+Unsupported GPT formats, FAT16, and similar media produce FAT32_UNSUPPORTED.
 This is a file-read diagnostic; application file handles are not provided yet.
 
 ### Validation
@@ -66,7 +67,7 @@ DMA disablement, and RAM completion.
 The [fixture generator](../tools/make-fat32-fixture.py) creates only new regular files.
 It does not overwrite existing paths or format physical disks.
 Test fixtures contain no UEFI boot code or EFI files and are not hardware boot images.
-The NUC5 32GB USB drive and physical FAT32 media with 4096-byte sectors remain untested; GPT is unsupported / untested.
+The NUC5 32GB USB drive and physical FAT32 media with 4096-byte sectors remain untested; physical GPT boot remains untested; GPT image reads have passed in QEMU.
 
 Primary source:
 [Microsoft FAT specification v1.03](https://www.pcjs.org/documents/papers/microsoft/MS_FAT_OVERVIEW_103-2000-12-06.pdf)
@@ -86,17 +87,18 @@ USB BOTのREAD(10)へ接続し、ルートディレクトリの短名MUSHA.TXT�
 
 - FAT32 superfloppy(ディスク先頭がvolume boot sector)。
 - MBRの一次partition type 0Bh / 0Ch。対象FAT32 partitionは一つだけ。
+- GPT revision 1.0の単一ESP。[GPT検証とイメージ](usb-image.md)を参照。
 - block sector 512 / 4096byteと一致するBPB、1 / 2 FAT。
 - 8.3短名、断片化したroot directoryとfile chain、最後のsectorの部分読出し。
 
-GPT、extended partition、FAT12 / FAT16 / exFAT、サブディレクトリ探索、
+extended partition、FAT12 / FAT16 / exFAT、サブディレクトリ探索、
 長名の解決、アプリ向けopen / read / close、書込みは未対応。
 Long File Name entryは読み飛ばすため、その短名aliasを指定することはできる。
 
 ### 検査と境界
 
 MBRのsignature、boot indicator、partition開始・長さ・ディスク境界を確認する。
-GPT protective MBRはUnsupportedとして扱う。
+GPT protective MBRと主・副GPTを検証し、破損metadataを拒否する。
 BPBのsector長、power-of-twoのsectors per cluster、reserved sector、FAT数、
 total sector、FAT長、root cluster、FAT32 version、active FATを検査する。
 FAT種別はdata cluster数から判定し、65525未満はFAT32としてmountしない。
@@ -122,7 +124,7 @@ deleted entry、volume label、directory、LFNを除外して短名を一致比�
 最初は内容を `Hello Musha-OS!` の一行にする。
 高画面ではFAT32 READ OKを表示し、debug出力にbyte数とFNV-1a 64bit hashを記録する。
 ファイルがなければFAT32_FILE_MISSINGとし、起動・入力・RAM診断は継続する。
-GPTやFAT16等はFAT32_UNSUPPORTEDとなる。
+未対応GPT形式やFAT16等はFAT32_UNSUPPORTEDとなる。
 これはfile読出しの診断であり、アプリ向けfile handleはまだ提供しない。
 
 ### 検証
@@ -138,7 +140,7 @@ MBRとsuperfloppyの両形式で成功。fixtureはreadonly接続し、
 [fixture作成ツール](../tools/make-fat32-fixture.py)は新しい通常ファイルだけを作成する。
 既存pathの上書きや実機ディスクのformatは行わない。
 試験用fixtureはUEFI起動コードやEFIファイルを持たず、実機起動用imageではない。
-NUC5の32GB USB、4096byte sectorの実物FAT32、GPTは未検証 / 未対応。
+NUC5の32GB USB、4096byte sectorの実物FAT32、実物GPT起動は未検証。GPTイメージ読出しはQEMUで確認済み。
 
 一次資料:
 [Microsoft FAT仕様 v1.03](https://www.pcjs.org/documents/papers/microsoft/MS_FAT_OVERVIEW_103-2000-12-06.pdf)

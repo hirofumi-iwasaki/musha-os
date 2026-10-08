@@ -3,15 +3,23 @@
 # SPDX-License-Identifier: Apache-2.0
 """Create a new sparse FAT32 test image; never operates on a device."""
 import argparse,pathlib,struct
+import importlib.util
 PAYLOAD=b'Hello Musha-OS!\n'+b'FAT32 file read over USB.\n'*45
 def create(path,layout='mbr',corrupt=False):
  size=512;clusters=65536;reserved=32;fatsecs=(clusters+2)*4//size+1
- start=2048 if layout=='mbr' else 0
+ start=2048 if layout in ['mbr','gpt'] else 0
  data=reserved+2*fatsecs;total=data+clusters
  def sector(file,lba,contents):file.seek(lba*size);file.write(contents)
  with pathlib.Path(path).open('xb') as file:
-  file.truncate((start+total)*size)
-  if start:
+  blocks=start+total+(33 if layout=='gpt' else 0)
+  file.truncate(blocks*size)
+  if layout=='gpt':
+   spec=importlib.util.spec_from_file_location('usb_image',pathlib.Path(__file__).with_name('make-usb-image.py'))
+   module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+   mbr,primary,backup,array=module.gpt_tables(blocks,start,start+total-1,'fixture')
+   sector(file,0,mbr);sector(file,1,primary);sector(file,2,array)
+   sector(file,blocks-33,array);sector(file,blocks-1,backup)
+  elif start:
    mbr=bytearray(size);mbr[510:512]=b'\x55\xaa';mbr[450]=0x0c
    struct.pack_into('<II',mbr,454,start,total);sector(file,0,mbr)
   boot=bytearray(size);boot[:3]=b'\xeb\x58\x90';boot[3:11]=b'MUSHA-OS'
@@ -41,6 +49,6 @@ def create(path,layout='mbr',corrupt=False):
  return len(PAYLOAD)
 if __name__=='__main__':
  parser=argparse.ArgumentParser()
- parser.add_argument('output');parser.add_argument('--layout',choices=['mbr','superfloppy'],default='mbr')
+ parser.add_argument('output');parser.add_argument('--layout',choices=['mbr','superfloppy','gpt'],default='mbr')
  parser.add_argument('--corrupt-chain',action='store_true');args=parser.parse_args()
  print('File bytes:',create(args.output,args.layout,args.corrupt_chain))

@@ -10,7 +10,7 @@ Our own GDT / IDT / TSS, exception diagnostics, page tables, reserved-region man
 ACPI PM timer handoff and 100ms measurement have been verified in QEMU.
 The Rust application API, xHCI stop / reset, dedicated DMA / rings,
 and 600 No-Op commands have been verified in QEMU.
-HPET, USB enumeration / I/O, NIC drivers, and hardware tests remain incomplete.
+USB enumeration / input / read diagnostics and GPT image generation are implemented. HPET, application file APIs, NIC drivers, and hardware tests remain incomplete.
 Do not create a 0.1.0 tag yet.
 
 ### Design status
@@ -67,7 +67,7 @@ Port reset, Enable Slot, Address Device, and Device Descriptor transfers are imp
 Configuration Descriptor, Set Configuration, and Boot Keyboard Interrupt IN diagnostics are implemented.
 Continuous input from a single keyboard is connected to the API version 2 FIFO.
 USB BOT capacity and first / last sector read diagnostics have been added.
-MBR / FAT32 short-name root-file reads have been added. Next, implement GPT and the application file API.
+MBR / FAT32 short-name root-file reads have been added. GPT validation and shared-image generation are implemented. Next, implement the application file API.
 The application C ABI and file / UDP APIs are also incomplete.
 HPET fallback for machines without a supported PM timer remains.
 Cross-check USB / NIC register specifications against primary sources and collect hardware PCI diagnostics.
@@ -100,7 +100,7 @@ If API, capacity, or CPU requirements change, document the reasons and validatio
 QEMUで確認済み。自前GDT / IDT / TSS、例外診断、ページテーブル、予約領域管理、
 64MiB arenaとPCI列挙（xHCI / Intel 82574識別）はQEMUで確認済み。ACPIのPM timer情報引継ぎと100ms計測はQEMUで確認済み。
 RustアプリAPIとxHCI停止・リセット、専用DMA / ring、No-Op 600回までQEMUで確認済み。
-HPET、USB列挙・入出力、NICドライバと実機試験は未完了。
+USB列挙・入力・読出し診断とGPTイメージ生成は実装済み。HPET、アプリ向けfile API、NICドライバと実機試験は未完了。
 0.1.0タグはまだ作らない。
 
 ### 設計状況
@@ -155,7 +155,7 @@ QEMUではUEFI + xHCI + USB disk + USB keyboard + e1000e構成を版固定する
 
 port reset、Enable Slot、Address Device、Device Descriptor転送まで実装済み。
 Configuration Descriptor、Set Configuration、Boot KeyboardのInterrupt IN診断まで実装済み。
-単一キーボードの継続入力とAPI版2のFIFOを接続済み。USB BOTの容量・先頭 / 末尾セクタ読出し診断を追加済み。MBR / FAT32の短名ルートファイル読出しを追加済み。次はGPTとアプリ向けfile APIへ進める。
+単一キーボードの継続入力とAPI版2のFIFOを接続済み。USB BOTの容量・先頭 / 末尾セクタ読出し診断を追加済み。MBR / FAT32の短名ルートファイル読出しを追加済み。GPT検証と共通イメージ生成は実装済み。次はアプリ向けfile APIへ進める。
 アプリのC ABI、ファイル・UDP APIも未完了。
 PM timer非対応機向けのHPET fallbackも残る。
 USB / NICのレジスタ仕様は一次資料に照合し、実機PCI診断情報を集める。

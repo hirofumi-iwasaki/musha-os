@@ -16,7 +16,7 @@ After each stage, record completed scope, tests, known limitations, and the next
 
 ### Progress
 
-- Stage 1: In progress. GPT validation and shared-image tooling are the current work.
+- Stage 1: Implemented and verified in QEMU. GPT validation, reproducible bootable images, and exact medium-capacity sizing are available. See [shared USB image](usb-image.md). Physical boot tests remain pending.
 - Stages 2–5: Pending; begin in the order above after the preceding acceptance checks pass.
 - Hardware validation: Pending arrival of the NUC5. NUC8 availability remains unconfirmed.
 
@@ -36,6 +36,6 @@ After each stage, record completed scope, tests, known limitations, and the next
 
 ### 進捗
 
-- 第1段階: 作業中。GPT検証と共通イメージ生成を進める。
+- 第1段階: 実装とQEMU検証完了。GPT検証、再現可能な起動イメージ、媒体の正確な容量指定に対応。[共通USBイメージ](usb-image.md)を参照。実機起動試験は未実施。
 - 第2～5段階: 未着手。前段階の合格確認後に順番に開始する。
 - 実機検証: NUC5の到着待ち。NUC8の確保状況は未確認。

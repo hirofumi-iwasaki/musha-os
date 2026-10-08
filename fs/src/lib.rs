@@ -1,6 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
+mod gpt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     Io,
@@ -153,7 +154,7 @@ fn visit(seen: &mut [u32; 128], count: &mut usize, cluster: u32) -> Result<(), E
     Ok(())
 }
 /// Reads a root-directory short-name file from FAT32, never writes to the disk.
-/// Supports superfloppy or exactly one primary MBR FAT32 partition.
+/// Supports superfloppy, one primary MBR FAT32 partition, or one GPT ESP.
 /// sector_size must match the block device (512 or 4096). At most 1024 reads.
 pub fn read_root<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     blocks: u64,
@@ -185,12 +186,13 @@ pub fn read_root<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
             return Err(Error::Unsupported);
         }
         let mut partition = None;
-        for i in 0..4 {
+        let protective = (0..4).any(|i| boot[446 + i * 16 + 4] == 0xee);
+        if protective {
+            partition = Some(gpt::partition(&mut r, &boot)?);
+        }
+        for i in 0..if protective { 0 } else { 4 } {
             let off = 446 + i * 16;
             let kind = boot[off + 4];
-            if kind == 0xee {
-                return Err(Error::Unsupported);
-            } // GPT requires a separate validator
             if matches!(kind, 0x0b | 0x0c) {
                 if partition.is_some() || !matches!(boot[off], 0 | 128) {
                     return Err(Error::Corrupt);

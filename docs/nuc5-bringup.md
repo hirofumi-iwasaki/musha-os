@@ -25,10 +25,10 @@ No hardware test results are available yet.
 
 Writing to the internal SSD is not implemented.
 No RAM or storage test rewrites the entire capacity of the 32GB USB drive.
-Integrated UEFI-bootable USB image generation is not implemented; a test FAT32 image generator exists.
+Integrated UEFI-bootable GPT/FAT32 image generation is implemented; see [image instructions](usb-image.md). A test FAT32 image generator also exists.
 Our own USB Mass Storage capacity and first / last sector reads are implemented.
 Reading MUSHA.TXT from the root of MBR / superfloppy FAT32 is implemented.
-GPT and the application file API remain unsupported.
+GPT image reads are implemented; the application file API remains unsupported.
 The final acceptance requirement of booting the same USB image in QEMU / NUC5 / NUC8 has not been met.
 
 On successful storage diagnostics, screens at least 444 pixels high display USB READ OK and capacity.
@@ -78,10 +78,10 @@ QEMU success alone does not establish support for hardware-specific USB routing 
    高さ388pixel以上ではKEY CODEが表示される。
 
 内部SSDへの書込み処理は未実装。USB32GBの容量全体をRAMやストレージ試験で
-書き換える処理もない。UEFI起動用の統合USBイメージ生成は未実装。試験用FAT32 imageの生成ツールはある。
+書き換える処理もない。UEFI起動用の統合GPT/FAT32イメージ生成は実装済み。[生成手順](usb-image.md)を参照。試験用FAT32 imageの生成ツールもある。
 独自USB Mass Storageの容量・先頭 / 末尾セクタ読出しは実装済み。
 MBR / superfloppy形式のFAT32で、ルートのMUSHA.TXT読出しを実装済み。
-GPTとアプリ向けfile APIはまだ未対応。
+GPTイメージ読出しは実装済み。アプリ向けfile APIはまだ未対応。
 同一USBイメージでQEMU / NUC5 / NUC8を起動する最終合格条件は未達。
 
 ストレージ診断の成功時、高さ444pixel以上ならUSB READ OKと容量を表示する。

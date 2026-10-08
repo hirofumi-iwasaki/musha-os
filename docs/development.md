@@ -42,7 +42,7 @@ sh tools/build-esp.sh
 In a normal rustup environment, run `rustup target add x86_64-unknown-uefi`,
 then use the same build script. Track Cargo.lock to pin dependency versions.
 The output is `out/esp/EFI/BOOT/BOOTX64.EFI`.
-This is an ESP directory, not a GPT / FAT32 USB disk image.
+This is an ESP directory. Use the [shared USB image generator](usb-image.md) to create a GPT / FAT32 disk image.
 
 ### Boot check
 
@@ -83,7 +83,7 @@ Firmware SHA-256 values used:
 
 Key input is connected to the API version 2 FIFO.
 USB BOT capacity / sector read diagnostics and MBR / FAT32 root-file reads have been added.
-Next, implement GPT and the application file API.
+GPT and shared-image generation are implemented. Next, implement the application file API.
 See [HID input diagnostics](usb-keyboard.md) and [NUC5 test preparation](nuc5-bringup.md).
 See [USB enumeration specifications](usb-enumeration.md), [DMA / ring specifications](xhci-rings.md),
 the [Rust application API](app-api.md), [xHCI initialization](xhci.md),
@@ -225,7 +225,7 @@ sh tools/build-esp.sh
 通常のrustup環境では `rustup target add x86_64-unknown-uefi` 後に
 同じビルドスクリプトを実行する。Cargo.lockは追跡し依存版を固定する。
 生成物は `out/esp/EFI/BOOT/BOOTX64.EFI`。
-これはESP用ディレクトリで、GPT / FAT32のUSBディスクイメージではない。
+これはESP用ディレクトリ。[共通USBイメージ生成](usb-image.md)でGPT / FAT32ディスクイメージを作成できる。
 
 ### 起動確認
 
@@ -263,7 +263,7 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ### 次の実装
 
-キー入力をAPI版2のFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。MBR / FAT32のルートファイル読出しも追加済み。次はGPTとアプリ向けfile APIへ進む。
+キー入力をAPI版2のFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。MBR / FAT32のルートファイル読出しも追加済み。GPTと共通イメージ生成は実装済み。次はアプリ向けfile APIへ進む。
 [HID入力診断](usb-keyboard.md)と[NUC5試験準備](nuc5-bringup.md)を参照。
 [USB列挙仕様](usb-enumeration.md)を参照。
 [DMA / ring仕様](xhci-rings.md)を参照。

@@ -33,6 +33,7 @@ The normal build ends the diagnostic session with Esc.
 USB BOT capacity queries and first / last sector reads have been verified in QEMU.
 See [storage diagnostics](docs/usb-storage.md).
 [FAT32 read diagnostics](docs/fat32.md) have been added; reading MUSHA.TXT from the root has been verified in QEMU.
+[GPT support and shared bootable USB images](docs/usb-image.md) are implemented and verified in QEMU.
 The application file API and LAN communication are not yet implemented.
 The first diagnostic application displays `Hello Musha-OS!` and is designed to
 check the display, input, RAM, file, and UDP status.
@@ -102,6 +103,7 @@ USBポートをリセットし、USBメモリとキーボードのDevice Descrip
 単一キーボードからアプリへの継続入力を追加しました。通常版はEscで診断を終了します。
 USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済みです。
 [ストレージ診断](docs/usb-storage.md)を参照。[FAT32読出し診断](docs/fat32.md)を追加し、ルートのMUSHA.TXTをQEMUで確認済みです。
+[GPT対応と共通の起動用USBイメージ](docs/usb-image.md)を実装し、QEMUで確認済みです。
 アプリ向けファイルAPIとLAN通信は未実装です。最初の診断アプリは `Hello Musha-OS!` と表示し、
 画面・入力・RAM・ファイル・UDPの状態を確認する構成です。
 [開発・ビルド手順](docs/development.md)を参照してください。
