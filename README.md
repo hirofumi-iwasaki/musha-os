@@ -35,8 +35,8 @@ README.md             プロジェクト概要
 
 ## 開発と公開
 
-既定ブランチは `main` です。GitHubのリポジトリURLが決まった後に、
-`origin` を設定できます。初期セットアップではGitHubへのpushは行いません。
+既定ブランチは `main`、設計ブランチは `design/0.1.0` です。
+GitHub: https://github.com/hirofumi-iwasaki/musha-os
 
 ## ライセンス
 
