@@ -10,7 +10,7 @@ Our own GDT / IDT / TSS, exception diagnostics, page tables, reserved-region man
 ACPI PM timer handoff and 100ms measurement have been verified in QEMU.
 The Rust application API, xHCI stop / reset, dedicated DMA / rings,
 and 600 No-Op commands have been verified in QEMU.
-USB enumeration / input / read diagnostics and GPT image generation are implemented. Initial [QEMU 82574/lwIP diagnostics](network.md) are implemented. HPET, general device-backed file APIs, NUC NIC initialization, concurrent I/O and hardware tests remain incomplete.
+USB enumeration / input / read diagnostics and GPT image generation are implemented. Initial [QEMU 82574/lwIP diagnostics](network.md) are implemented. HPET, general device-backed file APIs, NUC NIC initialization, general asynchronous disk I/O, application UDP handles and hardware tests remain incomplete. Initial [cooperative I/O](cooperative-io.md) is implemented.
 Do not create a 0.1.0 tag yet.
 
 ### Design status
@@ -100,7 +100,7 @@ If API, capacity, or CPU requirements change, document the reasons and validatio
 QEMUで確認済み。自前GDT / IDT / TSS、例外診断、ページテーブル、予約領域管理、
 64MiB arenaとPCI列挙（xHCI / Intel 82574識別）はQEMUで確認済み。ACPIのPM timer情報引継ぎと100ms計測はQEMUで確認済み。
 RustアプリAPIとxHCI停止・リセット、専用DMA / ring、No-Op 600回までQEMUで確認済み。
-USB列挙・入力・読出し診断とGPTイメージ生成は実装済み。初期の[QEMU 82574/lwIP診断](network.md)も実装済み。HPET、一般のdevice-backed file API、NUC向けNIC初期化、同時I/Oと実機試験は未完了。
+USB列挙・入力・読出し診断とGPTイメージ生成は実装済み。初期の[QEMU 82574/lwIP診断](network.md)も実装済み。HPET、一般のdevice-backed file API、NUC向けNIC初期化、一般の非同期disk I/O、アプリUDP handleと実機試験は未完了。初期の[協調I/O](cooperative-io.md)は実装済み。
 0.1.0タグはまだ作らない。
 
 ### 設計状況

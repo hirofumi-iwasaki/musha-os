@@ -155,6 +155,7 @@ fn reset(info: &BootInfo) -> Result<(), &'static str> {
     Ok(())
 }
 pub(crate) enum AppEvent<'a> {
+    Ready(bool),
     Keys(&'a [(u8, bool)]),
     File(&'a [u8]),
     FileError(musha_api::Error),

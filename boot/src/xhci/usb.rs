@@ -260,6 +260,7 @@ pub(super) fn enumerate(
     }
     host.delay(20)?;
     let mut count = 0u64;
+    let mut active_keyboard = None;
     for port in 1..=host.ports as usize {
         if protocols[port].major == 0 {
             continue;
@@ -352,10 +353,18 @@ pub(super) fn enumerate(
         crate::debug(b" PID=");
         crate::debug(&crate::cpu::hex(product as u64));
         crate::debug(b"\n");
-        keyboard(
-            host, pool, slot, input, output, stride, ring, buffer, speed, tick,
+        let keyboard = configure(
+            host, pool, slot, input, output, stride, ring, buffer, speed, port, tick,
         )?;
-        // Diagnostic enumeration releases each hardware slot only after a
+        if let Some(keyboard) = keyboard {
+            if active_keyboard.is_none() {
+                active_keyboard = Some(keyboard);
+                count += 1;
+                continue;
+            }
+            crate::debug(b"MUSHA: HID_ADDITIONAL_UNSUPPORTED\n");
+        }
+        // Release non-keyboard slots only after a
         // Disable Slot completion. The DMA allocation itself is never reused.
         host.command(0, (10 << 10) | ((slot as u32) << 24), slot)?;
         unsafe {
@@ -366,11 +375,28 @@ pub(super) fn enumerate(
     }
     crate::debug(b"MUSHA: USB_ENUMERATION_OK COUNT=");
     crate::debug(&crate::cpu::hex(count));
-    crate::debug(b"\n");
+    crate::debug(b"\nMUSHA: USB_DISCOVERY_DONE\n");
+    tick(super::AppEvent::Ready(active_keyboard.is_some()))?;
+    if let Some(keyboard) = active_keyboard {
+        let slot = keyboard.slot;
+        run_keyboard(host, keyboard, tick)?;
+        host.command(0, (10 << 10) | ((slot as u32) << 24), slot)?;
+        unsafe {
+            dma_u64(dcbaa + slot as usize * 8, 0);
+            core::arch::asm!("mfence", options(nostack));
+        }
+    }
     Ok(())
 }
 
-fn keyboard(
+struct Keyboard {
+    slot: u8,
+    endpoint: u8,
+    ring: usize,
+    report: usize,
+    port: usize,
+}
+fn configure(
     host: &mut Host<'_>,
     pool: &mut musha_xhci::Pool,
     slot: u8,
@@ -380,8 +406,9 @@ fn keyboard(
     control_ring: usize,
     buffer: usize,
     speed: musha_xhci::Speed,
+    port: usize,
     tick: &mut dyn FnMut(super::AppEvent<'_>) -> Result<bool, &'static str>,
-) -> Result<(), &'static str> {
+) -> Result<Option<Keyboard>, &'static str> {
     // Only configuration zero is inspected at this diagnostic stage.
     control(host, slot, control_ring, 6, buffer, 9, 0x02000680, 0)?;
     let mut bytes = [0u8; 1024];
@@ -417,10 +444,11 @@ fn keyboard(
             buffer,
             disk,
             tick,
-        );
+        )
+        .map(|()| None);
     }
     let Some(kbd) = musha_xhci::keyboard::configuration(&bytes[..length], speed)? else {
-        return Ok(());
+        return Ok(None);
     };
     let endpoint = kbd.endpoint * 2 + 1;
     let ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
@@ -465,6 +493,26 @@ fn keyboard(
         0x0b21,
         kbd.interface as u16,
     )?;
+    Ok(Some(Keyboard {
+        slot,
+        endpoint,
+        ring,
+        report,
+        port,
+    }))
+}
+fn run_keyboard(
+    host: &mut Host<'_>,
+    keyboard: Keyboard,
+    tick: &mut dyn FnMut(super::AppEvent<'_>) -> Result<bool, &'static str>,
+) -> Result<(), &'static str> {
+    let Keyboard {
+        slot,
+        endpoint,
+        ring,
+        report,
+        port,
+    } = keyboard;
     crate::debug(
         b"MUSHA: HID_READY
 ",
@@ -477,10 +525,12 @@ fn keyboard(
             host.framebuffer.color(0, 240, 100),
         );
     }
+
+    let op = (host.regs.read(0)? & 255) as usize;
     let deadline = if cfg!(feature = "qemu-debug") && !cfg!(feature = "input-persistent") {
         host.clock
             .now()?
-            .checked_add(5000)
+            .checked_add(10000)
             .ok_or("CLOCK OVERFLOW")?
     } else {
         u64::MAX
@@ -490,6 +540,9 @@ fn keyboard(
     let mut pending = false;
     let mut reports = 0;
     loop {
+        if host.regs.read(op + 0x400 + (port - 1) * 16)? & 1 == 0 {
+            return Err("KEYBOARD DISCONNECTED");
+        }
         if host.clock.now()? >= deadline {
             break;
         }

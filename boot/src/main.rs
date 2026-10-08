@@ -159,7 +159,6 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         }
         stop();
     }
-    net::diagnose(info);
     #[cfg(feature = "fault-pf")]
     unsafe {
         asm!("xor rax, rax","mov byte ptr [rax], 1",out("rax") _,options(nostack));

@@ -25,6 +25,47 @@ pub fn tx_word(length: usize) -> Option<u64> {
         .contains(&length)
         .then_some(length as u64 | (0x0b << 24))
 }
+/// Completion state retains buffer ownership until a clean DD observation.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TxStatus {
+    Pending,
+    Complete,
+    Error,
+    Timeout,
+}
+pub struct TxFlight {
+    deadline: u64,
+    last: u64,
+    observations: u32,
+}
+impl TxFlight {
+    pub fn new(now: u64) -> Option<Self> {
+        Some(Self {
+            deadline: now.checked_add(100)?,
+            last: now,
+            observations: 0,
+        })
+    }
+    pub fn observe(&mut self, status: u8, now: u64) -> TxStatus {
+        if now < self.last {
+            return TxStatus::Error;
+        }
+        self.last = now;
+        self.observations = self.observations.saturating_add(1);
+        if status & 1 != 0 {
+            return if status & 14 != 0 {
+                TxStatus::Error
+            } else {
+                TxStatus::Complete
+            };
+        }
+        if now >= self.deadline || self.observations >= 5_000_000 {
+            TxStatus::Timeout
+        } else {
+            TxStatus::Pending
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,5 +108,34 @@ mod tests {
         for length in [0, 13, 1515, usize::MAX] {
             assert!(tx_word(length).is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod flight_tests {
+    use super::*;
+    #[test]
+    fn pending_then_completion_and_hardware_errors() {
+        let mut f = TxFlight::new(100).unwrap();
+        assert_eq!(f.observe(0, 100), TxStatus::Pending);
+        assert_eq!(f.observe(0, 199), TxStatus::Pending);
+        assert_eq!(f.observe(1, 199), TxStatus::Complete);
+        for status in [3, 5, 9] {
+            assert_eq!(
+                TxFlight::new(0).unwrap().observe(status, 1),
+                TxStatus::Error
+            );
+        }
+    }
+    #[test]
+    fn deadlines_stalled_clock_and_overflow() {
+        assert!(TxFlight::new(u64::MAX).is_none());
+        assert_eq!(TxFlight::new(0).unwrap().observe(0, 100), TxStatus::Timeout);
+        assert_eq!(TxFlight::new(2).unwrap().observe(0, 1), TxStatus::Error);
+        let mut f = TxFlight::new(0).unwrap();
+        for _ in 0..4_999_999 {
+            assert_eq!(f.observe(0, 0), TxStatus::Pending);
+        }
+        assert_eq!(f.observe(0, 0), TxStatus::Timeout);
     }
 }

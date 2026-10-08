@@ -30,7 +30,7 @@ Duplicate usages or reordering must not generate extra events. Ignore the reserv
 ### Diagnostic lifetime
 
 After KEYBOARD READY, the normal build continues input until the application receives Esc.
-A build with only `qemu-debug` ends after five seconds for smoke testing.
+A build with only `qemu-debug` ends after ten seconds for smoke testing.
 `input-persistent` retains debug output while checking continuous input as in the normal build.
 Display HID usages on key presses in the application screen;
 log presses / releases at both device and application levels in debug output.
@@ -98,7 +98,7 @@ short reportやstall等は診断失敗とする。rollover(usage 1〜3)は以前
 ### 診断の寿命
 
 通常版はKEYBOARD READY表示後、アプリがEscを受信するまで入力を続ける。
-`qemu-debug` 単独ビルドはsmoke用に5秒で終了する。
+`qemu-debug` 単独ビルドはsmoke用に10秒で終了する。
 `input-persistent` featureはdebug出力を残して通常版と同じ継続入力を検査する。キー押下時のHID usageを
 アプリの画面へ表示し、デバッグ出力にはデバイスとアプリ双方の押下・解放を記録する。
 usage表示行は高さ388pixel以上の画面で確認できる。
@@ -113,6 +113,8 @@ controller停止・bus mastering解除後、RAM診断アプリへ進む。
 複数キーボードを同時にpollする処理は未対応。
 文字配列、JIS / US配列変換、repeat、LED制御、ハブ、hotplug、
 SuperSpeedキーボード、他configurationの探索、汎用Report Descriptor解析は未対応。
+
+[協調I/O](cooperative-io.md)も参照。全device初期化後にkeyboard pollを開始し、その合間にNIC通信とsnapshot file readを進める。キーボード切断を検知したらUSB DMAを停止し、残る処理を継続する。
 
 ### 検証
 

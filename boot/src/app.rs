@@ -10,8 +10,17 @@ struct Diagnostic {
     file_bytes: u64,
     file_hash: u64,
     file_done: bool,
+    file_expected: Option<(u64, u64)>,
+    file_checks: u64,
 }
 impl Diagnostic {
+    fn request_file_recheck(&mut self) {
+        if self.file_done && self.file_expected.is_some() {
+            self.file_done = false;
+            self.file_bytes = 0;
+            self.file_hash = 0xcbf29ce484222325;
+        }
+    }
     fn file_step(&mut self, ctx: &mut Context<'_>) -> Result<(), Error> {
         if self.file_done {
             return Ok(());
@@ -44,6 +53,23 @@ impl Diagnostic {
         }
         self.file_handle = None;
         self.file_done = true;
+        if let Some(expected) = self.file_expected {
+            if expected != (self.file_bytes, self.file_hash) {
+                return Err(Error::Io);
+            }
+        } else {
+            self.file_expected = Some((self.file_bytes, self.file_hash));
+        }
+        self.file_checks += 1;
+        if self.file_checks > 1 {
+            let checks = self.file_checks - 1;
+            if checks.is_power_of_two() {
+                crate::debug(b"MUSHA: APP_FILE_RECHECK_OK COUNT=");
+                crate::debug(&crate::cpu::hex(checks));
+                crate::debug(b"\n");
+            }
+            return Ok(());
+        }
         crate::debug(b"MUSHA: APP_FILE_OK BYTES=");
         crate::debug(&crate::cpu::hex(self.file_bytes));
         crate::debug(b" HASH=");
@@ -64,6 +90,10 @@ impl Application for Diagnostic {
         Ok(())
     }
     fn step(&mut self, ctx: &mut Context<'_>) -> Result<Step, Error> {
+        #[cfg(feature = "app-step-error")]
+        if self.file_checks > 1 {
+            return Err(Error::Io);
+        }
         self.file_step(ctx)?;
         while let Some(event) = ctx.next_key() {
             crate::debug(if event.pressed {
@@ -164,9 +194,7 @@ impl Application for Diagnostic {
     }
 }
 pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error> {
-    let mut time = None;
-    // SAFETY: paging validated framebuffer and arena are disjoint, and the
-    // runtime draws only between app callbacks, never concurrently with them.
+    // Framebuffer, cached file and arena have a single application owner.
     let mut ctx = unsafe { Context::new(arena, info.framebuffer) }?;
     let mut app = Diagnostic {
         page: 0,
@@ -177,17 +205,23 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         file_bytes: 0,
         file_hash: 0xcbf29ce484222325,
         file_done: false,
+        file_expected: None,
+        file_checks: 0,
     };
     app.init(&mut ctx)?;
+    let mut network = None;
     let mut steps = 0u64;
-    // Every recoverable failure after a successful init runs shutdown exactly
-    // once; app errors and clock errors share the same cleanup boundary.
+    let mut max_gap = 0u64;
+    let mut last_cycle = None;
+    let mut over_budget = 0u64;
     let result = (|| {
-        ctx.set_input_active(true);
+        let mut time = crate::acpi::Time::new(info.timer).map_err(|_| Error::Unsupported)?;
+        let mut ready = false;
+        let mut had_keyboard = false;
         let mut input_error = None;
-        let usb_result = crate::xhci::diagnose(info, &mut |event| {
+        let mut last_udp = 0;
+        let mut cycle = |event: crate::xhci::AppEvent<'_>| -> Result<bool, &'static str> {
             let events = match event {
-                crate::xhci::AppEvent::Keys(events) => events,
                 crate::xhci::AppEvent::File(bytes) => {
                     ctx.install_boot_file(bytes).map_err(|_| "APP FILE CACHE")?;
                     return Ok(false);
@@ -196,61 +230,133 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     ctx.record_file_error(error);
                     return Ok(false);
                 }
-            };
-            let result = (|| {
-                if time.is_none() {
-                    time =
-                        Some(crate::acpi::Time::new(info.timer).map_err(|_| Error::Unsupported)?);
+                crate::xhci::AppEvent::Ready(input) => {
+                    ctx.finish_file_discovery(false);
+                    ctx.set_input_active(input);
+                    had_keyboard = input;
+                    match crate::net::Session::start(info, &mut time) {
+                        Ok(session) => network = session,
+                        Err(error) => crate::net::failed(error),
+                    }
+                    ready = true;
+                    crate::debug(b"MUSHA: RUNTIME_POLL_READY\n");
+                    &[][..]
                 }
-                let timer = time.as_mut().unwrap();
-                let before = timer.now().map_err(|_| Error::Io)?;
+                crate::xhci::AppEvent::Keys(events) => events,
+            };
+            let step = (|| {
+                let before = time.now().map_err(|_| Error::Io)?;
+                if let Some(last) = last_cycle {
+                    max_gap = max_gap.max(before - last);
+                }
+                last_cycle = Some(before);
                 ctx.advance(before)?;
+                if let Some(session) = network.as_mut() {
+                    if let Err(error) = session.poll(before) {
+                        crate::net::failed(error);
+                        network = None;
+                    }
+                }
+                if let Some(session) = network.as_ref() {
+                    let udp = session.udp_count();
+                    if udp != last_udp {
+                        last_udp = udp;
+                        app.request_file_recheck();
+                    }
+                }
                 for &(key, down) in events {
                     ctx.push_key(key, down);
                 }
-                let step = app.step(&mut ctx)?;
-                if timer.now().map_err(|_| Error::Io)? - before > 1 {
-                    crate::debug(b"MUSHA: APP_STEP_BUDGET_EXCEEDED\n");
-                }
+                let state = app.step(&mut ctx)?;
                 steps += 1;
-                Ok(app.exit_requested || step == Step::Complete)
+                if time.now().map_err(|_| Error::Io)? - before > 1 {
+                    over_budget += 1;
+                    if over_budget == 1 {
+                        crate::debug(b"MUSHA: APP_STEP_BUDGET_EXCEEDED\n");
+                    }
+                }
+                Ok(app.exit_requested || state == Step::Complete)
             })();
-            match result {
+            match step {
                 Ok(stop) => Ok(stop),
                 Err(error) => {
                     input_error = Some(error);
                     Err("APP INPUT ERROR")
                 }
             }
-        });
+        };
+        let usb_result = crate::xhci::diagnose(info, &mut cycle);
+        drop(cycle);
+        let input_completed = had_keyboard && usb_result.is_ok();
         ctx.finish_file_discovery(usb_result.is_err());
         ctx.set_input_active(false);
         if let Some(error) = input_error {
             return Err(error);
         }
-        let mut time = match time {
-            Some(timer) => timer,
-            None => crate::acpi::Time::new(info.timer).map_err(|_| Error::Unsupported)?,
-        };
-        loop {
-            let before = time.now().map_err(|_| Error::Io)?;
-            ctx.advance(before)?;
-            let result = app.step(&mut ctx)?;
-            let after = time.now().map_err(|_| Error::Io)?;
-            if after - before > 1 {
-                crate::debug(b"MUSHA: APP_STEP_BUDGET_EXCEEDED\n");
+        if !ready {
+            match crate::net::Session::start(info, &mut time) {
+                Ok(session) => network = session,
+                Err(error) => crate::net::failed(error),
             }
+            crate::debug(b"MUSHA: RUNTIME_POLL_READY NO_INPUT\n");
+        }
+        // With no keyboard, progress continues for a bounded diagnostic window.
+        // Esc or completion of the debug keyboard window stops all services.
+        let tail_started = time.now().map_err(|_| Error::Io)?;
+        for _ in 0..100_000_000 {
+            let before = time.now().map_err(|_| Error::Io)?;
+            if let Some(last) = last_cycle {
+                max_gap = max_gap.max(before - last);
+            }
+            last_cycle = Some(before);
+            ctx.advance(before)?;
+            if let Some(session) = network.as_mut() {
+                if let Err(error) = session.poll(before) {
+                    crate::net::failed(error);
+                    network = None;
+                }
+            }
+            if let Some(session) = network.as_ref() {
+                let udp = session.udp_count();
+                if udp != last_udp {
+                    last_udp = udp;
+                    app.request_file_recheck();
+                }
+            }
+            let state = app.step(&mut ctx)?;
             steps += 1;
-            if result == Step::Complete {
+            let expired = network
+                .as_ref()
+                .is_none_or(|session| before - session.started() >= 10000);
+            if state == Step::Complete && (input_completed || app.exit_requested || expired) {
                 return Ok(());
             }
+            if before - tail_started >= 11000 {
+                return Err(Error::Io);
+            }
         }
+        Err(Error::Io)
     })();
     if result.is_err() {
         app.complete = false;
     }
     app.shutdown(&mut ctx);
+    if result.is_ok() {
+        if let Some(session) = network.as_mut() {
+            session.finish(info.framebuffer);
+        }
+    }
+    drop(network); // Also runs on application/clock errors, before propagating.
     result?;
+    crate::debug(b"MUSHA: RUNTIME_COOPERATIVE_OK STEPS=");
+    crate::debug(&crate::cpu::hex(steps));
+    crate::debug(b" MAX_GAP_MS=");
+    crate::debug(&crate::cpu::hex(max_gap));
+    crate::debug(b" FILE_RECHECKS=");
+    crate::debug(&crate::cpu::hex(app.file_checks.saturating_sub(1)));
+    crate::debug(b" OVER_BUDGET=");
+    crate::debug(&crate::cpu::hex(over_budget));
+    crate::debug(b"\n");
     crate::debug(b"MUSHA: APP_LIFECYCLE_OK STEPS=");
     crate::debug(&crate::cpu::hex(steps));
     crate::debug(b"\n");

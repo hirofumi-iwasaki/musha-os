@@ -14,7 +14,7 @@ The v0.1 filename retains the older document name; the first release number is 0
 Use Rust as the primary language with the minimum necessary x86-64 assembly.
 Keep lwIP in C and build it with Clang / LLD. Custom C drivers are not part of the baseline approach.
 Manage Rust code in a Cargo workspace and initially favor a configuration achievable on stable Rust.
-The current build pins Rust 1.99.0 and lwIP 2.2.1. The initial 82574 port and selected C source build are documented in [network diagnostics](network.md). NUC initialization and the concurrent loop below remain design targets.
+The current build pins Rust 1.99.0 and lwIP 2.2.1. The initial 82574 port and selected C source build are documented in [network diagnostics](network.md). NUC initialization remains a design target. The initial [cooperative loop](cooperative-io.md) is implemented for input, cached files and QEMU networking; general asynchronous disk requests and the application UDP API remain pending.
 
 The runtime uses `#![no_std]` and does not use a standard library dependent on OS or UEFI services.
 Initially use fixed-capacity buffers and explicit arena allocation, avoiding reliance on a general-purpose heap.
@@ -52,7 +52,7 @@ distinguish completion of boot stages.
 Show display, key input, arena capacity / boundary tests, known-file reads,
 and UDP round-trip results on one screen.
 Distinguish not run, success, and failure; the greeting alone does not mean every feature passed.
-The planned source layout follows. It is not implemented at this stage.
+The target source layout follows. The implemented tree currently provides the boot, framebuffer, memory, platform, api, xhci, fs and net crates; some planned components are still pending.
 
 ```text
 boot/              UEFI entry and boot-information construction
@@ -235,7 +235,7 @@ currently only PM timer information is passed.
 主言語はRustとし、必要最小限のx86-64アセンブリを併用する。
 lwIPはCのまま採用し、Clang / LLDでビルドする。独自Cドライバを基本構成にはしない。
 RustはCargo workspaceで管理し、まずstableで実現できる構成を優先する。
-現在のbuildはRust 1.99.0、lwIP 2.2.1へ固定した。初期82574 portと採用Cソースのbuildは[通信診断](network.md)を参照。NUC初期化と後述の同時進行loopは設計上の目標として残る。
+現在のbuildはRust 1.99.0、lwIP 2.2.1へ固定した。初期82574 portと採用Cソースのbuildは[通信診断](network.md)を参照。NUC初期化は設計上の目標として残る。入力・cached file・QEMU通信の初期[協調loop](cooperative-io.md)は実装済みだが、一般の非同期disk要求とアプリUDP APIは未実装。
 
 本体は `#![no_std]` とし、OS・UEFIサービスに依存する標準ライブラリを使わない。
 初期は固定容量バッファと明示的なarena割当てを使い、汎用ヒープへの依存を避ける。
@@ -270,7 +270,7 @@ UEFI関連crateはライセンスとBoot Services終了後の利用条件を確�
 画面、キー入力、arena容量・境界試験、既知ファイル読出し、UDP往復の
 結果を一画面で確認できるようにする。未実行・成功・失敗を区別し、
 Hello表示だけを全機能合格と判断しない。
-以下をソース構成の予定とする。現時点で未実装である。
+以下を目標のソース構成とする。現在はboot、framebuffer、memory、platform、api、xhci、fs、net crateを実装済みで、予定構成の一部は未実装である。
 
 ```text
 boot/              UEFI入口、起動情報の構築
