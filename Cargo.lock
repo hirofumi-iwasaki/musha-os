@@ -6,8 +6,13 @@ version = 4
 name = "musha-boot"
 version = "0.1.0"
 dependencies = [
+ "musha-framebuffer",
  "r-efi",
 ]
+
+[[package]]
+name = "musha-framebuffer"
+version = "0.1.0"
 
 [[package]]
 name = "r-efi"

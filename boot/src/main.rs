@@ -3,55 +3,120 @@
 #![no_std]
 #![no_main]
 
-use core::panic::PanicInfo;
-use r_efi::efi;
+use core::{arch::{asm, naked_asm}, panic::PanicInfo};
+use musha_framebuffer::Framebuffer;
+use r_efi::{efi, protocols::graphics_output as gop};
 
-// UEFI strings are NUL-terminated UTF-16; CRLF is required for line breaks.
-const GREETING: &[u16] = &[
-    72, 101, 108, 108, 111, 32, 77, 117, 115, 104, 97, 45, 79, 83, 33, 13, 10, 0,
-];
-const STAGE: &[u16] = &[
-    85, 69, 70, 73, 32, 98, 111, 111, 116, 32, 115, 109, 111, 107, 101, 32,
-    116, 101, 115, 116, 46, 32, 80, 114, 101, 115, 115, 32, 97, 110, 121, 32,
-    107, 101, 121, 32, 116, 111, 32, 114, 101, 116, 117, 114, 110, 46, 13, 10, 0,
-];
-
+const STACK_PAGES: usize = 16;
+const MAP_PAGES: usize = 32;
+#[repr(C)]
+struct BootInfo {
+    magic: u64,
+    version: u32,
+    size: u32,
+    framebuffer: Framebuffer,
+    map_base: usize,
+    map_size: usize,
+    descriptor_size: usize,
+    descriptor_version: u32,
+    stack_base: usize,
+    stack_bytes: usize,
+}
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    // Boot Services are not available through a global panic context.
-    // Remain stopped rather than returning through an unknown stack frame.
-    loop { core::hint::spin_loop(); }
+fn panic(_info: &PanicInfo) -> ! { stop() }
+fn stop() -> ! {
+    loop {
+        // SAFETY: runs only on the boot CPU at firmware/kernel privilege.
+        unsafe { asm!("cli", "hlt", options(nomem, nostack)); }
+    }
+}
+
+// Explicit Win64 ABI matches the UEFI target. RCX = info, RDX = stack top.
+// No Rust prologue may execute after replacing RSP. Allocate shadow space and
+// maintain 16-byte call alignment. runtime never returns to the old stack.
+#[unsafe(naked)]
+unsafe extern "win64" fn enter_runtime(_info: *const BootInfo, _stack_top: usize) -> ! {
+    naked_asm!("cli", "cld", "mov rsp, rdx", "and rsp, -16", "sub rsp, 32",
+        "call {entry}", "ud2", entry = sym runtime);
+}
+extern "win64" fn runtime(info: *const BootInfo) -> ! {
+    // SAFETY: handoff is in dedicated LOADER_DATA pages, not the abandoned
+    // firmware stack. Its framebuffer mapping remains firmware identity-mapped.
+    let info = unsafe { &*info };
+    if info.magic != 0x4d55534841424f4f || info.version != 1 { stop(); }
+    let rsp: usize;
+    unsafe { asm!("mov {}, rsp", out(reg) rsp, options(nomem, nostack, preserves_flags)); }
+    if rsp < info.stack_base || rsp >= info.stack_base + info.stack_bytes { stop(); }
+    unsafe {
+        for y in 0..100 { for x in 0..info.framebuffer.width.min(600) {
+            info.framebuffer.pixel(x,y,info.framebuffer.color(12,20,32));
+        }}
+        info.framebuffer.text("Hello Musha-OS!", 24, 24, info.framebuffer.color(240,240,240));
+        info.framebuffer.text("RUNTIME READY", 24, 64, info.framebuffer.color(0,240,100));
+    }
+    #[cfg(feature = "qemu-debug")]
+    for byte in b"MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK\n" {
+        // SAFETY: optional QEMU debug port only; not compiled into real-machine build.
+        unsafe { asm!("out dx, al", in("dx") 0xe9u16, in("al") *byte, options(nomem, nostack)); }
+    }
+    stop()
 }
 
 #[unsafe(no_mangle)]
-pub extern "efiapi" fn efi_main(
-    _image: efi::Handle,
-    system_table: *mut efi::SystemTable,
-) -> efi::Status {
+pub extern "efiapi" fn efi_main(image: efi::Handle, system_table: *mut efi::SystemTable) -> efi::Status {
     if system_table.is_null() { return efi::Status::INVALID_PARAMETER; }
-    // SAFETY: The firmware supplies a valid SystemTable for the lifetime of
-    // this invocation. We have not called ExitBootServices. Protocol pointers
-    // are checked before use; no references escape or are stored globally.
+    // SAFETY: firmware supplies valid protocol tables during Boot Services.
+    // Each retrieved pointer and framebuffer layout is checked before use.
     unsafe {
-        let table = &*system_table;
-        if table.con_out.is_null() || table.con_in.is_null() || table.boot_services.is_null() {
+        let bs = (*system_table).boot_services;
+        if bs.is_null() { return efi::Status::UNSUPPORTED; }
+        let mut protocol = core::ptr::null_mut();
+        let mut guid = gop::PROTOCOL_GUID;
+        let status = ((*bs).locate_protocol)(&mut guid, core::ptr::null_mut(), &mut protocol);
+        if status.is_error() { return status; }
+        if protocol.is_null() { return efi::Status::UNSUPPORTED; }
+        let mode = (*(protocol as *const gop::Protocol)).mode;
+        if mode.is_null() || (*mode).info.is_null() || (*mode).size_of_info < core::mem::size_of::<gop::ModeInformation>() {
             return efi::Status::UNSUPPORTED;
         }
-        let output = table.con_out;
-        for text in [GREETING, STAGE] {
-            let status = ((*output).output_string)(output, text.as_ptr().cast_mut());
-            if status.is_error() { return status; }
+        let m = &*(*mode).info;
+        let fb = Framebuffer {base: (*mode).frame_buffer_base as usize, bytes: (*mode).frame_buffer_size,
+            width: m.horizontal_resolution as usize, height: m.vertical_resolution as usize,
+            stride: m.pixels_per_scan_line as usize, format: m.pixel_format};
+        // Bitmask and BLT-only modes are explicitly unsupported in this milestone.
+        if !fb.valid() || fb.width < 320 || fb.height < 100 { return efi::Status::UNSUPPORTED; }
+        fb.text("Hello Musha-OS!",24,24,fb.color(240,240,240));
+        let mut bases = [0u64;3];
+        let page_counts = [STACK_PAGES,MAP_PAGES,1];
+        for i in 0..3 {
+            let status = ((*bs).allocate_pages)(efi::ALLOCATE_ANY_PAGES, efi::LOADER_DATA, page_counts[i], &mut bases[i]);
+            if status.is_error() {
+                for j in 0..i { ((*bs).free_pages)(bases[j],page_counts[j]); }
+                return status;
+            }
         }
-        let input = table.con_in;
-        // Clear any stale keystrokes, then wait for a fresh key event.
-        let status = ((*input).reset)(input, false.into());
-        if status.is_error() { return status; }
-        let mut event = (*input).wait_for_key;
-        if event.is_null() { return efi::Status::UNSUPPORTED; }
-        let mut index = 0usize;
-        let status = ((*table.boot_services).wait_for_event)(1, &mut event, &mut index);
-        if status.is_error() { return status; }
-        let mut key = core::mem::MaybeUninit::uninit();
-        ((*input).read_key_stroke)(input, key.as_mut_ptr())
+        let [stack,map,handoff] = bases;
+        let info = handoff as *mut BootInfo;
+        core::ptr::write(info, BootInfo {magic:0x4d55534841424f4f,version:1,size:core::mem::size_of::<BootInfo>() as u32,
+            framebuffer:fb,map_base:map as usize,map_size:0,descriptor_size:0,descriptor_version:0,
+            stack_base:stack as usize,stack_bytes:STACK_PAGES*4096});
+        // Final map and ExitBootServices are adjacent: no allocation, logging or
+        // protocol calls in between. Retry only INVALID_PARAMETER (stale key).
+        for _ in 0..3 {
+            let mut size=MAP_PAGES*4096;
+            let mut key=0;
+            let mut stride=0;
+            let mut version=0;
+            let status=((*bs).get_memory_map)(&mut size,map as *mut efi::MemoryDescriptor,&mut key,&mut stride,&mut version);
+            if status.is_error() || stride < core::mem::size_of::<efi::MemoryDescriptor>() || size % stride != 0 {
+                // No returning to firmware after a failed ExitBootServices attempt.
+                fb.text("BOOT FAILED",24,64,fb.color(255,0,0)); stop();
+            }
+            (*info).map_size=size; (*info).descriptor_size=stride; (*info).descriptor_version=version;
+            let status=((*bs).exit_boot_services)(image,key);
+            if status == efi::Status::SUCCESS { enter_runtime(info, stack as usize + STACK_PAGES*4096); }
+            if status != efi::Status::INVALID_PARAMETER { break; }
+        }
+        fb.text("BOOT FAILED",24,64,fb.color(255,0,0)); stop();
     }
 }

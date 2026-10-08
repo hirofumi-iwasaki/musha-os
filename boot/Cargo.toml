@@ -7,3 +7,7 @@ publish = false
 
 [dependencies]
 r-efi = "=5.3.0"
+musha-framebuffer = { path = "../framebuffer" }
+
+[features]
+qemu-debug = []
