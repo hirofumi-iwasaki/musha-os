@@ -5,6 +5,7 @@ struct Diagnostic {
     page: usize,
     complete: bool,
     writing: bool,
+    exit_requested: bool,
 }
 impl Application for Diagnostic {
     fn init(&mut self, ctx: &mut Context<'_>) -> Result<(), Error> {
@@ -15,6 +16,39 @@ impl Application for Diagnostic {
         Ok(())
     }
     fn step(&mut self, ctx: &mut Context<'_>) -> Result<Step, Error> {
+        while let Some(event) = ctx.next_key() {
+            crate::debug(if event.pressed {
+                b"MUSHA: APP_KEY_DOWN="
+            } else {
+                b"MUSHA: APP_KEY_UP="
+            });
+            crate::debug(&crate::cpu::hex(event.usage as u64));
+            crate::debug(b"\n");
+            if event.pressed && event.usage == 0x29 {
+                self.exit_requested = true;
+            }
+            if event.pressed {
+                let (width, height) = ctx.screen_size();
+                if height >= 380 && width > 24 {
+                    ctx.rectangle(24, 356, width - 24, 24, [12, 20, 32])?;
+                    ctx.text("KEY CODE", 24, 356, [0, 220, 240]);
+                    ctx.text(
+                        core::str::from_utf8(&crate::cpu::hex(event.usage as u64))
+                            .map_err(|_| Error::Invalid)?,
+                        240,
+                        356,
+                        [0, 220, 240],
+                    );
+                }
+            }
+        }
+        if self.complete {
+            return Ok(if ctx.input_active() {
+                Step::Continue
+            } else {
+                Step::Complete
+            });
+        }
         // Bounded work: probe at most 64 pages per callback; the full arena scan
         // is spread across iterations so the runtime can poll its clock/devices.
         let arena = ctx.arena();
@@ -65,7 +99,11 @@ impl Application for Diagnostic {
         crate::debug(&digits);
         crate::debug(b"\n");
         self.complete = true;
-        Ok(Step::Complete)
+        Ok(if ctx.input_active() {
+            Step::Continue
+        } else {
+            Step::Complete
+        })
     }
     fn shutdown(&mut self, ctx: &mut Context<'_>) {
         if self.complete {
@@ -74,20 +112,58 @@ impl Application for Diagnostic {
     }
 }
 pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error> {
-    let mut time = crate::acpi::Time::new(info.timer).map_err(|_| Error::Unsupported)?;
+    let mut time = None;
     // SAFETY: paging validated framebuffer and arena are disjoint, and the
-    // runtime suspends its drawing for the app's entire context lifetime.
+    // runtime draws only between app callbacks, never concurrently with them.
     let mut ctx = unsafe { Context::new(arena, info.framebuffer) }?;
     let mut app = Diagnostic {
         page: 0,
         complete: false,
         writing: true,
+        exit_requested: false,
     };
     app.init(&mut ctx)?;
     let mut steps = 0u64;
     // Every recoverable failure after a successful init runs shutdown exactly
     // once; app errors and clock errors share the same cleanup boundary.
     let result = (|| {
+        ctx.set_input_active(true);
+        let mut input_error = None;
+        crate::xhci::diagnose(info, &mut |events| {
+            let result = (|| {
+                if time.is_none() {
+                    time =
+                        Some(crate::acpi::Time::new(info.timer).map_err(|_| Error::Unsupported)?);
+                }
+                let timer = time.as_mut().unwrap();
+                let before = timer.now().map_err(|_| Error::Io)?;
+                ctx.advance(before)?;
+                for &(key, down) in events {
+                    ctx.push_key(key, down);
+                }
+                let step = app.step(&mut ctx)?;
+                if timer.now().map_err(|_| Error::Io)? - before > 1 {
+                    crate::debug(b"MUSHA: APP_STEP_BUDGET_EXCEEDED\n");
+                }
+                steps += 1;
+                Ok(app.exit_requested || step == Step::Complete)
+            })();
+            match result {
+                Ok(stop) => Ok(stop),
+                Err(error) => {
+                    input_error = Some(error);
+                    Err("APP INPUT ERROR")
+                }
+            }
+        });
+        ctx.set_input_active(false);
+        if let Some(error) = input_error {
+            return Err(error);
+        }
+        let mut time = match time {
+            Some(timer) => timer,
+            None => crate::acpi::Time::new(info.timer).map_err(|_| Error::Unsupported)?,
+        };
         loop {
             let before = time.now().map_err(|_| Error::Io)?;
             ctx.advance(before)?;
@@ -102,6 +178,9 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
             }
         }
     })();
+    if result.is_err() {
+        app.complete = false;
+    }
     app.shutdown(&mut ctx);
     result?;
     crate::debug(b"MUSHA: APP_LIFECYCLE_OK STEPS=");

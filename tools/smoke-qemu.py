@@ -8,6 +8,8 @@ parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--keyboard-usb-version',type=int,choices=[1,2],default=2)
 parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout'],default='normal')
 parser.add_argument('--no-keyboard-input',action='store_true')
+parser.add_argument('--keyboard-exit',action='store_true')
+parser.add_argument('--keyboard-wrap',action='store_true')
 args=parser.parse_args()
 root=pathlib.Path(__file__).resolve().parent.parent
 out=root/'out'/('qemu-'+args.case);out.mkdir(parents=True,exist_ok=True)
@@ -29,6 +31,10 @@ with (out/'qemu.log').open('w') as err:
   sock=None
   stream=None
   injected=False
+  escape_sent=False
+  repeats=0
+  awaiting_repeat=False
+  releases=0
   def command(name,arguments=None):
    stream.write((json.dumps({'execute':name,'arguments':arguments or {}})+'\n').encode());stream.flush()
    while True:
@@ -55,13 +61,27 @@ with (out/'qemu.log').open('w') as err:
     if sock is None:connect()
     command('send-key',{'keys':[{'type':'qcode','data':'shift'},{'type':'qcode','data':'a'}],'hold-time':200})
     injected=True
+   if args.keyboard_wrap and injected:
+    current=text.count('MUSHA: APP_KEY_UP=0000000000000004')
+    if current > releases:
+     releases=current
+     awaiting_repeat=False
+    if current > 0 and not awaiting_repeat and repeats < 160:
+     command('send-key',{'keys':[{'type':'qcode','data':'a'}],'hold-time':2})
+     repeats+=1
+     awaiting_repeat=True
+   if args.keyboard_exit and injected and not escape_sent and 'MUSHA: APP_KEY_UP=00000000000000E1' in text and (not args.keyboard_wrap or (repeats==160 and not awaiting_repeat)):
+    command('send-key',{'keys':[{'type':'qcode','data':'esc'}],'hold-time':50})
+    escape_sent=True
    if marker in text and text.endswith('\n'):
     if args.case=='normal':
+     if args.keyboard_wrap and 'MUSHA: HID_RING_WRAP_OK' not in text:raise RuntimeError('HID ring wrap missing: '+text)
+     if args.keyboard_exit and 'MUSHA: APP_KEY_DOWN=0000000000000029' not in text:raise RuntimeError('App Escape exit missing: '+text)
      if 'MUSHA: HID_DIAGNOSTIC_OK REPORTS=' not in text:raise RuntimeError('HID diagnostic missing: '+text)
      if not args.no_keyboard_input:
       for key in ['00000000000000E1','0000000000000004']:
        for direction in ['DOWN','UP']:
-        if 'MUSHA: HID_KEY_'+direction+'='+key not in text:raise RuntimeError('HID key transition missing: '+text)
+        if 'MUSHA: HID_KEY_'+direction+'='+key not in text or 'MUSHA: APP_KEY_'+direction+'='+key not in text:raise RuntimeError('HID/app key transition missing: '+text)
      if 'MUSHA: USB_ENUMERATION_OK COUNT=0000000000000002' not in text:raise RuntimeError('USB enumeration failed: '+text)
      if 'VID=00000000000046F4 PID=0000000000000001' not in text or 'VID=0000000000000627 PID=0000000000000001' not in text:raise RuntimeError('Expected USB disk and keyboard missing: '+text)
      if 'MUSHA: XHCI_NOOP_OK COUNT=0000000000000258 COMMAND_WRAP_OK EVENT_WRAP_OK' not in text or 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('Command ring probe failed: '+text)
@@ -82,7 +102,7 @@ with (out/'qemu.log').open('w') as err:
     if args.case in ['xhci-command-timeout','usb-descriptor-timeout'] and 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('DMA cleanup missing: '+text)
     break
    if proc.poll() is not None:raise RuntimeError((out/'qemu.log').read_text())
-   time.sleep(0.1)
+   time.sleep(0.001 if args.keyboard_wrap else 0.1)
   else:raise RuntimeError('Runtime marker absent: '+(out/'qemu.log').read_text())
   if sock is None:connect()
   command('screendump',{'filename':str(out/'screen.ppm')})

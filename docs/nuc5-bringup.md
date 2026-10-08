@@ -17,8 +17,8 @@
 4. FAT32のUEFI起動用USBに `EFI/BOOT/BOOTX64.EFI` の階層でコピーする。
    既存ファイルがある場合は先に内容を確認する。
    自動フォーマット・USB書込みツールは未提供。対象USBの確認前にディスク消去しない。
-5. USBからUEFI起動し、KEYBOARD READY表示中の5秒間にAやShiftを押して離す。
-   その後USB ENUMERATED、APP COMPLETEを確認する。
+5. USBからUEFI起動し、KEYBOARD READY表示後にAやShiftを押して離す。
+   入力は継続するため、最後にEscを押してUSB ENUMERATED、APP COMPLETEを確認する。
    高さ388pixel以上ではKEY CODEが表示される。
 
 内部SSDへの書込み処理は未実装。USB32GBの容量全体をRAMやストレージ試験で

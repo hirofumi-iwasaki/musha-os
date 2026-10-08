@@ -73,7 +73,7 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ## 次の実装
 
-次は常時入力をアプリAPIへ接続し、USB Mass Storage BOTへ進む。
+キー入力をAPI版2のFIFOへ接続済み。次はUSB Mass Storage BOTへ進む。
 [HID入力診断](usb-keyboard.md)と[NUC5試験準備](nuc5-bringup.md)を参照。
 [USB列挙仕様](usb-enumeration.md)を参照。
 [DMA / ring仕様](xhci-rings.md)を参照。
@@ -148,4 +148,8 @@ controller停止、BME解除、アプリ完了と起動完了まで確認する�
 
 通常smokeはHID_READY後にQMPでShift+Aを送信し、押下・解放を検査する。
 `--keyboard-usb-version 1` でFull-speed、`--no-keyboard-input` で無入力の終了を確認する。
-実機ではKEYBOARD READYから5秒間にキーを押す。
+通常の実機ビルドはKEYBOARD READY後も入力を続け、Escで終了する。
+
+継続入力のsmokeは `--features qemu-debug,input-persistent` でビルドし、
+`--keyboard-exit` を指定する。`--keyboard-wrap` を併用すると160回の押下・解放と
+ring周回を確認してからEscを送る。

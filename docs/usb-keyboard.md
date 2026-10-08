@@ -23,15 +23,20 @@ short reportやstall等は診断失敗とする。rollover(usage 1〜3)は以前
 
 ## 診断の寿命
 
-KEYBOARD READY表示後、5秒または128reportまで読み取る。キー押下時のHID usageを
-画面へ表示し、デバッグ出力には押下・解放を記録する。
+通常版はKEYBOARD READY表示後、アプリがEscを受信するまで入力を続ける。
+`qemu-debug` 単独ビルドはsmoke用に5秒で終了する。
+`input-persistent` featureはdebug出力を残して通常版と同じ継続入力を検査する。キー押下時のHID usageを
+アプリの画面へ表示し、デバッグ出力にはデバイスとアプリ双方の押下・解放を記録する。
 usage表示行は高さ388pixel以上の画面で確認できる。
-時間待ちは時計と最大5億poll回で制限する。
-無入力でNAKが続くことは正常終了として扱う。
+入力pollは一回のevent検査で即座に復帰し、無入力中にもアプリstepを実行する。
+時間待ちを使わず、転送がNAK中でもCPUからのアプリ実行を妨げない。
+一転送ずつ提出し、完了までring / reportを再利用しない。255 usable TRBの
+Link cycleを更新して周回する。IRQ有効化やCPUのsleepはまだ行わない。
 
 終了時にDisable Slotし、未完了のIN転送も破棄する。完了前のDMA領域を再利用しない。
 controller停止・bus mastering解除後、RAM診断アプリへ進む。
-これは起動時の入力診断であり、常時入力やアプリ向け入力queueはまだ提供しない。
+入力は[API版2のFIFO](app-api.md)へ渡す。単一キーボードの入力セッションであり、
+複数キーボードを同時にpollする処理は未対応。
 文字配列、JIS / US配列変換、repeat、LED制御、ハブ、hotplug、
 SuperSpeedキーボード、他configurationの探索、汎用Report Descriptor解析は未対応。
 
@@ -39,7 +44,9 @@ SuperSpeedキーボード、他configurationの探索、汎用Report Descriptor�
 
 QEMU usb-kbdのHigh-speed / Full-speedで、Shift+Aの押下・解放を
 QMPで送信し、usage E1と04の両方向通知を検査した。
-無入力でも診断を終え、DMA停止後にRAMアプリが完了することを確認した。
+5秒の無入力試験でもRAM診断が進み、DMA停止後にアプリが完了することを確認した。
+継続入力モードで160回の追加押下・解放、325report、transfer ring周回、
+アプリによるEsc終了とDMA停止を確認した。
 ホスト試験は不正configuration境界、packet、非対象interface、
 rollover、duplicate key、endpoint IDとshort report拒否を確認する。
 

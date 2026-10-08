@@ -135,7 +135,6 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     }
     acpi::diagnose(info.timer, info.framebuffer);
     pci::diagnose(info.framebuffer);
-    xhci::diagnose(info);
     let arena_base = arena.as_mut_ptr() as usize;
     // Diagnostic app owns the sole mutable arena borrow and exercises every page.
     if app::run(arena, info).is_err() {

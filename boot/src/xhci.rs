@@ -154,8 +154,11 @@ fn reset(info: &BootInfo) -> Result<(), &'static str> {
     crate::debug(b" DMA_DISABLED\n");
     Ok(())
 }
-pub(crate) fn diagnose(info: &BootInfo) {
-    let (label, color) = match reset(info).and_then(|()| command_probe(info)) {
+pub(crate) fn diagnose(
+    info: &BootInfo,
+    tick: &mut dyn FnMut(&[(u8, bool)]) -> Result<bool, &'static str>,
+) {
+    let (label, color) = match reset(info).and_then(|()| command_probe(info, tick)) {
         Ok(()) => ("USB ENUMERATED", info.framebuffer.color(0, 240, 100)),
         Err(error) => {
             crate::debug(b"MUSHA: XHCI_FAILED ");
@@ -275,6 +278,9 @@ fn event(
                 return Ok(words);
             }
         }
+        if timeout_ms == 0 {
+            return Err("EVENT PENDING");
+        }
         if clock.now()? >= deadline {
             return Err(if transfer != 0 {
                 "TRANSFER TIMEOUT"
@@ -286,7 +292,10 @@ fn event(
     }
     Err("CLOCK STALLED")
 }
-fn command_probe(info: &BootInfo) -> Result<(), &'static str> {
+fn command_probe(
+    info: &BootInfo,
+    tick: &mut dyn FnMut(&[(u8, bool)]) -> Result<bool, &'static str>,
+) -> Result<(), &'static str> {
     use musha_xhci::{Cursor, Pool};
     let regs = Registers {
         base: info.xhci.base,
@@ -407,7 +416,7 @@ fn command_probe(info: &BootInfo) -> Result<(), &'static str> {
             ports,
             framebuffer: info.framebuffer,
         };
-        usb::enumerate(&mut host, &mut pool, dcbaa)?;
+        usb::enumerate(&mut host, &mut pool, dcbaa, tick)?;
         Ok(())
     })();
     let halted = (|| {

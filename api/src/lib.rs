@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
 use musha_framebuffer::Framebuffer;
-pub const API_VERSION: u32 = 1;
+pub const API_VERSION: u32 = 2;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Invalid,
@@ -20,10 +20,22 @@ pub trait Application {
     fn step(&mut self, context: &mut Context<'_>) -> Result<Step, Error>;
     fn shutdown(&mut self, context: &mut Context<'_>);
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyEvent {
+    pub usage: u8,
+    pub pressed: bool,
+    pub timestamp_ms: u64,
+}
+const INPUT_CAPACITY: usize = 64;
 pub struct Context<'a> {
     arena: &'a mut [u8],
     screen: Framebuffer,
     now_ms: u64,
+    input: [Option<KeyEvent>; INPUT_CAPACITY],
+    head: usize,
+    count: usize,
+    lost: u64,
+    input_active: bool,
 }
 impl<'a> Context<'a> {
     /// # Safety
@@ -37,7 +49,47 @@ impl<'a> Context<'a> {
             arena,
             screen,
             now_ms: 0,
+            input: [None; INPUT_CAPACITY],
+            head: 0,
+            count: 0,
+            lost: 0,
+            input_active: false,
         })
+    }
+    /// Runtime producer; drops newest on overflow and retains the older FIFO.
+    pub fn push_key(&mut self, usage: u8, pressed: bool) {
+        if self.count == INPUT_CAPACITY {
+            self.lost = self.lost.saturating_add(1);
+            return;
+        }
+        let tail = (self.head + self.count) % INPUT_CAPACITY;
+        self.input[tail] = Some(KeyEvent {
+            usage,
+            pressed,
+            timestamp_ms: self.now_ms,
+        });
+        self.count += 1;
+    }
+    pub fn next_key(&mut self) -> Option<KeyEvent> {
+        if self.count == 0 {
+            return None;
+        }
+        let event = self.input[self.head].take();
+        self.head = (self.head + 1) % INPUT_CAPACITY;
+        self.count -= 1;
+        event
+    }
+    pub fn lost_key_events(&self) -> u64 {
+        self.lost
+    }
+    pub fn set_input_active(&mut self, active: bool) {
+        self.input_active = active;
+    }
+    pub fn input_active(&self) -> bool {
+        self.input_active
+    }
+    pub fn screen_size(&self) -> (usize, usize) {
+        (self.screen.width, self.screen.height)
     }
     pub fn version(&self) -> u32 {
         API_VERSION
@@ -101,6 +153,47 @@ impl<'a> Context<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn input_fifo_wrap_overflow_and_timestamps() {
+        let mut arena = [0u8; 1];
+        let mut pixels = [0u32; 1];
+        let fb = Framebuffer {
+            base: pixels.as_mut_ptr() as usize,
+            bytes: 4,
+            width: 1,
+            height: 1,
+            stride: 1,
+            format: 0,
+        };
+        let mut ctx = unsafe { Context::new(&mut arena, fb) }.unwrap();
+        ctx.advance(7).unwrap();
+        for key in 0..64 {
+            ctx.push_key(key, true);
+        }
+        ctx.push_key(99, false);
+        assert_eq!(ctx.lost_key_events(), 1);
+        for key in 0..32 {
+            assert_eq!(
+                ctx.next_key(),
+                Some(KeyEvent {
+                    usage: key,
+                    pressed: true,
+                    timestamp_ms: 7
+                })
+            );
+        }
+        ctx.advance(9).unwrap();
+        for key in 64..96 {
+            ctx.push_key(key, false);
+        }
+        for key in 32..96 {
+            let e = ctx.next_key().unwrap();
+            assert_eq!(e.usage, key);
+            assert_eq!(e.pressed, key < 64);
+            assert_eq!(e.timestamp_ms, if key < 64 { 7 } else { 9 });
+        }
+        assert_eq!(ctx.next_key(), None);
+    }
     #[test]
     fn monotonic_time_and_clipped_drawing() {
         let mut arena = [0u8; 16];

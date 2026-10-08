@@ -60,8 +60,8 @@ QEMUではUEFI + xHCI + USB disk + USB keyboard + e1000e構成を版固定する
 
 port reset、Enable Slot、Address Device、Device Descriptor転送まで実装済み。
 Configuration Descriptor、Set Configuration、Boot KeyboardのInterrupt IN診断まで実装済み。
-次は常時入力とアプリAPIの接続、USB Mass Storage BOTへ進める。
-アプリのC ABI、入力・ファイル・UDP APIも未完了。
+単一キーボードの継続入力とAPI版2のFIFOを接続済み。次はUSB Mass Storage BOTへ進める。
+アプリのC ABI、ファイル・UDP APIも未完了。
 PM timer非対応機向けのHPET fallbackも残る。
 USB / NICのレジスタ仕様は一次資料に照合し、実機PCI診断情報を集める。
 設計ブランチで文書を更新し、実装可能になった単位から実装へ進む。

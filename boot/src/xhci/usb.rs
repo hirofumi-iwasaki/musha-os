@@ -236,6 +236,7 @@ pub(super) fn enumerate(
     host: &mut Host<'_>,
     pool: &mut musha_xhci::Pool,
     dcbaa: usize,
+    tick: &mut dyn FnMut(&[(u8, bool)]) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
     let protocols = protocols(host.regs, host.ports)?;
     let stride = if host.regs.read(0x10)? & 4 != 0 {
@@ -350,7 +351,9 @@ pub(super) fn enumerate(
         crate::debug(b" PID=");
         crate::debug(&crate::cpu::hex(product as u64));
         crate::debug(b"\n");
-        keyboard(host, pool, slot, input, output, stride, ring, buffer, speed)?;
+        keyboard(
+            host, pool, slot, input, output, stride, ring, buffer, speed, tick,
+        )?;
         // Diagnostic enumeration releases each hardware slot only after a
         // Disable Slot completion. The DMA allocation itself is never reused.
         host.command(0, (10 << 10) | ((slot as u32) << 24), slot)?;
@@ -376,6 +379,7 @@ fn keyboard(
     control_ring: usize,
     buffer: usize,
     speed: musha_xhci::Speed,
+    tick: &mut dyn FnMut(&[(u8, bool)]) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
     // Only configuration zero is inspected at this diagnostic stage.
     control(host, slot, control_ring, 6, buffer, 9, 0x02000680, 0)?;
@@ -458,81 +462,89 @@ fn keyboard(
             host.framebuffer.color(0, 240, 100),
         );
     }
-    let deadline = host
-        .clock
-        .now()?
-        .checked_add(5000)
-        .ok_or("CLOCK OVERFLOW")?;
+    let deadline = if cfg!(feature = "qemu-debug") && !cfg!(feature = "input-persistent") {
+        host.clock
+            .now()?
+            .checked_add(5000)
+            .ok_or("CLOCK OVERFLOW")?
+    } else {
+        u64::MAX
+    };
     let mut state = musha_xhci::keyboard::State::default();
+    let mut producer = musha_xhci::Cursor::new(TRBS - 1).ok_or("CURSOR")?;
+    let mut pending = false;
     let mut reports = 0;
-    for index in 0..128 {
-        let now = host.clock.now()?;
-        if now >= deadline {
+    loop {
+        if host.clock.now()? >= deadline {
             break;
         }
-        unsafe {
-            core::ptr::write_bytes(report as *mut u8, 0, 64);
-            publish(
-                ring + index * 16,
-                [report as u32, 0, 8, (1 << 10) | (1 << 5) | 1],
-            );
+        if !pending {
+            unsafe {
+                core::ptr::write_bytes(report as *mut u8, 0, 64);
+                if producer.index == TRBS - 2 {
+                    publish(
+                        ring + (TRBS - 1) * 16,
+                        [ring as u32, 0, 0, (6 << 10) | 2 | producer.cycle],
+                    );
+                }
+                publish(
+                    ring + producer.index * 16,
+                    [report as u32, 0, 8, (1 << 10) | (1 << 5) | producer.cycle],
+                );
+            }
+            host.regs
+                .write(host.doorbell + slot as usize * 4, endpoint as u32)?;
+            pending = true;
         }
-        host.regs
-            .write(host.doorbell + slot as usize * 4, endpoint as u32)?;
-        match event(
+        let result = event(
             host.regs,
             host.clock,
             host.events,
             host.consumer,
             host.runtime,
             host.ac64,
-            ring + index * 16,
+            ring + producer.index * 16,
             host.ports,
             slot,
             endpoint,
-            deadline - now,
-        ) {
-            Ok(_) => {}
-            // An idle keyboard leaves a TD owned by hardware. Disable Slot in
-            // the caller cancels it; memory remains reserved until reboot.
-            Err("TRANSFER TIMEOUT") => break,
+            0,
+        );
+        let mut transitions = [(0u8, false); 20];
+        let mut count = 0;
+        match result {
+            Err("EVENT PENDING") => {}
             Err(error) => return Err(error),
-        }
-        let mut data = [0u8; 8];
-        for (i, b) in data.iter_mut().enumerate() {
-            *b = unsafe { (report as *const u8).add(i).read_volatile() };
-        }
-        if !state.update(data, |key, down| {
-            crate::debug(if down {
-                b"MUSHA: HID_KEY_DOWN="
-            } else {
-                b"MUSHA: HID_KEY_UP="
-            });
-            crate::debug(&crate::cpu::hex(key as u64));
-            crate::debug(
-                b"
-",
-            );
-            if down {
-                super::clear_line(host.framebuffer, 356);
-                unsafe {
-                    host.framebuffer
-                        .text("KEY CODE", 24, 356, host.framebuffer.color(0, 220, 240));
-                    host.framebuffer.text(
-                        core::str::from_utf8(&crate::cpu::hex(key as u64)).unwrap(),
-                        240,
-                        356,
-                        host.framebuffer.color(0, 220, 240),
-                    );
+            Ok(_) => {
+                let mut data = [0u8; 8];
+                for (i, b) in data.iter_mut().enumerate() {
+                    *b = unsafe { (report as *const u8).add(i).read_volatile() };
                 }
+                if !state.update(data, |key, down| {
+                    transitions[count] = (key, down);
+                    count += 1;
+                    crate::debug(if down {
+                        b"MUSHA: HID_KEY_DOWN="
+                    } else {
+                        b"MUSHA: HID_KEY_UP="
+                    });
+                    crate::debug(&crate::cpu::hex(key as u64));
+                    crate::debug(b"\n");
+                }) {
+                    crate::debug(b"MUSHA: HID_ROLLOVER\n");
+                }
+                pending = false;
+                producer.advance();
+                if producer.index == 0 {
+                    crate::debug(b"MUSHA: HID_RING_WRAP_OK\n");
+                }
+                reports += 1;
             }
-        }) {
-            crate::debug(
-                b"MUSHA: HID_ROLLOVER
-",
-            );
         }
-        reports += 1;
+        // Hardware poll never waits for a key. Each iteration also advances the
+        // application, including while the device NAKs an outstanding transfer.
+        if tick(&transitions[..count])? {
+            break;
+        }
     }
     crate::debug(b"MUSHA: HID_DIAGNOSTIC_OK REPORTS=");
     crate::debug(&crate::cpu::hex(reports));
