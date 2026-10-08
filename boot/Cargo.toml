@@ -11,6 +11,8 @@ musha-framebuffer = { path = "../framebuffer" }
 
 musha-memory = { path = "../memory" }
 
+musha-platform = { path = "../platform" }
+
 [features]
 qemu-debug = []
 fault-ud = ["qemu-debug"]

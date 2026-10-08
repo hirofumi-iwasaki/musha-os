@@ -37,6 +37,7 @@ with (out/'qemu.log').open('w') as err:
    text=log.read_text()
    if marker in text and text.endswith('\n'):
     if args.case=='normal':
+     if 'MUSHA: ACPI_TIMER_OK MS=' not in text:raise RuntimeError('Timer probe failed: '+text)
      if 'CLASS=00000000000C0330' not in text or 'ID=0000000010D38086 CLASS=0000000000020000' not in text:
       raise RuntimeError('Expected xHCI and Intel 82574 missing: '+text)
      if 'MUSHA: PCI_ENUMERATION_OK' not in text:raise RuntimeError('PCI enumeration incomplete')

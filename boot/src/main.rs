@@ -3,6 +3,7 @@
 #![no_std]
 #![no_main]
 
+mod acpi;
 mod cpu;
 mod memory;
 mod pci;
@@ -48,6 +49,7 @@ struct BootInfo {
     image_bytes: usize,
     table_base: usize,
     table_bytes: usize,
+    timer: musha_platform::Timer,
 }
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -144,6 +146,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     }
     #[cfg(not(feature = "fault-nx"))]
     let _ = arena_base;
+    acpi::diagnose(info.timer, info.framebuffer);
     pci::diagnose(info.framebuffer);
     debug(b"MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK\n");
     #[cfg(feature = "fault-ud")]
@@ -251,7 +254,7 @@ pub extern "efiapi" fn efi_main(
             format: m.pixel_format,
         };
         // Bitmask and BLT-only modes are explicitly unsupported in this milestone.
-        if !fb.valid() || fb.width < 320 || fb.height < 260 {
+        if !fb.valid() || fb.width < 320 || fb.height < 292 {
             return efi::Status::UNSUPPORTED;
         }
         fb.text("Hello Musha-OS!", 24, 24, fb.color(240, 240, 240));
@@ -306,8 +309,31 @@ pub extern "efiapi" fn efi_main(
                 image_bytes,
                 table_base: tables as usize,
                 table_bytes: 256 * 4096,
+                timer: musha_platform::Timer { port: 0, bits: 24 },
             },
         );
+        // ACPI is validated while firmware mappings still exist. Copy only the
+        // fixed timer contract; no original table pointer enters the runtime.
+        let mut initial_size = MAP_PAGES * 4096;
+        let mut initial_key = 0;
+        let mut initial_stride = 0;
+        let mut initial_version = 0;
+        let initial_status = ((*bs).get_memory_map)(
+            &mut initial_size,
+            map as *mut efi::MemoryDescriptor,
+            &mut initial_key,
+            &mut initial_stride,
+            &mut initial_version,
+        );
+        if !initial_status.is_error() {
+            let raw = core::slice::from_raw_parts(map as *const u8, initial_size);
+            if let Ok(snapshot) = musha_memory::MemoryMap::new(raw, initial_stride, initial_version)
+            {
+                if let Some(timer) = acpi::discover(system_table, &snapshot) {
+                    (*info).timer = timer;
+                }
+            }
+        }
         // Final map and ExitBootServices are adjacent: no allocation, logging or
         // protocol calls in between. Retry only INVALID_PARAMETER (stale key).
         for _ in 0..3 {

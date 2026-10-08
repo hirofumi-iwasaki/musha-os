@@ -11,7 +11,8 @@ Rust no_stdのUEFIアプリがGOP情報を取得し、フレームバッファ�
 GDT / IDT / TSSと4段ページテーブルは自前設定へ切り替える。
 予約領域を除外したRAM arenaを診断アプリへ渡し、各ページの両端を読書きする。
 CPU例外は診断後に停止し、復帰しない。
-独自USB / NIC、lwIP、ACPI引継ぎ、panicの画面診断は未実装。
+ACPIのPM timer情報を引継ぎ、100msの経過とPCI機器の検出を診断する。
+独自USB / NIC、lwIP、HPET、panicの画面診断は未実装。
 BootInfoとメモリマップは専用LoaderDataページに保存し、回収しない。
 現在はRGB / BGRの32bit GOPだけに対応し、bitmask / BLT-onlyは拒否する。
 メモリマップ用バッファは128KiB固定、stale map keyの再試行は最大3回。
@@ -47,7 +48,7 @@ QEMUとEDK2ファームウェアが必要。Homebrew版は次の手順で試験�
 `qemu-debug` はQEMU専用I/Oポートに成功マーカーを出すための機能で、実機版には含めない。
 
 ```sh
-cargo test -p musha-framebuffer -p musha-memory
+cargo test -p musha-framebuffer -p musha-memory -p musha-platform
 cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features qemu-debug
 mkdir -p out/esp/EFI/BOOT
 cp target/x86_64-unknown-uefi/release/musha-boot.efi out/esp/EFI/BOOT/BOOTX64.EFI
@@ -70,7 +71,8 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ## 次の実装
 
-ACPI情報の保存、時間源、PCI機器の列挙を次に追加する。
+次はアプリAPI、PCI BARの予約とマッピング、xHCIの所有権移行・初期化を進める。
+[ACPIと時間源の契約](acpi-timer.md)を参照。
 r-efiはUEFI定義のみを利用する。[依存ライセンス](third-party.md)を参照。
 
 ## CPU例外試験
