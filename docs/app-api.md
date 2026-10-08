@@ -25,7 +25,7 @@ While a Boot Keyboard is connected, call step between nonblocking USB polls.
 RAM diagnostics continue without input. After the input session ends, call shutdown and halt.
 The initial [cooperative runtime](cooperative-io.md) now services the first keyboard, [QEMU networking](network.md), and application snapshot-file reads together. USB/BOT boot discovery is still synchronous and completes before this session. Multiple active keyboards, general asynchronous disk requests and application UDP handles remain pending.
 
-now_ms is monotonic elapsed PM timer time starting at the first step, updated immediately before every step.
+now_ms is a monotonic PM-timer millisecond sample in the runtime-owned clock epoch, updated immediately before every step. Applications measure durations by differences within this session.
 The runtime-only context advance operation rejects backward time.
 Keep calls closer together than one PM timer wrap. Steps must not block.
 Diagnose steps exceeding the 1ms budget without forced interruption.
@@ -90,7 +90,7 @@ Boot Keyboard接続中は非ブロッキングUSB pollの合間にstepを呼ぶ�
 無入力中もRAM診断を進める。入力セッション終了後にshutdownし、停止する。
 初期の[協調ランタイム](cooperative-io.md)で、最初のキーボード、[QEMU通信](network.md)、アプリsnapshot file readを同時に進める。起動時のUSB/BOT探索は同期処理としてこのセッション前に完了する。複数キーボード、一般の非同期disk要求、アプリUDP handleは未実装。
 
-now_msは最初のstep開始を基点とするPM timerの単調経過値で、毎step直前に更新する。
+now_msはランタイム所有clockのepochにおけるPM timerの単調なミリ秒値で、毎step直前に更新する。セッション内の差分で経過時間を測る。
 contextのadvanceはランタイム用で、時刻の巻戻しを拒否する。
 呼出し間隔はPM timerの一周より短く保つ。stepのブロックは禁止する。
 1ms予算を超えたstepは診断するが、強制中断はしない。

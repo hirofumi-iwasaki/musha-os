@@ -23,7 +23,7 @@ The callbacks are serialized on one CPU with interrupts disabled; this is cooper
 
 The normal build keeps the first keyboard session active until Esc. A `qemu-debug` build without `input-persistent` ends that session after ten seconds; the old five-second window was extended for integrated tests. Esc ends the input session and stops both DMA controllers after the file/RAM diagnostic completes. Unsatisfied TX can be discarded during termination; no DMA buffer is reclaimed.
 
-No keyboard, or a disconnected keyboard, causes USB cleanup and a fallback cooperative loop. Healthy networking continues until ten seconds have elapsed since NIC startup, while file/RAM work progresses. If no NIC is supported or it has failed, the remaining application work completes without a network wait. A link loss or TX timeout stops only the NIC session; the keyboard/file application continues until its normal termination. Reconnection, USB hubs, multiple active keyboards, general hotplug recovery and NUC PHY initialization remain outside this implementation.
+No keyboard, or a disconnected keyboard, causes USB cleanup and a fallback cooperative loop. Healthy networking continues until ten seconds have elapsed since NIC startup, while file/RAM work progresses. If no NIC is supported or it has failed, the remaining application work completes without a network wait. A link loss or TX timeout stops only the NIC session; the keyboard/file application continues until its normal termination. A file recheck is scheduled after NIC failure, following completion of the initial check if necessary. Fault tests require the recheck marker to follow NIC DMA disablement. Reconnection, USB hubs, multiple active keyboards, general hotplug recovery and NUC PHY initialization remain outside this implementation.
 
 ### Validation
 
@@ -55,10 +55,10 @@ Repeat the last command with `input-idle`, `no-keyboard`, `keyboard-disconnect` 
 ### Image verification record
 
 The final debug GPT/FAT32 image passed the traffic/Esc and link-loss tests unchanged:
-`5f21d2102312a7db5aec4f11d926efedc599fd2fe22a4dc3ab6aa4b756e26bd2`.
+`e357b3854e2ad5925c81491ee82d6d8e5c1e1e0ae84bd66d22abf6654a535b00`.
 Idle/no-keyboard/disconnect tests also passed on the initial integrated image; TX-timeout and application-error tests passed on their dedicated fault builds.
-The normal image `out/musha-usb-cooperative.img`, without debug/fault features, was booted read-only, received Shift+A and Esc, and showed `APP FILE READ OK`, `APP COMPLETE` and `NET TEST OK`. The final normal and traffic screens were visually checked. Its SHA-256 remained
-`cb45c2b0287f0cde95a3203149ad67737112579197859e0cefd7a5c42bcd85a5`.
+The normal image `out/musha-usb-cooperative-final.img`, without debug/fault features, was booted read-only, received Shift+A and Esc, and showed `APP FILE READ OK`, `APP COMPLETE` and `NET TEST OK`. The final normal and traffic screens were visually checked. Its SHA-256 remained
+`678dbd9cfa6705ab36c43ca0cc463b6e4476870bd820ddc93f096948910c0fc4`.
 These are 64MiB test images. Follow [shared USB image sizing](usb-image.md) to regenerate an image for the exact capacity of the physical 32GB drive before writing it. `out/NOTICE` accompanies local binary artifacts. Physical boot remains untested.
 
 ## 日本語
@@ -84,7 +84,7 @@ interruptを無効にした単一CPUから順番に呼び出す協調処理で�
 
 通常版は最初のキーボードをEscまで待ち受ける。`input-persistent`なしの`qemu-debug`版は10秒で入力セッションを終える。統合試験のため従来の5秒を延長した。Esc後はfile/RAM診断完了を待ち、両DMA controllerを停止する。終了時の未完了TXは破棄でき、DMA buffer自体は回収しない。
 
-キーボードなし・切断時はUSBを停止し、協調fallback loopへ進む。正常な通信はNIC開始から10秒まで継続し、file/RAM処理も進める。非対応NIC・NIC停止後は残るアプリ処理を完了して終了する。link切断・TX timeoutはNICだけを停止し、キーボード・fileアプリは通常の終了まで継続する。再接続、hub、複数キーボードの同時処理、汎用hotplug復旧、NUC PHY初期化は未対応。
+キーボードなし・切断時はUSBを停止し、協調fallback loopへ進む。正常な通信はNIC開始から10秒まで継続し、file/RAM処理も進める。非対応NIC・NIC停止後は残るアプリ処理を完了して終了する。link切断・TX timeoutはNICだけを停止し、キーボード・fileアプリは通常の終了まで継続する。NIC障害後にfile再検査を予約し、必要なら初回検査完了後に開始する。故障試験はNIC DMA停止後に再検査成功markerが出る順序も要求する。再接続、hub、複数キーボードの同時処理、汎用hotplug復旧、NUC PHY初期化は未対応。
 
 ### 検証
 
@@ -108,8 +108,8 @@ QEMU 11.1.2 / Rust 1.99.0で、loopback socket Ethernetと実際のGPT/FAT32読�
 ### イメージ検証記録
 
 最終debug GPT/FAT32イメージで通信・Esc終了・link切断試験が成功し、SHA-256不変を確認した:
-`5f21d2102312a7db5aec4f11d926efedc599fd2fe22a4dc3ab6aa4b756e26bd2`。
+`e357b3854e2ad5925c81491ee82d6d8e5c1e1e0ae84bd66d22abf6654a535b00`。
 無入力・キーボードなし・切断試験は初期統合イメージでも成功。TX timeoutとアプリerrorは各専用故障注入版で成功した。
-debug/fault機能を含まない通常版`out/musha-usb-cooperative.img`も読出し専用で起動し、Shift+AとEscを送信した。`APP FILE READ OK`、`APP COMPLETE`、`NET TEST OK`を表示し、通常版・通信試験の最終画面を目視確認した。通常版のSHA-256は不変:
-`cb45c2b0287f0cde95a3203149ad67737112579197859e0cefd7a5c42bcd85a5`。
+debug/fault機能を含まない通常版`out/musha-usb-cooperative-final.img`も読出し専用で起動し、Shift+AとEscを送信した。`APP FILE READ OK`、`APP COMPLETE`、`NET TEST OK`を表示し、通常版・通信試験の最終画面を目視確認した。通常版のSHA-256は不変:
+`678dbd9cfa6705ab36c43ca0cc463b6e4476870bd820ddc93f096948910c0fc4`。
 これらは64MiBの試験イメージ。実物32GB USBへ書く前に[共通USBイメージの容量指定](usb-image.md)に従い、媒体の正確な容量で再生成する。ローカルbinary成果物へ`out/NOTICE`を添付した。実機起動は未検証。
