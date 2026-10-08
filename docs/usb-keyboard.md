@@ -44,7 +44,7 @@ IRQ enablement and CPU sleep are not implemented yet.
 On exit, Disable Slot and discard pending IN transfers.
 Do not reuse DMA regions before completion.
 After controller shutdown and bus-mastering disablement, proceed to the RAM diagnostic application.
-Pass input to the [API version 2 FIFO](app-api.md).
+Pass input to the [API version 3 FIFO](app-api.md).
 This is a single-keyboard input session; simultaneous polling of multiple keyboards is unsupported.
 Character mapping, JIS / US layout conversion, repeat, LED control, hubs, hotplug,
 SuperSpeed keyboards, other-configuration discovery, and generic Report Descriptor parsing are unsupported.
@@ -109,7 +109,7 @@ Link cycleを更新して周回する。IRQ有効化やCPUのsleepはまだ行�
 
 終了時にDisable Slotし、未完了のIN転送も破棄する。完了前のDMA領域を再利用しない。
 controller停止・bus mastering解除後、RAM診断アプリへ進む。
-入力は[API版2のFIFO](app-api.md)へ渡す。単一キーボードの入力セッションであり、
+入力は[API版3のFIFO](app-api.md)へ渡す。単一キーボードの入力セッションであり、
 複数キーボードを同時にpollする処理は未対応。
 文字配列、JIS / US配列変換、repeat、LED制御、ハブ、hotplug、
 SuperSpeedキーボード、他configurationの探索、汎用Report Descriptor解析は未対応。

@@ -10,7 +10,7 @@ Our own GDT / IDT / TSS, exception diagnostics, page tables, reserved-region man
 ACPI PM timer handoff and 100ms measurement have been verified in QEMU.
 The Rust application API, xHCI stop / reset, dedicated DMA / rings,
 and 600 No-Op commands have been verified in QEMU.
-USB enumeration / input / read diagnostics and GPT image generation are implemented. HPET, application file APIs, NIC drivers, and hardware tests remain incomplete.
+USB enumeration / input / read diagnostics and GPT image generation are implemented. HPET, general device-backed file APIs, NIC drivers, and hardware tests remain incomplete.
 Do not create a 0.1.0 tag yet.
 
 ### Design status
@@ -65,10 +65,10 @@ Do not declare support for all 0.1.0 targets if hardware is unavailable or untes
 
 Port reset, Enable Slot, Address Device, and Device Descriptor transfers are implemented.
 Configuration Descriptor, Set Configuration, and Boot Keyboard Interrupt IN diagnostics are implemented.
-Continuous input from a single keyboard is connected to the API version 2 FIFO.
+Continuous input from a single keyboard is connected to the API version 3 FIFO.
 USB BOT capacity and first / last sector read diagnostics have been added.
-MBR / FAT32 short-name root-file reads have been added. GPT validation and shared-image generation are implemented. Next, implement the application file API.
-The application C ABI and file / UDP APIs are also incomplete.
+MBR / FAT32 short-name root-file reads have been added. GPT validation and shared-image generation are implemented. The initial bounded [application file API](file-api.md) is implemented. Next, implement QEMU networking.
+The application C ABI, general device-backed file API, and UDP API are also incomplete.
 HPET fallback for machines without a supported PM timer remains.
 Cross-check USB / NIC register specifications against primary sources and collect hardware PCI diagnostics.
 Update documents on the design branch and implement units as their designs become ready.
@@ -100,7 +100,7 @@ If API, capacity, or CPU requirements change, document the reasons and validatio
 QEMUで確認済み。自前GDT / IDT / TSS、例外診断、ページテーブル、予約領域管理、
 64MiB arenaとPCI列挙（xHCI / Intel 82574識別）はQEMUで確認済み。ACPIのPM timer情報引継ぎと100ms計測はQEMUで確認済み。
 RustアプリAPIとxHCI停止・リセット、専用DMA / ring、No-Op 600回までQEMUで確認済み。
-USB列挙・入力・読出し診断とGPTイメージ生成は実装済み。HPET、アプリ向けfile API、NICドライバと実機試験は未完了。
+USB列挙・入力・読出し診断とGPTイメージ生成は実装済み。HPET、一般のdevice-backed file API、NICドライバと実機試験は未完了。
 0.1.0タグはまだ作らない。
 
 ### 設計状況
@@ -155,8 +155,8 @@ QEMUではUEFI + xHCI + USB disk + USB keyboard + e1000e構成を版固定する
 
 port reset、Enable Slot、Address Device、Device Descriptor転送まで実装済み。
 Configuration Descriptor、Set Configuration、Boot KeyboardのInterrupt IN診断まで実装済み。
-単一キーボードの継続入力とAPI版2のFIFOを接続済み。USB BOTの容量・先頭 / 末尾セクタ読出し診断を追加済み。MBR / FAT32の短名ルートファイル読出しを追加済み。GPT検証と共通イメージ生成は実装済み。次はアプリ向けfile APIへ進める。
-アプリのC ABI、ファイル・UDP APIも未完了。
+単一キーボードの継続入力とAPI版3のFIFOを接続済み。USB BOTの容量・先頭 / 末尾セクタ読出し診断を追加済み。MBR / FAT32の短名ルートファイル読出しを追加済み。GPT検証と共通イメージ生成は実装済み。初期の上限付き[アプリfile API](file-api.md)も実装済み。次はQEMU上のネットワークへ進める。
+アプリのC ABI、一般のdevice-backed file API、UDP APIも未完了。
 PM timer非対応機向けのHPET fallbackも残る。
 USB / NICのレジスタ仕様は一次資料に照合し、実機PCI診断情報を集める。
 設計ブランチで文書を更新し、実装可能になった単位から実装へ進む。

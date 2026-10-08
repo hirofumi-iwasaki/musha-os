@@ -46,7 +46,7 @@ inspect subsequent storage after Esc ends input.
 Simultaneous input / storage polling is unsupported.
 This stage provides boot-time block-read diagnostics; application block handles are not yet available.
 [MBR / FAT32 root-file reads](fat32.md) have been added.
-Application block / file APIs are still not provided.
+Application block APIs and on-demand disk file APIs are still not provided. The [initial file API](file-api.md) exposes a verified boot-file snapshot.
 
 ### Validation
 
@@ -119,7 +119,7 @@ endpoint reset、媒体エラーからの継続復旧はまだ実装しない。
 後続ストレージを調べる。入力とストレージの同時pollは未対応。
 この段階は起動時のblock読出し診断で、アプリ向けblock handle、
 [MBR / FAT32のルートファイル読出し](fat32.md)を追加した。
-アプリ向けblock / file APIはまだ提供しない。
+アプリ向けblock APIとオンデマンド媒体file APIは未提供。[初期file API](file-api.md)は検証済み起動ファイルのsnapshotを公開する。
 
 ### 検証
 

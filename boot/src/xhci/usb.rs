@@ -237,7 +237,7 @@ pub(super) fn enumerate(
     host: &mut Host<'_>,
     pool: &mut musha_xhci::Pool,
     dcbaa: usize,
-    tick: &mut dyn FnMut(&[(u8, bool)]) -> Result<bool, &'static str>,
+    tick: &mut dyn FnMut(super::AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
     let protocols = protocols(host.regs, host.ports)?;
     let stride = if host.regs.read(0x10)? & 4 != 0 {
@@ -380,7 +380,7 @@ fn keyboard(
     control_ring: usize,
     buffer: usize,
     speed: musha_xhci::Speed,
-    tick: &mut dyn FnMut(&[(u8, bool)]) -> Result<bool, &'static str>,
+    tick: &mut dyn FnMut(super::AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
     // Only configuration zero is inspected at this diagnostic stage.
     control(host, slot, control_ring, 6, buffer, 9, 0x02000680, 0)?;
@@ -416,6 +416,7 @@ fn keyboard(
             control_ring,
             buffer,
             disk,
+            tick,
         );
     }
     let Some(kbd) = musha_xhci::keyboard::configuration(&bytes[..length], speed)? else {
@@ -556,7 +557,7 @@ fn keyboard(
         }
         // Hardware poll never waits for a key. Each iteration also advances the
         // application, including while the device NAKs an outstanding transfer.
-        if tick(&transitions[..count])? {
+        if tick(super::AppEvent::Keys(&transitions[..count]))? {
             break;
         }
     }

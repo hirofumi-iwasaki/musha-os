@@ -16,6 +16,7 @@ parser.add_argument('--fat-fixture',choices=['mbr','superfloppy','gpt'])
 parser.add_argument('--usb-image',type=pathlib.Path,help='Boot an actual GPT/FAT32 USB image read-only')
 args=parser.parse_args()
 if args.storage_fixture and args.fat_fixture:parser.error('Choose one fixture type')
+if args.usb_image and args.fat_fixture:parser.error('Choose either a boot image or a FAT fixture; the API selects the first successful file')
 if args.case=='fat-corrupt' and not args.fat_fixture:parser.error('fat-corrupt requires --fat-fixture')
 if args.usb_image and args.case != 'normal':parser.error('--usb-image requires a normal diagnostic build')
 root=pathlib.Path(__file__).resolve().parent.parent
@@ -131,8 +132,12 @@ with (out/'qemu.log').open('w') as err:
        for direction in ['DOWN','UP']:
         if 'MUSHA: HID_KEY_'+direction+'='+key not in text or 'MUSHA: APP_KEY_'+direction+'='+key not in text:raise RuntimeError('HID/app key transition missing: '+text)
      if 'MUSHA: STORAGE_PROBE_OK READ_ONLY' not in text:raise RuntimeError('Storage probe missing: '+text)
-     if args.usb_image and f'MUSHA: FAT32_FILE_OK BYTES={len(boot_payload):016X} HASH={fnv(boot_payload):016X}' not in text:raise RuntimeError('Boot image file read missing: '+text)
-     if args.fat_fixture and fat_marker not in text:raise RuntimeError('FAT32 file differs: '+text)
+     if args.usb_image:
+      for prefix in ['MUSHA: FAT32_FILE_OK','MUSHA: APP_FILE_OK']:
+       if f'{prefix} BYTES={len(boot_payload):016X} HASH={fnv(boot_payload):016X}' not in text:raise RuntimeError('Boot image file read missing: '+text)
+      if 'CLOSED_HANDLE_REJECTED' not in text:raise RuntimeError('Stale file handle accepted')
+     if args.fat_fixture:
+      if fat_marker not in text or fat_marker.replace('FAT32_FILE_OK','APP_FILE_OK') not in text:raise RuntimeError('FAT32/app file differs: '+text)
      if args.storage_fixture:
       for expected in fixture_markers:
        if expected not in text:raise RuntimeError('Storage contents differ: '+expected+'\n'+text)

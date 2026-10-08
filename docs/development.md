@@ -81,9 +81,9 @@ Firmware SHA-256 values used:
 
 ### Next implementation work
 
-Key input is connected to the API version 2 FIFO.
+Key input is connected to the API version 3 FIFO.
 USB BOT capacity / sector read diagnostics and MBR / FAT32 root-file reads have been added.
-GPT and shared-image generation are implemented. Next, implement the application file API.
+GPT and shared-image generation are implemented. The initial bounded [application file API](file-api.md) is implemented. Next, implement QEMU networking.
 See [HID input diagnostics](usb-keyboard.md) and [NUC5 test preparation](nuc5-bringup.md).
 See [USB enumeration specifications](usb-enumeration.md), [DMA / ring specifications](xhci-rings.md),
 the [Rust application API](app-api.md), [xHCI initialization](xhci.md),
@@ -263,7 +263,7 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ### 次の実装
 
-キー入力をAPI版2のFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。MBR / FAT32のルートファイル読出しも追加済み。GPTと共通イメージ生成は実装済み。次はアプリ向けfile APIへ進む。
+キー入力をAPI版3のFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。MBR / FAT32のルートファイル読出しも追加済み。GPTと共通イメージ生成は実装済み。初期の上限付き[アプリfile API](file-api.md)も実装済み。次はQEMU上のネットワークへ進む。
 [HID入力診断](usb-keyboard.md)と[NUC5試験準備](nuc5-bringup.md)を参照。
 [USB列挙仕様](usb-enumeration.md)を参照。
 [DMA / ring仕様](xhci-rings.md)を参照。

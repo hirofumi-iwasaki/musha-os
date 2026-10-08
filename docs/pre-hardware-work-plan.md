@@ -17,7 +17,8 @@ After each stage, record completed scope, tests, known limitations, and the next
 ### Progress
 
 - Stage 1: Implemented and verified in QEMU. GPT validation, reproducible bootable images, and exact medium-capacity sizing are available. See [shared USB image](usb-image.md). Physical boot tests remain pending.
-- Stages 2–5: Pending; begin in the order above after the preceding acceptance checks pass.
+- Stage 2: Initial bounded file API implemented and verified in QEMU; see [file API](file-api.md). Generic device-backed asynchronous reads remain for the simultaneous-I/O design.
+- Stages 3–5: Pending; proceed with QEMU networking next.
 - Hardware validation: Pending arrival of the NUC5. NUC8 availability remains unconfirmed.
 
 ## 日本語
@@ -37,5 +38,6 @@ After each stage, record completed scope, tests, known limitations, and the next
 ### 進捗
 
 - 第1段階: 実装とQEMU検証完了。GPT検証、再現可能な起動イメージ、媒体の正確な容量指定に対応。[共通USBイメージ](usb-image.md)を参照。実機起動試験は未実施。
-- 第2～5段階: 未着手。前段階の合格確認後に順番に開始する。
+- 第2段階: 初期の上限付きfile APIを実装しQEMUで確認。[ファイルAPI](file-api.md)を参照。一般の非同期device-backed読出しは同時I/O設計に残る。
+- 第3～5段階: 未着手。次はQEMU上のネットワークへ進む。
 - 実機検証: NUC5の到着待ち。NUC8の確保状況は未確認。

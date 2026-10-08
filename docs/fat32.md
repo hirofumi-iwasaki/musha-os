@@ -15,7 +15,7 @@ It connects to USB BOT READ(10) and reads the short-name root file MUSHA.TXT for
 - 8.3 short names, fragmented root-directory and file chains, and partial reads of the last sector.
 
 Extended partitions, FAT12 / FAT16 / exFAT, subdirectory traversal,
-long-name resolution, application open / read / close, and writes are unsupported.
+long-name resolution, on-demand application disk access and writes are unsupported. A [snapshot file API](file-api.md) provides open / read / close for the verified boot file.
 Long File Name entries are skipped, so their short-name aliases can be specified.
 
 ### Validation and boundaries
@@ -50,7 +50,7 @@ On sufficiently tall screens, display FAT32 READ OK;
 record byte count and FNV-1a 64-bit hash in debug output.
 If the file is absent, report FAT32_FILE_MISSING and continue boot, input, and RAM diagnostics.
 Unsupported GPT formats, FAT16, and similar media produce FAT32_UNSUPPORTED.
-This is a file-read diagnostic; application file handles are not provided yet.
+This is a file-read diagnostic; the [application file API](file-api.md) exposes an owned copy through bounded handles.
 
 ### Validation
 
@@ -92,7 +92,7 @@ USB BOTのREAD(10)へ接続し、ルートディレクトリの短名MUSHA.TXT�
 - 8.3短名、断片化したroot directoryとfile chain、最後のsectorの部分読出し。
 
 extended partition、FAT12 / FAT16 / exFAT、サブディレクトリ探索、
-長名の解決、アプリ向けopen / read / close、書込みは未対応。
+長名の解決、アプリのオンデマンド媒体アクセス、書込みは未対応。[snapshot file API](file-api.md)で検証済み起動ファイルのopen / read / closeを提供する。
 Long File Name entryは読み飛ばすため、その短名aliasを指定することはできる。
 
 ### 検査と境界
@@ -125,7 +125,7 @@ deleted entry、volume label、directory、LFNを除外して短名を一致比�
 高画面ではFAT32 READ OKを表示し、debug出力にbyte数とFNV-1a 64bit hashを記録する。
 ファイルがなければFAT32_FILE_MISSINGとし、起動・入力・RAM診断は継続する。
 未対応GPT形式やFAT16等はFAT32_UNSUPPORTEDとなる。
-これはfile読出しの診断であり、アプリ向けfile handleはまだ提供しない。
+これはfile読出しの診断であり、[アプリfile API](file-api.md)は所有コピーを上限付きhandleで提供する。
 
 ### 検証
 

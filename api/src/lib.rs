@@ -1,13 +1,19 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
+mod files;
+pub use files::FileHandle;
 use musha_framebuffer::Framebuffer;
-pub const API_VERSION: u32 = 2;
+pub const API_VERSION: u32 = 3;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Invalid,
     Unsupported,
     Io,
+    Again,
+    NotFound,
+    NoMemory,
+    Disconnected,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -29,6 +35,7 @@ pub struct KeyEvent {
 const INPUT_CAPACITY: usize = 64;
 pub struct Context<'a> {
     arena: &'a mut [u8],
+    files: files::Files,
     screen: Framebuffer,
     now_ms: u64,
     input: [Option<KeyEvent>; INPUT_CAPACITY],
@@ -47,6 +54,7 @@ impl<'a> Context<'a> {
         }
         Ok(Self {
             arena,
+            files: files::Files::new(),
             screen,
             now_ms: 0,
             input: [None; INPUT_CAPACITY],
@@ -55,6 +63,30 @@ impl<'a> Context<'a> {
             lost: 0,
             input_active: false,
         })
+    }
+    /// Runtime publishes a verified owned snapshot; only the first success wins.
+    pub fn install_boot_file(&mut self, bytes: &[u8]) -> Result<bool, Error> {
+        self.files.publish(bytes)
+    }
+    pub fn record_file_error(&mut self, error: Error) {
+        self.files.unavailable(error);
+    }
+    pub fn finish_file_discovery(&mut self, failed: bool) {
+        self.files.finish(failed);
+    }
+    pub fn invalidate_files(&mut self, error: Error) {
+        self.files.invalidate(error);
+    }
+    /// Opens an absolute root 8.3 path. Initial cached file: /MUSHA.TXT.
+    pub fn file_open(&mut self, path: &str) -> Result<FileHandle, Error> {
+        self.files.open(path)
+    }
+    /// Copies at most out.len() bytes; zero means EOF or a zero-length buffer.
+    pub fn file_read(&mut self, handle: FileHandle, out: &mut [u8]) -> Result<usize, Error> {
+        self.files.read(handle, out)
+    }
+    pub fn file_close(&mut self, handle: FileHandle) -> Result<(), Error> {
+        self.files.close(handle)
     }
     /// Runtime producer; drops newest on overflow and retains the older FIFO.
     pub fn push_key(&mut self, usage: u8, pressed: bool) {

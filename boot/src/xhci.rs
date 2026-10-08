@@ -154,11 +154,17 @@ fn reset(info: &BootInfo) -> Result<(), &'static str> {
     crate::debug(b" DMA_DISABLED\n");
     Ok(())
 }
+pub(crate) enum AppEvent<'a> {
+    Keys(&'a [(u8, bool)]),
+    File(&'a [u8]),
+    FileError(musha_api::Error),
+}
 pub(crate) fn diagnose(
     info: &BootInfo,
-    tick: &mut dyn FnMut(&[(u8, bool)]) -> Result<bool, &'static str>,
-) {
-    let (label, color) = match reset(info).and_then(|()| command_probe(info, tick)) {
+    tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
+) -> Result<(), &'static str> {
+    let result = reset(info).and_then(|()| command_probe(info, tick));
+    let (label, color) = match result {
         Ok(()) => ("USB ENUMERATED", info.framebuffer.color(0, 240, 100)),
         Err(error) => {
             crate::debug(b"MUSHA: XHCI_FAILED ");
@@ -171,6 +177,7 @@ pub(crate) fn diagnose(
     unsafe {
         info.framebuffer.text(label, 24, 292, color);
     }
+    result
 }
 
 const TRBS: usize = 256;
@@ -294,7 +301,7 @@ fn event(
 }
 fn command_probe(
     info: &BootInfo,
-    tick: &mut dyn FnMut(&[(u8, bool)]) -> Result<bool, &'static str>,
+    tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
     use musha_xhci::{Cursor, Pool};
     let regs = Registers {

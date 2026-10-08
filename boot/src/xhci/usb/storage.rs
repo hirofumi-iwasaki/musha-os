@@ -142,6 +142,7 @@ pub(super) fn probe(
     control_ring: usize,
     buffer: usize,
     disk: Storage,
+    tick: &mut dyn FnMut(super::super::AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
     let in_ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
     let out_ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
@@ -246,6 +247,7 @@ pub(super) fn probe(
     );
     match file_result {
         Ok(bytes) => {
+            tick(super::super::AppEvent::File(&file[..bytes]))?;
             crate::debug(b"MUSHA: FAT32_FILE_OK BYTES=");
             crate::debug(&crate::cpu::hex(bytes as u64));
             crate::debug(b" HASH=");
@@ -263,8 +265,18 @@ pub(super) fn probe(
                 }
             }
         }
-        Err(musha_fs::Error::Unsupported) => crate::debug(b"MUSHA: FAT32_UNSUPPORTED\n"),
-        Err(musha_fs::Error::NotFound) => crate::debug(b"MUSHA: FAT32_FILE_MISSING\n"),
+        Err(musha_fs::Error::Unsupported) => {
+            tick(super::super::AppEvent::FileError(
+                musha_api::Error::Unsupported,
+            ))?;
+            crate::debug(b"MUSHA: FAT32_UNSUPPORTED\n");
+        }
+        Err(musha_fs::Error::NotFound) => {
+            tick(super::super::AppEvent::FileError(
+                musha_api::Error::NotFound,
+            ))?;
+            crate::debug(b"MUSHA: FAT32_FILE_MISSING\n");
+        }
         Err(_) => return Err("FAT32 READ"),
     }
     if host.framebuffer.height >= 444 {

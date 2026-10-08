@@ -6,6 +6,54 @@ struct Diagnostic {
     complete: bool,
     writing: bool,
     exit_requested: bool,
+    file_handle: Option<musha_api::FileHandle>,
+    file_bytes: u64,
+    file_hash: u64,
+    file_done: bool,
+}
+impl Diagnostic {
+    fn file_step(&mut self, ctx: &mut Context<'_>) -> Result<(), Error> {
+        if self.file_done {
+            return Ok(());
+        }
+        if self.file_handle.is_none() {
+            match ctx.file_open("/MUSHA.TXT") {
+                Ok(handle) => self.file_handle = Some(handle),
+                Err(Error::Again) => return Ok(()),
+                Err(Error::NotFound | Error::Unsupported | Error::Io) => {
+                    crate::debug(b"MUSHA: APP_FILE_UNAVAILABLE\n");
+                    self.file_done = true;
+                    return Ok(());
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        let handle = self.file_handle.unwrap();
+        let mut bytes = [0u8; 64];
+        let count = ctx.file_read(handle, &mut bytes)?;
+        if count != 0 {
+            for byte in &bytes[..count] {
+                self.file_hash = (self.file_hash ^ *byte as u64).wrapping_mul(0x100000001b3);
+            }
+            self.file_bytes += count as u64;
+            return Ok(());
+        }
+        ctx.file_close(handle)?;
+        if ctx.file_read(handle, &mut bytes) != Err(Error::Invalid) {
+            return Err(Error::Io);
+        }
+        self.file_handle = None;
+        self.file_done = true;
+        crate::debug(b"MUSHA: APP_FILE_OK BYTES=");
+        crate::debug(&crate::cpu::hex(self.file_bytes));
+        crate::debug(b" HASH=");
+        crate::debug(&crate::cpu::hex(self.file_hash));
+        crate::debug(b" CLOSED_HANDLE_REJECTED\n");
+        if ctx.screen_size().1 >= 508 {
+            ctx.text("APP FILE READ OK", 24, 484, [0, 240, 100]);
+        }
+        Ok(())
+    }
 }
 impl Application for Diagnostic {
     fn init(&mut self, ctx: &mut Context<'_>) -> Result<(), Error> {
@@ -16,6 +64,7 @@ impl Application for Diagnostic {
         Ok(())
     }
     fn step(&mut self, ctx: &mut Context<'_>) -> Result<Step, Error> {
+        self.file_step(ctx)?;
         while let Some(event) = ctx.next_key() {
             crate::debug(if event.pressed {
                 b"MUSHA: APP_KEY_DOWN="
@@ -43,7 +92,7 @@ impl Application for Diagnostic {
             }
         }
         if self.complete {
-            return Ok(if ctx.input_active() {
+            return Ok(if ctx.input_active() || !self.file_done {
                 Step::Continue
             } else {
                 Step::Complete
@@ -99,13 +148,16 @@ impl Application for Diagnostic {
         crate::debug(&digits);
         crate::debug(b"\n");
         self.complete = true;
-        Ok(if ctx.input_active() {
+        Ok(if ctx.input_active() || !self.file_done {
             Step::Continue
         } else {
             Step::Complete
         })
     }
     fn shutdown(&mut self, ctx: &mut Context<'_>) {
+        if let Some(handle) = self.file_handle.take() {
+            let _ = ctx.file_close(handle);
+        }
         if self.complete {
             ctx.text("APP COMPLETE", 24, 324, [0, 240, 100]);
         }
@@ -121,6 +173,10 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         complete: false,
         writing: true,
         exit_requested: false,
+        file_handle: None,
+        file_bytes: 0,
+        file_hash: 0xcbf29ce484222325,
+        file_done: false,
     };
     app.init(&mut ctx)?;
     let mut steps = 0u64;
@@ -129,7 +185,18 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
     let result = (|| {
         ctx.set_input_active(true);
         let mut input_error = None;
-        crate::xhci::diagnose(info, &mut |events| {
+        let usb_result = crate::xhci::diagnose(info, &mut |event| {
+            let events = match event {
+                crate::xhci::AppEvent::Keys(events) => events,
+                crate::xhci::AppEvent::File(bytes) => {
+                    ctx.install_boot_file(bytes).map_err(|_| "APP FILE CACHE")?;
+                    return Ok(false);
+                }
+                crate::xhci::AppEvent::FileError(error) => {
+                    ctx.record_file_error(error);
+                    return Ok(false);
+                }
+            };
             let result = (|| {
                 if time.is_none() {
                     time =
@@ -156,6 +223,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 }
             }
         });
+        ctx.finish_file_discovery(usb_result.is_err());
         ctx.set_input_active(false);
         if let Some(error) = input_error {
             return Err(error);

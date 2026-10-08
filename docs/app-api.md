@@ -4,8 +4,8 @@
 
 `musha-api` provides a safe API for Rust applications statically linked into a single EFI.
 The runtime calls `init`, `step`, and `shutdown` on the `Application` trait.
-The API version is 2. Rust types carry no external binary-compatibility guarantee.
-The C ABI, C headers, and file / UDP / handle APIs are not implemented and will be added separately.
+The API version is 3. Rust types carry no external binary-compatibility guarantee.
+A bounded read-only [file API](file-api.md) is implemented. The C ABI, C headers, UDP, and general device-backed file APIs remain unimplemented.
 
 ### Ownership and execution
 
@@ -36,7 +36,7 @@ Currently integer milliseconds report overruns at 2ms or more; strict 1ms detect
 pixel and rectangle convert RGB colors to the display format and return Invalid for out-of-bounds access or arithmetic overflow.
 rectangle validates the entire range before writing. text uses the existing fixed font with clipping.
 Drawing is synchronous; applications must split large drawing operations across steps.
-The current Error is a Rust enum with Invalid / Unsupported / Io, distinct from the future C integer-status contract.
+The current Error is a Rust enum with Invalid / Unsupported / Io / Again / NotFound / NoMemory / Disconnected, distinct from the future C integer-status contract.
 
 ### Diagnostic application and tests
 
@@ -70,8 +70,8 @@ Host tests verified FIFO order, wraparound, overflow, and timestamps.
 
 `musha-api`は単一EFIへ静的リンクするRustアプリ向けの安全なAPI。
 `Application` traitの`init`、`step`、`shutdown`をランタイムが呼ぶ。
-API版は2。Rust型には外部バイナリ互換性を約束しない。
-C ABI、Cヘッダー、ファイル・UDP・handle APIは未実装で、別途追加する。
+API版は3。Rust型には外部バイナリ互換性を約束しない。
+上限付き読出し専用の[ファイルAPI](file-api.md)を実装済み。C ABI、Cヘッダー、UDP、一般のdevice-backed file APIは未実装。
 
 ### 所有権と実行
 
@@ -101,7 +101,7 @@ contextのadvanceはランタイム用で、時刻の巻戻しを拒否する。
 pixelとrectangleはRGB色を画面形式へ変換し、境界外や算術overflowをInvalidとして返す。
 rectangleは全範囲を検証してから書き込む。textは既存の固定フォントでclipして描画する。
 描画は同期処理なので、大きな描画はアプリがstepへ分割する。
-今のErrorはInvalid / Unsupported / IoのRust enum。将来のC整数status契約とは区別する。
+今のErrorはInvalid / Unsupported / Io / Again / NotFound / NoMemory / DisconnectedのRust enum。将来のC整数status契約とは区別する。
 
 ### 診断アプリと試験
 
