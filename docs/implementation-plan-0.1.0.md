@@ -59,7 +59,8 @@ QEMUではUEFI + xHCI + USB disk + USB keyboard + e1000e構成を版固定する
 ## 直近の次作業
 
 port reset、Enable Slot、Address Device、Device Descriptor転送まで実装済み。
-次はConfiguration Descriptor、Set Configuration、HID入力へ進める。
+Configuration Descriptor、Set Configuration、Boot KeyboardのInterrupt IN診断まで実装済み。
+次は常時入力とアプリAPIの接続、USB Mass Storage BOTへ進める。
 アプリのC ABI、入力・ファイル・UDP APIも未完了。
 PM timer非対応機向けのHPET fallbackも残る。
 USB / NICのレジスタ仕様は一次資料に照合し、実機PCI診断情報を集める。
@@ -69,7 +70,7 @@ USB / NICのレジスタ仕様は一次資料に照合し、実機PCI診断情�
 
 - 最初の検証アプリは診断アプリとし、`Hello Musha-OS!` を表示する。
   画面・入力・arena・ファイル・UDPの診断結果を一画面で確認する。
-- NUC5 / NUC8は利用者が調達する。実機試験前に機種・RAM・USB機器を記録する。
+- NUC5と32GB USBは利用者が確保済み。NUC8は調達・試験状況未確認。実機試験前に機種・RAM・USB機器を記録する。
 - GitHubへのpushは利用者から許可された。musha-ic-progの所有者を確認した結果、
   `hirofumi-iwasaki` 個人アカウント配下だった。同じ所有者での公開作成が承認され、
   https://github.com/hirofumi-iwasaki/musha-os を作成済み。mainとdesign/0.1.0の初回pushを完了した。

@@ -164,6 +164,7 @@ pub(crate) fn diagnose(info: &BootInfo) {
             ("XHCI FAILED", info.framebuffer.color(255, 180, 0))
         }
     };
+    clear_line(info.framebuffer, 292);
     unsafe {
         info.framebuffer.text(label, 24, 292, color);
     }
@@ -200,17 +201,19 @@ fn event(
     expected: usize,
     ports: u32,
     expected_slot: u8,
-    transfer: bool,
+    transfer: u8,
+    timeout_ms: u64,
 ) -> Result<[u32; 4], &'static str> {
     let limit = if cfg!(feature = "xhci-command-timeout")
-        || (transfer && cfg!(feature = "usb-descriptor-timeout"))
+        || (transfer != 0 && cfg!(feature = "usb-descriptor-timeout"))
     {
         20
     } else {
-        1000
+        timeout_ms
     };
     let deadline = clock.now()?.checked_add(limit).ok_or("CLOCK OVERFLOW")?;
-    for _ in 0..5_000_000 {
+    let polls = if transfer > 1 { 500_000_000 } else { 5_000_000 };
+    for _ in 0..polls {
         if regs.read((regs.read(0)? & 255) as usize + 4)? & ((1 << 2) | (1 << 12)) != 0 {
             return Err("HOST ERROR");
         }
@@ -238,13 +241,19 @@ fn event(
                     } else {
                         Some(expected_slot)
                     };
-                    if transfer || !musha_xhci::command_completion(words, expected, slot, 8) {
+                    if transfer != 0 || !musha_xhci::command_completion(words, expected, slot, 8) {
                         return Err("BAD COMPLETION");
                     }
                     true
                 }
                 32 => {
-                    if !transfer || !musha_xhci::transfer_completion(words, expected, expected_slot)
+                    if transfer == 0
+                        || !musha_xhci::endpoint_completion(
+                            words,
+                            expected,
+                            expected_slot,
+                            transfer,
+                        )
                     {
                         return Err("BAD TRANSFER");
                     }
@@ -267,7 +276,7 @@ fn event(
             }
         }
         if clock.now()? >= deadline {
-            return Err(if transfer {
+            return Err(if transfer != 0 {
                 "TRANSFER TIMEOUT"
             } else {
                 "COMMAND TIMEOUT"
@@ -377,7 +386,8 @@ fn command_probe(info: &BootInfo) -> Result<(), &'static str> {
                 address,
                 ports,
                 0,
-                false,
+                0,
+                1000,
             )?;
             producer.advance();
         }
@@ -395,6 +405,7 @@ fn command_probe(info: &BootInfo) -> Result<(), &'static str> {
             doorbell,
             ac64,
             ports,
+            framebuffer: info.framebuffer,
         };
         usb::enumerate(&mut host, &mut pool, dcbaa)?;
         Ok(())
@@ -427,6 +438,7 @@ struct Host<'a> {
     doorbell: usize,
     ac64: bool,
     ports: u32,
+    framebuffer: musha_framebuffer::Framebuffer,
 }
 impl Host<'_> {
     fn command(
@@ -466,7 +478,8 @@ impl Host<'_> {
             address,
             self.ports,
             slot,
-            false,
+            0,
+            1000,
         )?;
         self.producer.advance();
         Ok(result)
@@ -480,5 +493,15 @@ impl Host<'_> {
             core::hint::spin_loop();
         }
         Err("CLOCK STALLED")
+    }
+}
+
+fn clear_line(fb: musha_framebuffer::Framebuffer, y: usize) {
+    for row in y..(y + 24).min(fb.height) {
+        for x in 24..fb.width {
+            unsafe {
+                fb.pixel(x, row, fb.color(12, 20, 32));
+            }
+        }
     }
 }

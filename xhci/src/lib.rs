@@ -74,14 +74,19 @@ pub fn command_completion(words: [u32; 4], expected: usize, slot: Option<u8>, ma
         }
 }
 pub fn transfer_completion(words: [u32; 4], expected: usize, slot: u8) -> bool {
+    endpoint_completion(words, expected, slot, 1)
+}
+pub fn endpoint_completion(words: [u32; 4], expected: usize, slot: u8, endpoint: u8) -> bool {
     let pointer = words[0] as u64 | ((words[1] as u64) << 32);
-    (words[3] >> 10) & 63 == 32
+    endpoint != 0
+        && endpoint <= 31
+        && (words[3] >> 10) & 63 == 32
         && words[2] >> 24 == 1
         && pointer == expected as u64
         && expected % 16 == 0
         && words[2] & 0xffffff == 0
         && (words[3] >> 24) as u8 == slot
-        && (words[3] >> 16) & 31 == 1
+        && (words[3] >> 16) & 31 == endpoint as u32
         && words[3] & (4 | 0xe00000) == 0
 }
 
@@ -275,3 +280,5 @@ mod event_tests {
         assert!(!transfer_completion(words, 0x1000, 1));
     }
 }
+
+pub mod keyboard;

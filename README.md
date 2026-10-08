@@ -19,7 +19,9 @@ QEMUで64MiB arenaとページ保護を確認済みです。
 PM timer、PCI列挙、xHCI所有権移行・リセット・DMA / ring診断とRustアプリのstep実行を追加しました。
 QEMUでNo-Op 600回の完了、リング周回と停止を確認済みです。
 USBポートをリセットし、USBメモリとキーボードのDevice Descriptor読出しを確認済みです。
-[USB列挙の範囲と制約](docs/usb-enumeration.md)を参照。入力・ファイル操作とLAN通信は未実装です。最初の診断アプリは `Hello Musha-OS!` と表示し、
+[USB列挙の範囲と制約](docs/usb-enumeration.md)を参照。Boot Keyboardの押下・解放診断をQEMUで確認済みです。
+[キーボード診断](docs/usb-keyboard.md)と[NUC5試験準備](docs/nuc5-bringup.md)を参照。
+常時入力API・ファイル操作とLAN通信は未実装です。最初の診断アプリは `Hello Musha-OS!` と表示し、
 画面・入力・RAM・ファイル・UDPの状態を確認する構成です。
 [開発・ビルド手順](docs/development.md)を参照してください。
 

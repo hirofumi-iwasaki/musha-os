@@ -12,7 +12,7 @@ GDT / IDT / TSSと4段ページテーブルは自前設定へ切り替える。
 予約領域を除外したRAM arenaを診断アプリへ渡し、各ページの両端を読書きする。
 CPU例外は診断後に停止し、復帰しない。
 ACPIのPM timer情報を引継ぎ、100msの経過とPCI機器の検出を診断する。
-xHCIは停止・リセットに加え、専用DMA / ringとNo-Op 600回の診断まで実装済み。Device DescriptorまでのUSB列挙を追加済み。USB入出力、NIC、lwIP、
+xHCIは停止・リセットに加え、専用DMA / ringとNo-Op 600回の診断まで実装済み。Device DescriptorまでのUSB列挙を追加済み。Boot Keyboardの起動時入力診断も追加済み。ストレージ入出力、NIC、lwIP、
 HPET、panicの画面診断は未実装。アプリは64ページずつRAMを試験する協調step方式。
 BootInfoとメモリマップは専用LoaderDataページに保存し、回収しない。
 現在はRGB / BGRの32bit GOPだけに対応し、bitmask / BLT-onlyは拒否する。
@@ -73,7 +73,8 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ## 次の実装
 
-次はConfiguration Descriptorの解析、Set Configuration、HID入力へ進む。
+次は常時入力をアプリAPIへ接続し、USB Mass Storage BOTへ進む。
+[HID入力診断](usb-keyboard.md)と[NUC5試験準備](nuc5-bringup.md)を参照。
 [USB列挙仕様](usb-enumeration.md)を参照。
 [DMA / ring仕様](xhci-rings.md)を参照。
 [RustアプリAPI](app-api.md)と[xHCI初期化](xhci.md)を参照。
@@ -142,3 +143,9 @@ controller停止、BME解除、アプリ完了と起動完了まで確認する�
 `--case usb-descriptor-timeout` を渡すと、18byte転送のdoorbellを省略する。
 20msの期限切れ、controller停止、DMA無効化、アプリ完了を確認する。
 通常ビルドには応答停止の注入を含めない。
+
+## キーボード診断
+
+通常smokeはHID_READY後にQMPでShift+Aを送信し、押下・解放を検査する。
+`--keyboard-usb-version 1` でFull-speed、`--no-keyboard-input` で無入力の終了を確認する。
+実機ではKEYBOARD READYから5秒間にキーを押す。

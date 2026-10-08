@@ -32,8 +32,8 @@ Success、residual 0を検査する。Short Packetや未知イベントは失敗
 成功・失敗ともcontrollerを停止してPCI bus masteringを解除する。
 DMA領域は途中失敗でも解放・再利用しない。診断後にアプリのRAM試験へ進む。
 
-Configuration Descriptor、Set Configuration、HID入力、Mass Storage BOT、
-ハブ、動的な接続・切断への対応は未実装。機器情報の確認をもって
+[Boot Keyboard診断](usb-keyboard.md)でConfiguration DescriptorとSet Configuration、
+Interrupt INを追加した。Mass Storage BOT、ハブ、動的な接続・切断への対応は未実装。機器情報の確認をもって
 キーボード入力やストレージ読出しが動くとは判定しない。
 
 ## 検証

@@ -169,29 +169,52 @@ fn get_descriptor(
     buffer: usize,
     bytes: u32,
 ) -> Result<(), &'static str> {
-    if index + 3 >= TRBS || bytes > 64 {
+    control(host, slot, ring, index, buffer, bytes, 0x01000680, 0)
+}
+fn control(
+    host: &mut Host<'_>,
+    slot: u8,
+    ring: usize,
+    index: usize,
+    buffer: usize,
+    bytes: u32,
+    request: u32,
+    interface: u16,
+) -> Result<(), &'static str> {
+    if index + 3 >= TRBS || bytes > 1024 {
         return Err("TRANSFER RANGE");
     }
     unsafe {
-        core::ptr::write_bytes(buffer as *mut u8, 0, 64);
+        core::ptr::write_bytes(buffer as *mut u8, 0, bytes as usize);
         // Publish backward so the first Setup cycle is visible only once the
         // complete Setup/Data/Status sequence exists. Only one TD is in flight.
-        publish(ring + (index + 2) * 16, [0, 0, 0, (4 << 10) | (1 << 5) | 1]);
+        let status_index = index + if bytes == 0 { 1 } else { 2 };
         publish(
-            ring + (index + 1) * 16,
-            [buffer as u32, 0, bytes, (3 << 10) | (1 << 16) | 1],
+            ring + status_index * 16,
+            [
+                0,
+                0,
+                0,
+                (4 << 10) | (1 << 5) | if bytes == 0 { 1 << 16 } else { 0 } | 1,
+            ],
         );
+        if bytes != 0 {
+            publish(
+                ring + (index + 1) * 16,
+                [buffer as u32, 0, bytes, (3 << 10) | (1 << 16) | 1],
+            );
+        }
         publish(
             ring + index * 16,
             [
-                0x01000680,
-                bytes << 16,
+                request,
+                (bytes << 16) | interface as u32,
                 8,
-                (2 << 10) | (1 << 6) | (3 << 16) | 1,
+                (2 << 10) | (1 << 6) | if bytes == 0 { 0 } else { 3 << 16 } | 1,
             ],
         );
     }
-    if !(cfg!(feature = "usb-descriptor-timeout") && bytes == 18) {
+    if !(cfg!(feature = "usb-descriptor-timeout") && request == 0x01000680 && bytes == 18) {
         host.regs.write(host.doorbell + slot as usize * 4, 1)?;
     }
     event(
@@ -201,10 +224,11 @@ fn get_descriptor(
         host.consumer,
         host.runtime,
         host.ac64,
-        ring + (index + 2) * 16,
+        ring + (index + if bytes == 0 { 1 } else { 2 }) * 16,
         host.ports,
         slot,
-        true,
+        1,
+        1000,
     )?;
     Ok(())
 }
@@ -252,7 +276,7 @@ pub(super) fn enumerate(
         let output = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
         let input = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
         let ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
-        let buffer = pool.allocate(64, 64).ok_or("DMA FULL")?;
+        let buffer = pool.allocate(1024, 64).ok_or("DMA FULL")?;
         let enabled = host.command(0, (9 << 10) | ((protocol.slot as u32) << 16), 255)?;
         let slot = (enabled[3] >> 24) as u8;
         if slot as u32 > (host.regs.read(4)? & 255).min(8) {
@@ -326,6 +350,7 @@ pub(super) fn enumerate(
         crate::debug(b" PID=");
         crate::debug(&crate::cpu::hex(product as u64));
         crate::debug(b"\n");
+        keyboard(host, pool, slot, input, output, stride, ring, buffer, speed)?;
         // Diagnostic enumeration releases each hardware slot only after a
         // Disable Slot completion. The DMA allocation itself is never reused.
         host.command(0, (10 << 10) | ((slot as u32) << 24), slot)?;
@@ -338,5 +363,182 @@ pub(super) fn enumerate(
     crate::debug(b"MUSHA: USB_ENUMERATION_OK COUNT=");
     crate::debug(&crate::cpu::hex(count));
     crate::debug(b"\n");
+    Ok(())
+}
+
+fn keyboard(
+    host: &mut Host<'_>,
+    pool: &mut musha_xhci::Pool,
+    slot: u8,
+    input: usize,
+    output: usize,
+    stride: usize,
+    control_ring: usize,
+    buffer: usize,
+    speed: musha_xhci::Speed,
+) -> Result<(), &'static str> {
+    // Only configuration zero is inspected at this diagnostic stage.
+    control(host, slot, control_ring, 6, buffer, 9, 0x02000680, 0)?;
+    let mut bytes = [0u8; 1024];
+    for (i, b) in bytes[..9].iter_mut().enumerate() {
+        *b = unsafe { (buffer as *const u8).add(i).read_volatile() };
+    }
+    let length = u16::from_le_bytes([bytes[2], bytes[3]]) as usize;
+    if bytes[0] != 9 || bytes[1] != 2 || !(9..=1024).contains(&length) {
+        return Err("CONFIG HEADER");
+    }
+    control(
+        host,
+        slot,
+        control_ring,
+        9,
+        buffer,
+        length as u32,
+        0x02000680,
+        0,
+    )?;
+    for (i, b) in bytes[..length].iter_mut().enumerate() {
+        *b = unsafe { (buffer as *const u8).add(i).read_volatile() };
+    }
+    let Some(kbd) = musha_xhci::keyboard::configuration(&bytes[..length], speed)? else {
+        return Ok(());
+    };
+    let endpoint = kbd.endpoint * 2 + 1;
+    let ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
+    let report = pool.allocate(64, 64).ok_or("DMA FULL")?;
+    unsafe {
+        core::ptr::write_bytes(input as *mut u8, 0, 4096);
+        dma_word(input + 4, 1 | (1 << endpoint));
+        for i in 0..3 {
+            dma_word(input + stride + i * 4, read_word(output + i * 4));
+        }
+        let previous = read_word(input + stride);
+        dma_word(
+            input + stride,
+            (previous & !(31 << 27)) | ((endpoint as u32) << 27),
+        );
+        let ep = input + (endpoint as usize + 1) * stride;
+        dma_word(ep, (kbd.interval as u32) << 16);
+        dma_word(ep + 4, (3 << 1) | (7 << 3) | ((kbd.packet as u32) << 16));
+        dma_word(ep + 8, ring as u32 | 1);
+        dma_word(ep + 16, 8 | (8 << 16));
+        publish(ring + (TRBS - 1) * 16, [ring as u32, 0, 0, (6 << 10) | 3]);
+        core::arch::asm!("mfence", options(nostack));
+    }
+    host.command(input, (12 << 10) | ((slot as u32) << 24), slot)?;
+    control(
+        host,
+        slot,
+        control_ring,
+        12,
+        buffer,
+        0,
+        ((kbd.configuration as u32) << 16) | 0x0900,
+        0,
+    )?;
+    control(
+        host,
+        slot,
+        control_ring,
+        14,
+        buffer,
+        0,
+        0x0b21,
+        kbd.interface as u16,
+    )?;
+    crate::debug(
+        b"MUSHA: HID_READY
+",
+    );
+    unsafe {
+        host.framebuffer.text(
+            "KEYBOARD READY",
+            24,
+            292,
+            host.framebuffer.color(0, 240, 100),
+        );
+    }
+    let deadline = host
+        .clock
+        .now()?
+        .checked_add(5000)
+        .ok_or("CLOCK OVERFLOW")?;
+    let mut state = musha_xhci::keyboard::State::default();
+    let mut reports = 0;
+    for index in 0..128 {
+        let now = host.clock.now()?;
+        if now >= deadline {
+            break;
+        }
+        unsafe {
+            core::ptr::write_bytes(report as *mut u8, 0, 64);
+            publish(
+                ring + index * 16,
+                [report as u32, 0, 8, (1 << 10) | (1 << 5) | 1],
+            );
+        }
+        host.regs
+            .write(host.doorbell + slot as usize * 4, endpoint as u32)?;
+        match event(
+            host.regs,
+            host.clock,
+            host.events,
+            host.consumer,
+            host.runtime,
+            host.ac64,
+            ring + index * 16,
+            host.ports,
+            slot,
+            endpoint,
+            deadline - now,
+        ) {
+            Ok(_) => {}
+            // An idle keyboard leaves a TD owned by hardware. Disable Slot in
+            // the caller cancels it; memory remains reserved until reboot.
+            Err("TRANSFER TIMEOUT") => break,
+            Err(error) => return Err(error),
+        }
+        let mut data = [0u8; 8];
+        for (i, b) in data.iter_mut().enumerate() {
+            *b = unsafe { (report as *const u8).add(i).read_volatile() };
+        }
+        if !state.update(data, |key, down| {
+            crate::debug(if down {
+                b"MUSHA: HID_KEY_DOWN="
+            } else {
+                b"MUSHA: HID_KEY_UP="
+            });
+            crate::debug(&crate::cpu::hex(key as u64));
+            crate::debug(
+                b"
+",
+            );
+            if down {
+                super::clear_line(host.framebuffer, 356);
+                unsafe {
+                    host.framebuffer
+                        .text("KEY CODE", 24, 356, host.framebuffer.color(0, 220, 240));
+                    host.framebuffer.text(
+                        core::str::from_utf8(&crate::cpu::hex(key as u64)).unwrap(),
+                        240,
+                        356,
+                        host.framebuffer.color(0, 220, 240),
+                    );
+                }
+            }
+        }) {
+            crate::debug(
+                b"MUSHA: HID_ROLLOVER
+",
+            );
+        }
+        reports += 1;
+    }
+    crate::debug(b"MUSHA: HID_DIAGNOSTIC_OK REPORTS=");
+    crate::debug(&crate::cpu::hex(reports));
+    crate::debug(
+        b"
+",
+    );
     Ok(())
 }
