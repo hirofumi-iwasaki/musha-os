@@ -1,5 +1,5 @@
 [workspace]
-members = ["boot", "framebuffer", "memory", "platform", "api"]
+members = ["boot", "framebuffer", "memory", "platform", "api", "xhci"]
 resolver = "2"
 
 [profile.dev]

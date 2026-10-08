@@ -202,3 +202,16 @@ pub(crate) unsafe fn disable_dma(c: Controller) {
         asm!("out dx, ax",in("dx") 0xcfcu16,in("ax") command & !4,options(nomem,nostack));
     }
 }
+
+/// Enable only when every DMA pointer and ring is ready, while xHC is halted.
+pub(crate) unsafe fn enable_dma(c: Controller) {
+    let command = unsafe { read(c.bus, c.device, c.function, 4) } as u16;
+    let address = 0x80000004u32
+        | ((c.bus as u32) << 16)
+        | ((c.device as u32) << 11)
+        | ((c.function as u32) << 8);
+    unsafe {
+        asm!("out dx, eax",in("dx") 0xcf8u16,in("eax") address,options(nomem,nostack));
+        asm!("out dx, ax",in("dx") 0xcfcu16,in("ax") command | 4,options(nomem,nostack));
+    }
+}

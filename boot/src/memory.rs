@@ -124,6 +124,7 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             Range::new(info.emergency_base, 32768)?,
             Range::new(info.table_base, info.table_bytes)?,
             Range::new(info.framebuffer.base, info.framebuffer.bytes)?.aligned()?,
+            Range::new(info.dma_base, info.dma_bytes)?,
         ];
         for (i, a) in reserved.iter().enumerate() {
             if a.end > physical_limit {
@@ -134,6 +135,24 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
                     return Err(Error::Overlap);
                 }
             }
+        }
+        if info.dma_base % PAGE != 0 || info.dma_bytes % PAGE != 0 || reserved[7].end > 1usize << 32
+        {
+            return Err(Error::Invalid);
+        }
+        let mut dma_valid = false;
+        for i in 0..map.count() {
+            let region = map.region(i)?;
+            if region.kind == 2
+                && region.range.start <= reserved[7].start
+                && region.range.end >= reserved[7].end
+                && region.attributes & ((1 << 13) | (1 << 17)) == 0
+            {
+                dma_valid = true;
+            }
+        }
+        if !dma_valid {
+            return Err(Error::Invalid);
         }
         let mmio = if info.xhci.bytes != 0 {
             let range = Range::new(info.xhci.base, info.xhci.bytes)?;
@@ -192,6 +211,8 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             tables.map(*range, true, false, tables.wb)?;
         }
         tables.map(reserved[6], true, false, tables.uc)?;
+        // Dedicated DMA pages use UC, including non-snooping scratchpads.
+        tables.map(reserved[7], true, false, tables.uc)?;
         tables.map(arena, true, false, tables.wb)?;
         if let Some(range) = mmio {
             tables.map(range, true, false, tables.uc)?;
@@ -203,6 +224,10 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         let cr0: usize;
         asm!("mov {}, cr0",out(reg) cr0,options(nomem,nostack));
         asm!("mov cr0, {}",in(reg) cr0|(1<<16),options(nostack));
+        // Old firmware mappings may have cached these newly allocated pages as
+        // WB. Flush dirty lines before changing DMA/GOP pages to UC, then flush
+        // translations via CR3. No DMA-pool access occurs between these steps.
+        asm!("mfence", "wbinvd", options(nostack));
         asm!("mov cr3, {}",in(reg) tables.base,options(nostack));
         let active: usize;
         asm!("mov {}, cr3",out(reg) active,options(nomem,nostack));

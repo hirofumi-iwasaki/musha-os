@@ -12,7 +12,7 @@ GDT / IDT / TSSと4段ページテーブルは自前設定へ切り替える。
 予約領域を除外したRAM arenaを診断アプリへ渡し、各ページの両端を読書きする。
 CPU例外は診断後に停止し、復帰しない。
 ACPIのPM timer情報を引継ぎ、100msの経過とPCI機器の検出を診断する。
-xHCIは停止・リセットまで実装済み。USB機器の列挙・入出力、NIC、lwIP、
+xHCIは停止・リセットに加え、専用DMA / ringとNo-Op 600回の診断まで実装済み。USB機器の列挙・入出力、NIC、lwIP、
 HPET、panicの画面診断は未実装。アプリは64ページずつRAMを試験する協調step方式。
 BootInfoとメモリマップは専用LoaderDataページに保存し、回収しない。
 現在はRGB / BGRの32bit GOPだけに対応し、bitmask / BLT-onlyは拒否する。
@@ -50,7 +50,7 @@ QEMUとEDK2ファームウェアが必要。Homebrew版は次の手順で試験�
 `qemu-debug` はQEMU専用I/Oポートに成功マーカーを出すための機能で、実機版には含めない。
 
 ```sh
-cargo test -p musha-framebuffer -p musha-memory -p musha-platform
+cargo test -p musha-framebuffer -p musha-memory -p musha-platform -p musha-api -p musha-xhci
 cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features qemu-debug
 mkdir -p out/esp/EFI/BOOT
 cp target/x86_64-unknown-uefi/release/musha-boot.efi out/esp/EFI/BOOT/BOOTX64.EFI
@@ -73,7 +73,8 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ## 次の実装
 
-次は専用DMA poolとxHCIのcommand / event ring、No-Op完了確認を進める。
+次はport reset、Enable Slot、Address DeviceとUSB列挙を進める。
+[DMA / ring仕様](xhci-rings.md)を参照。
 [RustアプリAPI](app-api.md)と[xHCI初期化](xhci.md)を参照。
 [ACPIと時間源の契約](acpi-timer.md)を参照。
 r-efiはUEFI定義のみを利用する。[依存ライセンス](third-party.md)を参照。
@@ -121,3 +122,13 @@ CPU例外試験と同様にfeatureを一つだけ選んでEFIを再配置し、�
 `xhci-timeout` featureでビルドしてEFIを再配置し、smokeスクリプトに
 `--case xhci-timeout`を指定する。期限切れを診断し、アプリ実行と起動完了まで継続する。
 通常版はfeatureを外してビルドし直す。専用feature同士は組み合わせない。
+
+
+## Command ring timeout試験
+
+`xhci-command-timeout` featureでビルドしてEFIを再配置し、smokeスクリプトへ
+`--case xhci-command-timeout`を渡す。doorbellを省略して20msの期限切れを検査し、
+controller停止、BME解除、アプリ完了と起動完了まで確認する。
+試験後は `sh tools/build-esp.sh` で通常版へ戻す。
+
+今回の検証: ホスト20テスト、QEMUの通常600 No-Op・command timeout・null書込のページ保護が成功。

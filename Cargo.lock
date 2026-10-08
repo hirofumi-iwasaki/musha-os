@@ -17,6 +17,7 @@ dependencies = [
  "musha-framebuffer",
  "musha-memory",
  "musha-platform",
+ "musha-xhci",
  "r-efi",
 ]
 
@@ -30,6 +31,10 @@ version = "0.1.0"
 
 [[package]]
 name = "musha-platform"
+version = "0.1.0"
+
+[[package]]
+name = "musha-xhci"
 version = "0.1.0"
 
 [[package]]

@@ -19,6 +19,7 @@ const _: () = assert!(
         + (cfg!(feature = "fault-nx") as usize)
         + (cfg!(feature = "fault-guard") as usize)
         + (cfg!(feature = "xhci-timeout") as usize)
+        + (cfg!(feature = "xhci-command-timeout") as usize)
         <= 1,
     "Select only one injected fault"
 );
@@ -54,6 +55,8 @@ struct BootInfo {
     table_bytes: usize,
     timer: musha_platform::Timer,
     xhci: pci::Controller,
+    dma_base: usize,
+    dma_bytes: usize,
 }
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -251,11 +254,16 @@ pub extern "efiapi" fn efi_main(
             return efi::Status::UNSUPPORTED;
         }
         let xhci = pci::discover_xhci(bs);
-        let mut bases = [0u64; 5];
-        let page_counts = [STACK_PAGES, MAP_PAGES, 1, 8, 256];
-        for i in 0..5 {
+        let mut bases = [0u64; 6];
+        bases[5] = 0xffff_ffff;
+        let page_counts = [STACK_PAGES, MAP_PAGES, 1, 8, 256, 256];
+        for i in 0..6 {
             let status = ((*bs).allocate_pages)(
-                efi::ALLOCATE_ANY_PAGES,
+                if i == 5 {
+                    efi::ALLOCATE_MAX_ADDRESS
+                } else {
+                    efi::ALLOCATE_ANY_PAGES
+                },
                 efi::LOADER_DATA,
                 page_counts[i],
                 &mut bases[i],
@@ -267,7 +275,7 @@ pub extern "efiapi" fn efi_main(
                 return status;
             }
         }
-        let [stack, map, handoff, emergency, tables] = bases;
+        let [stack, map, handoff, emergency, tables, dma] = bases;
         let info = handoff as *mut BootInfo;
         core::ptr::write(
             info,
@@ -289,6 +297,8 @@ pub extern "efiapi" fn efi_main(
                 table_bytes: 256 * 4096,
                 timer: musha_platform::Timer { port: 0, bits: 24 },
                 xhci,
+                dma_base: dma as usize,
+                dma_bytes: 256 * 4096,
             },
         );
         // ACPI is validated while firmware mappings still exist. Copy only the
