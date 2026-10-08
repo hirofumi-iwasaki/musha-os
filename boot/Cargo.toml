@@ -1,0 +1,49 @@
+[package]
+name = "musha-boot"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+r-efi = "=5.3.0"
+musha-framebuffer = { path = "../framebuffer" }
+
+musha-memory = { path = "../memory" }
+
+musha-platform = { path = "../platform" }
+
+musha-api = { path = "../api" }
+
+musha-xhci = { path = "../xhci" }
+
+musha-fs = { path = "../fs" }
+
+musha-net = { path = "../net" }
+
+[features]
+qemu-debug = []
+fault-ud = ["qemu-debug"]
+fault-gp = ["qemu-debug"]
+fault-df = ["qemu-debug"]
+fault-pf = ["qemu-debug"]
+fault-ro = ["qemu-debug"]
+fault-nx = ["qemu-debug"]
+fault-guard = ["qemu-debug"]
+
+xhci-timeout = ["qemu-debug"]
+
+xhci-command-timeout = ["qemu-debug"]
+
+usb-descriptor-timeout = ["qemu-debug"]
+
+input-persistent = ["qemu-debug"]
+
+storage-timeout = ["qemu-debug"]
+
+net-tx-timeout = ["qemu-debug"]
+
+app-step-error = ["qemu-debug"]
+
+# Experimental PHY identity probe only; does not enable I218 networking.
+i218-phy-probe = []

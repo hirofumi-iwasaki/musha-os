@@ -1,0 +1,5 @@
+Source: https://github.com/lwip-tcpip/lwip
+Tag: STABLE-2_2_1_RELEASE
+Commit: 77dcd25a72509eb83f72b033d219b1d40cd8eb95
+Version: 2.2.1
+Selected source files, complete upstream headers, and COPYING are unmodified.

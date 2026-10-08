@@ -1,0 +1,11 @@
+[workspace]
+members = ["boot", "framebuffer", "memory", "platform", "api", "xhci", "fs", "net"]
+resolver = "2"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
