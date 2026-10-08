@@ -68,6 +68,84 @@ impl Clock {
         Some(self.ticks / 3_579_545 * 1000 + self.ticks % 3_579_545 * 1000 / 3_579_545)
     }
 }
+/// Bounded short PM-timer delay used by MDIO, including counter wrap.
+pub struct ShortDelay {
+    start: u32,
+    mask: u32,
+    ticks: u32,
+}
+impl ShortDelay {
+    pub fn new(timer: Timer, sample: u32, us: u32) -> Option<Self> {
+        if !(1..=1000).contains(&us) {
+            return None;
+        }
+        let mask = match timer.bits {
+            24 => 0xffffff,
+            32 => u32::MAX,
+            _ => return None,
+        };
+        let ticks = ((us as u64 * 3_579_545).div_ceil(1_000_000)) as u32;
+        Some(Self {
+            start: sample & mask,
+            mask,
+            ticks,
+        })
+    }
+    pub fn complete(&self, sample: u32) -> bool {
+        ((sample & self.mask).wrapping_sub(self.start) & self.mask) >= self.ticks
+    }
+}
+#[cfg(test)]
+mod short_delay_tests {
+    use super::*;
+    #[test]
+    fn calibrated_delay_and_wrap() {
+        for bits in [24, 32] {
+            let mask = if bits == 24 { 0xffffff } else { u32::MAX };
+            let d = ShortDelay::new(Timer { port: 0x408, bits }, mask - 100, 50).unwrap();
+            assert!(!d.complete(77));
+            assert!(d.complete(78));
+        }
+        let d = ShortDelay::new(
+            Timer {
+                port: 0x408,
+                bits: 24,
+            },
+            0,
+            1000,
+        )
+        .unwrap();
+        assert!(!d.complete(3579));
+        assert!(d.complete(3580));
+    }
+    #[test]
+    fn rejects_invalid_delays() {
+        for us in [0, 1001, u32::MAX] {
+            assert!(
+                ShortDelay::new(
+                    Timer {
+                        port: 0x408,
+                        bits: 24
+                    },
+                    0,
+                    us
+                )
+                .is_none()
+            );
+        }
+        assert!(
+            ShortDelay::new(
+                Timer {
+                    port: 0x408,
+                    bits: 16
+                },
+                0,
+                50
+            )
+            .is_none()
+        );
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

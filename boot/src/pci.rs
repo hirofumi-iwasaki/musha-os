@@ -169,9 +169,14 @@ pub(crate) unsafe fn discover(bs: *mut r_efi::efi::BootServices, nic: bool) -> C
                 }
                 if nic {
                     let mut id = 0u32;
+                    // Only the explicit probe build selects NUC5's expected
+                    // I218-V3 candidate; other I218 variants remain excluded.
+                    let eligible = |id: u32| {
+                        id == 0x10d38086 || (cfg!(feature = "i218-phy-probe") && id == 0x15a38086)
+                    };
                     if ((*p).pci.read)(p, pci_io::WIDTH_UINT32, 0, 1, (&mut id as *mut u32).cast())
                         .is_error()
-                        || id != 0x10d38086
+                        || !eligible(id)
                     {
                         continue;
                     }

@@ -21,6 +21,7 @@ After each stage, record completed scope, tests, known limitations, and the next
 - Stage 3: Initial QEMU 82574/lwIP diagnostic implemented and verified; see [network diagnostics](network.md). ARP, ICMP, UDP, ring wraps, checksum rejection and link-loss cleanup pass. NUC PHY initialization remains pending.
 - Stage 4: Initial [cooperative I/O runtime](cooperative-io.md) implemented and verified. Input, snapshot-file reads and QEMU networking progress together; idle/no-keyboard/disconnect, link loss, TX timeout, application error and Esc cleanup were tested. General asynchronous disk requests and the application UDP API remain pending.
 - Stage 5: [Hardware diagnostics](hardware-diagnostics.md) and the bilingual [test record template](hardware-test-record-template.md) are implemented and QEMU-verified. Normal builds show PCI/USB identity, initialization stages, failure details and file metadata. The five planned preparation stages are complete within their recorded initial scope; physical testing and NUC NIC implementation remain pending.
+- Subsequent work: the [I218 Rust port](i218-rust-port-plan.md) has started with source capture, bounded PHY access and opt-in probe integration. Power/reset/link/data-path implementation and physical verification remain pending.
 - Hardware validation: Pending arrival of the NUC5. NUC8 availability remains unconfirmed.
 
 ## 日本語
@@ -44,4 +45,5 @@ After each stage, record completed scope, tests, known limitations, and the next
 - 第3段階: 初期のQEMU 82574/lwIP診断を実装・検証。[ネットワーク診断](network.md)を参照。ARP・ICMP・UDP、ring周回、checksum拒否、link切断時の停止を確認。NUC PHY初期化は未実装。
 - 第4段階: 初期の[協調I/Oランタイム](cooperative-io.md)を実装・検証。入力・snapshot file read・QEMU通信が同時に進む。無入力・キーボードなし・切断、link切断、TX timeout、アプリerror、Esc cleanupを確認。一般の非同期disk要求とアプリUDP APIは未実装。
 - 第5段階: [実機診断](hardware-diagnostics.md)と英語・日本語の[試験記録様式](hardware-test-record-template.md)を実装しQEMUで検証。通常版でもPCI・USB機器情報、初期化段階、失敗詳細、ファイル情報を表示する。予定した5段階の準備は記載した初期範囲で完了。実機試験とNUC NIC実装は未完了。
+- 続く作業: [I218 Rust移植](i218-rust-port-plan.md)に着手し、原本保存、上限付きPHYアクセス、実験用probe統合を実施。電源/reset/link/送受信の実装と実機検証は未完了。
 - 実機検証: NUC5の到着待ち。NUC8の確保状況は未確認。

@@ -2,7 +2,7 @@
 
 ## English
 
-Implemented on 2026-10-08 for the QEMU `e1000e` 82574 device (PCI `8086:10D3`). It now runs within the [cooperative input/file/network session](cooperative-io.md). An application UDP API remains unimplemented. I218-V (NUC5) and I219-V (NUC8) initialization and physical verification remain pending. Other NICs report unsupported.
+Implemented on 2026-10-08 for the QEMU `e1000e` 82574 device (PCI `8086:10D3`). It now runs within the [cooperative input/file/network session](cooperative-io.md). An application UDP API remains unimplemented. I218-V (NUC5) and I219-V (NUC8) network initialization and physical verification remain pending. The initial [I218 PHY probe](i218-phy-probe.md) is opt-in and does not start a network session. Other NICs report unsupported.
 
 The original Rust driver uses legacy 16-byte descriptors, 16 RX entries and 8 TX entries, 2KiB buffers, and a dedicated 64KiB LoaderData allocation below 4GiB. This allocation is excluded from the application arena and mapped UC/RW/NX. Both controller BARs are checked for overlap and mapped UC. The supported NIC's bus mastering is disabled immediately after ExitBootServices, before constructing page tables and the arena. Initialization validates the device, memory decode, MAC, link, reset and EEPROM reload. DMA starts only after ring addresses are installed. RX uses DD/EOP/error/length validation and copies into CPU-owned storage. TX waits for completion before reusing buffers. Volatile accesses, compiler fences and x86 fences preserve DMA ordering. All device interrupts remain masked.
 
@@ -41,7 +41,7 @@ The driver is original code based on Intel's [82574 datasheet](https://www.mouse
 
 ## 日本語
 
-2026-10-08にQEMUの`e1000e`、82574（PCI `8086:10D3`）向け診断を実装した。現在は[入力・file・通信の協調セッション](cooperative-io.md)内で動く。アプリ用UDP APIは未実装。NUC5のI218-V、NUC8のI219-Vの初期化と実機検証は未実施。他のNICは非対応と報告する。
+2026-10-08にQEMUの`e1000e`、82574（PCI `8086:10D3`）向け診断を実装した。現在は[入力・file・通信の協調セッション](cooperative-io.md)内で動く。アプリ用UDP APIは未実装。NUC5のI218-V、NUC8のI219-Vの通信初期化と実機検証は未実施。初期の[I218 PHY probe](i218-phy-probe.md)は明示指定する診断で、network sessionを開始しない。他のNICは非対応と報告する。
 
 自作Rustドライバは16byteのlegacy descriptor、RX 16件、TX 8件、2KiB bufferを使用する。専用64KiBのLoaderDataを4GiB未満へ確保し、アプリarenaから除外してUC/RW/NXへmapする。2つのcontroller BARは重複を検査しUCへmapする。対応NICのbus masteringはExitBootServices直後、ページテーブル・arena構築前に無効化する。機種、memory decode、MAC、link、reset、EEPROM reloadを検査し、ringの設定完了後にDMAを開始する。RXはDD/EOP/error/長さを検査してCPU所有bufferへコピーする。TXは完了前にbufferを再利用しない。volatileアクセス、compiler fence、x86 fenceでDMA順序を保つ。device interruptは全てmaskする。
 

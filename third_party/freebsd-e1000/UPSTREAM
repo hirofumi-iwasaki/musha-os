@@ -1,0 +1,7 @@
+Repository: https://github.com/freebsd/freebsd-src
+Branch at capture: releng/14.3
+Commit: 833d39bd2e38421a14ea489a956261a0fa993fbc
+Path: sys/dev/e1000
+License: BSD-3-Clause (retain original notices)
+Selected unmodified reference sources; these C files are not compiled into Musha-OS.
+Rust adaptations identify this revision and retain the upstream terms.

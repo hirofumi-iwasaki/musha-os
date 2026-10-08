@@ -1,7 +1,9 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-//! Cooperative, polling-only session for the QEMU 82574. No I218/I219 support.
+//! Cooperative QEMU 82574 session; optional I218 PHY probe, no I218/I219 networking.
 use crate::{BootInfo, acpi, pci};
+#[cfg(feature = "i218-phy-probe")]
+mod i218;
 use core::{
     arch::asm,
     sync::atomic::{AtomicU32, Ordering, compiler_fence},
@@ -186,6 +188,11 @@ impl Session {
             crate::diagnostics::net_stage("DRIVER UNSUPPORTED / ABSENT");
             crate::debug(b"MUSHA: NET_UNSUPPORTED\n");
             return Ok(None);
+        }
+        #[cfg(feature = "i218-phy-probe")]
+        if unsafe { pci::read(c.bus, c.device, c.function, 0) } == 0x15a38086 {
+            i218::probe(c, time)?;
+            return Ok(None); // Probe identity is never a network-ready session.
         }
         if c.bytes < 0x6000
             || unsafe { pci::read(c.bus, c.device, c.function, 0) } != 0x10d38086

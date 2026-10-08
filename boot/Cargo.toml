@@ -44,3 +44,6 @@ storage-timeout = ["qemu-debug"]
 net-tx-timeout = ["qemu-debug"]
 
 app-step-error = ["qemu-debug"]
+
+# Experimental PHY identity probe only; does not enable I218 networking.
+i218-phy-probe = []
