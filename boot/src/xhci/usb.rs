@@ -275,6 +275,7 @@ pub(super) fn enumerate(
         if protocol.major == 0 {
             return Err("MISSING PROTOCOL");
         }
+        crate::diagnostics::usb_stage("PORT RESET");
         let (speed_id, speed) = port_reset(host, port, protocol)?;
         let output = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
         let input = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
@@ -300,11 +301,13 @@ pub(super) fn enumerate(
             publish(ring + (TRBS - 1) * 16, [ring as u32, 0, 0, (6 << 10) | 3]);
             core::arch::asm!("mfence", options(nostack));
         }
+        crate::diagnostics::usb_stage("SLOT / ADDRESS");
         host.command(input, (11 << 10) | ((slot as u32) << 24), slot)?; // BSR=0: xHC sends SET_ADDRESS
         let state = unsafe { read_word(output + 12) };
         if state >> 27 != 2 || state & 255 == 0 || state & 255 > 127 {
             return Err("ADDRESS STATE");
         }
+        crate::diagnostics::usb_stage("DEVICE DESCRIPTOR");
         get_descriptor(host, slot, ring, 0, buffer, 8)?;
         let mut prefix = [0u8; 8];
         for (i, b) in prefix.iter_mut().enumerate() {
@@ -332,6 +335,7 @@ pub(super) fn enumerate(
             }
             host.command(input, (13 << 10) | ((slot as u32) << 24), slot)?;
         }
+        crate::diagnostics::usb_stage("DEVICE DESCRIPTOR");
         get_descriptor(host, slot, ring, 3, buffer, 18)?;
         let mut descriptor = [0u8; 18];
         for (i, b) in descriptor.iter_mut().enumerate() {
@@ -342,6 +346,18 @@ pub(super) fn enumerate(
         if descriptor[7] != prefix[7] {
             return Err("DESCRIPTOR CHANGED");
         }
+        crate::diagnostics::usb(
+            port,
+            slot,
+            vendor,
+            product,
+            match speed {
+                musha_xhci::Speed::Low => "LOW",
+                musha_xhci::Speed::Full => "FULL",
+                musha_xhci::Speed::High => "HIGH",
+                musha_xhci::Speed::Super => "SUPER",
+            },
+        );
         crate::debug(b"MUSHA: USB_DEVICE PORT=");
         crate::debug(&crate::cpu::hex(port as u64));
         crate::debug(b" SLOT=");
@@ -353,6 +369,7 @@ pub(super) fn enumerate(
         crate::debug(b" PID=");
         crate::debug(&crate::cpu::hex(product as u64));
         crate::debug(b"\n");
+        crate::diagnostics::usb_stage("CONFIGURATION");
         let keyboard = configure(
             host, pool, slot, input, output, stride, ring, buffer, speed, port, tick,
         )?;
@@ -379,6 +396,7 @@ pub(super) fn enumerate(
     tick(super::AppEvent::Ready(active_keyboard.is_some()))?;
     if let Some(keyboard) = active_keyboard {
         let slot = keyboard.slot;
+        crate::diagnostics::usb_stage("KEYBOARD POLLING");
         run_keyboard(host, keyboard, tick)?;
         host.command(0, (10 << 10) | ((slot as u32) << 24), slot)?;
         unsafe {

@@ -2,6 +2,8 @@
 
 ## English
 
+Use the [hardware diagnostic panel](hardware-diagnostics.md) and copy the [test record template](hardware-test-record-template.md) for each configuration. Record image and EFI SHA-256, exact USB capacity, firmware, RAM, ports, and photographs. NUC5 LAN currently reports an unsupported driver; networking is not a completed hardware test.
+
 ### Hardware secured
 
 The user has reported securing a NUC5 and a 32GB USB drive.
@@ -32,7 +34,7 @@ GPT image reads are implemented; the initial [snapshot file API](file-api.md) is
 The final acceptance requirement of booting the same USB image in QEMU / NUC5 / NUC8 has not been met.
 
 On successful storage diagnostics, screens at least 444 pixels high display USB READ OK and capacity.
-Depending on port order, storage diagnostics may start after keyboard input ends with Esc.
+All initially discovered USB storage devices are probed before keyboard polling begins. Port order no longer requires ending keyboard input to start storage diagnostics.
 Reads from this physical USB drive have not been validated. See [supported scope](usb-storage.md).
 
 To check FAT32, place MUSHA.TXT of at most 4096 bytes in the root of supported USB media.
@@ -53,6 +55,8 @@ QEMU success alone does not establish support for hardware-specific USB routing 
 ---
 
 ## 日本語
+
+[実機診断パネル](hardware-diagnostics.md)を確認し、構成ごとに[試験記録様式](hardware-test-record-template.md)をコピーする。imageとEFIのSHA-256、USBの正確な容量、firmware、RAM、ポート、写真を記録する。NUC5 LANは現在driver未対応表示となり、実機通信試験は完了扱いにしない。
 
 **NUC5実機試験の準備**
 
@@ -85,7 +89,7 @@ GPTイメージ読出しは実装済み。初期の[snapshot file API](file-api.
 同一USBイメージでQEMU / NUC5 / NUC8を起動する最終合格条件は未達。
 
 ストレージ診断の成功時、高さ444pixel以上ならUSB READ OKと容量を表示する。
-ポート順によってはEscでキーボード入力を終えてからストレージ診断が始まる。
+初期検出したUSBストレージの診断はkeyboard polling開始前に行う。ポート順によってEsc終了までストレージ診断を待つ構成ではなくなった。
 この実物USBでの読出しはまだ検証していない。[対応範囲](usb-storage.md)を参照。
 
 FAT32の確認には、対応形式のUSBルートへ4096byte以下のMUSHA.TXTを配置する。

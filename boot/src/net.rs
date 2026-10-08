@@ -78,6 +78,7 @@ impl Nic {
         Err("TIMEOUT")
     }
     fn quiesce(&self) -> bool {
+        crate::diagnostics::net_stage("STOPPING");
         self.write(0xd8, u32::MAX);
         self.write(0x100, 0);
         self.write(0x400, 0);
@@ -87,11 +88,13 @@ impl Nic {
         unsafe { pci::read(self.c.bus, self.c.device, self.c.function, 4) & 4 == 0 }
     }
     fn initialize(&self, t: &mut acpi::Time) -> Result<(), &'static str> {
+        crate::diagnostics::net_stage("RESET");
         self.write(0xd8, u32::MAX);
         self.write(0x100, 0);
         self.write(0x400, 0);
         self.write(0, self.read(0) | (1 << 26));
         self.wait(t, 0, 1 << 26, 0, 100)?;
+        crate::diagnostics::net_stage("EEPROM / MAC");
         self.wait(t, 0x10, 1 << 9, 1 << 9, 1000)?;
         self.write(0xd8, u32::MAX);
         self.write(0xe0, 0);
@@ -108,8 +111,10 @@ impl Nic {
         if hi & (1 << 31) == 0 || mac[0] & 1 != 0 || mac == [0; 6] {
             return Err("MAC");
         }
+        crate::diagnostics::net_stage("LINK");
         self.write(0, self.read(0) | (1 << 6));
         self.wait(t, 8, 2, 2, 3000)?;
+        crate::diagnostics::net_stage("DMA / LWIP");
         // DMA storage is permanent, dedicated, below 4GiB and mapped UC/RW/NX.
         // No Rust references are formed to device-owned descriptors or buffers.
         unsafe {
@@ -175,8 +180,10 @@ impl Session {
         info: &BootInfo,
         time: &mut acpi::Time,
     ) -> Result<Option<Self>, &'static str> {
+        crate::diagnostics::net_stage("RESOURCE / INITIALIZE");
         let c = info.nic;
         if c.base == 0 {
+            crate::diagnostics::net_stage("DRIVER UNSUPPORTED / ABSENT");
             crate::debug(b"MUSHA: NET_UNSUPPORTED\n");
             return Ok(None);
         }
@@ -216,7 +223,11 @@ impl Session {
             polls: 0,
             stopped: false,
         };
-        session.nic.initialize(time)?;
+        if let Err(error) = session.nic.initialize(time) {
+            crate::diagnostics::net_failure(error);
+            return Err(error);
+        }
+        crate::diagnostics::net_stage("POLLING");
         session.started = time.now()?;
         Ok(Some(session))
     }
@@ -337,6 +348,10 @@ impl Session {
         unsafe {
             musha_lwip_counters(c.as_mut_ptr());
         }
+        crate::diagnostics::set(
+            23,
+            format_args!("NET UDP {:08X} ARP {:08X} ICMP {:08X}", c[2], c[0], c[1]),
+        );
         for (label, value) in [
             (b"MUSHA: NET_ARP=".as_slice(), c[0] as u64),
             (b" ICMP=", c[1] as u64),
@@ -358,9 +373,11 @@ impl Session {
             return;
         }
         if !self.nic.quiesce() {
+            crate::diagnostics::net_failure("DMA STOP");
             crate::debug(b"MUSHA: NET_FAILED DMA STOP\n");
             crate::stop();
         }
+        crate::diagnostics::net_stage("STOPPED DMA DISABLED");
         self.stopped = true;
         BDF.store(u32::MAX, Ordering::Relaxed);
         crate::debug(b"MUSHA: NET_QUIESCED DMA_DISABLED\n");
@@ -372,6 +389,7 @@ impl Drop for Session {
     }
 }
 pub(crate) fn failed(error: &str) {
+    crate::diagnostics::net_failure(error);
     crate::debug(b"MUSHA: NET_FAILED ");
     crate::debug(error.as_bytes());
     crate::debug(b"\n");

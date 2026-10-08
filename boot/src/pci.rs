@@ -45,9 +45,23 @@ pub(crate) fn diagnose(fb: Framebuffer) {
                 let class = unsafe { read(bus, device, function, 8) } >> 8;
                 count += 1;
                 if class == 0x0c0330 {
+                    if xhci == 0 {
+                        crate::diagnostics::pci(
+                            2,
+                            id,
+                            ((bus as u16) << 8) | ((device as u16) << 3) | function as u16,
+                        );
+                    }
                     xhci += 1;
                 }
                 if class >> 8 == 0x0200 && id as u16 == 0x8086 {
+                    if intel_lan == 0 {
+                        crate::diagnostics::pci(
+                            3,
+                            id,
+                            ((bus as u16) << 8) | ((device as u16) << 3) | function as u16,
+                        );
+                    }
                     intel_lan += 1;
                 }
                 field(

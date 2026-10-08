@@ -144,6 +144,7 @@ pub(super) fn probe(
     disk: Storage,
     tick: &mut dyn FnMut(super::super::AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
+    crate::diagnostics::usb_stage("STORAGE BOT / CAPACITY");
     let in_ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
     let out_ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
     let cbw = pool.allocate(64, 64).ok_or("DMA FULL")?;
@@ -219,6 +220,12 @@ pub(super) fn probe(
     let mut cap = [0u8; 8];
     copy(data, &mut cap);
     let (blocks, size) = storage::capacity(&cap).ok_or("CAPACITY RANGE")?;
+    crate::diagnostics::set(
+        19,
+        format_args!("MEDIA SLOT {:02X} BLOCKS {:016X}", slot, blocks),
+    );
+    crate::diagnostics::set(20, format_args!("SECTOR BYTES {:08X}", size));
+    crate::diagnostics::usb_stage("STORAGE SECTOR READ");
     crate::debug(b"MUSHA: STORAGE_CAPACITY BLOCKS=");
     crate::debug(&crate::cpu::hex(blocks));
     crate::debug(b" SECTOR=");
@@ -233,6 +240,7 @@ pub(super) fn probe(
         crate::debug(b"\n");
     }
     let mut file = [0u8; 4096];
+    crate::diagnostics::usb_stage("FAT32 FILE READ");
     let file_result = musha_fs::read_root(
         blocks,
         size as usize,
@@ -247,6 +255,11 @@ pub(super) fn probe(
     );
     match file_result {
         Ok(bytes) => {
+            crate::diagnostics::set(21, format_args!("FILE MUSHA.TXT BYTES {:08X}", bytes));
+            crate::diagnostics::set(
+                22,
+                format_args!("FILE HASH {:016X}", storage::hash(&file[..bytes])),
+            );
             tick(super::super::AppEvent::File(&file[..bytes]))?;
             crate::debug(b"MUSHA: FAT32_FILE_OK BYTES=");
             crate::debug(&crate::cpu::hex(bytes as u64));
@@ -266,12 +279,16 @@ pub(super) fn probe(
             }
         }
         Err(musha_fs::Error::Unsupported) => {
+            crate::diagnostics::set(21, format_args!("FILE FORMAT UNSUPPORTED"));
+            crate::diagnostics::set(22, format_args!("FILE HASH UNKNOWN"));
             tick(super::super::AppEvent::FileError(
                 musha_api::Error::Unsupported,
             ))?;
             crate::debug(b"MUSHA: FAT32_UNSUPPORTED\n");
         }
         Err(musha_fs::Error::NotFound) => {
+            crate::diagnostics::set(21, format_args!("FILE MUSHA.TXT MISSING"));
+            crate::diagnostics::set(22, format_args!("FILE HASH UNKNOWN"));
             tick(super::super::AppEvent::FileError(
                 musha_api::Error::NotFound,
             ))?;

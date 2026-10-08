@@ -54,18 +54,31 @@ impl Framebuffer {
     /// # Safety
     /// Same mapping/ownership requirements as pixel.
     pub unsafe fn text(&self, text: &str, x: usize, y: usize, color: u32) {
+        unsafe {
+            self.text_scaled(text, x, y, color, 3);
+        }
+    }
+    /// # Safety
+    /// Same mapping/ownership requirements as pixel.
+    pub unsafe fn text_small(&self, text: &str, x: usize, y: usize, color: u32) {
+        unsafe {
+            self.text_scaled(text, x, y, color, 1);
+        }
+    }
+    unsafe fn text_scaled(&self, text: &str, x: usize, y: usize, color: u32, scale: usize) {
         for (i, ch) in text.bytes().enumerate() {
-            let Some(left) = i.checked_mul(18).and_then(|v| x.checked_add(v)) else {
+            let Some(left) = i.checked_mul(6 * scale).and_then(|v| x.checked_add(v)) else {
                 break;
             };
             for (row, bits) in glyph(ch).iter().enumerate() {
                 for col in 0..5 {
                     if bits & (1 << (4 - col)) != 0 {
-                        for dy in 0..3 {
-                            for dx in 0..3 {
-                                if let (Some(px), Some(py)) =
-                                    (left.checked_add(col * 3 + dx), y.checked_add(row * 3 + dy))
-                                {
+                        for dy in 0..scale {
+                            for dx in 0..scale {
+                                if let (Some(px), Some(py)) = (
+                                    left.checked_add(col * scale + dx),
+                                    y.checked_add(row * scale + dy),
+                                ) {
                                     unsafe {
                                         self.pixel(px, py, color);
                                     }
@@ -81,6 +94,14 @@ impl Framebuffer {
 // Original minimal 5x7 bitmap glyphs for this boot milestone, not a third-party font.
 fn glyph(ch: u8) -> [u8; 7] {
     match ch {
+        b'G' => [14, 17, 16, 23, 17, 17, 14],
+        b'J' => [7, 2, 2, 2, 18, 18, 12],
+        b'Q' => [14, 17, 17, 17, 21, 18, 13],
+        b'Z' => [31, 1, 2, 4, 8, 16, 31],
+        b'.' => [0, 0, 0, 0, 0, 4, 4],
+        b':' => [0, 4, 4, 0, 4, 4, 0],
+        b'/' => [1, 1, 2, 4, 8, 16, 16],
+        b'=' => [0, 0, 31, 0, 31, 0, 0],
         b'H' => [17, 17, 17, 31, 17, 17, 17],
         b'e' => [0, 0, 14, 17, 31, 16, 14],
         b'l' => [12, 4, 4, 4, 4, 4, 14],
@@ -183,6 +204,27 @@ mod tests {
                 assert_eq!(*value, 0xdeadbeef);
             }
         }
+    }
+    #[test]
+    fn small_text_clips_without_touching_padding_or_guards() {
+        let mut memory = [0xdeadbeefu32; 42];
+        let f = Framebuffer {
+            base: memory.as_mut_ptr() as usize,
+            bytes: 40 * 4,
+            width: 3,
+            height: 8,
+            stride: 5,
+            format: 0,
+        };
+        unsafe {
+            f.text_small("GQ:Z", 1, 2, 0x123456);
+            f.text_small("A", usize::MAX, usize::MAX, 0);
+        }
+        assert!(memory[..40].contains(&0x123456));
+        for y in 0..8 {
+            assert_eq!(&memory[y * 5 + 3..y * 5 + 5], &[0xdeadbeef; 2]);
+        }
+        assert_eq!(&memory[40..], &[0xdeadbeef; 2]);
     }
     #[test]
     fn pixel_formats() {

@@ -14,6 +14,7 @@ parser.add_argument('--storage-fixture',type=int,choices=[512,4096])
 parser.add_argument('--storage-high-speed',action='store_true')
 parser.add_argument('--fat-fixture',choices=['mbr','superfloppy','gpt'])
 parser.add_argument('--usb-image',type=pathlib.Path,help='Boot an actual GPT/FAT32 USB image read-only')
+parser.add_argument('--nic', choices=['e1000e','e1000'],default='e1000e',help='e1000 exercises the unsupported Intel NIC diagnostic')
 args=parser.parse_args()
 if args.storage_fixture and args.fat_fixture:parser.error('Choose one fixture type')
 if args.usb_image and args.fat_fixture:parser.error('Choose either a boot image or a FAT fixture; the API selects the first successful file')
@@ -26,7 +27,7 @@ shutil.copyfile(firmware/'edk2-i386-vars.fd',out/'vars.fd')
 log=out/'debug.log';log.write_text('')
 qmp_path=out/'qmp.sock'
 if qmp_path.exists(): qmp_path.unlink()
-cmd=[args.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev','user,id=net0','-device','e1000e,netdev=net0',
+cmd=[args.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev','user,id=net0','-device',args.nic+',netdev=net0',
  '-drive',f'if=pflash,format=raw,readonly=on,file={firmware / "edk2-x86_64-code.fd"}',
  '-drive',f'if=pflash,format=raw,file={out / "vars.fd"}',
  '-drive',f'if=none,id=esp,format=raw,file=fat:rw:{root / "out/esp"}',
@@ -148,7 +149,7 @@ with (out/'qemu.log').open('w') as err:
      if 'MUSHA: APP_LIFECYCLE_OK STEPS=' not in text:raise RuntimeError('App lifecycle failed: '+text)
      if 'MUSHA: XHCI_RESET_OK PORTS=' not in text or 'DMA_DISABLED' not in text:raise RuntimeError('xHCI reset failed: '+text)
      if 'MUSHA: ACPI_TIMER_OK MS=' not in text:raise RuntimeError('Timer probe failed: '+text)
-     if 'CLASS=00000000000C0330' not in text or 'ID=0000000010D38086 CLASS=0000000000020000' not in text:
+     if 'CLASS=00000000000C0330' not in text or ('ID=00000000'+('10D3' if args.nic=='e1000e' else '100E')+'8086 CLASS=0000000000020000') not in text:
       raise RuntimeError('Expected xHCI and Intel 82574 missing: '+text)
      if 'MUSHA: PCI_ENUMERATION_OK' not in text:raise RuntimeError('PCI enumeration incomplete')
     if args.case not in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt']:
@@ -161,6 +162,20 @@ with (out/'qemu.log').open('w') as err:
      time.sleep(0.1);continue
     if args.case in ['xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt'] and 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('DMA cleanup missing: '+text)
     if args.case=='storage-timeout' and 'MUSHA: STORAGE_CAPACITY BLOCKS=' not in text:raise RuntimeError('Read timeout was not reached')
+    if args.case in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt']:
+     required=['MUSHA: DIAG STATE SESSION COMPLETE','MUSHA: DIAG XHCI PCI 1B36:000D']
+     if args.case=='normal':
+      required+=['MUSHA: DIAG USB STEP STOPPED DMA DISABLED','MUSHA: DIAG USB PORT','46F4:0001','0627:0001',
+       'MUSHA: DIAG LAN PCI 8086:'+('10D3' if args.nic=='e1000e' else '100E'),
+       'MUSHA: DIAG NET STEP '+('STOPPED DMA DISABLED' if args.nic=='e1000e' else 'DRIVER UNSUPPORTED / ABSENT')]
+      if args.usb_image:required+=['MUSHA: DIAG FILE MUSHA.TXT BYTES 00000010','MUSHA: DIAG FILE HASH 9A42A948C590F507']
+     else:
+      required+=['MUSHA: DIAG FAIL AT USB STEP','MUSHA: DIAG USB ERROR']
+      stages={'xhci-timeout':'HALT','xhci-command-timeout':'RINGS / COMMANDS','usb-descriptor-timeout':'DEVICE DESCRIPTOR','storage-timeout':'STORAGE SECTOR READ','fat-corrupt':'FAT32 FILE READ'}
+      required+=['MUSHA: DIAG FAIL AT USB STEP '+stages[args.case]]
+     for expected in required:
+      if expected not in text:raise RuntimeError('Hardware diagnostic missing: '+expected+'\n'+text)
+
     break
    if proc.poll() is not None:raise RuntimeError((out/'qemu.log').read_text())
    time.sleep(0.001 if args.keyboard_wrap else 0.1)

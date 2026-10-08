@@ -6,6 +6,7 @@
 mod acpi;
 mod app;
 mod cpu;
+mod diagnostics;
 mod memory;
 mod net;
 mod pci;
@@ -92,6 +93,8 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     if info.magic != 0x4d55534841424f4f || info.version != 1 {
         stop();
     }
+    diagnostics::start(info.framebuffer);
+    diagnostics::set(1, format_args!("STATE CPU TABLES"));
     // Stop the supported NIC before constructing the arena or new page tables.
     if info.nic.base != 0 {
         unsafe {
@@ -111,6 +114,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     unsafe {
         cpu::initialize(info);
     }
+    diagnostics::set(1, format_args!("STATE PAGING / ARENA"));
     let arena = match unsafe { memory::initialize(info) } {
         Ok(arena) => arena,
         Err(error) => {
@@ -123,6 +127,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
                     ("MEMORY UNSUPPORTED", b"MUSHA: MEMORY_UNSUPPORTED\n")
                 }
             };
+            diagnostics::set(1, format_args!("STATE {}", label));
             debug(message);
             unsafe {
                 info.framebuffer
@@ -147,11 +152,14 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         info.framebuffer
             .text("RUNTIME READY", 24, 64, info.framebuffer.color(0, 240, 100));
     }
+    diagnostics::set(1, format_args!("STATE PCI / APPLICATION"));
     acpi::diagnose(info.timer, info.framebuffer);
     pci::diagnose(info.framebuffer);
     let arena_base = arena.as_mut_ptr() as usize;
     // Diagnostic app owns the sole mutable arena borrow and exercises every page.
     if app::run(arena, info).is_err() {
+        diagnostics::set(1, format_args!("STATE APP FAILED"));
+        diagnostics::snapshot();
         debug(b"MUSHA: APP_FAILED\n");
         unsafe {
             info.framebuffer
@@ -177,6 +185,8 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     }
     #[cfg(not(feature = "fault-nx"))]
     let _ = arena_base;
+    diagnostics::set(1, format_args!("STATE SESSION COMPLETE"));
+    diagnostics::snapshot();
     debug(b"MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK\n");
     #[cfg(feature = "fault-ud")]
     unsafe {

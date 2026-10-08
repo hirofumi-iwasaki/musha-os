@@ -38,10 +38,13 @@ An initial read-only [application file API](docs/file-api.md) is implemented for
 [Cooperative input, snapshot-file reads and QEMU networking](docs/cooperative-io.md) now run in the same session, including idle input and isolated device failures.
 The first diagnostic application displays `Hello Musha-OS!` and is designed to
 check the display, input, RAM, file, and UDP status.
+The normal build includes a persistent [hardware diagnostic panel](docs/hardware-diagnostics.md); use the [hardware test record template](docs/hardware-test-record-template.md) for physical tests.
 See [development and build instructions](docs/development.md).
 
 ### Policy documents
 
+- [Hardware diagnostics](docs/hardware-diagnostics.md)
+- [Hardware test record template](docs/hardware-test-record-template.md)
 - [Work plan before hardware arrival](docs/pre-hardware-work-plan.md)
 
 - [Musha-OS baseline policy 0.1.0](docs/policy-v0.1.md)
@@ -101,6 +104,7 @@ QEMUでNo-Op 600回の完了、リング周回と停止を確認済みです。
 USBポートをリセットし、USBメモリとキーボードのDevice Descriptor読出しを確認済みです。
 [USB列挙の範囲と制約](docs/usb-enumeration.md)を参照。Boot Keyboardの押下・解放診断をQEMUで確認済みです。
 [キーボード診断](docs/usb-keyboard.md)と[NUC5試験準備](docs/nuc5-bringup.md)を参照。
+通常版の[実機診断表示](docs/hardware-diagnostics.md)と[試験記録様式](docs/hardware-test-record-template.md)も追加済みです。
 単一キーボードからアプリへの継続入力を追加しました。通常版はEscで診断を終了します。
 USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済みです。
 [ストレージ診断](docs/usb-storage.md)を参照。[FAT32読出し診断](docs/fat32.md)を追加し、ルートのMUSHA.TXTをQEMUで確認済みです。
@@ -111,6 +115,8 @@ USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済み
 
 ### 方針書
 
+- [実機診断](docs/hardware-diagnostics.md)
+- [実機試験記録様式](docs/hardware-test-record-template.md)
 - [実機到着前の作業方針](docs/pre-hardware-work-plan.md)
 
 - [Musha-OS 基本方針 0.1.0](docs/policy-v0.1.md)

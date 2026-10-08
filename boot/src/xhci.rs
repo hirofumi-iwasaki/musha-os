@@ -62,6 +62,7 @@ fn wait(
     Err("CLOCK STALLED")
 }
 fn reset(info: &BootInfo) -> Result<(), &'static str> {
+    crate::diagnostics::usb_stage("CAPABILITY");
     let c = info.xhci;
     if c.bytes == 0 {
         return Err("NOT FOUND");
@@ -101,6 +102,7 @@ fn reset(info: &BootInfo) -> Result<(), &'static str> {
             return Err("CLOCK STALLED");
         }
     }
+    crate::diagnostics::usb_stage("OWNERSHIP");
     let mut next = ((regs.read(0x10)? >> 16) as usize) * 4;
     let mut traversed = 0;
     while next != 0 {
@@ -131,6 +133,7 @@ fn reset(info: &BootInfo) -> Result<(), &'static str> {
         }
         next = next.checked_add(delta).ok_or("EXT CAPABILITY")?;
     }
+    crate::diagnostics::usb_stage("HALT");
     wait(&regs, &mut clock, op + 4, 1 << 11, 0, 1000)?;
     let command = regs.read(op)?;
     regs.write(op, command & !0xd)?; // R/S, INTE, HSEE off
@@ -143,6 +146,7 @@ fn reset(info: &BootInfo) -> Result<(), &'static str> {
     }
     #[cfg(feature = "xhci-timeout")]
     wait(&regs, &mut clock, op + 4, 1, 0, 20)?; // held halted: deadline must expire
+    crate::diagnostics::usb_stage("RESET");
     regs.write(op, regs.read(op)? | 2)?; // preserve reserved command bits
     wait(&regs, &mut clock, op, 2, 0, 1000)?;
     wait(&regs, &mut clock, op + 4, 1 << 11, 0, 1000)?;
@@ -164,10 +168,14 @@ pub(crate) fn diagnose(
     info: &BootInfo,
     tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
-    let result = reset(info).and_then(|()| command_probe(info, tick));
+    let result = reset(info).and_then(|()| {
+        crate::diagnostics::usb_stage("RINGS / COMMANDS");
+        command_probe(info, tick)
+    });
     let (label, color) = match result {
         Ok(()) => ("USB ENUMERATED", info.framebuffer.color(0, 240, 100)),
         Err(error) => {
+            crate::diagnostics::usb_failure(error);
             crate::debug(b"MUSHA: XHCI_FAILED ");
             crate::debug(error.as_bytes());
             crate::debug(b"\n");
@@ -427,6 +435,9 @@ fn command_probe(
         usb::enumerate(&mut host, &mut pool, dcbaa, tick)?;
         Ok(())
     })();
+    if let Err(error) = result {
+        crate::diagnostics::usb_failure(error);
+    }
     let halted = (|| {
         let command = regs.read(op)?;
         regs.write(op, command & !0xd)?;
@@ -440,6 +451,7 @@ fn command_probe(
     if halted.is_err() || !disabled {
         return Err("QUIESCE FAILED");
     }
+    crate::diagnostics::usb_stage("STOPPED DMA DISABLED");
     crate::debug(b"MUSHA: XHCI_QUIESCED DMA_DISABLED\n");
     result
 }

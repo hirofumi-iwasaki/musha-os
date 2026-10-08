@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
+pub mod diagnostics;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct Timer {
