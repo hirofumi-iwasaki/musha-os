@@ -2,6 +2,8 @@
 
 ## English
 
+The [one-command build](test-usb-build.md) creates both a raw image and a FAT32 file-copy bundle.
+
 ### Scope and layout
 
 Stage 1 of the [pre-hardware work plan](pre-hardware-work-plan.md) is implemented and verified in QEMU. Physical NUC5 / NUC8 boot tests remain pending.
@@ -44,6 +46,8 @@ QEMU booted the generated 64MiB GPT image and read its root text file successful
 Reference: [UEFI 2.11 GPT format](https://uefi.org/specs/UEFI/2.11/05_GUID_Partition_Table_Format.html).
 
 ## 日本語
+
+[一括ビルド](test-usb-build.md)でディスクイメージとFAT32への配置用ファイル一式を生成できます。
 
 ### 対象範囲と構成
 

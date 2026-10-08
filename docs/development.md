@@ -2,6 +2,8 @@
 
 ## English
 
+For an end-to-end normal build and USB artifacts, see [test USB build](test-usb-build.md).
+
 ### Current implementation scope
 
 The Rust no_std UEFI application obtains GOP information and draws
@@ -187,6 +189,8 @@ The fixture is not for UEFI boot on physical hardware. See [supported scope](fat
 ---
 
 ## 日本語
+
+通常ビルドからUSB用ファイルまでの一括生成は[テストUSBビルド](test-usb-build.md)を参照してください。
 
 **開発手順と最初の実装**
 

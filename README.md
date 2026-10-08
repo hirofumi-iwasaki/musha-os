@@ -40,6 +40,7 @@ The first diagnostic application displays `Hello Musha-OS!` and is designed to
 check the display, input, RAM, file, and UDP status.
 The normal build includes a persistent [hardware diagnostic panel](docs/hardware-diagnostics.md); use the [hardware test record template](docs/hardware-test-record-template.md) for physical tests.
 See [development and build instructions](docs/development.md).
+Build a test image and FAT32 USB bundle with the [one-command USB build](docs/test-usb-build.md).
 
 ### Policy documents
 
@@ -130,6 +131,8 @@ USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済み
 - [0.1.0 実装計画と設計完了条件](docs/implementation-plan-0.1.0.md)
 
 最初のリリース番号は `0.1.0` です。現在は設計と実装を継続中で、リリース済みではありません。
+
+テストイメージとFAT32 USB用ファイル一式の生成方法は[一括USBビルド](docs/test-usb-build.md)を参照してください。
 
 ### リポジトリ構成
 
