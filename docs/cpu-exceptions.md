@@ -1,8 +1,64 @@
-# CPUテーブルと例外診断
+# CPU tables and exception diagnostics
+
+## English
+
+Implemented on 2026-10-08. Targets the initial x86-64 BSP runtime at ring 0 with interrupts disabled.
+
+### Tables and lifetime
+
+The GDT contains null, 64-bit code (selector 0x08), data (0x10), and a 64-bit TSS (0x18, two entries).
+After lgdt, change CS with a far return, set DS / ES / SS, and enable the TSS with ltr.
+The IDT uses 256 16-byte interrupt gates at ring 0 with selector 0x08.
+Check sgdt / sidt / CS / TR readbacks before outputting boot success.
+
+Place GDT / IDT / TSS in fixed regions of the EFI image; do not move or reclaim them.
+In addition to BootInfo and the normal 64KiB stack, allocate 32KiB of LoaderData
+for emergency stacks before ExitBootServices.
+The first 16KiB is IST1 for #DF; the second 16KiB is IST2 for NMI.
+Set the TSS I/O map offset to 104 without providing an I/O bitmap.
+Keep these regions identity-mapped and reserved when page-table management is introduced.
+
+### Exception entry
+
+Vectors 0–31 each have a dedicated stub.
+The CPU pushes an error code for vectors 8, 10, 11, 12, 13, 14, 17, 21, 29, and 30;
+other stubs supply error 0.
+Pass vector / error / RIP / CS / RFLAGS / RSP / SS to the common entry.
+Using the Win64 calling convention, pass the frame base in RCX, align the stack to 16 bytes,
+reserve 32 bytes of shadow space, and call the Rust diagnostic function. Clear the direction flag.
+Because handlers never return, do not save general-purpose registers or execute iretq.
+
+Display CPU EXCEPTION, VECTOR, ERROR, RIP, and CR2 through GOP.
+Read CR2 only for #PF; display 0 for other exceptions.
+If another exception occurs during the first diagnostic, halt to avoid reentrant drawing.
+External interrupts are not enabled yet. Vectors 32–255 use a common entry
+that halts as unknown vector 255, without individual IRQ handling or EOI.
+
+### Tests and limitations
+
+Verify normal boot, #UD, #GP, and #DF in QEMU.
+Trigger #UD with ud2 and #GP by loading DS with selector 0x28 outside the GDT.
+For #DF, fault injection disables the #GP gate before triggering #GP, checking IST1.
+Fault-injection features are excluded from normal builds.
+
+NMI, machine check, and all reserved-vector behavior remain untested.
+#PF has been verified with our own page tables.
+Recovery, interrupt-driven operation, panic-information display, emergency-stack guard pages,
+complete FPU / SIMD state management, and hardware tests remain future work.
+A #DF test with the normal stack completely unavailable has not been performed.
+Handling NMI during the short GDT-to-IDT transition is not yet guaranteed.
+
+Reference: [Intel SDM Volume 3 exception and 64-bit IDT / TSS specifications](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)
+
+---
+
+## 日本語
+
+**CPUテーブルと例外診断**
 
 2026-10-08実装。対象はx86-64のBSP、ring 0、割込み無効の初期ランタイム。
 
-## テーブルと寿命
+### テーブルと寿命
 
 GDTはnull、64bit code（selector 0x08）、data（0x10）、64bit TSS（0x18、2項目）。
 lgdt後にfar returnでCSを変更し、DS / ES / SSを設定、ltrでTSSを有効にする。
@@ -15,7 +71,7 @@ ExitBootServices前に確保する。前半16KiBは#DFのIST1、後半16KiBはNM
 TSSのI/O map offsetは104とし、I/O bitmapは提供しない。
 ページテーブル管理を導入する際も、これらを恒等マップ・予約範囲として保持する。
 
-## 例外入口
+### 例外入口
 
 vector 0〜31はそれぞれ専用スタブを持つ。CPUがerror codeを積むvectorは
 8、10、11、12、13、14、17、21、29、30。ほかはスタブでerror 0を補う。
@@ -30,7 +86,7 @@ CR2は#PFだけで読み取り、それ以外は0と表示する。
 外部割込みはまだ有効にしない。vector 32〜255は未知vector 255として停止する
 共通入口を使い、個別のIRQ処理やEOIは行わない。
 
-## 試験と制約
+### 試験と制約
 
 QEMUで通常起動、#UD、#GP、#DFを確認する。
 #UDはud2、#GPはGDT範囲外selector 0x28のDSへのロードで発生させる。

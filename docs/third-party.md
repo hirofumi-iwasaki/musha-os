@@ -1,4 +1,22 @@
-# 第三者依存
+# Third-party dependencies
+
+## English
+
+| Dependency | Pinned version | License | Purpose |
+|---|---|---|---|
+| r-efi | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later | UEFI type and protocol definitions |
+
+We use r-efi under its Apache-2.0 option without modifications.
+Source: https://github.com/r-efi/r-efi . When distributing it, retain the dependency's
+copyright and attribution notices alongside the project's LICENSE.
+Cargo fetches the upstream source. If vendoring the source, include its original license files.
+Cargo.lock checksums pin the fetched artifacts. lwIP has not yet been incorporated.
+
+---
+
+## 日本語
+
+**第三者依存**
 
 | 依存 | 固定版 | ライセンス | 用途 |
 |---|---|---|---|

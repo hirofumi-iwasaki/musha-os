@@ -1,6 +1,80 @@
-# USB Boot Keyboard診断
+# USB Boot Keyboard diagnostics
 
-## 設定と入力
+## English
+
+### Configuration and input
+
+After obtaining the Device Descriptor, read the first nine bytes and then the full configuration at index 0.
+Limit it to 1024 bytes. Validate descriptor lengths, total length, boundaries,
+HID descriptors, endpoint count for the target interface, packet size, and interval.
+Select a Boot Keyboard with alt setting 0, class 3, subclass 1, and protocol 1.
+Allow one input candidate per configuration; multiple candidates are a failure.
+Only enumerate nontarget devices; do not Set Configuration for them.
+
+Target directly connected Low / Full / High-speed keyboards.
+Register the Interrupt IN endpoint with Configure Endpoint.
+Use DCI=endpoint number*2+1, CErr=3, MaxBurst=0, and DCS=1.
+HS interval is bInterval-1; FS / LS interval is floor(log2(bInterval))+3.
+Maximum packet sizes are 8 bytes for LS, 64 for FS, and 1024 for HS;
+high-bandwidth additional transactions are unsupported.
+Send Set Configuration and Set Protocol(Boot) through EP0.
+
+Read eight-byte Boot Reports using Interrupt IN Normal TRBs.
+Poll the event ring without CPU interrupts.
+Check pointer, slot, DCI, Success, and residual 0.
+Short reports, stalls, and similar conditions are diagnostic failures.
+On rollover (usage 1–3), retain previous key state without generating incorrect releases.
+Report presses / releases for modifiers and up to six ordinary usages.
+Duplicate usages or reordering must not generate extra events. Ignore the reserved byte.
+
+### Diagnostic lifetime
+
+After KEYBOARD READY, the normal build continues input until the application receives Esc.
+A build with only `qemu-debug` ends after five seconds for smoke testing.
+`input-persistent` retains debug output while checking continuous input as in the normal build.
+Display HID usages on key presses in the application screen;
+log presses / releases at both device and application levels in debug output.
+The usage line is visible on screens at least 388 pixels high.
+Input polling returns immediately after one event check; application steps run even without input.
+Do not wait on time; a NAKed transfer does not prevent application execution by the CPU.
+Submit one transfer at a time and do not reuse the ring / report until completion.
+Update the Link cycle to wrap around the 255 usable TRBs.
+IRQ enablement and CPU sleep are not implemented yet.
+
+On exit, Disable Slot and discard pending IN transfers.
+Do not reuse DMA regions before completion.
+After controller shutdown and bus-mastering disablement, proceed to the RAM diagnostic application.
+Pass input to the [API version 2 FIFO](app-api.md).
+This is a single-keyboard input session; simultaneous polling of multiple keyboards is unsupported.
+Character mapping, JIS / US layout conversion, repeat, LED control, hubs, hotplug,
+SuperSpeed keyboards, other-configuration discovery, and generic Report Descriptor parsing are unsupported.
+
+### Validation
+
+With QEMU usb-kbd at High-speed / Full-speed, send Shift+A press / release through QMP
+and check both directions of usage E1 and 04 notifications.
+A five-second idle test confirmed RAM diagnostic progress and application completion after DMA shutdown.
+Continuous-input mode verified 160 additional presses / releases, 325 reports,
+transfer-ring wraparound, application termination with Esc, and DMA shutdown.
+Host tests check malformed configuration boundaries, packets, nontarget interfaces,
+rollover, duplicate keys, endpoint IDs, and short-report rejection.
+
+NUC5 hardware, Low-speed, CSZ=64, and physical composite keyboards remain untested.
+See [development instructions](development.md) for test procedures
+and [NUC5 tests](nuc5-bringup.md) for hardware preparation.
+
+Primary sources: [USB HID 1.11](https://www.usb.org/sites/default/files/hid1_11.pdf)
+§7.2.6, Appendix B / F,
+[Intel xHCI 1.2b](https://cdrdv2-public.intel.com/625472/625472_xHCI_Rev1_2b.pdf)
+§4.3, 4.6.5, 4.11, 6.2.3.
+
+---
+
+## 日本語
+
+**USB Boot Keyboard診断**
+
+### 設定と入力
 
 Device Descriptor取得後、configuration index 0の先頭9byteと全体を読む。
 最大1024byte。descriptor length、total length、境界、HID descriptor、
@@ -21,7 +95,7 @@ short reportやstall等は診断失敗とする。rollover(usage 1〜3)は以前
 保持し、誤った解放を生成しない。modifierと最大6個の通常usageについて押下・解放を
 通知し、重複usageと並び替えで余分な通知を生成しない。reserved byteは無視する。
 
-## 診断の寿命
+### 診断の寿命
 
 通常版はKEYBOARD READY表示後、アプリがEscを受信するまで入力を続ける。
 `qemu-debug` 単独ビルドはsmoke用に5秒で終了する。
@@ -40,7 +114,7 @@ controller停止・bus mastering解除後、RAM診断アプリへ進む。
 文字配列、JIS / US配列変換、repeat、LED制御、ハブ、hotplug、
 SuperSpeedキーボード、他configurationの探索、汎用Report Descriptor解析は未対応。
 
-## 検証
+### 検証
 
 QEMU usb-kbdのHigh-speed / Full-speedで、Shift+Aの押下・解放を
 QMPで送信し、usage E1と04の両方向通知を検査した。
