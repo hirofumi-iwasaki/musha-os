@@ -218,7 +218,7 @@ extern "win64" fn common() -> ! {
     naked_asm!("cli","cld","mov rcx, rsp","and rsp, -16","sub rsp, 32",
         "call {handler}","ud2",handler=sym fatal);
 }
-fn hex(value: u64) -> [u8; 16] {
+pub(crate) fn hex(value: u64) -> [u8; 16] {
     let mut bytes = [b'0'; 16];
     for (i, ch) in bytes.iter_mut().enumerate() {
         *ch = b"0123456789ABCDEF"[((value >> ((15 - i) * 4)) & 15) as usize];

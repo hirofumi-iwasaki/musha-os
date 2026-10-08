@@ -8,13 +8,15 @@ Rust no_stdのUEFIアプリがGOP情報を取得し、フレームバッファ�
 その後は割込みを無効にして停止する。キー入力でファームウェアへ戻る方式は終了した。
 
 これは初期ハンドオフの実装で、完全なCPU初期化済みランタイムではない。
-GDT / IDT / TSSは自前設定へ切り替える。ページテーブルはまだ
-ファームウェアの設定を保持する。CPU例外は診断後に停止し、復帰しない。
-RAM arena、独自USB / NIC、lwIP、ACPI引継ぎ、panicの画面診断は未実装。
+GDT / IDT / TSSと4段ページテーブルは自前設定へ切り替える。
+予約領域を除外したRAM arenaを診断アプリへ渡し、各ページの両端を読書きする。
+CPU例外は診断後に停止し、復帰しない。
+独自USB / NIC、lwIP、ACPI引継ぎ、panicの画面診断は未実装。
 BootInfoとメモリマップは専用LoaderDataページに保存し、回収しない。
 現在はRGB / BGRの32bit GOPだけに対応し、bitmask / BLT-onlyは拒否する。
 メモリマップ用バッファは128KiB固定、stale map keyの再試行は最大3回。
-後続の予約範囲管理でEFIイメージ、stack、BootInfo、mapを保護する必要がある。
+EFIイメージ、stack、BootInfo、map、緊急stack、ページテーブル、GOP領域を
+予約し、arenaに含めない。通常stackの先頭4KiBはガードページとする。
 
 ## ビルド
 
@@ -45,7 +47,7 @@ QEMUとEDK2ファームウェアが必要。Homebrew版は次の手順で試験�
 `qemu-debug` はQEMU専用I/Oポートに成功マーカーを出すための機能で、実機版には含めない。
 
 ```sh
-cargo test -p musha-framebuffer
+cargo test -p musha-framebuffer -p musha-memory
 cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features qemu-debug
 mkdir -p out/esp/EFI/BOOT
 cp target/x86_64-unknown-uefi/release/musha-boot.efi out/esp/EFI/BOOT/BOOTX64.EFI
@@ -53,7 +55,8 @@ python3 tools/smoke-qemu.py --qemu /opt/homebrew/bin/qemu-system-x86_64 --firmwa
 ```
 
 スクリプトはq35 / TCG、256MiB、xHCI接続USBストレージ、標準VGAで起動し、
-ExitBootServices成功後のスタック範囲検査と描画を終えたマーカーを確認する。
+ExitBootServices、専用stack、CPUテーブル、自前CR3への切替、arena試験と
+描画を終えたマーカーを確認する。
 45秒以内に確認できなければ失敗とする。成功時の画面はout/qemu-normal/screen.ppm。
 QEMU終了時に試験プロセスを停止し、内部ディスクや実機にはアクセスしない。
 この試験は自前xHCIドライバを確認するものではない。
@@ -67,8 +70,7 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ## 次の実装
 
-ページテーブル・予約範囲管理、ACPI情報の保存、
-RAM arenaの確保を次に追加する。
+ACPI情報の保存、時間源、PCI機器の列挙を次に追加する。
 r-efiはUEFI定義のみを利用する。[依存ライセンス](third-party.md)を参照。
 
 ## CPU例外試験
@@ -86,6 +88,24 @@ GPではfeatureをfault-gp、caseをgpへ、DFではfault-df / dfへ変更する
 2026-10-08: 通常起動、#UD（vector 6 / error 0）、#GP（vector 13 / error 0x28）、
 #DF（vector 8 / error 0）をQEMUで確認した。例外のRIPも非ゼロであることを検査する。
 #DFではハンドラのスタックが専用IST領域内であることを実行時に検査した。
-NMIとページフォルトの故障注入試験は未実施。
+NMIの故障注入試験は未実施。ページフォルト試験は下記を参照。
 試験後は `sh tools/build-esp.sh` で故障注入を含まない実機用EFIへ戻す。
 [CPU例外設計](cpu-exceptions.md)を参照。
+
+## ページ保護とarenaの試験
+
+2026-10-08: QEMUの256MiB RAM構成で64MiB arenaを確保し、
+各4KiBページの先頭・末尾をvolatileで読書きして照合した。
+メモリマップ・PE解析の7テストと描画の4テストが成功した。
+
+| feature | case | 故障注入 | 期待する#PF error |
+|---|---|---|---|
+| fault-pf | pf | アドレス0への書込 | 0x02 |
+| fault-ro | ro | ランタイムのコードページへの書込 | 0x03 |
+| fault-nx | nx | arena上の命令実行 | 0x11 |
+| fault-guard | guard | 通常stackの先頭ページへの書込 | 0x02 |
+
+CPU例外試験と同様にfeatureを一つだけ選んでEFIを再配置し、対応caseを指定する。
+いずれもQEMUで期待したvector 14、error、CR2を確認した。
+自前ページテーブル上で#UD / #GP / #DFも再確認した。
+[メモリ設計と制約](memory.md)を参照。

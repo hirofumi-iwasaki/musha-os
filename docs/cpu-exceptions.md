@@ -37,8 +37,8 @@ QEMUで通常起動、#UD、#GP、#DFを確認する。
 #DFは#GP gateを故障注入で無効化してから#GPを起こし、IST1を検査する。
 故障注入featureは通常ビルドに含めない。
 
-NMI、#PF、machine check、全予約vectorの挙動は未検証。
-復旧、割込み駆動、panic情報の表示、guard page、ページ属性、FPU / SIMD状態の
+NMI、machine check、全予約vectorの挙動は未検証。#PFは自前ページテーブルで検証済み。
+復旧、割込み駆動、panic情報の表示、緊急stackのguard page、FPU / SIMD状態の
 完全な管理、実機試験は後続作業。通常スタックを完全に失った状態の#DF試験も未実施。
 GDTからIDT切替までの短い移行中にNMIを扱う保証はまだない。
 

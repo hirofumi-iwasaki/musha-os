@@ -5,7 +5,7 @@ import argparse, json, os, pathlib, shutil, socket, subprocess, time
 parser=argparse.ArgumentParser()
 parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
-parser.add_argument('--case',choices=['normal','ud','gp','df'],default='normal')
+parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard'],default='normal')
 args=parser.parse_args()
 root=pathlib.Path(__file__).resolve().parent.parent
 out=root/'out'/('qemu-'+args.case);out.mkdir(parents=True,exist_ok=True)
@@ -25,9 +25,13 @@ with (out/'qemu.log').open('w') as err:
  proc=subprocess.Popen(cmd,stdout=err,stderr=err)
  try:
   deadline=time.monotonic()+45
-  marker={'normal':'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK',
+  marker={'normal':'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK',
    'ud':'MUSHA: EXCEPTION VECTOR=0000000000000006 ERROR=0000000000000000',
    'df':'MUSHA: EXCEPTION VECTOR=0000000000000008 ERROR=0000000000000000',
+   'guard':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000002',
+   'pf':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000002',
+   'ro':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000003',
+   'nx':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000011',
    'gp':'MUSHA: EXCEPTION VECTOR=000000000000000D ERROR=0000000000000028'}[args.case]
   while time.monotonic()<deadline:
    text=log.read_text()
@@ -35,7 +39,9 @@ with (out/'qemu.log').open('w') as err:
     if args.case!='normal':
      import re
      match=re.search(r'RIP=([0-9A-F]{16}) CR2=([0-9A-F]{16})',text)
-     if not match or int(match.group(1),16)==0:raise RuntimeError('Invalid exception frame: '+text)
+     if not match or (args.case!='nx' and int(match.group(1),16)==0):raise RuntimeError('Invalid exception frame: '+text)
+     if args.case=='pf' and int(match.group(2),16)!=0:raise RuntimeError('Unexpected CR2')
+     if args.case in ['ro','nx','guard'] and int(match.group(2),16)==0:raise RuntimeError('Missing fault address')
     break
    if proc.poll() is not None:raise RuntimeError((out/'qemu.log').read_text())
    time.sleep(0.1)

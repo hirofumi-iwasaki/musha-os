@@ -4,20 +4,29 @@
 #![no_main]
 
 mod cpu;
+mod memory;
 
-#[cfg(any(
-    all(feature = "fault-ud", feature = "fault-gp"),
-    all(feature = "fault-ud", feature = "fault-df"),
-    all(feature = "fault-gp", feature = "fault-df")
-))]
-compile_error!("Select only one injected fault");
+const _: () = assert!(
+    (cfg!(feature = "fault-ud") as usize)
+        + (cfg!(feature = "fault-gp") as usize)
+        + (cfg!(feature = "fault-df") as usize)
+        + (cfg!(feature = "fault-pf") as usize)
+        + (cfg!(feature = "fault-ro") as usize)
+        + (cfg!(feature = "fault-nx") as usize)
+        + (cfg!(feature = "fault-guard") as usize)
+        <= 1,
+    "Select only one injected fault"
+);
 
 use core::{
     arch::{asm, naked_asm},
     panic::PanicInfo,
 };
 use musha_framebuffer::Framebuffer;
-use r_efi::{efi, protocols::graphics_output as gop};
+use r_efi::{
+    efi,
+    protocols::{graphics_output as gop, loaded_image},
+};
 
 const STACK_PAGES: usize = 16;
 const MAP_PAGES: usize = 32;
@@ -34,6 +43,10 @@ struct BootInfo {
     stack_base: usize,
     stack_bytes: usize,
     emergency_base: usize,
+    image_base: usize,
+    image_bytes: usize,
+    table_base: usize,
+    table_bytes: usize,
 }
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -73,9 +86,29 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     unsafe {
         cpu::initialize(info);
     }
+    let arena = match unsafe { memory::initialize(info) } {
+        Ok(arena) => arena,
+        Err(error) => {
+            let (label, message): (&str, &[u8]) = match error {
+                musha_memory::Error::Invalid => ("MEMORY INVALID", b"MUSHA: MEMORY_INVALID\n"),
+                musha_memory::Error::Overflow => ("MEMORY OVERFLOW", b"MUSHA: MEMORY_OVERFLOW\n"),
+                musha_memory::Error::Overlap => ("MEMORY OVERLAP", b"MUSHA: MEMORY_OVERLAP\n"),
+                musha_memory::Error::NoMemory => ("MEMORY LOW", b"MUSHA: MEMORY_LOW\n"),
+                musha_memory::Error::Unsupported => {
+                    ("MEMORY UNSUPPORTED", b"MUSHA: MEMORY_UNSUPPORTED\n")
+                }
+            };
+            debug(message);
+            unsafe {
+                info.framebuffer
+                    .text(label, 24, 100, info.framebuffer.color(255, 0, 0));
+            }
+            stop();
+        }
+    };
     unsafe {
-        for y in 0..100 {
-            for x in 0..info.framebuffer.width.min(600) {
+        for y in 0..info.framebuffer.height {
+            for x in 0..info.framebuffer.width {
                 info.framebuffer
                     .pixel(x, y, info.framebuffer.color(12, 20, 32));
             }
@@ -89,7 +122,28 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         info.framebuffer
             .text("RUNTIME READY", 24, 64, info.framebuffer.color(0, 240, 100));
     }
-    debug(b"MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK\n");
+    let arena_base = arena.as_mut_ptr() as usize;
+    // Diagnostic app owns the sole mutable arena borrow and exercises every page.
+    diagnostic_app(arena, info.framebuffer);
+    #[cfg(feature = "fault-pf")]
+    unsafe {
+        asm!("xor rax, rax","mov byte ptr [rax], 1",out("rax") _,options(nostack));
+    }
+    #[cfg(feature = "fault-guard")]
+    unsafe {
+        asm!("mov byte ptr [{address}], 1",address=in(reg) info.stack_base,options(nostack));
+    }
+    #[cfg(feature = "fault-ro")]
+    unsafe {
+        asm!("mov byte ptr [{address}], 1",address=in(reg) runtime as *const () as usize,options(nostack));
+    }
+    #[cfg(feature = "fault-nx")]
+    unsafe {
+        asm!("call rax",in("rax") arena_base,clobber_abi("win64"));
+    }
+    #[cfg(not(feature = "fault-nx"))]
+    let _ = arena_base;
+    debug(b"MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK\n");
     #[cfg(feature = "fault-ud")]
     unsafe {
         asm!("ud2", options(noreturn));
@@ -105,6 +159,41 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
 
     #[cfg(not(feature = "fault-ud"))]
     stop()
+}
+
+fn diagnostic_app(arena: &mut [u8], fb: Framebuffer) {
+    for (page, chunk) in arena.chunks_mut(4096).enumerate() {
+        // SAFETY: the exclusive slice owns mapped RAM; accesses are inside each
+        // chunk. Volatile prevents optimization from eliding the hardware probe.
+        unsafe {
+            chunk.as_mut_ptr().write_volatile((page as u8) ^ 0x5a);
+            chunk
+                .as_mut_ptr()
+                .add(chunk.len() - 1)
+                .write_volatile((page as u8) ^ 0xa5);
+        }
+    }
+    for (page, chunk) in arena.chunks(4096).enumerate() {
+        let first = unsafe { chunk.as_ptr().read_volatile() };
+        let last = unsafe { chunk.as_ptr().add(chunk.len() - 1).read_volatile() };
+        if first != ((page as u8) ^ 0x5a) || last != ((page as u8) ^ 0xa5) {
+            stop();
+        }
+    }
+    debug(b"MUSHA: ARENA_BYTES=");
+    debug(&cpu::hex(arena.len() as u64));
+    debug(b"\n");
+    unsafe {
+        fb.text("ARENA READY", 24, 100, fb.color(0, 220, 240));
+        fb.text("ARENA BYTES", 24, 132, fb.color(0, 220, 240));
+        let bytes = cpu::hex(arena.len() as u64);
+        fb.text(
+            core::str::from_utf8_unchecked(&bytes),
+            240,
+            132,
+            fb.color(0, 220, 240),
+        );
+    }
 }
 
 fn debug(bytes: &[u8]) {
@@ -164,9 +253,24 @@ pub extern "efiapi" fn efi_main(
             return efi::Status::UNSUPPORTED;
         }
         fb.text("Hello Musha-OS!", 24, 24, fb.color(240, 240, 240));
-        let mut bases = [0u64; 4];
-        let page_counts = [STACK_PAGES, MAP_PAGES, 1, 8];
-        for i in 0..4 {
+        let mut image_protocol = core::ptr::null_mut();
+        let mut image_guid = loaded_image::PROTOCOL_GUID;
+        let status = ((*bs).handle_protocol)(image, &mut image_guid, &mut image_protocol);
+        if status.is_error() {
+            return status;
+        }
+        if image_protocol.is_null() {
+            return efi::Status::UNSUPPORTED;
+        }
+        let loaded = &*(image_protocol as *const loaded_image::Protocol);
+        let image_base = loaded.image_base as usize;
+        let image_bytes = loaded.image_size as usize;
+        if image_base == 0 || image_bytes == 0 || image_bytes > 16 * 1024 * 1024 {
+            return efi::Status::UNSUPPORTED;
+        }
+        let mut bases = [0u64; 5];
+        let page_counts = [STACK_PAGES, MAP_PAGES, 1, 8, 256];
+        for i in 0..5 {
             let status = ((*bs).allocate_pages)(
                 efi::ALLOCATE_ANY_PAGES,
                 efi::LOADER_DATA,
@@ -180,7 +284,7 @@ pub extern "efiapi" fn efi_main(
                 return status;
             }
         }
-        let [stack, map, handoff, emergency] = bases;
+        let [stack, map, handoff, emergency, tables] = bases;
         let info = handoff as *mut BootInfo;
         core::ptr::write(
             info,
@@ -196,6 +300,10 @@ pub extern "efiapi" fn efi_main(
                 stack_base: stack as usize,
                 stack_bytes: STACK_PAGES * 4096,
                 emergency_base: emergency as usize,
+                image_base,
+                image_bytes,
+                table_base: tables as usize,
+                table_bytes: 256 * 4096,
             },
         );
         // Final map and ExitBootServices are adjacent: no allocation, logging or

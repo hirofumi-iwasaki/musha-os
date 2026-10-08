@@ -2,8 +2,8 @@
 
 2026-10-08時点: 基本方針とアーキテクチャは文書化済み。
 詳細設計・実装を継続中。GOP直接描画、ExitBootServices、専用スタック移行は
-QEMUで確認済み。自前GDT / IDT / TSSと例外診断はQEMUで確認済み。ページテーブル、
-arena、独自ドライバと実機試験は未完了。
+QEMUで確認済み。自前GDT / IDT / TSS、例外診断、ページテーブル、予約領域管理、
+64MiB arenaはQEMUで確認済み。時間源、ACPI、独自ドライバと実機試験は未完了。
 0.1.0タグはまだ作らない。
 
 ## 設計状況
@@ -12,7 +12,7 @@ arena、独自ドライバと実機試験は未完了。
 |---|---|---|
 | 言語 / ビルド | Rust no_std、C版lwIP、最小限のアセンブリ | ツール版、crate選定、CとのABI、CPU機能設定 |
 | 起動 | 単一EFI、静的リンク、UEFI終了後自主管理 | ライブラリ選定、boot_infoのRust型・FFI定義、切替アセンブリ |
-| メモリ | 恒等マップ、予約範囲除外、単一arena | PAT / MTRR、DMA容量、arena最低容量 |
+| メモリ | 恒等マップ、予約範囲除外、単一arena | 実機PAT / MTRR適合性、DMA容量、動的拡張 |
 | CPU / 時間 | BSPのみ、ポーリング、例外診断 | PM timer / HPET手順とtimeout、FPU / SIMD状態、例外試験の拡張 |
 | アプリ | 協調step、非同期I/O、版付きcontext | Rust APIとCヘッダー、handle・バッファ上限 |
 | USB | xHCI、boot keyboard、BOT | リング/context仕様、状態機械、復旧手順 |
@@ -56,7 +56,7 @@ QEMUではUEFI + xHCI + USB disk + USB keyboard + e1000e構成を版固定する
 
 ## 直近の次作業
 
-起動・ビルド詳細設計を先に完成させ、次にAPIヘッダーとメモリ配置を確定する。
+ACPIの保存・マッピング、時間源、PCI列挙を進め、アプリAPIの公開契約を確定する。
 USB / NICのレジスタ仕様は一次資料に照合し、実機PCI診断情報を集める。
 設計ブランチで文書を更新し、実装可能になった単位から実装へ進む。
 

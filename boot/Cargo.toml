@@ -9,8 +9,14 @@ publish = false
 r-efi = "=5.3.0"
 musha-framebuffer = { path = "../framebuffer" }
 
+musha-memory = { path = "../memory" }
+
 [features]
 qemu-debug = []
 fault-ud = ["qemu-debug"]
 fault-gp = ["qemu-debug"]
 fault-df = ["qemu-debug"]
+fault-pf = ["qemu-debug"]
+fault-ro = ["qemu-debug"]
+fault-nx = ["qemu-debug"]
+fault-guard = ["qemu-debug"]
