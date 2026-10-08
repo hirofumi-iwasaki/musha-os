@@ -64,7 +64,7 @@ USB / NICのレジスタ仕様は一次資料に照合し、実機PCI診断情�
 - NUC5 / NUC8は利用者が調達する。実機試験前に機種・RAM・USB機器を記録する。
 - GitHubへのpushは利用者から許可された。musha-ic-progの所有者を確認した結果、
   `hirofumi-iwasaki` 個人アカウント配下だった。同じ所有者での公開作成が承認され、
-  https://github.com/hirofumi-iwasaki/musha-os を作成済み。pushはGit認証の確認中。
+  https://github.com/hirofumi-iwasaki/musha-os を作成済み。mainとdesign/0.1.0の初回pushを完了した。
 
 以下は担当者が詳細設計で確定でき、すべてを利用者に選択してもらう必要はない。
 Rust版、UEFI crate、lwIP版、crate構成、CPU切替、メモリ属性、DMA配置、
