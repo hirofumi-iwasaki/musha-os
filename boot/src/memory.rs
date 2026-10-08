@@ -135,6 +135,25 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
                 }
             }
         }
+        let mmio = if info.xhci.bytes != 0 {
+            let range = Range::new(info.xhci.base, info.xhci.bytes)?;
+            if range.start % PAGE != 0
+                || range.end % PAGE != 0
+                || range.end > physical_limit
+                || reserved.iter().any(|r| r.overlaps(range))
+            {
+                return Err(Error::Overlap);
+            }
+            for i in 0..map.count() {
+                let region = map.region(i)?;
+                if range.overlaps(region.range) && !matches!(region.kind, 0 | 11 | 12) {
+                    return Err(Error::Overlap);
+                }
+            }
+            Some(range)
+        } else {
+            None
+        };
         let arena = map.arena(&reserved, 16 * 1024 * 1024, 64 * 1024 * 1024)?;
         if arena.end > physical_limit {
             return Err(Error::Invalid);
@@ -174,6 +193,9 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         }
         tables.map(reserved[6], true, false, tables.uc)?;
         tables.map(arena, true, false, tables.wb)?;
+        if let Some(range) = mmio {
+            tables.map(range, true, false, tables.uc)?;
+        }
         // No global mappings survive from firmware. Preserve MTRR and PAT values.
         let efer = rdmsr(0xc0000080);
         wrmsr(0xc0000080, efer | (1 << 11));

@@ -4,9 +4,11 @@
 #![no_main]
 
 mod acpi;
+mod app;
 mod cpu;
 mod memory;
 mod pci;
+mod xhci;
 
 const _: () = assert!(
     (cfg!(feature = "fault-ud") as usize)
@@ -16,6 +18,7 @@ const _: () = assert!(
         + (cfg!(feature = "fault-ro") as usize)
         + (cfg!(feature = "fault-nx") as usize)
         + (cfg!(feature = "fault-guard") as usize)
+        + (cfg!(feature = "xhci-timeout") as usize)
         <= 1,
     "Select only one injected fault"
 );
@@ -50,6 +53,7 @@ struct BootInfo {
     table_base: usize,
     table_bytes: usize,
     timer: musha_platform::Timer,
+    xhci: pci::Controller,
 }
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -125,9 +129,19 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         info.framebuffer
             .text("RUNTIME READY", 24, 64, info.framebuffer.color(0, 240, 100));
     }
+    acpi::diagnose(info.timer, info.framebuffer);
+    pci::diagnose(info.framebuffer);
+    xhci::diagnose(info);
     let arena_base = arena.as_mut_ptr() as usize;
     // Diagnostic app owns the sole mutable arena borrow and exercises every page.
-    diagnostic_app(arena, info.framebuffer);
+    if app::run(arena, info).is_err() {
+        debug(b"MUSHA: APP_FAILED\n");
+        unsafe {
+            info.framebuffer
+                .text("APP FAILED", 24, 324, info.framebuffer.color(255, 0, 0));
+        }
+        stop();
+    }
     #[cfg(feature = "fault-pf")]
     unsafe {
         asm!("xor rax, rax","mov byte ptr [rax], 1",out("rax") _,options(nostack));
@@ -146,8 +160,6 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     }
     #[cfg(not(feature = "fault-nx"))]
     let _ = arena_base;
-    acpi::diagnose(info.timer, info.framebuffer);
-    pci::diagnose(info.framebuffer);
     debug(b"MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK\n");
     #[cfg(feature = "fault-ud")]
     unsafe {
@@ -164,41 +176,6 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
 
     #[cfg(not(feature = "fault-ud"))]
     stop()
-}
-
-fn diagnostic_app(arena: &mut [u8], fb: Framebuffer) {
-    for (page, chunk) in arena.chunks_mut(4096).enumerate() {
-        // SAFETY: the exclusive slice owns mapped RAM; accesses are inside each
-        // chunk. Volatile prevents optimization from eliding the hardware probe.
-        unsafe {
-            chunk.as_mut_ptr().write_volatile((page as u8) ^ 0x5a);
-            chunk
-                .as_mut_ptr()
-                .add(chunk.len() - 1)
-                .write_volatile((page as u8) ^ 0xa5);
-        }
-    }
-    for (page, chunk) in arena.chunks(4096).enumerate() {
-        let first = unsafe { chunk.as_ptr().read_volatile() };
-        let last = unsafe { chunk.as_ptr().add(chunk.len() - 1).read_volatile() };
-        if first != ((page as u8) ^ 0x5a) || last != ((page as u8) ^ 0xa5) {
-            stop();
-        }
-    }
-    debug(b"MUSHA: ARENA_BYTES=");
-    debug(&cpu::hex(arena.len() as u64));
-    debug(b"\n");
-    unsafe {
-        fb.text("ARENA READY", 24, 100, fb.color(0, 220, 240));
-        fb.text("ARENA BYTES", 24, 132, fb.color(0, 220, 240));
-        let bytes = cpu::hex(arena.len() as u64);
-        fb.text(
-            core::str::from_utf8_unchecked(&bytes),
-            240,
-            132,
-            fb.color(0, 220, 240),
-        );
-    }
 }
 
 fn debug(bytes: &[u8]) {
@@ -254,7 +231,7 @@ pub extern "efiapi" fn efi_main(
             format: m.pixel_format,
         };
         // Bitmask and BLT-only modes are explicitly unsupported in this milestone.
-        if !fb.valid() || fb.width < 320 || fb.height < 292 {
+        if !fb.valid() || fb.width < 320 || fb.height < 356 {
             return efi::Status::UNSUPPORTED;
         }
         fb.text("Hello Musha-OS!", 24, 24, fb.color(240, 240, 240));
@@ -273,6 +250,7 @@ pub extern "efiapi" fn efi_main(
         if image_base == 0 || image_bytes == 0 || image_bytes > 16 * 1024 * 1024 {
             return efi::Status::UNSUPPORTED;
         }
+        let xhci = pci::discover_xhci(bs);
         let mut bases = [0u64; 5];
         let page_counts = [STACK_PAGES, MAP_PAGES, 1, 8, 256];
         for i in 0..5 {
@@ -310,6 +288,7 @@ pub extern "efiapi" fn efi_main(
                 table_base: tables as usize,
                 table_bytes: 256 * 4096,
                 timer: musha_platform::Timer { port: 0, bits: 24 },
+                xhci,
             },
         );
         // ACPI is validated while firmware mappings still exist. Copy only the

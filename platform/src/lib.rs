@@ -126,3 +126,47 @@ mod tests {
         }
     }
 }
+
+/// Validated memory BAR from EFI_PCI_IO_PROTOCOL.GetBarAttributes.
+pub fn bar_resource(b: &[u8]) -> Option<(usize, usize)> {
+    if b.len() < 48 || b[0] != 0x8a || b[1..3] != [43, 0] || b[3] != 0 || b[46] != 0x79 {
+        return None;
+    }
+    let value = |at| -> Option<usize> {
+        usize::try_from(u64::from_le_bytes(b.get(at..at + 8)?.try_into().ok()?)).ok()
+    };
+    let base = value(14)?;
+    let bytes = value(38)?;
+    if value(30)? != 0
+        || base < 0x100000
+        || base % 4096 != 0
+        || !(4096..=1024 * 1024).contains(&bytes)
+        || bytes % 4096 != 0
+        || base.checked_add(bytes)? >= 1usize << 47
+    {
+        return None;
+    }
+    Some((base, bytes))
+}
+#[cfg(test)]
+mod bar_tests {
+    use super::*;
+    #[test]
+    fn refuses_io_translation_and_overflow() {
+        let mut b = [0u8; 48];
+        b[0] = 0x8a;
+        b[1] = 43;
+        b[46] = 0x79;
+        b[14..22].copy_from_slice(&0xf0000000u64.to_le_bytes());
+        b[38..46].copy_from_slice(&0x4000u64.to_le_bytes());
+        assert_eq!(bar_resource(&b), Some((0xf0000000, 0x4000)));
+        b[3] = 1;
+        assert_eq!(bar_resource(&b), None);
+        b[3] = 0;
+        b[30] = 1;
+        assert_eq!(bar_resource(&b), None);
+        b[30] = 0;
+        b[14..22].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert_eq!(bar_resource(&b), None);
+    }
+}

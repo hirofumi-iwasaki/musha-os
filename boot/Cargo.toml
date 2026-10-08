@@ -13,6 +13,8 @@ musha-memory = { path = "../memory" }
 
 musha-platform = { path = "../platform" }
 
+musha-api = { path = "../api" }
+
 [features]
 qemu-debug = []
 fault-ud = ["qemu-debug"]
@@ -22,3 +24,5 @@ fault-pf = ["qemu-debug"]
 fault-ro = ["qemu-debug"]
 fault-nx = ["qemu-debug"]
 fault-guard = ["qemu-debug"]
+
+xhci-timeout = ["qemu-debug"]

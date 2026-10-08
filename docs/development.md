@@ -12,9 +12,11 @@ GDT / IDT / TSSと4段ページテーブルは自前設定へ切り替える。
 予約領域を除外したRAM arenaを診断アプリへ渡し、各ページの両端を読書きする。
 CPU例外は診断後に停止し、復帰しない。
 ACPIのPM timer情報を引継ぎ、100msの経過とPCI機器の検出を診断する。
-独自USB / NIC、lwIP、HPET、panicの画面診断は未実装。
+xHCIは停止・リセットまで実装済み。USB機器の列挙・入出力、NIC、lwIP、
+HPET、panicの画面診断は未実装。アプリは64ページずつRAMを試験する協調step方式。
 BootInfoとメモリマップは専用LoaderDataページに保存し、回収しない。
 現在はRGB / BGRの32bit GOPだけに対応し、bitmask / BLT-onlyは拒否する。
+診断行の追加に合わせ、最小画面サイズは320×356とする。
 メモリマップ用バッファは128KiB固定、stale map keyの再試行は最大3回。
 EFIイメージ、stack、BootInfo、map、緊急stack、ページテーブル、GOP領域を
 予約し、arenaに含めない。通常stackの先頭4KiBはガードページとする。
@@ -71,7 +73,8 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ## 次の実装
 
-次はアプリAPI、PCI BARの予約とマッピング、xHCIの所有権移行・初期化を進める。
+次は専用DMA poolとxHCIのcommand / event ring、No-Op完了確認を進める。
+[RustアプリAPI](app-api.md)と[xHCI初期化](xhci.md)を参照。
 [ACPIと時間源の契約](acpi-timer.md)を参照。
 r-efiはUEFI定義のみを利用する。[依存ライセンス](third-party.md)を参照。
 
@@ -111,3 +114,10 @@ CPU例外試験と同様にfeatureを一つだけ選んでEFIを再配置し、�
 いずれもQEMUで期待したvector 14、error、CR2を確認した。
 自前ページテーブル上で#UD / #GP / #DFも再確認した。
 [メモリ設計と制約](memory.md)を参照。
+
+
+## xHCI timeout試験
+
+`xhci-timeout` featureでビルドしてEFIを再配置し、smokeスクリプトに
+`--case xhci-timeout`を指定する。期限切れを診断し、アプリ実行と起動完了まで継続する。
+通常版はfeatureを外してビルドし直す。専用feature同士は組み合わせない。

@@ -140,3 +140,24 @@ pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) {
         fb.text("TIMER STALLED", 24, 260, fb.color(255, 0, 0));
     }
 }
+
+// The runtime owns this clock. All driver waits and app steps poll it on BSP.
+pub(crate) struct Time {
+    timer: Timer,
+    clock: musha_platform::Clock,
+}
+impl Time {
+    pub(crate) fn new(timer: Timer) -> Result<Self, &'static str> {
+        if timer.port == 0 {
+            return Err("NO TIMER");
+        }
+        let clock =
+            musha_platform::Clock::new(timer, unsafe { read(timer.port) }).ok_or("TIMER WIDTH")?;
+        Ok(Self { timer, clock })
+    }
+    pub(crate) fn now(&mut self) -> Result<u64, &'static str> {
+        self.clock
+            .sample(unsafe { read(self.timer.port) })
+            .ok_or("CLOCK OVERFLOW")
+    }
+}

@@ -69,7 +69,7 @@ core/              メモリ、診断、協調実行
 `UEFI_ENTRY → PREPARE → EXIT_BOOT_SERVICES → CPU_INIT → MEMORY_INIT
 → DEVICE_INIT → APP_LOOP` とする。
 
-PREPAREでGOPを選択し、ACPI RSDPを保存する。ランタイム用スタック、ページテーブル、
+PREPAREでGOPを選択し、ACPIを検証してPM timer情報を値として保存する。ランタイム用スタック、ページテーブル、
 起動情報、メモリマップ保存バッファを確保する。画面情報は値として保存する。
 最終GetMemoryMapとExitBootServicesの間でログ出力や新規確保を行わない。
 失敗時は事前確保バッファでマップを再取得して再試行する。
@@ -85,7 +85,7 @@ UEFI Runtime Servicesは呼ばず、その領域は予約したまま保持す�
 ## 3. 起動情報とメモリ
 
 内部boot_infoはmagic、構造体サイズ、版、UEFIマップの基点・長さ・descriptor size、
-GOPの物理アドレス・サイズ・幅・高さ・stride・pixel format、RSDP物理アドレス、
+GOPの物理アドレス・サイズ・幅・高さ・stride・pixel format、PM timer情報、
 予約範囲一覧を持つ。ポインタ値だけでなく各領域のサイズを必ず渡す。
 UEFI descriptorは固定長配列と決めつけず、返されたstrideで走査する。
 
@@ -197,3 +197,10 @@ sys_check_timeoutsを呼ぶ。socket / netconn APIは使用しない。
 
 参照仕様の版は実装開始時に固定し、最新UEFI版への準拠を基準機へ要求しない。
 NIC、USB class、FATの一次資料と採用コードのライセンスは詳細設計時に追加する。
+
+
+## 現在のAPI / xHCI実装
+
+[RustアプリAPI](app-api.md)と[xHCI初期化の第1段階](xhci.md)を実装済み。
+APIテーブルを持つC contextと全I/O APIは今後追加する。
+ACPI原本の保存契約は将来AML / MCFG利用時に拡張し、現在はPM timer情報のみ渡す。

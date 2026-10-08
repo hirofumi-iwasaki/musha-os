@@ -30,5 +30,8 @@ NICにはQEMUのuser networkを接続するが、Musha-OSはまだ通信を開�
 ACPIの検証・保存、PM timer / HPET、BAR範囲の予約とマッピング、
 xHCI / NICの所有権移行・初期化・復旧処理を続ける。
 
+PCI列挙そのものは設定レジスタを変更しない。別の[xHCI初期化](xhci.md)では、
+停止後にPCI CommandのBus Master Enableを解除する。
+
 仕様参照: [Intel E8501 chipset datasheet](https://www.intel.com/content/dam/doc/datasheet/e8501-chipset-north-bridge-datasheet.pdf)
 のPCI configuration access（CF8 / CFC）。

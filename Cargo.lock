@@ -3,9 +3,17 @@
 version = 4
 
 [[package]]
+name = "musha-api"
+version = "0.1.0"
+dependencies = [
+ "musha-framebuffer",
+]
+
+[[package]]
 name = "musha-boot"
 version = "0.1.0"
 dependencies = [
+ "musha-api",
  "musha-framebuffer",
  "musha-memory",
  "musha-platform",

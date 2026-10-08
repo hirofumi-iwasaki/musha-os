@@ -4,7 +4,8 @@
 詳細設計・実装を継続中。GOP直接描画、ExitBootServices、専用スタック移行は
 QEMUで確認済み。自前GDT / IDT / TSS、例外診断、ページテーブル、予約領域管理、
 64MiB arenaとPCI列挙（xHCI / Intel 82574識別）はQEMUで確認済み。ACPIのPM timer情報引継ぎと100ms計測はQEMUで確認済み。
-HPET、独自ドライバと実機試験は未完了。
+RustアプリAPIとxHCI停止・リセットまでQEMUで確認済み。
+HPET、USB列挙・入出力、NICドライバと実機試験は未完了。
 0.1.0タグはまだ作らない。
 
 ## 設計状況
@@ -57,7 +58,8 @@ QEMUではUEFI + xHCI + USB disk + USB keyboard + e1000e構成を版固定する
 
 ## 直近の次作業
 
-アプリAPIの公開契約、PCI BARの予約・マッピング、xHCI初期化を進める。
+専用DMA poolとxHCI command / event ring、No-Op完了確認を進める。
+アプリのC ABI、入力・ファイル・UDP APIも未完了。
 PM timer非対応機向けのHPET fallbackも残る。
 USB / NICのレジスタ仕様は一次資料に照合し、実機PCI診断情報を集める。
 設計ブランチで文書を更新し、実装可能になった単位から実装へ進む。

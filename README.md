@@ -15,7 +15,9 @@ QEMUと両実機で同一のUSBイメージを起動する構成を目標とし�
 `RUNTIME READY` を表示するところまでQEMUで確認済みです。
 自前GDT / IDT / TSSとCPU例外診断を実装し、QEMUで#UD / #GP / #DFを確認済みです。
 自前ページテーブルと予約メモリ管理、RAM arenaも実装し、
-QEMUで64MiB arenaとページ保護を確認済みです。独自ドライバは未実装です。最初の診断アプリは `Hello Musha-OS!` と表示し、
+QEMUで64MiB arenaとページ保護を確認済みです。
+PM timer、PCI列挙、xHCI所有権移行・停止・リセットとRustアプリのstep実行を追加しました。
+USB機器の列挙・入出力とLAN通信は未実装です。最初の診断アプリは `Hello Musha-OS!` と表示し、
 画面・入力・RAM・ファイル・UDPの状態を確認する構成です。
 [開発・ビルド手順](docs/development.md)を参照してください。
 
