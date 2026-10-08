@@ -5,9 +5,10 @@ import argparse, json, os, pathlib, shutil, socket, subprocess, time
 parser=argparse.ArgumentParser()
 parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
+parser.add_argument('--case',choices=['normal','ud','gp','df'],default='normal')
 args=parser.parse_args()
 root=pathlib.Path(__file__).resolve().parent.parent
-out=root/'out'/'qemu';out.mkdir(parents=True,exist_ok=True)
+out=root/'out'/('qemu-'+args.case);out.mkdir(parents=True,exist_ok=True)
 firmware=pathlib.Path(args.firmware_dir)
 shutil.copyfile(firmware/'edk2-i386-vars.fd',out/'vars.fd')
 log=out/'debug.log';log.write_text('')
@@ -24,9 +25,18 @@ with (out/'qemu.log').open('w') as err:
  proc=subprocess.Popen(cmd,stdout=err,stderr=err)
  try:
   deadline=time.monotonic()+45
-  marker='MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK'
+  marker={'normal':'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK',
+   'ud':'MUSHA: EXCEPTION VECTOR=0000000000000006 ERROR=0000000000000000',
+   'df':'MUSHA: EXCEPTION VECTOR=0000000000000008 ERROR=0000000000000000',
+   'gp':'MUSHA: EXCEPTION VECTOR=000000000000000D ERROR=0000000000000028'}[args.case]
   while time.monotonic()<deadline:
-   if marker in log.read_text():break
+   text=log.read_text()
+   if marker in text and text.endswith('\n'):
+    if args.case!='normal':
+     import re
+     match=re.search(r'RIP=([0-9A-F]{16}) CR2=([0-9A-F]{16})',text)
+     if not match or int(match.group(1),16)==0:raise RuntimeError('Invalid exception frame: '+text)
+    break
    if proc.poll() is not None:raise RuntimeError((out/'qemu.log').read_text())
    time.sleep(0.1)
   else:raise RuntimeError('Runtime marker absent: '+(out/'qemu.log').read_text())

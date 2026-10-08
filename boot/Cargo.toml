@@ -11,3 +11,6 @@ musha-framebuffer = { path = "../framebuffer" }
 
 [features]
 qemu-debug = []
+fault-ud = ["qemu-debug"]
+fault-gp = ["qemu-debug"]
+fault-df = ["qemu-debug"]

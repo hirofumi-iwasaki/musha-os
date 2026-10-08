@@ -2,7 +2,8 @@
 
 2026-10-08時点: 基本方針とアーキテクチャは文書化済み。
 詳細設計・実装を継続中。GOP直接描画、ExitBootServices、専用スタック移行は
-QEMUで確認済み。自前CPUテーブル、arena、独自ドライバと実機試験は未完了。
+QEMUで確認済み。自前GDT / IDT / TSSと例外診断はQEMUで確認済み。ページテーブル、
+arena、独自ドライバと実機試験は未完了。
 0.1.0タグはまだ作らない。
 
 ## 設計状況
@@ -12,7 +13,7 @@ QEMUで確認済み。自前CPUテーブル、arena、独自ドライバと実�
 | 言語 / ビルド | Rust no_std、C版lwIP、最小限のアセンブリ | ツール版、crate選定、CとのABI、CPU機能設定 |
 | 起動 | 単一EFI、静的リンク、UEFI終了後自主管理 | ライブラリ選定、boot_infoのRust型・FFI定義、切替アセンブリ |
 | メモリ | 恒等マップ、予約範囲除外、単一arena | PAT / MTRR、DMA容量、arena最低容量 |
-| CPU / 時間 | BSPのみ、ポーリング、例外診断 | IDT形式、PM timer / HPET手順とtimeout |
+| CPU / 時間 | BSPのみ、ポーリング、例外診断 | PM timer / HPET手順とtimeout、FPU / SIMD状態、例外試験の拡張 |
 | アプリ | 協調step、非同期I/O、版付きcontext | Rust APIとCヘッダー、handle・バッファ上限 |
 | USB | xHCI、boot keyboard、BOT | リング/context仕様、状態機械、復旧手順 |
 | FAT32 | 読出し専用、8.3名 | BPB制約、GPT検証、破損時の処理 |

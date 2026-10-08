@@ -8,7 +8,8 @@ Rust no_stdのUEFIアプリがGOP情報を取得し、フレームバッファ�
 その後は割込みを無効にして停止する。キー入力でファームウェアへ戻る方式は終了した。
 
 これは初期ハンドオフの実装で、完全なCPU初期化済みランタイムではない。
-GDT / IDT / ページテーブルはまだファームウェアの設定を保持する。
+GDT / IDT / TSSは自前設定へ切り替える。ページテーブルはまだ
+ファームウェアの設定を保持する。CPU例外は診断後に停止し、復帰しない。
 RAM arena、独自USB / NIC、lwIP、ACPI引継ぎ、panicの画面診断は未実装。
 BootInfoとメモリマップは専用LoaderDataページに保存し、回収しない。
 現在はRGB / BGRの32bit GOPだけに対応し、bitmask / BLT-onlyは拒否する。
@@ -53,7 +54,7 @@ python3 tools/smoke-qemu.py --qemu /opt/homebrew/bin/qemu-system-x86_64 --firmwa
 
 スクリプトはq35 / TCG、256MiB、xHCI接続USBストレージ、標準VGAで起動し、
 ExitBootServices成功後のスタック範囲検査と描画を終えたマーカーを確認する。
-45秒以内に確認できなければ失敗とする。成功時の画面はout/qemu/screen.ppm。
+45秒以内に確認できなければ失敗とする。成功時の画面はout/qemu-normal/screen.ppm。
 QEMU終了時に試験プロセスを停止し、内部ディスクや実機にはアクセスしない。
 この試験は自前xHCIドライバを確認するものではない。
 
@@ -66,6 +67,25 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ## 次の実装
 
-自前GDT / IDTと例外診断、ページテーブル・予約範囲管理、ACPI情報の保存、
+ページテーブル・予約範囲管理、ACPI情報の保存、
 RAM arenaの確保を次に追加する。
 r-efiはUEFI定義のみを利用する。[依存ライセンス](third-party.md)を参照。
+
+## CPU例外試験
+
+`fault-ud`、`fault-gp`、`fault-df` はQEMU専用の故障注入機能。
+いずれか一つだけを有効にしてビルドし、EFIを再配置してから試験する。
+
+```sh
+cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features fault-ud
+cp target/x86_64-unknown-uefi/release/musha-boot.efi out/esp/EFI/BOOT/BOOTX64.EFI
+python3 tools/smoke-qemu.py --case ud --qemu /opt/homebrew/bin/qemu-system-x86_64 --firmware-dir /opt/homebrew/share/qemu
+```
+
+GPではfeatureをfault-gp、caseをgpへ、DFではfault-df / dfへ変更する。
+2026-10-08: 通常起動、#UD（vector 6 / error 0）、#GP（vector 13 / error 0x28）、
+#DF（vector 8 / error 0）をQEMUで確認した。例外のRIPも非ゼロであることを検査する。
+#DFではハンドラのスタックが専用IST領域内であることを実行時に検査した。
+NMIとページフォルトの故障注入試験は未実施。
+試験後は `sh tools/build-esp.sh` で故障注入を含まない実機用EFIへ戻す。
+[CPU例外設計](cpu-exceptions.md)を参照。
