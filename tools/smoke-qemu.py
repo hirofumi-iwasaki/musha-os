@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """Boot the staged EFI on QEMU USB storage; verify the post-exit marker."""
-import argparse, hashlib, json, os, pathlib, shutil, socket, subprocess, time
+import argparse, hashlib, importlib.util, json, os, pathlib, shutil, socket, subprocess, time
 parser=argparse.ArgumentParser()
 parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--keyboard-usb-version',type=int,choices=[1,2],default=2)
-parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout'],default='normal')
+parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt'],default='normal')
 parser.add_argument('--no-keyboard-input',action='store_true')
 parser.add_argument('--keyboard-exit',action='store_true')
 parser.add_argument('--keyboard-wrap',action='store_true')
 parser.add_argument('--storage-fixture',type=int,choices=[512,4096])
 parser.add_argument('--storage-high-speed',action='store_true')
+parser.add_argument('--fat-fixture',choices=['mbr','superfloppy'])
 args=parser.parse_args()
+if args.storage_fixture and args.fat_fixture:parser.error('Choose one fixture type')
+if args.case=='fat-corrupt' and not args.fat_fixture:parser.error('fat-corrupt requires --fat-fixture')
 root=pathlib.Path(__file__).resolve().parent.parent
 out=root/'out'/('qemu-'+args.case);out.mkdir(parents=True,exist_ok=True)
 firmware=pathlib.Path(args.firmware_dir)
@@ -45,6 +48,16 @@ if args.storage_fixture:
   f'MUSHA: STORAGE_READ_OK LBA={len(payload)//size-1:016X} HASH={fnv(payload[-size:]):016X}']
  cmd.extend(['-drive',f'if=none,id=fixture,format=raw,readonly=on,file={fixture}',
   '-device',f'usb-storage,drive=fixture,logical_block_size={size},physical_block_size={size}'+(',port=4' if args.storage_high_speed else '')])
+if args.fat_fixture:
+ spec=importlib.util.spec_from_file_location('fat_fixture',root/'tools/make-fat32-fixture.py')
+ fat=importlib.util.module_from_spec(spec);spec.loader.exec_module(fat)
+ fixture=out/'fat32-fixture.raw'
+ if fixture.exists():fixture.unlink()
+ fat.create(fixture,args.fat_fixture,args.case=='fat-corrupt')
+ fixture_hash=hashlib.sha256(fixture.read_bytes()).hexdigest()
+ fat_marker=f'MUSHA: FAT32_FILE_OK BYTES={len(fat.PAYLOAD):016X} HASH={fnv(fat.PAYLOAD):016X}'
+ cmd.extend(['-drive',f'if=none,id=fat_fixture,format=raw,readonly=on,file={fixture}',
+  '-device','usb-storage,drive=fat_fixture'+(',port=4' if args.storage_high_speed else '')])
 with (out/'qemu.log').open('w') as err:
  proc=subprocess.Popen(cmd,stdout=err,stderr=err)
  try:
@@ -67,7 +80,7 @@ with (out/'qemu.log').open('w') as err:
    stream=sock.makefile('rwb');stream.readline()
    command('qmp_capabilities')
   deadline=time.monotonic()+45
-  marker={'storage-timeout':'MUSHA: XHCI_FAILED TRANSFER TIMEOUT','usb-descriptor-timeout':'MUSHA: XHCI_FAILED TRANSFER TIMEOUT', 'xhci-command-timeout':'MUSHA: XHCI_FAILED COMMAND TIMEOUT', 'xhci-timeout':'MUSHA: XHCI_FAILED TIMEOUT', 'normal':'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK',
+  marker={'fat-corrupt':'MUSHA: XHCI_FAILED FAT32 READ','storage-timeout':'MUSHA: XHCI_FAILED TRANSFER TIMEOUT','usb-descriptor-timeout':'MUSHA: XHCI_FAILED TRANSFER TIMEOUT', 'xhci-command-timeout':'MUSHA: XHCI_FAILED COMMAND TIMEOUT', 'xhci-timeout':'MUSHA: XHCI_FAILED TIMEOUT', 'normal':'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK',
    'ud':'MUSHA: EXCEPTION VECTOR=0000000000000006 ERROR=0000000000000000',
    'df':'MUSHA: EXCEPTION VECTOR=0000000000000008 ERROR=0000000000000000',
    'guard':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000002',
@@ -103,10 +116,11 @@ with (out/'qemu.log').open('w') as err:
        for direction in ['DOWN','UP']:
         if 'MUSHA: HID_KEY_'+direction+'='+key not in text or 'MUSHA: APP_KEY_'+direction+'='+key not in text:raise RuntimeError('HID/app key transition missing: '+text)
      if 'MUSHA: STORAGE_PROBE_OK READ_ONLY' not in text:raise RuntimeError('Storage probe missing: '+text)
+     if args.fat_fixture and fat_marker not in text:raise RuntimeError('FAT32 file differs: '+text)
      if args.storage_fixture:
       for expected in fixture_markers:
        if expected not in text:raise RuntimeError('Storage contents differ: '+expected+'\n'+text)
-     expected_count=3 if args.storage_fixture else 2
+     expected_count=3 if (args.storage_fixture or args.fat_fixture) else 2
      if f'MUSHA: USB_ENUMERATION_OK COUNT={expected_count:016X}' not in text:raise RuntimeError('USB enumeration failed: '+text)
      if 'VID=00000000000046F4 PID=0000000000000001' not in text or 'VID=0000000000000627 PID=0000000000000001' not in text:raise RuntimeError('Expected USB disk and keyboard missing: '+text)
      if 'MUSHA: XHCI_NOOP_OK COUNT=0000000000000258 COMMAND_WRAP_OK EVENT_WRAP_OK' not in text or 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('Command ring probe failed: '+text)
@@ -116,15 +130,15 @@ with (out/'qemu.log').open('w') as err:
      if 'CLASS=00000000000C0330' not in text or 'ID=0000000010D38086 CLASS=0000000000020000' not in text:
       raise RuntimeError('Expected xHCI and Intel 82574 missing: '+text)
      if 'MUSHA: PCI_ENUMERATION_OK' not in text:raise RuntimeError('PCI enumeration incomplete')
-    if args.case not in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout']:
+    if args.case not in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt']:
      import re
      match=re.search(r'RIP=([0-9A-F]{16}) CR2=([0-9A-F]{16})',text)
      if not match or (args.case!='nx' and int(match.group(1),16)==0):raise RuntimeError('Invalid exception frame: '+text)
      if args.case=='pf' and int(match.group(2),16)!=0:raise RuntimeError('Unexpected CR2')
      if args.case in ['ro','nx','guard'] and int(match.group(2),16)==0:raise RuntimeError('Missing fault address')
-    if args.case in ['xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout'] and 'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK' not in text:
+    if args.case in ['xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt'] and 'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK' not in text:
      time.sleep(0.1);continue
-    if args.case in ['xhci-command-timeout','usb-descriptor-timeout','storage-timeout'] and 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('DMA cleanup missing: '+text)
+    if args.case in ['xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt'] and 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('DMA cleanup missing: '+text)
     if args.case=='storage-timeout' and 'MUSHA: STORAGE_CAPACITY BLOCKS=' not in text:raise RuntimeError('Read timeout was not reached')
     break
    if proc.poll() is not None:raise RuntimeError((out/'qemu.log').read_text())

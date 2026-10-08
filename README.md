@@ -23,7 +23,8 @@ USBポートをリセットし、USBメモリとキーボードのDevice Descrip
 [キーボード診断](docs/usb-keyboard.md)と[NUC5試験準備](docs/nuc5-bringup.md)を参照。
 単一キーボードからアプリへの継続入力を追加しました。通常版はEscで診断を終了します。
 USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済みです。
-[ストレージ診断](docs/usb-storage.md)を参照。FAT32のファイル操作とLAN通信は未実装です。最初の診断アプリは `Hello Musha-OS!` と表示し、
+[ストレージ診断](docs/usb-storage.md)を参照。[FAT32読出し診断](docs/fat32.md)を追加し、ルートのMUSHA.TXTをQEMUで確認済みです。
+アプリ向けファイルAPIとLAN通信は未実装です。最初の診断アプリは `Hello Musha-OS!` と表示し、
 画面・入力・RAM・ファイル・UDPの状態を確認する構成です。
 [開発・ビルド手順](docs/development.md)を参照してください。
 

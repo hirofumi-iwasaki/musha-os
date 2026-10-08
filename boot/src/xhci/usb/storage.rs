@@ -231,6 +231,42 @@ pub(super) fn probe(
         crate::debug(&crate::cpu::hex(hash));
         crate::debug(b"\n");
     }
+    let mut file = [0u8; 4096];
+    let file_result = musha_fs::read_root(
+        blocks,
+        size as usize,
+        b"MUSHA   TXT",
+        &mut file,
+        &mut |lba, out| {
+            bot.read(host, lba, blocks, size)
+                .map_err(|_| musha_fs::Error::Io)?;
+            copy(data, out);
+            Ok(())
+        },
+    );
+    match file_result {
+        Ok(bytes) => {
+            crate::debug(b"MUSHA: FAT32_FILE_OK BYTES=");
+            crate::debug(&crate::cpu::hex(bytes as u64));
+            crate::debug(b" HASH=");
+            crate::debug(&crate::cpu::hex(storage::hash(&file[..bytes])));
+            crate::debug(b"\n");
+            if host.framebuffer.height >= 476 {
+                super::super::clear_line(host.framebuffer, 452);
+                unsafe {
+                    host.framebuffer.text(
+                        "FAT32 READ OK",
+                        24,
+                        452,
+                        host.framebuffer.color(0, 240, 100),
+                    );
+                }
+            }
+        }
+        Err(musha_fs::Error::Unsupported) => crate::debug(b"MUSHA: FAT32_UNSUPPORTED\n"),
+        Err(musha_fs::Error::NotFound) => crate::debug(b"MUSHA: FAT32_FILE_MISSING\n"),
+        Err(_) => return Err("FAT32 READ"),
+    }
     if host.framebuffer.height >= 444 {
         super::super::clear_line(host.framebuffer, 388);
         super::super::clear_line(host.framebuffer, 420);

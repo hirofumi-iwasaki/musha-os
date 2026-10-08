@@ -15,6 +15,7 @@ version = "0.1.0"
 dependencies = [
  "musha-api",
  "musha-framebuffer",
+ "musha-fs",
  "musha-memory",
  "musha-platform",
  "musha-xhci",
@@ -23,6 +24,10 @@ dependencies = [
 
 [[package]]
 name = "musha-framebuffer"
+version = "0.1.0"
+
+[[package]]
+name = "musha-fs"
 version = "0.1.0"
 
 [[package]]

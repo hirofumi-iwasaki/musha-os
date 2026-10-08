@@ -73,7 +73,7 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ## 次の実装
 
-キー入力をAPI版2のFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。次はpartition / FAT32読出しへ進む。
+キー入力をAPI版2のFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。MBR / FAT32のルートファイル読出しも追加済み。次はGPTとアプリ向けfile APIへ進む。
 [HID入力診断](usb-keyboard.md)と[NUC5試験準備](nuc5-bringup.md)を参照。
 [USB列挙仕様](usb-enumeration.md)を参照。
 [DMA / ring仕様](xhci-rings.md)を参照。
@@ -163,3 +163,12 @@ ring周回を確認してからEscを送る。
 `--features qemu-debug,storage-timeout` でビルドし、smokeへ
 `--case storage-timeout` を渡すと読出しData INの応答停止を検査する。
 [ストレージ仕様と制約](usb-storage.md)を参照。
+
+## FAT32の試験
+
+通常のqemu-debugビルドで `--fat-fixture mbr` または
+`--fat-fixture superfloppy` をsmokeへ渡す。USBに既知内容のFAT32を追加し、
+file長・hashとimageのSHA-256不変を検査する。
+`--fat-fixture mbr --case fat-corrupt` は循環file chainの拒否とDMA停止を確認する。
+通常ファイルへのfixture作成は `python3 tools/make-fat32-fixture.py out/test-fat32.raw`。
+fixtureは実機のUEFI起動用ではない。[対応範囲](fat32.md)を参照。
