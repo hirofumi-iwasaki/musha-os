@@ -125,6 +125,7 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             Range::new(info.table_base, info.table_bytes)?,
             Range::new(info.framebuffer.base, info.framebuffer.bytes)?.aligned()?,
             Range::new(info.dma_base, info.dma_bytes)?,
+            Range::new(info.net_dma_base, info.net_dma_bytes)?,
         ];
         for (i, a) in reserved.iter().enumerate() {
             if a.end > physical_limit {
@@ -136,30 +137,36 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
                 }
             }
         }
-        if info.dma_base % PAGE != 0 || info.dma_bytes % PAGE != 0 || reserved[7].end > 1usize << 32
-        {
-            return Err(Error::Invalid);
-        }
-        let mut dma_valid = false;
-        for i in 0..map.count() {
-            let region = map.region(i)?;
-            if region.kind == 2
-                && region.range.start <= reserved[7].start
-                && region.range.end >= reserved[7].end
-                && region.attributes & ((1 << 13) | (1 << 17)) == 0
-            {
-                dma_valid = true;
+        for dma in &reserved[7..9] {
+            if dma.start % PAGE != 0 || dma.end % PAGE != 0 || dma.end > 1usize << 32 {
+                return Err(Error::Invalid);
+            }
+            let mut valid = false;
+            for i in 0..map.count() {
+                let region = map.region(i)?;
+                if region.kind == 2
+                    && region.range.start <= dma.start
+                    && region.range.end >= dma.end
+                    && region.attributes & ((1 << 13) | (1 << 17)) == 0
+                {
+                    valid = true;
+                }
+            }
+            if !valid {
+                return Err(Error::Invalid);
             }
         }
-        if !dma_valid {
-            return Err(Error::Invalid);
-        }
-        let mmio = if info.xhci.bytes != 0 {
-            let range = Range::new(info.xhci.base, info.xhci.bytes)?;
+        let mut mmio = [None; 2];
+        for (index, controller) in [info.xhci, info.nic].iter().enumerate() {
+            if controller.bytes == 0 {
+                continue;
+            }
+            let range = Range::new(controller.base, controller.bytes)?;
             if range.start % PAGE != 0
                 || range.end % PAGE != 0
                 || range.end > physical_limit
                 || reserved.iter().any(|r| r.overlaps(range))
+                || mmio.iter().flatten().any(|r: &Range| r.overlaps(range))
             {
                 return Err(Error::Overlap);
             }
@@ -169,10 +176,8 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
                     return Err(Error::Overlap);
                 }
             }
-            Some(range)
-        } else {
-            None
-        };
+            mmio[index] = Some(range);
+        }
         let arena = map.arena(&reserved, 16 * 1024 * 1024, 64 * 1024 * 1024)?;
         if arena.end > physical_limit {
             return Err(Error::Invalid);
@@ -213,8 +218,9 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         tables.map(reserved[6], true, false, tables.uc)?;
         // Dedicated DMA pages use UC, including non-snooping scratchpads.
         tables.map(reserved[7], true, false, tables.uc)?;
+        tables.map(reserved[8], true, false, tables.uc)?;
         tables.map(arena, true, false, tables.wb)?;
-        if let Some(range) = mmio {
+        for range in mmio.into_iter().flatten() {
             tables.map(range, true, false, tables.uc)?;
         }
         // No global mappings survive from firmware. Preserve MTRR and PAT values.

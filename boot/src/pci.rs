@@ -5,8 +5,8 @@ use core::arch::asm;
 use musha_framebuffer::Framebuffer;
 
 // The boot CPU is the sole caller; interrupts stay disabled. CF8/CFC transactions
-// cannot interleave. Only the configuration ADDRESS port is written; device
-// registers, BAR sizing, bus numbering and bus mastering are never modified.
+// cannot interleave. Discovery does not size BARs or reconfigure buses.
+// The driver ownership helpers below separately change PCI bus mastering.
 pub(crate) unsafe fn read(bus: u8, device: u8, function: u8, register: u8) -> u32 {
     let address = 0x8000_0000u32
         | ((bus as u32) << 16)
@@ -114,7 +114,7 @@ impl Controller {
 }
 // EFI protocol/resource pointers are trusted firmware allocations, used and
 // freed while Boot Services is live. Copy only scalar BAR and BDF information.
-pub(crate) unsafe fn discover_xhci(bs: *mut r_efi::efi::BootServices) -> Controller {
+pub(crate) unsafe fn discover(bs: *mut r_efi::efi::BootServices, nic: bool) -> Controller {
     use r_efi::{efi, protocols::pci_io};
     let mut guid = pci_io::PROTOCOL_GUID;
     let mut count = 0;
@@ -149,9 +149,18 @@ pub(crate) unsafe fn discover_xhci(bs: *mut r_efi::efi::BootServices) -> Control
                     (&mut class as *mut u32).cast(),
                 )
                 .is_error()
-                    || class >> 8 != 0x0c0330
+                    || class >> 8 != if nic { 0x020000 } else { 0x0c0330 }
                 {
                     continue;
+                }
+                if nic {
+                    let mut id = 0u32;
+                    if ((*p).pci.read)(p, pci_io::WIDTH_UINT32, 0, 1, (&mut id as *mut u32).cast())
+                        .is_error()
+                        || id != 0x10d38086
+                    {
+                        continue;
+                    }
                 }
                 let (mut segment, mut bus, mut device, mut function) = (0, 0, 0, 0);
                 if ((*p).get_location)(p, &mut segment, &mut bus, &mut device, &mut function)
@@ -203,7 +212,7 @@ pub(crate) unsafe fn disable_dma(c: Controller) {
     }
 }
 
-/// Enable only when every DMA pointer and ring is ready, while xHC is halted.
+/// Enable only when every DMA pointer and ring is ready, after the owning controller is initialized.
 pub(crate) unsafe fn enable_dma(c: Controller) {
     let command = unsafe { read(c.bus, c.device, c.function, 4) } as u16;
     let address = 0x80000004u32

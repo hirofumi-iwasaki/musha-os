@@ -7,6 +7,7 @@ mod acpi;
 mod app;
 mod cpu;
 mod memory;
+mod net;
 mod pci;
 mod xhci;
 
@@ -57,6 +58,9 @@ struct BootInfo {
     table_bytes: usize,
     timer: musha_platform::Timer,
     xhci: pci::Controller,
+    nic: pci::Controller,
+    net_dma_base: usize,
+    net_dma_bytes: usize,
     dma_base: usize,
     dma_bytes: usize,
 }
@@ -87,6 +91,15 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     let info = unsafe { &*info };
     if info.magic != 0x4d55534841424f4f || info.version != 1 {
         stop();
+    }
+    // Stop the supported NIC before constructing the arena or new page tables.
+    if info.nic.base != 0 {
+        unsafe {
+            pci::disable_dma(info.nic);
+        }
+        if unsafe { pci::read(info.nic.bus, info.nic.device, info.nic.function, 4) } & 4 != 0 {
+            stop();
+        }
     }
     let rsp: usize;
     unsafe {
@@ -146,6 +159,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         }
         stop();
     }
+    net::diagnose(info);
     #[cfg(feature = "fault-pf")]
     unsafe {
         asm!("xor rax, rax","mov byte ptr [rax], 1",out("rax") _,options(nostack));
@@ -254,13 +268,15 @@ pub extern "efiapi" fn efi_main(
         if image_base == 0 || image_bytes == 0 || image_bytes > 16 * 1024 * 1024 {
             return efi::Status::UNSUPPORTED;
         }
-        let xhci = pci::discover_xhci(bs);
-        let mut bases = [0u64; 6];
+        let xhci = pci::discover(bs, false);
+        let nic = pci::discover(bs, true);
+        let mut bases = [0u64; 7];
         bases[5] = 0xffff_ffff;
-        let page_counts = [STACK_PAGES, MAP_PAGES, 1, 8, 256, 256];
-        for i in 0..6 {
+        bases[6] = 0xffff_ffff;
+        let page_counts = [STACK_PAGES, MAP_PAGES, 1, 8, 256, 256, 16];
+        for i in 0..7 {
             let status = ((*bs).allocate_pages)(
-                if i == 5 {
+                if i >= 5 {
                     efi::ALLOCATE_MAX_ADDRESS
                 } else {
                     efi::ALLOCATE_ANY_PAGES
@@ -276,7 +292,7 @@ pub extern "efiapi" fn efi_main(
                 return status;
             }
         }
-        let [stack, map, handoff, emergency, tables, dma] = bases;
+        let [stack, map, handoff, emergency, tables, dma, net_dma] = bases;
         let info = handoff as *mut BootInfo;
         core::ptr::write(
             info,
@@ -298,6 +314,9 @@ pub extern "efiapi" fn efi_main(
                 table_bytes: 256 * 4096,
                 timer: musha_platform::Timer { port: 0, bits: 24 },
                 xhci,
+                nic,
+                net_dma_base: net_dma as usize,
+                net_dma_bytes: 16 * 4096,
                 dma_base: dma as usize,
                 dma_bytes: 256 * 4096,
             },

@@ -19,6 +19,8 @@ musha-xhci = { path = "../xhci" }
 
 musha-fs = { path = "../fs" }
 
+musha-net = { path = "../net" }
+
 [features]
 qemu-debug = []
 fault-ud = ["qemu-debug"]

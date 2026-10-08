@@ -23,7 +23,7 @@ Do not call shutdown after init failure; init is responsible for partial-initial
 Cleanup is not guaranteed on panic / CPU exceptions.
 While a Boot Keyboard is connected, call step between nonblocking USB polls.
 RAM diagnostics continue without input. After the input session ends, call shutdown and halt.
-A general multi-device event loop and NIC polling are not yet provided.
+A general multi-device event loop and application NIC polling are not yet provided. [QEMU networking](network.md) currently runs as an independent diagnostic after the application session.
 
 now_ms is monotonic elapsed PM timer time starting at the first step, updated immediately before every step.
 The runtime-only context advance operation rejects backward time.
@@ -88,7 +88,7 @@ init失敗時はshutdownを呼ばず、部分初期化の後始末はinitの責�
 panic / CPU例外では終了処理を保証しない。
 Boot Keyboard接続中は非ブロッキングUSB pollの合間にstepを呼ぶ。
 無入力中もRAM診断を進める。入力セッション終了後にshutdownし、停止する。
-複数デバイスの汎用イベントループとNIC pollはまだ提供していない。
+複数デバイスの汎用イベントループとアプリ向けNIC pollはまだ提供していない。[QEMU通信](network.md)は現在、アプリセッション終了後の独立診断として動く。
 
 now_msは最初のstep開始を基点とするPM timerの単調経過値で、毎step直前に更新する。
 contextのadvanceはランタイム用で、時刻の巻戻しを拒否する。

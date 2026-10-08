@@ -18,7 +18,7 @@ CPU exceptions display diagnostics and halt without returning.
 ACPI PM timer information is carried over; diagnostics check 100ms elapsed time and PCI device detection.
 xHCI stop / reset, dedicated DMA / rings, and 600 No-Op diagnostics are implemented.
 USB enumeration through Device Descriptor reads has been added, as have boot-time Boot Keyboard input
-and storage read diagnostics. NICs, lwIP, HPET, and on-screen panic diagnostics are not implemented.
+and storage read diagnostics. Initial QEMU 82574/lwIP diagnostics are implemented; see [network diagnostics](network.md). NUC NIC initialization, HPET, and on-screen panic diagnostics remain pending.
 The application uses cooperative steps to test 64 RAM pages at a time.
 BootInfo and the memory map are stored in dedicated LoaderData pages and are not reclaimed.
 Only 32-bit RGB / BGR GOP formats are supported; bitmask / BLT-only formats are rejected.
@@ -40,7 +40,7 @@ sh tools/build-esp.sh
 ```
 
 In a normal rustup environment, run `rustup target add x86_64-unknown-uefi`,
-then use the same build script. Track Cargo.lock to pin dependency versions.
+then use the same build script. Track Cargo.lock to pin dependency versions. Clang is also required for the lwIP C port.
 The output is `out/esp/EFI/BOOT/BOOTX64.EFI`.
 This is an ESP directory. Use the [shared USB image generator](usb-image.md) to create a GPT / FAT32 disk image.
 
@@ -83,7 +83,7 @@ Firmware SHA-256 values used:
 
 Key input is connected to the API version 3 FIFO.
 USB BOT capacity / sector read diagnostics and MBR / FAT32 root-file reads have been added.
-GPT and shared-image generation are implemented. The initial bounded [application file API](file-api.md) is implemented. Next, implement QEMU networking.
+GPT and shared-image generation are implemented. The initial bounded [application file API](file-api.md) is implemented. Next, integrate concurrent input/file/network progress.
 See [HID input diagnostics](usb-keyboard.md) and [NUC5 test preparation](nuc5-bringup.md).
 See [USB enumeration specifications](usb-enumeration.md), [DMA / ring specifications](xhci-rings.md),
 the [Rust application API](app-api.md), [xHCI initialization](xhci.md),
@@ -202,7 +202,7 @@ GDT / IDT / TSSと4段ページテーブルは自前設定へ切り替える。
 予約領域を除外したRAM arenaを診断アプリへ渡し、各ページの両端を読書きする。
 CPU例外は診断後に停止し、復帰しない。
 ACPIのPM timer情報を引継ぎ、100msの経過とPCI機器の検出を診断する。
-xHCIは停止・リセットに加え、専用DMA / ringとNo-Op 600回の診断まで実装済み。Device DescriptorまでのUSB列挙を追加済み。Boot Keyboardの起動時入力診断も追加済み。ストレージは読出し診断まで追加済み。NIC、lwIP、
+xHCIは停止・リセットに加え、専用DMA / ringとNo-Op 600回の診断まで実装済み。Device DescriptorまでのUSB列挙を追加済み。Boot Keyboardの起動時入力診断も追加済み。ストレージは読出し診断まで追加済み。QEMU 82574/lwIPの初期診断も実装した。[通信診断](network.md)を参照。NUC向けNIC初期化、
 HPET、panicの画面診断は未実装。アプリは64ページずつRAMを試験する協調step方式。
 BootInfoとメモリマップは専用LoaderDataページに保存し、回収しない。
 現在はRGB / BGRの32bit GOPだけに対応し、bitmask / BLT-onlyは拒否する。
@@ -223,7 +223,7 @@ sh tools/build-esp.sh
 ```
 
 通常のrustup環境では `rustup target add x86_64-unknown-uefi` 後に
-同じビルドスクリプトを実行する。Cargo.lockは追跡し依存版を固定する。
+同じビルドスクリプトを実行する。Cargo.lockは追跡し依存版を固定する。lwIP C portのためClangも必要。
 生成物は `out/esp/EFI/BOOT/BOOTX64.EFI`。
 これはESP用ディレクトリ。[共通USBイメージ生成](usb-image.md)でGPT / FAT32ディスクイメージを作成できる。
 
@@ -263,7 +263,7 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ### 次の実装
 
-キー入力をAPI版3のFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。MBR / FAT32のルートファイル読出しも追加済み。GPTと共通イメージ生成は実装済み。初期の上限付き[アプリfile API](file-api.md)も実装済み。次はQEMU上のネットワークへ進む。
+キー入力をAPI版3のFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。MBR / FAT32のルートファイル読出しも追加済み。GPTと共通イメージ生成は実装済み。初期の上限付き[アプリfile API](file-api.md)も実装済み。次は入力・ファイル・通信の同時進行へ統合する。
 [HID入力診断](usb-keyboard.md)と[NUC5試験準備](nuc5-bringup.md)を参照。
 [USB列挙仕様](usb-enumeration.md)を参照。
 [DMA / ring仕様](xhci-rings.md)を参照。

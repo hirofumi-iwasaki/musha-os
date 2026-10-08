@@ -14,7 +14,7 @@ The v0.1 filename retains the older document name; the first release number is 0
 Use Rust as the primary language with the minimum necessary x86-64 assembly.
 Keep lwIP in C and build it with Clang / LLD. Custom C drivers are not part of the baseline approach.
 Manage Rust code in a Cargo workspace and initially favor a configuration achievable on stable Rust.
-Select and pin the toolchain, dependency crates, and lwIP versions in the detailed build design.
+The current build pins Rust 1.99.0 and lwIP 2.2.1. The initial 82574 port and selected C source build are documented in [network diagnostics](network.md). NUC initialization and the concurrent loop below remain design targets.
 
 The runtime uses `#![no_std]` and does not use a standard library dependent on OS or UEFI services.
 Initially use fixed-capacity buffers and explicit arena allocation, avoiding reliance on a general-purpose heap.
@@ -235,7 +235,7 @@ currently only PM timer information is passed.
 主言語はRustとし、必要最小限のx86-64アセンブリを併用する。
 lwIPはCのまま採用し、Clang / LLDでビルドする。独自Cドライバを基本構成にはしない。
 RustはCargo workspaceで管理し、まずstableで実現できる構成を優先する。
-ツールチェーン、依存crate、lwIPの版はビルド詳細設計で選定・固定する。
+現在のbuildはRust 1.99.0、lwIP 2.2.1へ固定した。初期82574 portと採用Cソースのbuildは[通信診断](network.md)を参照。NUC初期化と後述の同時進行loopは設計上の目標として残る。
 
 本体は `#![no_std]` とし、OS・UEFIサービスに依存する標準ライブラリを使わない。
 初期は固定容量バッファと明示的なarena割当てを使い、汎用ヒープへの依存を避ける。
