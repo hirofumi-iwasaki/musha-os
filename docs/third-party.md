@@ -9,6 +9,8 @@
 | lwIP | 2.2.1 / `77dcd25a72509eb83f72b033d219b1d40cd8eb95` | BSD-style 3-clause; retain file notices | ARP / IPv4 / ICMP / UDP |
 
 We use r-efi under its Apache-2.0 option without modifications.
+Its upstream AUTHORS and provenance are retained under `third_party/r-efi`;
+include AUTHORS with binary distributions.
 Source: https://github.com/r-efi/r-efi . When distributing it, retain the dependency's
 copyright and attribution notices alongside the project's LICENSE.
 Cargo fetches the upstream source. If vendoring the source, include its original license files.
@@ -27,6 +29,7 @@ Cargo.lock checksums pin the fetched artifacts. lwIP is vendored as selected unm
 | lwIP | 2.2.1 / `77dcd25a72509eb83f72b033d219b1d40cd8eb95` | BSD型3条項。各fileのnoticeを保持 | ARP / IPv4 / ICMP / UDP |
 
 r-efiはApache-2.0の条件を選択して利用する。変更は加えていない。
+元のAUTHORSと採用元を`third_party/r-efi`に保持し、バイナリ配布へAUTHORSを添付する。
 採用元: https://github.com/r-efi/r-efi 。配布時は本体LICENSEとともに
 依存元の著作権・帰属表示を保持する。依存元ソースはCargoが取得する。
 ソースをvendorする場合は元のライセンスファイルを含める。

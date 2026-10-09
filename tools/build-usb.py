@@ -34,6 +34,7 @@ def package(output, efi, size_mib=64, size_bytes=None):
     (esp / 'MUSHA.TXT').write_bytes(b'Hello Musha-OS!\n')
     for name in ('LICENSE', 'NOTICE'):
         shutil.copyfile(ROOT / name, esp / name)
+    shutil.copyfile(ROOT / 'third_party/r-efi/AUTHORS', esp / 'r-efi-AUTHORS')
     spec = importlib.util.spec_from_file_location('usb_image', ROOT / 'tools/make-usb-image.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -47,6 +48,7 @@ def package(output, efi, size_mib=64, size_bytes=None):
                 archive.writestr(info, path.read_bytes())
     for name in ('LICENSE', 'NOTICE'):
         shutil.copyfile(ROOT / name, output / name)
+    shutil.copyfile(ROOT / 'third_party/r-efi/AUTHORS', output / 'r-efi-AUTHORS')
     paths = [image, output / 'musha-os-fat32-files.zip', boot / 'BOOTX64.EFI']
     checksums = {str(path.relative_to(output)): digest(path) for path in paths}
     (output / 'SHA256SUMS').write_text(''.join(f'{value}  {name}\n' for name, value in checksums.items()), encoding='utf-8')

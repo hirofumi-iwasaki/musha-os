@@ -16,7 +16,7 @@ python3 tools/build-usb.py --output-dir out/test-usb
 The output directory must be new. The script builds the **normal** application
 without experimental PHY probes or QEMU debug/fault features. It creates:
 
-- `musha-os-fat32-files.zip`: EFI/BOOT/BOOTX64.EFI, MUSHA.TXT, LICENSE and NOTICE.
+- `musha-os-fat32-files.zip`: EFI/BOOT/BOOTX64.EFI, MUSHA.TXT, LICENSE, NOTICE and r-efi-AUTHORS.
 - `musha-os.img`: a 64MiB GPT/FAT32 image for QEMU by default.
 - `SHA256SUMS` and `build-manifest.json`: checksums, image capacity, source commit,
   working tree state and compiler versions.
@@ -58,7 +58,7 @@ python3 tools/build-usb.py --output-dir out/test-usb
 出力先には新しいディレクトリを指定します。実験的PHYプローブやQEMU専用の
 デバッグ・障害注入を含まない**通常ビルド**を生成します。
 
-- `musha-os-fat32-files.zip`：EFI/BOOT/BOOTX64.EFI、MUSHA.TXT、LICENSE、NOTICE。
+- `musha-os-fat32-files.zip`：EFI/BOOT/BOOTX64.EFI、MUSHA.TXT、LICENSE、NOTICE、r-efi-AUTHORS。
 - `musha-os.img`：既定ではQEMU用の64MiB GPT/FAT32イメージ。
 - `SHA256SUMS`と`build-manifest.json`：チェックサム、容量、ソースのコミット、未コミット変更の有無、コンパイラの版。
 - `files/`：展開済みのUSB用ファイル。イメージの隣にもライセンスを配置します。

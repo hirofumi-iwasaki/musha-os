@@ -44,6 +44,10 @@ Build a test image and FAT32 USB bundle with the [one-command USB build](docs/te
 
 ### Policy documents
 
+- [MI68 release preparation](docs/mi68-release-preparation.md)
+- [Preparation results](docs/mi68-preparation-results.md)
+- [Draft release notes](docs/release-notes-0.1.0-draft.md)
+
 - [I218-V Rust port plan](docs/i218-rust-port-plan.md)
 - [Experimental I218 PHY probe](docs/i218-phy-probe.md)
 - [Hardware diagnostics](docs/hardware-diagnostics.md)
