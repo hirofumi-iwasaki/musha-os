@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned Rust and UEFI target
-        run: rustup toolchain install 1.99.0 --profile minimal --target x86_64-unknown-uefi
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --target x86_64-unknown-uefi
       - name: Install Clang and QEMU
         run: |
           brew install llvm qemu

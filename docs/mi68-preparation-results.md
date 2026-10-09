@@ -34,6 +34,9 @@ The artifact manifest records the generating commit, working-tree state, tool
 versions, features and file hashes. Archive metadata is normalized; identical
 EFI binaries across different build environments are not guaranteed.
 
+The first GitHub CI run stopped because the minimal Rust profile omitted rustfmt.
+The workflow now installs rustfmt explicitly; the rerun is tracked separately.
+
 ### Remaining acceptance work
 
 - Freeze a final release commit after fixes and hardware results; the preparation commit is not a v0.1.0 tag.
@@ -76,6 +79,9 @@ Apple Clang 21.0.0、QEMU 11.1.2。作業ブランチは`release/mi68-preparatio
 成果物は`dist/mi68-candidate-20261009/`です。manifestにコミット、変更状態、
 ツール版、features、ハッシュを記録します。アーカイブの属性は正規化していますが、
 異なるビルド環境でEFIが完全一致することは保証していません。
+
+GitHub CIの初回はminimalプロファイルにrustfmtがなく停止しました。
+CIでrustfmtを明示的に導入するよう修正し、再実行結果を別に確認します。
 
 ### 残る合格条件
 
