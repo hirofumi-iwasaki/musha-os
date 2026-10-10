@@ -96,3 +96,8 @@ suspend/resumeは別の追加範囲として評価する。
 
 次の実装単位は1の診断と、MMIOを含まないBCE protocol/queueモデルのhost tests。
 この調査だけでv0.2.0完成や内蔵キーボード対応済みとはしない。
+
+## 実装進捗
+
+読取専用の情報採取を[T2-D1診断](t2-d1-diagnostics.md)として追加した。
+次はMac実機の結果を確認し、BAR範囲検証とBCE通信の最小試作へ進む。

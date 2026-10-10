@@ -82,3 +82,11 @@ python3 tools/build-usb.py --output-dir out/test-usb-exact --size-bytes EXACT_BY
 実ディスクへの書き込みは対象を消去する別作業であり、このスクリプトは実行しません。
 [イメージ構造とQEMU検証](usb-image.md)、[NUC5準備](nuc5-bringup.md)も参照してください。
 大きなイメージは対応ファイルシステムでは疎ファイルになりますが、ハッシュ計算は全容量を読みます。
+
+## T2 internal keyboard investigation / T2内蔵入力の調査
+
+For the opt-in read-only T2-D1 image, add `--t2-diagnostics`.
+It does not start an internal keyboard driver. See [T2-D1 diagnostics](t2-d1-diagnostics.md).
+
+読取専用のT2-D1診断版は`--t2-diagnostics`を付けて作成する。
+内蔵キーボードドライバーはまだ開始しない。[実機撮影手順](t2-d1-diagnostics.md)を参照。

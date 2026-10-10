@@ -8,6 +8,7 @@ parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--keyboard-usb-version',type=int,choices=[1,2],default=2)
 parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt'],default='normal')
 parser.add_argument('--no-keyboard-input',action='store_true')
+parser.add_argument('--expect-t2-diagnostics',action='store_true',help='Require read-only T2-D1 evidence on the QEMU machine (no BCE device)')
 parser.add_argument('--keyboard-exit',action='store_true')
 parser.add_argument('--keyboard-wrap',action='store_true')
 parser.add_argument('--storage-fixture',type=int,choices=[512,4096])
@@ -23,6 +24,7 @@ parser.add_argument('--usb-hub',action='store_true',help='Add a root-port hub to
 parser.add_argument('--keyboard-second',action='store_true',help='Connect keyboard to the second controller; requires --extra-xhci')
 parser.add_argument('--devices-second',action='store_true',help='Leave the first controller empty; requires --extra-xhci')
 args=parser.parse_args()
+if args.expect_t2_diagnostics and args.case != 'normal':parser.error('T2 evidence checks require the normal case')
 if (args.keyboard_second or args.devices_second) and not args.extra_xhci:parser.error('Second-controller device placement requires --extra-xhci')
 if args.hub_disconnect and (not args.hub_depth or args.keyboard_exit or args.keyboard_wrap):parser.error('Hub disconnect requires a hub topology without key injection')
 if args.hub_depth and (args.keyboard_usb_version!=1 or args.extra_xhci or args.usb_hub or args.storage_high_speed):parser.error('Hub topology requires USB1 keyboard and no conflicting placement options')
@@ -168,6 +170,9 @@ with (out/'qemu.log').open('w') as err:
    if marker in text and text.endswith('\n'):
     if args.case=='normal':
      if args.control_ring_probe and ('MUSHA: EP0_SHORT_OK BYTES=18 STATUS_COMPLETE' not in text or 'MUSHA: EP0_RING_WRAP_OK' not in text):raise RuntimeError('EP0 ring/short probe missing: '+text)
+     if args.expect_t2_diagnostics:
+      for expected in ['MUSHA: T2-D1 READ ONLY / NO MMIO / NO DMA', 'MUSHA: T2 SMBIOS OK', 'MUSHA: T2 BCE COUNT 0 OMIT 0', 'MUSHA: T2_DIAGNOSTICS_COMPLETE']:
+       if expected+'\n' not in text:raise RuntimeError('T2 diagnostic missing: '+expected+'\n'+text)
      if args.keyboard_wrap and 'MUSHA: HID_RING_WRAP_OK' not in text:raise RuntimeError('HID ring wrap missing: '+text)
      if args.keyboard_exit and 'MUSHA: APP_KEY_DOWN=0000000000000029' not in text:raise RuntimeError('App Escape exit missing: '+text)
      if 'MUSHA: HID_DIAGNOSTIC_OK REPORTS=' not in text:raise RuntimeError('HID diagnostic missing: '+text)

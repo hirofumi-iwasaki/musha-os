@@ -107,7 +107,14 @@ fn render(p: &Panel) {
 pub fn start(fb: Framebuffer) {
     update(|p| {
         p.fb = Some(fb);
-        p.lines[0] = line(format_args!("MUSHA-OS 0.1.0 HARDWARE H19"));
+        p.lines[0] = line(format_args!(
+            "{}",
+            if cfg!(feature = "t2-diagnostics") {
+                "MUSHA-OS 0.2.0 DEV T2-D1"
+            } else {
+                "MUSHA-OS 0.1.0 HARDWARE H19"
+            }
+        ));
     });
 }
 pub fn set(row: usize, args: fmt::Arguments<'_>) {
@@ -492,7 +499,16 @@ pub fn page(index: usize) -> usize {
             }
             break;
         }
-        display[0] = line(format_args!("H19 {}/{}", index % total + 1, total));
+        display[0] = line(format_args!(
+            "{} {}/{}",
+            if cfg!(feature = "t2-diagnostics") {
+                "T2-D1"
+            } else {
+                "H19"
+            },
+            index % total + 1,
+            total
+        ));
         p.page = Some(display);
     });
     total

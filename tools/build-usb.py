@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Build the normal UEFI application, a GPT image and a FAT32 file-copy bundle."""
+"""Build a UEFI application, GPT image and FAT32 file-copy bundle."""
 import argparse
 import hashlib
 import importlib.util
@@ -60,6 +60,7 @@ def package(output, efi, size_mib=64, size_bytes=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output-dir', type=Path, required=True, help='New directory; existing paths are refused')
+    parser.add_argument('--t2-diagnostics', action='store_true', help='Build read-only T2-D1 diagnostics instead of the normal image')
     sizes = parser.add_mutually_exclusive_group()
     sizes.add_argument('--size-mib', type=int, default=64, help='Image size for QEMU (default: 64)')
     sizes.add_argument('--size-bytes', type=int, help='Exact physical USB capacity, multiple of 512')
@@ -86,10 +87,13 @@ def main():
     versions = {'cargo': run(['cargo', '--version'], True).stdout.strip(),
                 'clang': run([compiler, '--version'], True).stdout.splitlines()[0]}
     target_dir = ROOT / 'target'
+    features = ['t2-diagnostics'] if args.t2_diagnostics else []
     run(['cargo', 'build', '--locked', '--release', '--target', TARGET,
-         '--target-dir', str(target_dir), '-p', 'musha-boot'])
+         '--target-dir', str(target_dir), '-p', 'musha-boot']
+        + (['--features', ','.join(features)] if features else []))
     manifest = package(output, target_dir / TARGET / 'release/musha-boot.efi', args.size_mib, args.size_bytes)
-    manifest.update({'target': TARGET, 'tool_versions': versions,
+    manifest.update({'target': TARGET, 'tool_versions': versions, 'features': features,
+                     'diagnostic_revision': 'T2-D1' if args.t2_diagnostics else 'H19',
                      'commit': run(['git', 'rev-parse', 'HEAD'], True).stdout.strip(),
                      'working_tree_dirty': bool(run(['git', 'status', '--porcelain'], True).stdout.strip())})
     (output / 'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')

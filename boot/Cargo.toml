@@ -50,3 +50,6 @@ i218-phy-probe = []
 
 # Opt-in QEMU EP0 wrap/short-response validation; excluded from normal images.
 usb-control-probe = ["qemu-debug"]
+
+# Read-only PCI/SMBIOS evidence; no T2 MMIO, DMA or firmware commands.
+t2-diagnostics = []

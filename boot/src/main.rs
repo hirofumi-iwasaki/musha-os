@@ -10,6 +10,8 @@ mod diagnostics;
 mod memory;
 mod net;
 mod pci;
+#[cfg(feature = "t2-diagnostics")]
+mod t2;
 mod xhci;
 
 const _: () = assert!(
@@ -103,6 +105,8 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         stop();
     }
     diagnostics::start(info.framebuffer);
+    #[cfg(feature = "t2-diagnostics")]
+    t2::report();
     pci::report_snapshots(
         &info.xhcis,
         &[
@@ -324,6 +328,8 @@ pub extern "efiapi" fn efi_main(
         if image_base == 0 || image_bytes == 0 || image_bytes > 16 * 1024 * 1024 {
             return efi::Status::UNSUPPORTED;
         }
+        #[cfg(feature = "t2-diagnostics")]
+        t2::discover();
         let xhcis = pci::discover_all(bs, false);
         let pci_early = pci::snapshots(&xhcis);
         let boot_path = pci::boot_path(bs, loaded.device_handle);
@@ -414,6 +420,8 @@ pub extern "efiapi" fn efi_main(
             let raw = core::slice::from_raw_parts(map as *const u8, initial_size);
             if let Ok(snapshot) = musha_memory::MemoryMap::new(raw, initial_stride, initial_version)
             {
+                #[cfg(feature = "t2-diagnostics")]
+                t2::model(system_table, &snapshot);
                 if let Some(timer) = acpi::discover(system_table, &snapshot) {
                     (*info).timer = timer;
                 }
@@ -445,9 +453,13 @@ pub extern "efiapi" fn efi_main(
             (*info).descriptor_size = stride;
             (*info).descriptor_version = version;
             (*info).pci_pre_exit = pci::snapshots(&(*info).xhcis);
+            #[cfg(feature = "t2-diagnostics")]
+            t2::capture(1);
             let status = ((*bs).exit_boot_services)(image, key);
             if status == efi::Status::SUCCESS {
                 (*info).pci_post_exit = pci::snapshots(&(*info).xhcis);
+                #[cfg(feature = "t2-diagnostics")]
+                t2::capture(2);
                 enter_runtime(info, stack as usize + STACK_PAGES * 4096);
             }
             if status != efi::Status::INVALID_PARAMETER {
