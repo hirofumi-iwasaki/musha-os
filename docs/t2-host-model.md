@@ -64,8 +64,15 @@ This policy may need refinement after comparison with actual firmware behavior.
 
 The shared input layer still supports the existing 8-byte HID boot report only.
 It does not assume that the internal keyboard supports that report format.
-Independent source states are possible, but simultaneous source aggregation,
-selection/fallback, report-ID parsing and Touch Bar handling are not implemented.
+`musha-input::sources::Sources` now provides external-first selection/fallback
+over normalized usage transitions. Each connected source retains its own held
+keys; disconnect releases the selected source and falls back to the next source.
+Unchanged held keys do not emit duplicates. Generation handles reject events
+from an older connection. Releases precede new presses during selection changes.
+Adapters must keep inactive sources updated and explicitly disconnect on failure.
+This selector is host-tested but not yet connected to the single-keyboard boot
+session; T2 integration requires the hardware adapter and descriptor evidence.
+Simultaneous aggregation, report-ID parsing and Touch Bar handling remain absent.
 The new release-all operation is not yet wired into existing disconnect cleanup.
 
 ## Test evidence
@@ -111,3 +118,14 @@ FreeBSD原本とライセンスは`third_party/freebsd-apple-bce`へ固定保存
 コードではない。古い完了通知をindex再利用後に識別できないwire上の制限も残る。
 実機のBAR検証、割込み／polling選択、T2への通信、内蔵HID descriptor対応は後続段階。
 現在のT2-D1 USBを更新する必要はなく、移動中の実機操作も不要。
+
+## Step 3 follow-up: input source selection
+
+共通入力層に入力元の優先選択と切断時の切替を追加した。外付けをslot 0、内蔵をslot 1
+とすることで外付け優先にできる。入力形式は正規化したキー押下／解放イベントであり、
+内蔵側に8-byte boot reportを強制しない。切替時のShift解放、同じキーの重複防止、
+切断後に届く古いイベントの拒否、rollover中の切断をテストした。
+実行時への組込みはT2アダプターと合わせて行う。今回も実機操作やUSB更新は不要。
+
+追加後の検証: Rust workspace 127 tests passed、共通入力層のUEFI target check成功。
+入力元選択はまだ起動処理へ接続していないため、今回の追加に対するQEMU再検証は行っていない。

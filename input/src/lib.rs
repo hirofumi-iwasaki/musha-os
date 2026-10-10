@@ -6,6 +6,8 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
+pub mod sources;
+
 #[derive(Default)]
 pub struct BootKeyboardState {
     previous: [u8; 8],
