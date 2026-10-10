@@ -38,7 +38,8 @@ use r_efi::{
     protocols::{graphics_output as gop, loaded_image},
 };
 
-const STACK_PAGES: usize = 16;
+// Diagnostic formatting and GPT file reads share this guarded runtime stack.
+const STACK_PAGES: usize = 32;
 const MAP_PAGES: usize = 32;
 #[repr(C)]
 struct BootInfo {
@@ -59,12 +60,20 @@ struct BootInfo {
     table_bytes: usize,
     timer: musha_platform::Timer,
     xhci: pci::Controller,
+    xhcis: pci::Controllers,
+    pci_early: [pci::Snapshot; pci::MAX_CONTROLLERS],
+    pci_pre_exit: [pci::Snapshot; pci::MAX_CONTROLLERS],
+    pci_post_exit: [pci::Snapshot; pci::MAX_CONTROLLERS],
+    boot_path: pci::BootPath,
+    boot_owner: u16,
+    pci_resource_safe: [pci::ResourceEvidence; pci::MAX_CONTROLLERS],
     nic: pci::Controller,
     net_dma_base: usize,
     net_dma_bytes: usize,
     dma_base: usize,
     dma_bytes: usize,
 }
+const _: () = assert!(core::mem::size_of::<BootInfo>() <= 4096);
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     stop()
@@ -94,6 +103,19 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         stop();
     }
     diagnostics::start(info.framebuffer);
+    pci::report_snapshots(
+        &info.xhcis,
+        &[
+            ("EARLY", &info.pci_early),
+            ("PRE EBS", &info.pci_pre_exit),
+            ("POST EBS", &info.pci_post_exit),
+        ],
+    );
+    pci::report_boot_path(&info.boot_path);
+    diagnostics::observation(format_args!(
+        "BOOT XHCI BDF {:04X} FFFF UNKNOWN FFFE MULTIPLE",
+        info.boot_owner
+    ));
     diagnostics::set(1, format_args!("STATE CPU TABLES"));
     // Stop the supported NIC before constructing the arena or new page tables.
     if info.nic.base != 0 {
@@ -128,6 +150,8 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
                 }
             };
             diagnostics::set(1, format_args!("STATE {}", label));
+            diagnostics::set(17, format_args!("MEMORY RESULT {:?}", error));
+            diagnostics::snapshot();
             debug(message);
             unsafe {
                 info.framebuffer
@@ -154,7 +178,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     }
     diagnostics::set(1, format_args!("STATE PCI / APPLICATION"));
     acpi::diagnose(info.timer, info.framebuffer);
-    pci::diagnose(info.framebuffer);
+    pci::diagnose(info.framebuffer, info.xhci);
     let arena_base = arena.as_mut_ptr() as usize;
     // Diagnostic app owns the sole mutable arena borrow and exercises every page.
     if app::run(arena, info).is_err() {
@@ -201,6 +225,29 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         asm!("mov ax, 40","mov ds, ax",out("ax") _,options(nostack));
     }
 
+    #[cfg(not(feature = "qemu-debug"))]
+    if let Ok(mut clock) = acpi::Time::new(info.timer) {
+        let mut page = 0;
+        loop {
+            let total = diagnostics::page(page);
+            page = (page + 1) % total;
+            let Ok(start) = clock.now() else { break };
+            let mut elapsed = false;
+            for _ in 0..500_000_000 {
+                match clock.now() {
+                    Ok(now) if now.saturating_sub(start) >= 8000 => {
+                        elapsed = true;
+                        break;
+                    }
+                    Err(_) => break,
+                    _ => core::hint::spin_loop(),
+                }
+            }
+            if !elapsed {
+                break;
+            }
+        }
+    }
     #[cfg(not(feature = "fault-ud"))]
     stop()
 }
@@ -277,12 +324,25 @@ pub extern "efiapi" fn efi_main(
         if image_base == 0 || image_bytes == 0 || image_bytes > 16 * 1024 * 1024 {
             return efi::Status::UNSUPPORTED;
         }
-        let xhci = pci::discover(bs, false);
+        let xhcis = pci::discover_all(bs, false);
+        let pci_early = pci::snapshots(&xhcis);
+        let boot_path = pci::boot_path(bs, loaded.device_handle);
+        let boot_owner = pci::boot_owner(bs, &xhcis, &boot_path);
+        let pci_resource_safe = pci::resource_safety(bs, &xhcis);
+        let xhci = xhcis.entries[0];
         let nic = pci::discover(bs, true);
         let mut bases = [0u64; 7];
         bases[5] = 0xffff_ffff;
         bases[6] = 0xffff_ffff;
-        let page_counts = [STACK_PAGES, MAP_PAGES, 1, 8, 256, 256, 16];
+        let page_counts = [
+            STACK_PAGES,
+            MAP_PAGES,
+            1,
+            8,
+            256,
+            256 * xhcis.count.max(1),
+            16,
+        ];
         for i in 0..7 {
             let status = ((*bs).allocate_pages)(
                 if i >= 5 {
@@ -323,11 +383,18 @@ pub extern "efiapi" fn efi_main(
                 table_bytes: 256 * 4096,
                 timer: musha_platform::Timer { port: 0, bits: 24 },
                 xhci,
+                xhcis,
+                pci_early,
+                pci_pre_exit: [pci::Snapshot::EMPTY; pci::MAX_CONTROLLERS],
+                pci_post_exit: [pci::Snapshot::EMPTY; pci::MAX_CONTROLLERS],
+                boot_path,
+                boot_owner,
+                pci_resource_safe,
                 nic,
                 net_dma_base: net_dma as usize,
                 net_dma_bytes: 16 * 4096,
                 dma_base: dma as usize,
-                dma_bytes: 256 * 4096,
+                dma_bytes: page_counts[5] * 4096,
             },
         );
         // ACPI is validated while firmware mappings still exist. Copy only the
@@ -377,8 +444,10 @@ pub extern "efiapi" fn efi_main(
             (*info).map_size = size;
             (*info).descriptor_size = stride;
             (*info).descriptor_version = version;
+            (*info).pci_pre_exit = pci::snapshots(&(*info).xhcis);
             let status = ((*bs).exit_boot_services)(image, key);
             if status == efi::Status::SUCCESS {
+                (*info).pci_post_exit = pci::snapshots(&(*info).xhcis);
                 enter_runtime(info, stack as usize + STACK_PAGES * 4096);
             }
             if status != efi::Status::INVALID_PARAMETER {

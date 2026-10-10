@@ -4,10 +4,10 @@
 
 ### Scope
 
-After UEFI exit, our own xHCI driver inspects devices directly connected at boot, one by one.
+After UEFI exit, our own xHCI driver inspects devices connected at boot, including supported USB2 hub children, one by one.
 Validate USB 2 / USB 3 port ranges, overlap, and BAR boundaries in Supported Protocol capabilities;
 do not operate undefined ports. Determine speed from default IDs or symmetric PSI.
-Treat asymmetric PSI, unknown speeds, and connections exceeding the eight-device limit as diagnostic failures.
+Treat asymmetric PSI, unknown speeds, and connections exceeding bounded traversal or simultaneous-slot limits as diagnostic failures.
 Use 32 / 64-byte contexts according to the HC's CSZ.
 
 Ensure port power and debounce connection for 100ms.
@@ -28,8 +28,8 @@ One request consists of three TRBs: Setup / Data IN / Status OUT.
 Publish later stages first, handing over Setup last.
 Issue only one transfer at a time. Validate the Status Transfer Event's pointer,
 slot, EP ID, Success, and residual 0.
-Treat Short Packet and unknown events as failures.
-After completion, Disable Slot and clear the DCBAA entry.
+EP0 uses per-slot producer/cycle state. Validate short Data Stage residuals and still wait for Status; exact-length callers reject short replies. Unknown events remain failures.
+Retain keyboard and parent-hub slots as needed. Release children before parents, then clear DCBAA entries.
 
 ### Shutdown and limitations
 
@@ -41,7 +41,7 @@ Proceed to the application's RAM test after diagnostics.
 [Boot Keyboard diagnostics](usb-keyboard.md) add Configuration Descriptor,
 Set Configuration, and Interrupt IN.
 [Mass Storage BOT read diagnostics](usb-storage.md) have also been added.
-Hubs and dynamic connection / disconnection handling are not implemented.
+USB2 hub boot traversal and upstream keyboard-disconnect monitoring are implemented; see [scope and validation](usb-multi-controller-hub-plan.md). USB3.0/5Gbps hub initialization is implemented but its wire transfers are unverified. USB3.1/3.2 hubs and dynamic attach/re-enumeration remain unsupported.
 Device information alone does not establish working keyboard input or storage reads.
 
 ### Validation
@@ -69,10 +69,10 @@ Primary source: [Intel xHCI 1.2b](https://cdrdv2-public.intel.com/625472/625472_
 
 ### 範囲
 
-UEFI終了後、自前xHCIドライバで起動時の直結機器を順に調べる。
+UEFI終了後、自前xHCIドライバで起動時の直結機器と対応USB2ハブ配下の機器を順に調べる。
 Supported Protocol capabilityのUSB 2 / USB 3ポート範囲、重複、BAR境界を検査し、
 定義のないポートは操作しない。速度は既定IDまたは対称PSIから判定する。
-非対称PSI、未知速度、上限8機器を超える接続は診断失敗とする。
+非対称PSI、未知速度、探索件数・同時slotの上限を超える接続は診断失敗とする。
 32 / 64byte contextをHCのCSZに合わせる。
 
 ポート電源を確保し、接続を100ms debounceする。USB 2はPR、USB 3はwarm resetを
@@ -90,8 +90,8 @@ packetサイズが変わる場合はEvaluate ContextでEP0を更新する。
 次に18byte全体を読み、VID / PIDとconfiguration数を確認する。
 Setup / Data IN / Status OUTの3 TRBを一要求とし、後段から公開して最後にSetupを渡す。
 一度に一転送だけ発行し、StatusのTransfer Eventのpointer、slot、EP ID、
-Success、residual 0を検査する。Short Packetや未知イベントは失敗とする。
-完了後Disable Slotを行い、DCBAA entryを消す。
+Success、residual 0を検査する。EP0はslot別producer／cycleを使う。短いData応答のresidualと最後のStatusを検査し、所定長の要求では不足を拒否する。未知イベントは失敗とする。
+必要なkeyboardと親hub slotを保持し、子から親の順にDisable Slotを行いDCBAA entryを消す。
 
 ### 終了と制約
 
@@ -101,7 +101,7 @@ DMA領域は途中失敗でも解放・再利用しない。診断後にアプ�
 
 [Boot Keyboard診断](usb-keyboard.md)でConfiguration DescriptorとSet Configuration、
 Interrupt INを追加した。[Mass Storage BOT読出し診断](usb-storage.md)も追加した。
-ハブ、動的な接続・切断への対応は未実装。機器情報の確認をもって
+USB2ハブの起動時列挙と上流portの切断監視を追加した。[設計と検証](usb-multi-controller-hub-plan.md)を参照。USB3.0／5Gbps hub初期化は実装済み・実転送未検証。USB3.1／3.2 hubと動的な接続・再列挙は未対応。機器情報の確認をもって
 キーボード入力やストレージ読出しが動くとは判定しない。
 
 ### 検証

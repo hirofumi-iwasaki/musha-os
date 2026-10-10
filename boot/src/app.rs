@@ -114,7 +114,10 @@ impl Application for Diagnostic {
             if event.pressed {
                 let (width, height) = ctx.screen_size();
                 if height >= 380 && width > 24 {
-                    ctx.rectangle(24, 356, width - 24, 24, [12, 20, 32])?;
+                    let py = 356 * height.saturating_sub(48).min(1100) / 550;
+                    if py + 42 <= height {
+                        ctx.rectangle(24, py, width - 24, 42, [12, 20, 32])?;
+                    }
                     ctx.text("KEY CODE", 24, 356, [0, 220, 240]);
                     ctx.text(
                         core::str::from_utf8(&crate::cpu::hex(event.usage as u64))

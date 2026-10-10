@@ -7,4 +7,5 @@ mkdir -p out/esp/EFI/BOOT
 cp target/x86_64-unknown-uefi/release/musha-boot.efi out/esp/EFI/BOOT/BOOTX64.EFI
 cp LICENSE out/LICENSE
 cp NOTICE out/NOTICE
+cp third_party/r-efi/AUTHORS out/r-efi-AUTHORS
 printf '%s\n' 'Created out/esp/EFI/BOOT/BOOTX64.EFI with out/LICENSE and out/NOTICE'

@@ -1,5 +1,7 @@
 # Musha-OS 0.1.0 implementation plan and design completion criteria
 
+> 2026-10-10: v0.1.0 is approved as a limited initial development release. [Final scope / 確定した公開範囲](release-scope-0.1.0.md) supersedes the original acceptance gates below. Earlier unreleased statements are historical.
+
 ## English
 
 As of 2026-10-08, the baseline policy and architecture are documented.

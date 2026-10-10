@@ -283,3 +283,7 @@ mod event_tests {
 
 pub mod keyboard;
 pub mod storage;
+
+pub mod hub;
+
+pub mod control;

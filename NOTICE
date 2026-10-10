@@ -2648,3 +2648,10 @@ notices apply to the Rust adaptation and must accompany binary redistribution.
   POSSIBILITY OF SUCH DAMAGE.
 
 ******************************************************************************/
+
+
+r-efi 5.3.0
+Source: https://github.com/r-efi/r-efi
+Used under the Apache License 2.0 option. Upstream authors and license
+statements are retained in third_party/r-efi/AUTHORS, included in candidate
+bundles, and staged as out/r-efi-AUTHORS by tools/build-esp.sh.

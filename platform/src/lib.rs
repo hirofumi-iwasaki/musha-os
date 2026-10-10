@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
+pub mod acpi_read;
+pub mod controllers;
 pub mod diagnostics;
+pub mod pci_resources;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct Timer {
@@ -206,18 +209,182 @@ mod tests {
     }
 }
 
-/// Validated memory BAR from EFI_PCI_IO_PROTOCOL.GetBarAttributes.
-pub fn bar_resource(b: &[u8]) -> Option<(usize, usize)> {
-    if b.len() < 48 || b[0] != 0x8a || b[1..3] != [43, 0] || b[3] != 0 || b[46] != 0x79 {
-        return None;
-    }
-    let value = |at| -> Option<usize> {
-        usize::try_from(u64::from_le_bytes(b.get(at..at + 8)?.try_into().ok()?)).ok()
+/// Advance configuration DWORD slots separately from UEFI logical BAR indices.
+/// Zero/unimplemented BARs retain an index; 64-bit upper halves do not.
+pub fn next_bar_indices(slot: usize, resource: u8, raw: u32) -> (usize, u8) {
+    (slot + if raw & 7 == 4 { 2 } else { 1 }, resource + 1)
+}
+
+/// Classify physical BAR slots without treating a 64-bit upper DWORD as a BAR.
+/// Unsupported encodings remain explicit; this is diagnostic, not permission.
+pub fn bar_layout(header: u8, bars: [u32; 6]) -> [&'static str; 6] {
+    let count = match header & 0x7f {
+        0 => 6,
+        1 => 2,
+        _ => 0,
     };
-    let base = value(14)?;
-    let bytes = value(38)?;
-    if value(30)? != 0
-        || base < 0x100000
+    let mut result = ["NOT BAR"; 6];
+    let mut i = 0;
+    while i < count {
+        let raw = bars[i];
+        result[i] = if raw == 0 {
+            "ZERO"
+        } else if raw & 1 != 0 {
+            "IO"
+        } else {
+            match raw & 6 {
+                0 => "MEM32",
+                4 => "MEM64",
+                _ => "RESERVED",
+            }
+        };
+        if raw != 0 && raw & 7 == 4 {
+            if i + 1 == count {
+                result[i] = "INVALID64";
+            } else {
+                result[i + 1] = "UPPER64";
+                i += 1;
+            }
+        }
+        i += 1;
+    }
+    result
+}
+
+/// Structural fields only: callers must independently apply memory policy.
+pub fn bar_descriptor_fields(b: &[u8]) -> Result<[u64; 8], &'static str> {
+    if b.len() < 48 {
+        return Err("DESCRIPTOR TRUNCATED");
+    }
+    if b[0] != 0x8a {
+        return Err("DESCRIPTOR TAG");
+    }
+    if b[1..3] != [43, 0] {
+        return Err("DESCRIPTOR LENGTH");
+    }
+    if b[46] != 0x79 {
+        return Err("DESCRIPTOR END TAG");
+    }
+    if b[47] != 0 && b[..48].iter().fold(0u8, |a, v| a.wrapping_add(*v)) != 0 {
+        return Err("DESCRIPTOR CHECKSUM");
+    }
+    let word = |offset| u64::from_le_bytes(b[offset..offset + 8].try_into().unwrap());
+    Ok([
+        b[3] as u64,
+        b[4] as u64,
+        b[5] as u64,
+        word(6),
+        word(14),
+        word(22),
+        word(30),
+        word(38),
+    ])
+}
+
+#[cfg(test)]
+mod bar_inspection_tests {
+    use super::*;
+    #[test]
+    fn logical_indices_cover_mixed_and_zero_bars() {
+        let raws = [0xb000000c, 0, 0xc000000c, 0, 0x3001, 0x81500000];
+        let (mut slot, mut resource) = (0, 0);
+        let mut seen = [(0, 0); 4];
+        let mut count = 0;
+        while slot < 6 {
+            seen[count] = (slot, resource);
+            count += 1;
+            (slot, resource) = next_bar_indices(slot, resource, raws[slot]);
+        }
+        assert_eq!(seen, [(0, 0), (2, 1), (4, 2), (5, 3)]);
+        assert_eq!(next_bar_indices(0, 0, 0), (1, 1));
+        assert_eq!(next_bar_indices(1, 1, 0x2000), (2, 2));
+        assert_eq!(next_bar_indices(0, 0, 4), (2, 1));
+        assert_eq!(next_bar_indices(0, 0, 0x3001), (1, 1));
+    }
+    #[test]
+    fn layouts_preserve_upper_halves_and_bounds() {
+        assert_eq!(
+            bar_layout(0, [0x1004, 0x3000, 0x2001, 0x8008, 2, 0]),
+            ["MEM64", "UPPER64", "IO", "MEM32", "RESERVED", "ZERO"]
+        );
+        for upper in [0, 1, 4, u32::MAX] {
+            assert_eq!(
+                bar_layout(0, [4, upper, 0, 0, 0, 4]),
+                ["MEM64", "UPPER64", "ZERO", "ZERO", "ZERO", "INVALID64"]
+            );
+        }
+        assert_eq!(
+            bar_layout(0x81, [0, 4, 0, 0, 0, 0]),
+            [
+                "ZERO",
+                "INVALID64",
+                "NOT BAR",
+                "NOT BAR",
+                "NOT BAR",
+                "NOT BAR"
+            ]
+        );
+        assert_eq!(bar_layout(2, [0; 6]), ["NOT BAR"; 6]);
+    }
+    #[test]
+    fn structural_success_never_grants_memory_permission() {
+        let mut b = [0u8; 48];
+        b[0] = 0x8a;
+        b[1] = 43;
+        b[46] = 0x79;
+        for kind in [0, 1, 2, 255] {
+            b[3] = kind;
+            assert_eq!(bar_descriptor_fields(&b).unwrap()[0], kind as u64);
+            assert!(memory_bar_descriptor(&b).is_err());
+        }
+        assert!(bar_descriptor_fields(&b[..47]).is_err());
+        for (offset, value) in [(0, 0), (1, 44), (46, 0), (47, 1)] {
+            let mut bad = b;
+            bad[offset] = value;
+            assert!(bar_descriptor_fields(&bad).is_err());
+        }
+    }
+}
+
+/// Decode the fixed UEFI GetBarAttributes QWORD memory descriptor and end tag.
+/// Keep host addresses as u64; direct hardware access has stricter policy below.
+pub fn memory_bar_descriptor(b: &[u8]) -> Result<(u64, u64), &'static str> {
+    if b.len() < 48 {
+        return Err("DESCRIPTOR TRUNCATED");
+    }
+    if b[0] != 0x8a {
+        return Err("DESCRIPTOR TAG");
+    }
+    if b[1..3] != [43, 0] {
+        return Err("DESCRIPTOR LENGTH");
+    }
+    if b[3] != 0 {
+        return Err("DESCRIPTOR TYPE");
+    }
+    if b[46] != 0x79 {
+        return Err("DESCRIPTOR END TAG");
+    }
+    if b[47] != 0 && b[..48].iter().fold(0u8, |a, v| a.wrapping_add(*v)) != 0 {
+        return Err("DESCRIPTOR CHECKSUM");
+    }
+    // Translation is defined by UEFI, but recovery currently assumes identical
+    // host and PCI addresses. Reject explicitly rather than call it malformed.
+    if b[30..38] != [0; 8] {
+        return Err("RESOURCE TRANSLATION");
+    }
+    let base = u64::from_le_bytes(b[14..22].try_into().unwrap());
+    let bytes = u64::from_le_bytes(b[38..46].try_into().unwrap());
+    if bytes == 0 || base.checked_add(bytes).is_none() {
+        return Err("RESOURCE RANGE");
+    }
+    Ok((base, bytes))
+}
+
+/// Validated memory BAR for direct MMIO access; policy is unchanged.
+pub fn bar_resource(b: &[u8]) -> Option<(usize, usize)> {
+    let (base, bytes) = memory_bar_descriptor(b).ok()?;
+    let (base, bytes) = (usize::try_from(base).ok()?, usize::try_from(bytes).ok()?);
+    if base < 0x100000
         || base % 4096 != 0
         || !(4096..=1024 * 1024).contains(&bytes)
         || bytes % 4096 != 0
@@ -230,6 +397,32 @@ pub fn bar_resource(b: &[u8]) -> Option<(usize, usize)> {
 #[cfg(test)]
 mod bar_tests {
     use super::*;
+    #[test]
+    fn descriptor_errors_and_large_peer_ranges() {
+        let mut b = [0u8; 48];
+        b[0] = 0x8a;
+        b[1] = 43;
+        b[46] = 0x79;
+        b[14..22].copy_from_slice(&0x100000000u64.to_le_bytes());
+        b[38..46].copy_from_slice(&0x20000000u64.to_le_bytes());
+        assert_eq!(memory_bar_descriptor(&b), Ok((0x100000000, 0x20000000)));
+        assert_eq!(bar_resource(&b), None); // controller access size policy
+        assert_eq!(memory_bar_descriptor(&b[..47]), Err("DESCRIPTOR TRUNCATED"));
+        for (offset, value, reason) in [
+            (0, 0, "DESCRIPTOR TAG"),
+            (1, 44, "DESCRIPTOR LENGTH"),
+            (3, 1, "DESCRIPTOR TYPE"),
+            (46, 0, "DESCRIPTOR END TAG"),
+            (30, 1, "RESOURCE TRANSLATION"),
+            (47, 1, "DESCRIPTOR CHECKSUM"),
+        ] {
+            let mut bad = b;
+            bad[offset] = value;
+            assert_eq!(memory_bar_descriptor(&bad), Err(reason));
+        }
+        b[38..46].fill(0);
+        assert_eq!(memory_bar_descriptor(&b), Err("RESOURCE RANGE"));
+    }
     #[test]
     fn refuses_io_translation_and_overflow() {
         let mut b = [0u8; 48];
@@ -249,3 +442,5 @@ mod bar_tests {
         assert_eq!(bar_resource(&b), None);
     }
 }
+
+pub mod pci_recovery;

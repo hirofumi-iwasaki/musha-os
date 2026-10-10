@@ -46,8 +46,10 @@ Do not reuse DMA regions before completion.
 After controller shutdown and bus-mastering disablement, proceed to the RAM diagnostic application.
 Pass input to the [API version 3 FIFO](app-api.md).
 This is a single-keyboard input session; simultaneous polling of multiple keyboards is unsupported.
-Character mapping, JIS / US layout conversion, repeat, LED control, hubs, hotplug,
+Character mapping, JIS / US layout conversion, repeat, LED control, USB3.1/3.2 hubs, hotplug re-enumeration,
 SuperSpeed keyboards, other-configuration discovery, and generic Report Descriptor parsing are unsupported.
+
+USB2 hub paths and upstream disconnect monitoring are described in the [hub implementation plan](usb-multi-controller-hub-plan.md).
 
 ### Validation
 
@@ -111,10 +113,12 @@ Link cycleを更新して周回する。IRQ有効化やCPUのsleepはまだ行�
 controller停止・bus mastering解除後、RAM診断アプリへ進む。
 入力は[API版3のFIFO](app-api.md)へ渡す。単一キーボードの入力セッションであり、
 複数キーボードを同時にpollする処理は未対応。
-文字配列、JIS / US配列変換、repeat、LED制御、ハブ、hotplug、
+文字配列、JIS / US配列変換、repeat、LED制御、USB3.1／3.2ハブ、hotplug再列挙、
 SuperSpeedキーボード、他configurationの探索、汎用Report Descriptor解析は未対応。
 
 [協調I/O](cooperative-io.md)も参照。全device初期化後にkeyboard pollを開始し、その合間にNIC通信とsnapshot file readを進める。キーボード切断を検知したらUSB DMAを停止し、残る処理を継続する。
+
+USB2ハブ経路と上流切断監視は[ハブ実装計画](usb-multi-controller-hub-plan.md)を参照。
 
 ### 検証
 

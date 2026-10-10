@@ -163,7 +163,7 @@ Apply time limits to every wait and validate TRB cycles, ring wraparound, and DM
 Define register offsets, timeout values, and ring capacities in the detailed driver specifications.
 
 Initially target directly connected USB Boot Keyboards and USB Mass Storage BOT / SCSI transparent devices.
-Hubs, UAS, and arbitrary HID report descriptors are excluded.
+USB2 hub boot enumeration is now an implementation extension; see [hub design and validation](usb-multi-controller-hub-plan.md). USB3.0/5Gbps hub initialization is implemented but physical transfers are unverified. USB3.1/3.2 hubs, hotplug re-enumeration, UAS, and arbitrary HID report descriptors remain unsupported.
 Use the keyboard boot protocol and report modifier / press / release changes.
 Validate BOT CBW / data / CSW tags, lengths, and status, and design stall and reset recovery.
 On USB disconnection, fail pending requests and invalidate old handles.
@@ -216,6 +216,11 @@ The [Rust application API](app-api.md) and [first stage of xHCI initialization](
 A C context containing an API table and the complete I/O APIs will be added later.
 Extend the contract for preserving original ACPI tables when AML / MCFG is needed;
 currently only PM timer information is passed.
+
+### Future application isolation
+
+0.1.0 runs the runtime and trusted diagnostic application at Ring 0 in long mode.
+The [future architecture](future-design.md) adopts Ring 3 as the default for separately supplied applications, with private address spaces, checked system calls, fault containment and enforceable CPU budgets. This is outside the 0.1.0 implementation scope.
 
 ---
 
@@ -376,7 +381,7 @@ command ring、event ring、port reset、slot / endpoint contextの順に初期�
 register offsetやtimeout値、リング容量は詳細ドライバ仕様で定める。
 
 初期機器は直結USB Boot Keyboardと直結USB Mass Storage BOT / SCSI transparentを
-対象とする。ハブ、UAS、任意HID report descriptorは対象外。
+対象とする。USB2ハブの起動時列挙を追加範囲とする。[設計と検証](usb-multi-controller-hub-plan.md)を参照。USB3.0／5Gbps hub初期化は実装したが実転送は未検証。USB3.1／3.2 hub、hotplug再列挙、UAS、任意HID report descriptorは未対応。
 キーボードはboot protocolを用い、修飾キーと押下・解放を差分で通知する。
 BOTはCBW / data / CSWのtag、長さ、statusを検査し、stallとreset recoveryを設計する。
 USB切断時は保留要求を失敗させ、古いhandleを無効化する。
@@ -427,3 +432,7 @@ NIC、USB class、FATの一次資料と採用コードのライセンスは詳�
 [RustアプリAPI](app-api.md)と[xHCI初期化の第1段階](xhci.md)を実装済み。
 APIテーブルを持つC contextと全I/O APIは今後追加する。
 ACPI原本の保存契約は将来AML / MCFG利用時に拡張し、現在はPM timer情報のみ渡す。
+
+### 将来のアプリ分離
+
+0.1.0では実行環境と信頼された診断アプリをロングモードのRing 0で実行する。[将来設計](future-design.md)では、外部提供アプリにRing 3を標準とし、独立アドレス空間、検証付きsystem call、障害の封じ込め、強制可能なCPU時間制限を導入する。0.1.0の実装範囲には含めない。

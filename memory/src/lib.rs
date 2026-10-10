@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
 pub const PAGE: usize = 4096;
+/// Runtime ownership is distinct from GetMemoryMap protection capabilities.
+pub const RUNTIME_ATTRIBUTE: u64 = 1 << 63;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Invalid,
@@ -104,6 +106,38 @@ impl<'a> MemoryMap<'a> {
             attributes: u64at(b, 32)?,
         })
     }
+    /// Require complete non-runtime LoaderData coverage, independent
+    /// of descriptor order and firmware splitting at attribute boundaries.
+    pub fn loader_coverage(&self, target: Range) -> Result<(), Error> {
+        if target.start == 0
+            || target.start % PAGE != 0
+            || target.end % PAGE != 0
+            || target.end <= target.start
+            || target.end > 1usize << 32
+        {
+            return Err(Error::Invalid);
+        }
+        let mut cursor = target.start;
+        for _ in 0..self.count() {
+            let mut covering = None;
+            for i in 0..self.count() {
+                let region = self.region(i)?;
+                if region.range.start <= cursor && cursor < region.range.end {
+                    covering = Some(region);
+                    break;
+                }
+            }
+            let region = covering.ok_or(Error::Invalid)?;
+            if region.kind != 2 || region.attributes & RUNTIME_ATTRIBUTE != 0 {
+                return Err(Error::Invalid);
+            }
+            cursor = region.range.end.min(target.end);
+            if cursor == target.end {
+                return Ok(());
+            }
+        }
+        Err(Error::Invalid)
+    }
     pub fn arena(
         &self,
         reserved: &[Range],
@@ -122,10 +156,11 @@ impl<'a> MemoryMap<'a> {
         let mut best = None;
         for i in 0..self.count() {
             let region = self.region(i)?;
-            // Only Conventional + WB-capable, not runtime / read-protected / read-only.
+            // Conventional + WB-capable, non-runtime. RP/RO/XP are capabilities;
+            // the caller installs its own RW/NX mappings after ExitBootServices.
             if region.kind != 7
                 || region.attributes & 8 == 0
-                || region.attributes & ((1 << 63) | (1 << 13) | (1 << 17)) != 0
+                || region.attributes & RUNTIME_ATTRIBUTE != 0
             {
                 continue;
             }
@@ -283,14 +318,64 @@ mod tests {
         assert!(matches!(MemoryMap::new(&b, 48, 1), Err(Error::Overlap)));
     }
     #[test]
-    fn excludes_firmware_and_protected_regions() {
-        for (kind, attrs) in [
-            (2, 8),
-            (7, 0),
-            (7, 8 | (1 << 63)),
-            (7, 8 | (1 << 13)),
-            (7, 8 | (1 << 17)),
+    fn dma_coverage_accepts_split_unsorted_and_partial_descriptors() {
+        let b = [
+            descriptor(2, 4 * PAGE as u64, 4, 1),
+            descriptor(2, PAGE as u64, 3, 8),
+        ]
+        .concat();
+        let map = MemoryMap::new(&b, 48, 1).unwrap();
+        assert_eq!(
+            map.loader_coverage(Range::new(2 * PAGE, 5 * PAGE).unwrap()),
+            Ok(())
+        );
+        assert_eq!(
+            map.loader_coverage(Range::new(PAGE, 7 * PAGE).unwrap()),
+            Ok(())
+        );
+    }
+    #[test]
+    fn dma_coverage_rejects_gaps_types_and_runtime() {
+        let target = Range::new(PAGE, 4 * PAGE).unwrap();
+        for (kind, attr, start) in [(2, 8, 4), (7, 8, 3), (0, 8, 3), (2, 1u64 << 63, 3)] {
+            let b = [
+                descriptor(2, PAGE as u64, 2, 8),
+                descriptor(kind, start * PAGE as u64, 2, attr),
+            ]
+            .concat();
+            let map = MemoryMap::new(&b, 48, 1).unwrap();
+            assert_eq!(map.loader_coverage(target), Err(Error::Invalid));
+        }
+        let b = descriptor(2, PAGE as u64, 8, 8);
+        let map = MemoryMap::new(&b, 48, 1).unwrap();
+        for range in [
+            Range {
+                start: 0,
+                end: PAGE,
+            },
+            Range {
+                start: PAGE + 1,
+                end: 2 * PAGE,
+            },
+            Range {
+                start: PAGE,
+                end: 2 * PAGE + 1,
+            },
+            Range {
+                start: PAGE,
+                end: PAGE,
+            },
+            Range {
+                start: PAGE,
+                end: (1usize << 32) + PAGE,
+            },
         ] {
+            assert_eq!(map.loader_coverage(range), Err(Error::Invalid));
+        }
+    }
+    #[test]
+    fn excludes_firmware_runtime_and_non_wb_regions() {
+        for (kind, attrs) in [(2, 8), (7, 0), (7, 8 | (1 << 63))] {
             let b = descriptor(kind, 4096, 8, attrs);
             assert_eq!(
                 MemoryMap::new(&b, 48, 1)
@@ -298,6 +383,35 @@ mod tests {
                     .arena(&[], PAGE, 4 * PAGE),
                 Err(Error::NoMemory)
             );
+        }
+    }
+    #[test]
+    fn protection_capabilities_do_not_deny_owned_ram() {
+        // H6 Mac descriptor: RP/RO/XP plus all four cache capabilities.
+        let capabilities = 0x2600f;
+        let b = [
+            descriptor(2, PAGE as u64, 2, capabilities),
+            descriptor(2, 3 * PAGE as u64, 2, 8),
+        ]
+        .concat();
+        let map = MemoryMap::new(&b, 48, 1).unwrap();
+        assert_eq!(
+            map.loader_coverage(Range::new(PAGE, 4 * PAGE).unwrap()),
+            Ok(())
+        );
+        let b = descriptor(7, PAGE as u64, 12, capabilities);
+        let map = MemoryMap::new(&b, 48, 1).unwrap();
+        let reserved = Range::new(PAGE, 2 * PAGE).unwrap();
+        let arena = map.arena(&[reserved], PAGE, 4 * PAGE).unwrap();
+        assert_eq!(arena, Range::new(3 * PAGE, 4 * PAGE).unwrap());
+        for kind in [2, 7] {
+            let b = descriptor(kind, PAGE as u64, 12, capabilities | RUNTIME_ATTRIBUTE);
+            let map = MemoryMap::new(&b, 48, 1).unwrap();
+            assert!(
+                map.loader_coverage(Range::new(PAGE, PAGE).unwrap())
+                    .is_err()
+            );
+            assert!(map.arena(&[], PAGE, 4 * PAGE).is_err());
         }
     }
     #[test]

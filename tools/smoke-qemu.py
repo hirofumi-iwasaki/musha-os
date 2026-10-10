@@ -15,7 +15,17 @@ parser.add_argument('--storage-high-speed',action='store_true')
 parser.add_argument('--fat-fixture',choices=['mbr','superfloppy','gpt'])
 parser.add_argument('--usb-image',type=pathlib.Path,help='Boot an actual GPT/FAT32 USB image read-only')
 parser.add_argument('--nic', choices=['e1000e','e1000'],default='e1000e',help='e1000 exercises the unsupported Intel NIC diagnostic')
+parser.add_argument('--extra-xhci',action='store_true',help='Add a second controller to verify sequential discovery')
+parser.add_argument('--control-ring-probe',action='store_true',help='Require the opt-in EP0 wrap/short-response probe markers')
+parser.add_argument('--hub-disconnect',action='store_true',help='Remove a hub-child keyboard during idle input and verify cleanup')
+parser.add_argument('--hub-depth',type=int,choices=range(1,6),help='Put keyboard and fixture behind this many USB2 hubs; use keyboard USB version 1')
+parser.add_argument('--usb-hub',action='store_true',help='Add a root-port hub to verify unsupported-hub diagnostics')
+parser.add_argument('--keyboard-second',action='store_true',help='Connect keyboard to the second controller; requires --extra-xhci')
+parser.add_argument('--devices-second',action='store_true',help='Leave the first controller empty; requires --extra-xhci')
 args=parser.parse_args()
+if (args.keyboard_second or args.devices_second) and not args.extra_xhci:parser.error('Second-controller device placement requires --extra-xhci')
+if args.hub_disconnect and (not args.hub_depth or args.keyboard_exit or args.keyboard_wrap):parser.error('Hub disconnect requires a hub topology without key injection')
+if args.hub_depth and (args.keyboard_usb_version!=1 or args.extra_xhci or args.usb_hub or args.storage_high_speed):parser.error('Hub topology requires USB1 keyboard and no conflicting placement options')
 if args.storage_fixture and args.fat_fixture:parser.error('Choose one fixture type')
 if args.usb_image and args.fat_fixture:parser.error('Choose either a boot image or a FAT fixture; the API selects the first successful file')
 if args.case=='fat-corrupt' and not args.fat_fixture:parser.error('fat-corrupt requires --fat-fixture')
@@ -31,9 +41,30 @@ cmd=[args.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev','user,id=net0','
  '-drive',f'if=pflash,format=raw,readonly=on,file={firmware / "edk2-x86_64-code.fd"}',
  '-drive',f'if=pflash,format=raw,file={out / "vars.fd"}',
  '-drive',f'if=none,id=esp,format=raw,file=fat:rw:{root / "out/esp"}',
- '-device',('qemu-xhci,p3=1' if args.storage_high_speed else 'qemu-xhci'),'-device',('usb-storage,drive=esp,port=2' if args.storage_high_speed else 'usb-storage,drive=esp'),'-device',f'usb-kbd,usb_version={args.keyboard_usb_version}'+(',port=3' if args.storage_high_speed else ''),'-vga','std','-display','none',
+ '-device',('qemu-xhci,id=usbhost,p3=1' if args.storage_high_speed else 'qemu-xhci,id=usbhost'),'-device',('usb-storage,drive=esp,bus=usbhost.0,port=2' if args.storage_high_speed else 'usb-storage,drive=esp,bus=usbhost.0'),'-device',f'usb-kbd,id=testkbd,bus=usbhost.0,usb_version={args.keyboard_usb_version}'+(',port=3' if args.storage_high_speed else ''),'-vga','std','-display','none',
  '-debugcon',f'file:{log}','-global','isa-debugcon.iobase=0xe9',
  '-qmp',f'unix:{qmp_path},server=on,wait=off','-no-reboot']
+if args.extra_xhci:
+ index=next(i for i,x in enumerate(cmd) if x.startswith('qemu-xhci,'))
+ cmd[index+1:index+1]=['-device','qemu-xhci,id=unused']
+if args.usb_hub:cmd.extend(['-device','usb-hub,ports=4,bus=usbhost.0,port=3'])
+if args.keyboard_second or args.devices_second:
+ index=next(i for i,x in enumerate(cmd) if x.startswith('usb-kbd,'))
+ cmd[index]=cmd[index].replace('bus=usbhost.0','bus=unused.0')
+if args.devices_second:
+ index=next(i for i,x in enumerate(cmd) if x.startswith('usb-storage,drive=esp'))
+ cmd[index]=cmd[index].replace('bus=usbhost.0','bus=unused.0')
+if args.hub_depth:
+ index=next(i for i,x in enumerate(cmd) if x.startswith('usb-kbd,'))
+ cmd[index]+= ',port=3'+'.1'*args.hub_depth
+ index=next(i for i,x in enumerate(cmd) if x.startswith('usb-storage,drive=esp'))
+ cmd[index]+= ',port=1'
+ hubs=[]
+ for depth in range(args.hub_depth):
+  hubs.extend(['-device','usb-hub,ports=4,bus=usbhost.0,port=3'+'.1'*depth+',port-power=on'])
+ index=next(i for i,x in enumerate(cmd) if x.startswith('qemu-xhci,'))
+ cmd[index+1:index+1]=hubs
+
 def sha256_file(path):
  digest=hashlib.sha256()
  with path.open('rb') as source:
@@ -64,7 +95,7 @@ if args.storage_fixture:
   f'MUSHA: STORAGE_READ_OK LBA={0:016X} HASH={fnv(payload[:size]):016X}',
   f'MUSHA: STORAGE_READ_OK LBA={len(payload)//size-1:016X} HASH={fnv(payload[-size:]):016X}']
  cmd.extend(['-drive',f'if=none,id=fixture,format=raw,readonly=on,file={fixture}',
-  '-device',f'usb-storage,drive=fixture,logical_block_size={size},physical_block_size={size}'+(',port=4' if args.storage_high_speed else '')])
+  '-device',f'usb-storage,drive=fixture,bus=usbhost.0,logical_block_size={size},physical_block_size={size}'+(',port=4' if args.storage_high_speed else '')])
 if args.fat_fixture:
  spec=importlib.util.spec_from_file_location('fat_fixture',root/'tools/make-fat32-fixture.py')
  fat=importlib.util.module_from_spec(spec);spec.loader.exec_module(fat)
@@ -74,7 +105,10 @@ if args.fat_fixture:
  fixture_hash=hashlib.sha256(fixture.read_bytes()).hexdigest()
  fat_marker=f'MUSHA: FAT32_FILE_OK BYTES={len(fat.PAYLOAD):016X} HASH={fnv(fat.PAYLOAD):016X}'
  cmd.extend(['-drive',f'if=none,id=fat_fixture,format=raw,readonly=on,file={fixture}',
-  '-device','usb-storage,drive=fat_fixture'+(',port=4' if args.storage_high_speed else '')])
+  '-device','usb-storage,drive=fat_fixture,bus=usbhost.0'+(',port=4' if args.storage_high_speed else '')])
+if args.hub_depth and fixture:
+ index=next(i for i,x in enumerate(cmd) if x.startswith('usb-storage,drive=fixture') or x.startswith('usb-storage,drive=fat_fixture'))
+ cmd[index]+= ',port=3'+'.1'*(args.hub_depth-1)+'.2'
 with (out/'qemu.log').open('w') as err:
  proc=subprocess.Popen(cmd,stdout=err,stderr=err)
  try:
@@ -107,7 +141,15 @@ with (out/'qemu.log').open('w') as err:
    'gp':'MUSHA: EXCEPTION VECTOR=000000000000000D ERROR=0000000000000028'}[args.case]
   while time.monotonic()<deadline:
    text=log.read_text()
-   if args.case=='normal' and not args.no_keyboard_input and not injected and 'MUSHA: HID_READY\n' in text:
+   if args.hub_disconnect and not injected and 'MUSHA: HID_READY\n' in text:
+    if sock is None:connect()
+    command('device_del',{'id':'testkbd'})
+    injected=True
+   if args.hub_disconnect and marker in text:
+    for expected in ['MUSHA: XHCI_FAILED KEYBOARD DISCONNECTED','MUSHA: XHCI_QUIESCED DMA_DISABLED','MUSHA: NET_QUIESCED DMA_DISABLED']:
+     if expected not in text:raise RuntimeError('Hub disconnect check failed: '+text)
+    break
+   if args.case=='normal' and not args.hub_disconnect and not args.no_keyboard_input and not injected and 'MUSHA: HID_READY\n' in text:
     if sock is None:connect()
     command('send-key',{'keys':[{'type':'qcode','data':'shift'},{'type':'qcode','data':'a'}],'hold-time':200})
     injected=True
@@ -125,6 +167,7 @@ with (out/'qemu.log').open('w') as err:
     escape_sent=True
    if marker in text and text.endswith('\n'):
     if args.case=='normal':
+     if args.control_ring_probe and ('MUSHA: EP0_SHORT_OK BYTES=18 STATUS_COMPLETE' not in text or 'MUSHA: EP0_RING_WRAP_OK' not in text):raise RuntimeError('EP0 ring/short probe missing: '+text)
      if args.keyboard_wrap and 'MUSHA: HID_RING_WRAP_OK' not in text:raise RuntimeError('HID ring wrap missing: '+text)
      if args.keyboard_exit and 'MUSHA: APP_KEY_DOWN=0000000000000029' not in text:raise RuntimeError('App Escape exit missing: '+text)
      if 'MUSHA: HID_DIAGNOSTIC_OK REPORTS=' not in text:raise RuntimeError('HID diagnostic missing: '+text)
@@ -142,8 +185,12 @@ with (out/'qemu.log').open('w') as err:
      if args.storage_fixture:
       for expected in fixture_markers:
        if expected not in text:raise RuntimeError('Storage contents differ: '+expected+'\n'+text)
-     expected_count=3 if (args.storage_fixture or args.fat_fixture) else 2
-     if f'MUSHA: USB_ENUMERATION_OK COUNT={expected_count:016X}' not in text:raise RuntimeError('USB enumeration failed: '+text)
+     expected_count=(1 if args.keyboard_second and not args.devices_second else 2)+(1 if args.storage_fixture or args.fat_fixture else 0)+int(args.usb_hub)+(args.hub_depth or 0)
+     if args.devices_second:
+      # Boot disk + keyboard are on second; an optional fixture stays on first.
+      for count in [2, int(bool(args.storage_fixture or args.fat_fixture))]:
+       if f'MUSHA: USB_ENUMERATION_OK COUNT={count:016X}' not in text:raise RuntimeError('Per-controller USB enumeration failed: '+text)
+     elif f'MUSHA: USB_ENUMERATION_OK COUNT={expected_count:016X}' not in text:raise RuntimeError('USB enumeration failed: '+text)
      if 'VID=00000000000046F4 PID=0000000000000001' not in text or 'VID=0000000000000627 PID=0000000000000001' not in text:raise RuntimeError('Expected USB disk and keyboard missing: '+text)
      if 'MUSHA: XHCI_NOOP_OK COUNT=0000000000000258 COMMAND_WRAP_OK EVENT_WRAP_OK' not in text or 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('Command ring probe failed: '+text)
      if 'MUSHA: APP_LIFECYCLE_OK STEPS=' not in text:raise RuntimeError('App lifecycle failed: '+text)
@@ -165,9 +212,23 @@ with (out/'qemu.log').open('w') as err:
     if args.case in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt']:
      required=['MUSHA: DIAG STATE SESSION COMPLETE','MUSHA: DIAG XHCI PCI 1B36:000D']
      if args.case=='normal':
-      required+=['MUSHA: DIAG USB STEP STOPPED DMA DISABLED','MUSHA: DIAG USB PORT','46F4:0001','0627:0001',
+      required+=['MUSHA: DIAG USB STEP STOPPED DMA DISABLED','MUSHA: DIAG USB C','0627:0001',
        'MUSHA: DIAG LAN PCI 8086:'+('10D3' if args.nic=='e1000e' else '100E'),
        'MUSHA: DIAG NET STEP '+('STOPPED DMA DISABLED' if args.nic=='e1000e' else 'DRIVER UNSUPPORTED / ABSENT')]
+      required+=['MUSHA: DIAG XHCI0 1B36:000D', 'INPUT DONE', 'BOOT KEYBOARD MATCH / CHECK INPUT']
+      if not args.keyboard_second or args.devices_second:required+=['46F4:0001', 'BOT STORAGE MATCH / CHECK READ']
+      if not args.extra_xhci:required+=[f'MUSHA: DIAG THIS CONTROLLER BOOT KBD 1 BOT STORAGE {2 if args.fat_fixture or args.storage_fixture else 1}']
+      if args.extra_xhci:
+       required+=['MUSHA: DIAG XHCI1 1B36:000D', 'SCANNED', 'MUSHA: XHCI_SCAN_COMPLETE', 'SEQUENTIAL SCAN / DETAILS CURRENT CONTROLLER']
+       if text.count('MUSHA: XHCI_SCAN BDF=') != 2:raise RuntimeError('Both controllers must be scanned exactly once')
+       if text.count('MUSHA: RUNTIME_POLL_READY') != 1:raise RuntimeError('Ready must be emitted exactly once')
+       if args.keyboard_second or args.devices_second:
+        required+=['MUSHA: XHCI_INPUT BDF=0000000000000020', 'XHCI1 1B36:000D BDF 0020 INPUT DONE']
+       else:required+=['MUSHA: XHCI_INPUT BDF=0000000000000018']
+      if args.usb_hub or args.hub_depth:required+=['MUSHA: USB2_HUB_READY']
+      if args.hub_depth:
+       if text.count('MUSHA: USB2_HUB_READY') != args.hub_depth:raise RuntimeError('Hub count differs')
+       required+=['MUSHA: HUB_CHILD_RESET_OK']
       if args.usb_image:required+=['MUSHA: DIAG FILE MUSHA.TXT BYTES 00000010','MUSHA: DIAG FILE HASH 9A42A948C590F507']
      else:
       required+=['MUSHA: DIAG FAIL AT USB STEP','MUSHA: DIAG USB ERROR']
