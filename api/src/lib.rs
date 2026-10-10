@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
 mod files;
+mod input;
 pub use files::FileHandle;
 use musha_framebuffer::Framebuffer;
-pub const API_VERSION: u32 = 3;
+pub const API_VERSION: u32 = 4;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Invalid,
@@ -32,16 +33,12 @@ pub struct KeyEvent {
     pub pressed: bool,
     pub timestamp_ms: u64,
 }
-const INPUT_CAPACITY: usize = 64;
 pub struct Context<'a> {
     arena: &'a mut [u8],
     files: files::Files,
     screen: Framebuffer,
     now_ms: u64,
-    input: [Option<KeyEvent>; INPUT_CAPACITY],
-    head: usize,
-    count: usize,
-    lost: u64,
+    input: input::Input,
     input_active: bool,
 }
 impl<'a> Context<'a> {
@@ -57,10 +54,7 @@ impl<'a> Context<'a> {
             files: files::Files::new(),
             screen,
             now_ms: 0,
-            input: [None; INPUT_CAPACITY],
-            head: 0,
-            count: 0,
-            lost: 0,
+            input: input::Input::new(),
             input_active: false,
         })
     }
@@ -88,31 +82,21 @@ impl<'a> Context<'a> {
     pub fn file_close(&mut self, handle: FileHandle) -> Result<(), Error> {
         self.files.close(handle)
     }
-    /// Runtime producer; drops newest on overflow and retains the older FIFO.
+    /// Runtime producer. Overflow preserves the older FIFO and records the latest
+    /// held-key state. Further input coalesces until the consumer drains recovery.
+    /// Intermediate transitions may be lost; final held state is reconciled.
     pub fn push_key(&mut self, usage: u8, pressed: bool) {
-        if self.count == INPUT_CAPACITY {
-            self.lost = self.lost.saturating_add(1);
-            return;
-        }
-        let tail = (self.head + self.count) % INPUT_CAPACITY;
-        self.input[tail] = Some(KeyEvent {
-            usage,
-            pressed,
-            timestamp_ms: self.now_ms,
-        });
-        self.count += 1;
+        self.input.push(usage, pressed, self.now_ms);
     }
+    /// FIFO events retain timestamps; recovery events use the current context
+    /// time and release keys before pressing keys. Drain until None each step.
     pub fn next_key(&mut self) -> Option<KeyEvent> {
-        if self.count == 0 {
-            return None;
-        }
-        let event = self.input[self.head].take();
-        self.head = (self.head + 1) % INPUT_CAPACITY;
-        self.count -= 1;
-        event
+        self.input.next(self.now_ms)
     }
+    /// Number of producer events coalesced during overflow recovery (saturating).
+    /// State recovery does not reconstruct lost clicks, text or their timestamps.
     pub fn lost_key_events(&self) -> u64 {
-        self.lost
+        self.input.lost()
     }
     pub fn set_input_active(&mut self, active: bool) {
         self.input_active = active;
@@ -186,7 +170,7 @@ impl<'a> Context<'a> {
 mod tests {
     use super::*;
     #[test]
-    fn input_fifo_wrap_overflow_and_timestamps() {
+    fn input_fifo_wrap_and_timestamps() {
         let mut arena = [0u8; 1];
         let mut pixels = [0u32; 1];
         let fb = Framebuffer {
@@ -202,8 +186,7 @@ mod tests {
         for key in 0..64 {
             ctx.push_key(key, true);
         }
-        ctx.push_key(99, false);
-        assert_eq!(ctx.lost_key_events(), 1);
+        assert_eq!(ctx.lost_key_events(), 0);
         for key in 0..32 {
             assert_eq!(
                 ctx.next_key(),

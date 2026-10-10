@@ -108,8 +108,8 @@ that license; the test-only dependency on `musha-input` does not link BCE to boo
 実機前に進められる項目1（HID解析）と項目2（BCE模擬接続）を追加した。
 解析したキー情報は既存の共通入力層へ渡せる。BCEは模擬レジスター／メモリーで
 順序と異常時の停止・保持方針を確認した。実機へのアクセスは有効にしておらず、
-内蔵キーボード動作を確認したという意味ではない。次の実機作業はT2-D1診断と
-実際のdescriptor採取で、取得した形式に合わせて対応範囲を調整する。
+内蔵キーボード動作を確認したという意味ではない。次の実機作業はT2-D1診断。実際のdescriptor採取は実通信・列挙を整えた後の
+別段階で行い、取得した形式に合わせて対応範囲を調整する。
 
 Validation result: 147 Rust workspace tests passed (18 newly added HID/adapter
 integration cases), both libraries passed the UEFI target check, and normal plus
@@ -117,3 +117,5 @@ T2-D1 release builds passed. All four FreeBSD reference hashes verified; release
 packaging tests passed (5 cases). Formatting and diff checks passed. The new
 parser/adapter is not activated in boot; QEMU was not rerun for these unconnected
 additions. The preceding runtime-input integration has its own QEMU evidence.
+
+Follow-up: [入力溢れ復元・HIDファジング・実機採取手順](input-prehardware-validation.md).

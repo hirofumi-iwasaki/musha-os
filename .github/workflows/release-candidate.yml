@@ -51,6 +51,11 @@ jobs:
           python3 tools/test-usb-image.py
           python3 tools/test-usb-build.py
           python3 tools/test-release-package.py
+      - name: HID mutation and state properties
+        timeout-minutes: 2
+        run: |
+          cargo run --locked --release -p musha-input --example hid_fuzz -- 100000 7445454
+          cargo run --locked --release -p musha-input --example hid_fuzz -- 100000 123456789
       - name: Build diagnostic USB image
         run: |
           cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features qemu-debug

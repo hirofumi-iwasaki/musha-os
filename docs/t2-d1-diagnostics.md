@@ -66,3 +66,5 @@ USB更新時には既存EFIを別の場所へ退避し、ZIPの内容をUSBル�
 
 QEMUにはApple BCEがないため、T2が存在する実機でのconfiguration取得は未検証。
 通信、内蔵キー入力、Touch Barの成功を示す結果ではない。
+
+次回の記録項目と判定基準は[実機前の入力検証](input-prehardware-validation.md)を参照。
