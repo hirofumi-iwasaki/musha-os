@@ -175,6 +175,7 @@ with (out/'qemu.log').open('w') as err:
        if expected+'\n' not in text:raise RuntimeError('T2 diagnostic missing: '+expected+'\n'+text)
      if args.keyboard_wrap and 'MUSHA: HID_RING_WRAP_OK' not in text:raise RuntimeError('HID ring wrap missing: '+text)
      if args.keyboard_exit and 'MUSHA: APP_KEY_DOWN=0000000000000029' not in text:raise RuntimeError('App Escape exit missing: '+text)
+     if args.keyboard_exit and ('MUSHA: INPUT_SOURCE_DETACHED' not in text or text.count('MUSHA: APP_KEY_UP=0000000000000029')!=1):raise RuntimeError('Escape release/cleanup missing or duplicated: '+text)
      if 'MUSHA: HID_DIAGNOSTIC_OK REPORTS=' not in text:raise RuntimeError('HID diagnostic missing: '+text)
      if not args.no_keyboard_input:
       for key in ['00000000000000E1','0000000000000004']:

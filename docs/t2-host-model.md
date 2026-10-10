@@ -24,7 +24,8 @@ No BCE driver is activated by this change. T2-D1 remains the next hardware test.
 - `musha-input::BootKeyboardState` is the existing xHCI boot-report decoder moved
   into a transport-independent crate. `musha_xhci::keyboard::State` re-exports it,
   so the current runtime uses the shared implementation without changing callers.
-  A source-specific release-all operation is tested for a future disconnect path.
+  The boot application now routes external transitions through `Sources<2>` and
+  detaches the source on every xHCI diagnostic return.
 
 ## Adapter contract and limits
 
@@ -70,10 +71,12 @@ keys; disconnect releases the selected source and falls back to the next source.
 Unchanged held keys do not emit duplicates. Generation handles reject events
 from an older connection. Releases precede new presses during selection changes.
 Adapters must keep inactive sources updated and explicitly disconnect on failure.
-This selector is host-tested but not yet connected to the single-keyboard boot
-session; T2 integration requires the hardware adapter and descriptor evidence.
+The selector is connected to the external-keyboard boot session (slot 0).
+Slot 1 is reserved; actual T2 integration still requires the hardware adapter
+and descriptor evidence.
 Simultaneous aggregation, report-ID parsing and Touch Bar handling remain absent.
-The new release-all operation is not yet wired into existing disconnect cleanup.
+Runtime cleanup uses selector disconnect to release held keys; decoder
+`release_all` remains an alternative for transport adapters.
 
 ## Test evidence
 
@@ -162,3 +165,31 @@ normal and T2-D1 builds succeeded without that warning. No physical USB changed.
 項目4の実機不要の回帰検証を完了。新しい入力元切替はhost integration testで検証し、
 既存の外付け入力・USB読出し・通信は再ビルドしたQEMU環境で確認した。
 次の実機依存作業はT2-D1診断結果の採取であり、内蔵キーボード対応の完了は未確認。
+
+## Runtime input integration (2026-10-10)
+
+`boot/src/app.rs` now owns `Sources<2>` for its input session. Ready connects the
+external source at priority slot 0. All decoded xHCI transitions pass through the
+selector before the application's existing FIFO. After `xhci::diagnose` returns,
+the runtime disconnects the source and enqueues releases for its held keys. This
+covers Esc, diagnostic deadline, disconnect and hardware/application errors.
+Input availability derives from the selector's active source. No T2 source is
+connected yet; live internal/external fallback remains unverified.
+
+The selector cleanup happens after xHCI's existing quiescence and changes only
+CPU state. Successful/continuing application execution consumes the releases in
+the existing tail loop. On application error the source is still cleared and
+releases enqueued, but the failed application is not called again to consume them;
+normal shutdown/error propagation continues. No new hardware access is added.
+
+QEMU regression now holds Shift+A without automatic key-up before deleting the
+keyboard and requires each release exactly once at both detach and application
+boundaries. The Esc test requires its application release exactly once. The app
+error scenario holds A and checks detach before final failure, alongside existing
+DMA-stop checks. These assertions run in the existing CI scenarios.
+
+Validation for this integration: 129 workspace host tests passed; QEMU
+multi-controller/ring-wrap, Esc cleanup, cooperative traffic, input-idle,
+no-keyboard, held-Shift+A disconnect and held-A application failure passed.
+Normal and T2-D1 builds passed. The pre-existing unused `diagnostics::page`
+warning remains in debug builds. Physical USB and T2 hardware were not modified.

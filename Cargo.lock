@@ -20,6 +20,7 @@ dependencies = [
  "musha-api",
  "musha-framebuffer",
  "musha-fs",
+ "musha-input",
  "musha-memory",
  "musha-net",
  "musha-platform",

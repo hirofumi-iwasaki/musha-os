@@ -81,8 +81,23 @@ with (out/'qemu.log').open('w') as err:
    text=log.read_text();assert text.count('MUSHA: XHCI_SCAN BDF=')==2
    assert 'MUSHA: XHCI_SCAN_COMPLETE' in text
    assert text.count('MUSHA: RUNTIME_POLL_READY')==1
+  if a.case=='app-error':
+   control('input-send-event',{'events':[{'type':'key','data':{'down':True,'key':{'type':'qcode','data':'a'}}}]})
+   wait_marker('APP_KEY_DOWN=0000000000000004')
   if a.case=='keyboard-disconnect':
+   # Hold Shift+A with no scheduled key-up before physically removing the device.
+   control('input-send-event',{'events':[
+    {'type':'key','data':{'down':True,'key':{'type':'qcode','data':'shift'}}},
+    {'type':'key','data':{'down':True,'key':{'type':'qcode','data':'a'}}}]})
+   wait_marker('APP_KEY_DOWN=00000000000000E1')
+   wait_marker('APP_KEY_DOWN=0000000000000004')
    control('device_del',{'id':'keyboard'});wait_marker('XHCI_FAILED KEYBOARD DISCONNECTED')
+   wait_marker('INPUT_SOURCE_DETACHED')
+   for usage in ['00000000000000E1','0000000000000004']:
+    wait_marker('APP_KEY_UP='+usage)
+    text=log.read_text()
+    assert text.count('MUSHA: INPUT_DETACH_KEY_UP='+usage)==1
+    assert text.count('MUSHA: APP_KEY_UP='+usage)==1
   if a.case in ['link-down','tx-timeout']:
    if a.case=='link-down':control('set_link',{'name':'net0','up':False})
    reason='LINK DOWN' if a.case=='link-down' else 'TX TIMEOUT'
@@ -156,6 +171,8 @@ with (out/'qemu.log').open('w') as err:
     assert 'XHCI_QUIESCED DMA_DISABLED' in text and 'NET_QUIESCED DMA_DISABLED' in text
     assert text.index('XHCI_QUIESCED')<text.index('APP_FAILED') and text.index('NET_QUIESCED')<text.index('APP_FAILED')
     assert 'APP_LIFECYCLE_OK' not in text
+    assert text.count('MUSHA: INPUT_DETACH_KEY_UP=0000000000000004')==1
+    assert text.index('INPUT_SOURCE_DETACHED')<text.index('APP_FAILED')
     control('quit');proc.wait(timeout=5)
     print('PASS: application error stops both DMA controllers before halt')
     raise SystemExit(0)

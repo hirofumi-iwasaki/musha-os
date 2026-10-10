@@ -229,6 +229,9 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         let mut had_keyboard = false;
         let mut input_error = None;
         let mut last_udp = 0;
+        // External slot 0 has priority; slot 1 is reserved for a future T2 adapter.
+        let mut inputs = musha_input::sources::Sources::<2>::default();
+        let mut external = None;
         let mut cycle = |event: crate::xhci::AppEvent<'_>| -> Result<bool, &'static str> {
             let events = match event {
                 crate::xhci::AppEvent::File(bytes) => {
@@ -241,7 +244,14 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 }
                 crate::xhci::AppEvent::Ready(input) => {
                     ctx.finish_file_discovery(false);
-                    ctx.set_input_active(input);
+                    if input {
+                        external = Some(
+                            inputs
+                                .connect(0, |k, d| ctx.push_key(k, d))
+                                .map_err(|_| "INPUT SOURCE CONNECT")?,
+                        );
+                    }
+                    ctx.set_input_active(inputs.active().is_some());
                     had_keyboard = input;
                     match crate::net::Session::start(info, &mut time) {
                         Ok(session) => network = session,
@@ -275,7 +285,10 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     }
                 }
                 for &(key, down) in events {
-                    ctx.push_key(key, down);
+                    let source = external.ok_or(Error::Invalid)?;
+                    inputs
+                        .key(source, key, down, |k, d| ctx.push_key(k, d))
+                        .map_err(|_| Error::Invalid)?;
                 }
                 let state = app.step(&mut ctx)?;
                 steps += 1;
@@ -297,9 +310,23 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         };
         let usb_result = crate::xhci::diagnose(info, &mut cycle);
         drop(cycle);
+        // Every diagnose return (Esc, deadline, disconnect, hardware/app error)
+        // detaches the input source. This changes CPU input state only; xHCI owns
+        // DMA quiescence. Do not invoke a failed app again solely for cleanup.
+        if let Some(source) = external.take() {
+            inputs
+                .disconnect(source, |k, d| {
+                    ctx.push_key(k, d);
+                    crate::debug(b"MUSHA: INPUT_DETACH_KEY_UP=");
+                    crate::debug(&crate::cpu::hex(k as u64));
+                    crate::debug(b"\n");
+                })
+                .map_err(|_| Error::Invalid)?;
+        }
+        crate::debug(b"MUSHA: INPUT_SOURCE_DETACHED\n");
         let input_completed = had_keyboard && usb_result.is_ok();
         ctx.finish_file_discovery(usb_result.is_err());
-        ctx.set_input_active(false);
+        ctx.set_input_active(inputs.active().is_some());
         if let Some(error) = input_error {
             return Err(error);
         }
