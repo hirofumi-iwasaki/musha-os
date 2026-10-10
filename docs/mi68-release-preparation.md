@@ -1,5 +1,9 @@
 # MI68 / Musha-OS v0.1.0 release preparation
 
+> 2026-10-10: v0.1.0 is approved as a limited initial development release. [Final scope / 確定した公開範囲](release-scope-0.1.0.md) supersedes the original acceptance gates below. Earlier unreleased statements are historical.
+
+> 最新の実機確認状況（2026-10-10）は[配布資料用の実機確認状況](hardware-verification-status.md)を参照。以下の過去の準備・検証記録は、その記録日時点の内容です。
+
 ## English
 
 Created: 2026-10-09 (Japan time). Status: preparation in progress; unreleased.

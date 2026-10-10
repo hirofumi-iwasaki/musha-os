@@ -172,7 +172,6 @@ pub(super) fn probe(
         host,
         slot,
         control_ring,
-        12,
         buffer,
         0,
         ((disk.configuration as u32) << 16) | 0x0900,
@@ -221,10 +220,10 @@ pub(super) fn probe(
     copy(data, &mut cap);
     let (blocks, size) = storage::capacity(&cap).ok_or("CAPACITY RANGE")?;
     crate::diagnostics::set(
-        19,
+        36,
         format_args!("MEDIA SLOT {:02X} BLOCKS {:016X}", slot, blocks),
     );
-    crate::diagnostics::set(20, format_args!("SECTOR BYTES {:08X}", size));
+    crate::diagnostics::set(37, format_args!("SECTOR BYTES {:08X}", size));
     crate::diagnostics::usb_stage("STORAGE SECTOR READ");
     crate::debug(b"MUSHA: STORAGE_CAPACITY BLOCKS=");
     crate::debug(&crate::cpu::hex(blocks));
@@ -255,9 +254,9 @@ pub(super) fn probe(
     );
     match file_result {
         Ok(bytes) => {
-            crate::diagnostics::set(21, format_args!("FILE MUSHA.TXT BYTES {:08X}", bytes));
+            crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT BYTES {:08X}", bytes));
             crate::diagnostics::set(
-                22,
+                39,
                 format_args!("FILE HASH {:016X}", storage::hash(&file[..bytes])),
             );
             tick(super::super::AppEvent::File(&file[..bytes]))?;
@@ -279,16 +278,16 @@ pub(super) fn probe(
             }
         }
         Err(musha_fs::Error::Unsupported) => {
-            crate::diagnostics::set(21, format_args!("FILE FORMAT UNSUPPORTED"));
-            crate::diagnostics::set(22, format_args!("FILE HASH UNKNOWN"));
+            crate::diagnostics::set(38, format_args!("FILE FORMAT UNSUPPORTED"));
+            crate::diagnostics::set(39, format_args!("FILE HASH UNKNOWN"));
             tick(super::super::AppEvent::FileError(
                 musha_api::Error::Unsupported,
             ))?;
             crate::debug(b"MUSHA: FAT32_UNSUPPORTED\n");
         }
         Err(musha_fs::Error::NotFound) => {
-            crate::diagnostics::set(21, format_args!("FILE MUSHA.TXT MISSING"));
-            crate::diagnostics::set(22, format_args!("FILE HASH UNKNOWN"));
+            crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT MISSING"));
+            crate::diagnostics::set(39, format_args!("FILE HASH UNKNOWN"));
             tick(super::super::AppEvent::FileError(
                 musha_api::Error::NotFound,
             ))?;

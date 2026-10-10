@@ -47,11 +47,11 @@ impl Failure {
         }
     }
 }
-/// Full panel occupies 384x240 pixels. Compact status uses the last seven rows.
+/// Full panel occupies 384x420 pixels. Compact status uses the last seven rows.
 pub fn layout(width: usize, height: usize) -> Option<(usize, usize, bool)> {
-    if width >= 1024 && height >= 264 {
+    if width >= 1024 && height >= 444 {
         Some((640, 24, true))
-    } else if width >= 408 && height >= 824 {
+    } else if width >= 408 && height >= 980 {
         Some((24, 560, true))
     } else if width >= 8 && height >= 8 {
         Some((0, height - 8, false))
@@ -86,15 +86,102 @@ mod tests {
     }
     #[test]
     fn panel_stays_inside_screen() {
-        for (w, h) in [(1280, 800), (1024, 768), (640, 824), (320, 356), (7, 7)] {
+        for (w, h) in [
+            (1280, 800),
+            (1024, 768),
+            (640, 980),
+            (1024, 443),
+            (1024, 444),
+            (408, 980),
+            (320, 356),
+            (7, 7),
+        ] {
             if let Some((x, y, full)) = layout(w, h) {
                 assert!(x < w && y + 7 <= h);
                 if full {
-                    assert!(x + 384 <= w && y + 240 <= h);
+                    assert!(x + 384 <= w && y + 420 <= h);
                 }
             } else {
                 assert_eq!((w, h), (7, 7));
             }
         }
+    }
+}
+
+/// Diagnostic classification only; it does not authorize configuring a device.
+pub fn device_kind(class: u8) -> &'static str {
+    match class {
+        0 => "INTERFACE CLASS",
+        3 => "HID",
+        8 => "MASS STORAGE",
+        9 => "HUB UNSUPPORTED",
+        _ => "OTHER DEVICE",
+    }
+}
+/// Inspect a validated configuration chain without claiming driver support.
+pub fn configuration_kind(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() < 9
+        || bytes[0] != 9
+        || bytes[1] != 2
+        || u16::from_le_bytes([bytes[2], bytes[3]]) as usize != bytes.len()
+    {
+        return None;
+    }
+    let mut offset = 0;
+    let mut classes = 0u8;
+    while offset < bytes.len() {
+        let length = *bytes.get(offset)? as usize;
+        if length < 2 || offset.checked_add(length)? > bytes.len() {
+            return None;
+        }
+        if bytes[offset + 1] == 4 {
+            if length < 9 {
+                return None;
+            }
+            classes |= match bytes[offset + 5] {
+                3 => 1,
+                8 => 2,
+                9 => 4,
+                _ => 8,
+            };
+        }
+        offset += length;
+    }
+    Some(match classes {
+        1 => "HID / CHECK BOOT SUPPORT",
+        2 => "STORAGE / CHECK BOT SUPPORT",
+        4 => "HUB UNSUPPORTED",
+        0 => "NO INTERFACES",
+        8 => "OTHER INTERFACE",
+        _ => "MULTIPLE INTERFACE CLASSES",
+    })
+}
+#[cfg(test)]
+mod classification_tests {
+    use super::*;
+    #[test]
+    fn class_zero_is_not_keyboard_and_hubs_are_explicit() {
+        assert_eq!(device_kind(0), "INTERFACE CLASS");
+        assert_eq!(device_kind(9), "HUB UNSUPPORTED");
+        let mut config = [9, 2, 18, 0, 1, 1, 0, 128, 50, 9, 4, 0, 0, 0, 9, 0, 3, 0];
+        assert_eq!(configuration_kind(&config), Some("HUB UNSUPPORTED"));
+        config[14] = 3;
+        assert_eq!(
+            configuration_kind(&config),
+            Some("HID / CHECK BOOT SUPPORT")
+        );
+        config[9] = 0;
+        assert_eq!(configuration_kind(&config), None);
+    }
+    #[test]
+    fn truncated_and_mixed_interfaces() {
+        assert_eq!(configuration_kind(&[9, 2, 18, 0, 1, 1, 0, 128, 50]), None);
+        let config = [
+            9, 2, 27, 0, 2, 1, 0, 128, 50, 9, 4, 0, 0, 0, 3, 1, 1, 0, 9, 4, 1, 0, 0, 8, 6, 80, 0,
+        ];
+        assert_eq!(
+            configuration_kind(&config),
+            Some("MULTIPLE INTERFACE CLASSES")
+        );
     }
 }

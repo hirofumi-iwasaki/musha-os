@@ -31,6 +31,10 @@ impl Tables {
         execute: bool,
         cache: u8,
     ) -> Result<(), Error> {
+        crate::diagnostics::set(
+            15,
+            format_args!("MAPPING {:016X}-{:016X}", range.start, range.end),
+        );
         let range = range.aligned()?;
         for address in (range.start..range.end).step_by(PAGE) {
             if address == 0 {
@@ -84,6 +88,7 @@ unsafe fn wrmsr(index: u32, value: u64) {
 // The returned arena is the sole mutable application view of chosen RAM.
 pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> {
     unsafe {
+        crate::diagnostics::set(10, format_args!("MEM CHECK CPU / PAT"));
         let leaf = __cpuid(1);
         if leaf.edx & (1 << 16) == 0
             || __cpuid(0x80000000).eax < 0x80000008
@@ -110,12 +115,59 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         // Preserve firmware PAT/MTRRs; select existing WB and UC entries.
         let wb = find(6)?;
         let uc = find(0)?;
+        crate::diagnostics::set(10, format_args!("MEM CHECK BOOTINFO"));
+        crate::diagnostics::set(
+            11,
+            format_args!(
+                "MAP BYTES {} STRIDE {} VERSION {}",
+                info.map_size, info.descriptor_size, info.descriptor_version
+            ),
+        );
+        crate::diagnostics::set(
+            12,
+            format_args!("IMAGE {:016X} SIZE {:X}", info.image_base, info.image_bytes),
+        );
+        crate::diagnostics::set(
+            13,
+            format_args!("TABLE {:016X} SIZE {:X}", info.table_base, info.table_bytes),
+        );
         if info.map_size > 128 * 1024 || info.image_base % PAGE != 0 || info.table_base % PAGE != 0
         {
             return Err(Error::Invalid);
         }
         let bytes = core::slice::from_raw_parts(info.map_base as *const u8, info.map_size);
-        let map = MemoryMap::new(bytes, info.descriptor_size, info.descriptor_version)?;
+        crate::diagnostics::set(10, format_args!("MEM CHECK UEFI MAP"));
+        let map = MemoryMap::new(bytes, info.descriptor_size, info.descriptor_version).map_err(
+            |error| {
+                // Inspect only bounded, complete descriptors for an offending record.
+                if info.descriptor_size >= 40 && info.descriptor_size <= bytes.len() {
+                    for (index, record) in bytes.chunks_exact(info.descriptor_size).enumerate() {
+                        if MemoryMap::new(record, info.descriptor_size, info.descriptor_version)
+                            .is_err()
+                        {
+                            let u64at =
+                                |n| u64::from_le_bytes(record[n..n + 8].try_into().unwrap());
+                            crate::diagnostics::set(
+                                14,
+                                format_args!(
+                                    "BAD MAP INDEX {} TYPE {}",
+                                    index,
+                                    u32::from_le_bytes(record[..4].try_into().unwrap())
+                                ),
+                            );
+                            crate::diagnostics::set(
+                                15,
+                                format_args!("START {:016X} PAGES {:X}", u64at(8), u64at(24)),
+                            );
+                            crate::diagnostics::set(16, format_args!("ATTR {:016X}", u64at(32)));
+                            break;
+                        }
+                    }
+                }
+                error
+            },
+        )?;
+        crate::diagnostics::set(10, format_args!("MEM CHECK RESERVED RANGES"));
         let reserved = [
             Range::new(info.image_base, info.image_bytes)?.aligned()?,
             Range::new(info.stack_base, info.stack_bytes)?,
@@ -128,6 +180,10 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             Range::new(info.net_dma_base, info.net_dma_bytes)?,
         ];
         for (i, a) in reserved.iter().enumerate() {
+            crate::diagnostics::set(
+                14,
+                format_args!("RESERVED {} {:016X}-{:016X}", i, a.start, a.end),
+            );
             if a.end > physical_limit {
                 return Err(Error::Invalid);
             }
@@ -137,30 +193,119 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
                 }
             }
         }
-        for dma in &reserved[7..9] {
+        crate::diagnostics::set(10, format_args!("MEM CHECK DMA LOADER COVERAGE"));
+        for (dma_index, dma) in reserved[7..9].iter().enumerate() {
+            crate::diagnostics::set(
+                15,
+                format_args!("DMA OWNER {}", if dma_index == 0 { "USB" } else { "LAN" }),
+            );
+            crate::diagnostics::set(14, format_args!("DMA {:016X}-{:016X}", dma.start, dma.end));
             if dma.start % PAGE != 0 || dma.end % PAGE != 0 || dma.end > 1usize << 32 {
                 return Err(Error::Invalid);
             }
-            let mut valid = false;
-            for i in 0..map.count() {
-                let region = map.region(i)?;
-                if region.kind == 2
-                    && region.range.start <= dma.start
-                    && region.range.end >= dma.end
-                    && region.attributes & ((1 << 13) | (1 << 17)) == 0
-                {
-                    valid = true;
+            if let Err(error) = map.loader_coverage(*dma) {
+                // Explain the exact coverage rejection without changing policy.
+                let mut cursor = dma.start;
+                for _ in 0..map.count() {
+                    let mut found = None;
+                    for i in 0..map.count() {
+                        let region = map.region(i)?;
+                        if region.range.start <= cursor && cursor < region.range.end {
+                            found = Some((i, region));
+                            break;
+                        }
+                    }
+                    let Some((index, region)) = found else {
+                        crate::diagnostics::set(
+                            16,
+                            format_args!("DMA REJECT GAP AT {:016X}", cursor),
+                        );
+                        break;
+                    };
+                    let rejected = region.attributes & musha_memory::RUNTIME_ATTRIBUTE;
+                    if region.kind != 2 || rejected != 0 {
+                        crate::diagnostics::set(
+                            16,
+                            format_args!(
+                                "DMA REJECT MAP {} {}",
+                                index,
+                                if region.kind != 2 {
+                                    "TYPE"
+                                } else {
+                                    "ATTR POLICY"
+                                }
+                            ),
+                        );
+                        crate::diagnostics::set(39, format_args!("REJECT MASK {:016X}", rejected));
+                        break;
+                    }
+                    cursor = region.range.end.min(dma.end);
+                    if cursor == dma.end {
+                        break;
+                    }
                 }
-            }
-            if !valid {
-                return Err(Error::Invalid);
+                let mut shown = 0;
+                for i in 0..map.count() {
+                    let region = map.region(i)?;
+                    if !region.range.overlaps(*dma) {
+                        continue;
+                    }
+                    if shown < 5 {
+                        let row = 18 + shown * 4;
+                        crate::diagnostics::set(
+                            row,
+                            format_args!(
+                                "MAP {} TYPE {} ATTR {:016X}",
+                                i, region.kind, region.attributes
+                            ),
+                        );
+                        crate::diagnostics::set(
+                            row + 1,
+                            format_args!("START {:016X}", region.range.start),
+                        );
+                        crate::diagnostics::set(
+                            row + 2,
+                            format_args!("END   {:016X}", region.range.end),
+                        );
+                        crate::diagnostics::set(
+                            row + 3,
+                            format_args!(
+                                "FLAGS RT {} RP {} RO {} XP {} WB {}",
+                                (region.attributes >> 63) & 1,
+                                (region.attributes >> 13) & 1,
+                                (region.attributes >> 17) & 1,
+                                (region.attributes >> 14) & 1,
+                                (region.attributes >> 3) & 1
+                            ),
+                        );
+                    }
+                    shown += 1;
+                }
+                crate::diagnostics::set(
+                    40,
+                    format_args!("DMA OVERLAP RECORDS {} FIRST 5 SHOWN", shown),
+                );
+                crate::diagnostics::set(41, format_args!("REQUIRE TYPE 2 / NO GAP / NO RUNTIME"));
+                return Err(error);
             }
         }
-        let mut mmio = [None; 2];
-        for (index, controller) in [info.xhci, info.nic].iter().enumerate() {
+        crate::diagnostics::set(10, format_args!("MEM CHECK MMIO"));
+        let mut mmio = [None; crate::pci::MAX_CONTROLLERS + 1];
+        for (index, controller) in info.xhcis.entries[..info.xhcis.count]
+            .iter()
+            .chain(core::iter::once(&info.nic))
+            .enumerate()
+        {
             if controller.bytes == 0 {
                 continue;
             }
+            crate::diagnostics::set(
+                14,
+                format_args!(
+                    "MMIO {} BASE {:016X} SIZE {:X}",
+                    index, controller.base, controller.bytes
+                ),
+            );
             let range = Range::new(controller.base, controller.bytes)?;
             if range.start % PAGE != 0
                 || range.end % PAGE != 0
@@ -178,12 +323,14 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             }
             mmio[index] = Some(range);
         }
+        crate::diagnostics::set(10, format_args!("MEM CHECK ARENA"));
         let arena = map.arena(&reserved, 16 * 1024 * 1024, 64 * 1024 * 1024)?;
         if arena.end > physical_limit {
             return Err(Error::Invalid);
         }
         let image_bytes =
             core::slice::from_raw_parts(info.image_base as *const u8, info.image_bytes);
+        crate::diagnostics::set(10, format_args!("MEM CHECK PE IMAGE"));
         let image = Image::new(image_bytes)?;
         let mut tables = Tables {
             base: info.table_base,
@@ -192,6 +339,7 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             wb,
             uc,
         };
+        crate::diagnostics::set(10, format_args!("MEM CHECK PAGE TABLES"));
         tables.allocate()?;
         tables.map(reserved[0], false, false, tables.wb)?;
         for i in 0..image.count() {
@@ -237,6 +385,7 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         asm!("mov cr3, {}",in(reg) tables.base,options(nostack));
         let active: usize;
         asm!("mov {}, cr3",out(reg) active,options(nomem,nostack));
+        crate::diagnostics::set(10, format_args!("MEM CHECK ACTIVE CR3"));
         if active != tables.base {
             return Err(Error::Invalid);
         }

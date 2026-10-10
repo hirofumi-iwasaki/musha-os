@@ -19,7 +19,9 @@ Explicitly reserve the image, stack, BootInfo, map, emergency stack,
 table pool, DMA pool, and GOP; reject initialization if they overlap.
 
 Arena candidates are only EfiConventionalMemory regions with WB capability
-and without Runtime / RP / RO attributes.
+and without Runtime attributes. RP/RO/XP are protection capabilities, not
+current access settings; owned page tables enforce RW/NX.
+See [attribute correction](memory-attribute-policy.md).
 Exclude reserved ranges and page 0, then select 16–64MiB from the largest contiguous region.
 Halt with MEMORY LOW if less than 16MiB is available. Recheck overlaps after selection.
 Do not expose the DMA pool to applications; it is dedicated to device drivers.
@@ -90,8 +92,9 @@ descriptor version 1、strideが40byte以上かつ8の倍数、全領域のペ�
 算術overflow、領域間の重複を検査する。イメージ・stack・BootInfo・map・
 緊急stack・table pool・DMA pool・GOPを明示予約し、重複していれば初期化を拒否する。
 
-arenaの候補はEfiConventionalMemoryでWB対応属性を持ち、Runtime / RP / ROの
-属性がない領域だけ。予約範囲とページ0を除外し、最大の連続領域から
+arenaの候補はEfiConventionalMemoryでWB対応属性を持ち、Runtime属性がない領域だけ。
+RP／RO／XPは保護設定能力で、現在のアクセス権とは限らない。自前ページテーブルでRW／NXを保証する。
+[属性修正方針](memory-attribute-policy.md)を参照。予約範囲とページ0を除外し、最大の連続領域から
 16〜64MiBを選択する。16MiBに満たない場合はMEMORY LOWとして停止する。
 選択後の重複も再検査する。DMA poolはアプリへ公開せず、機器ドライバ専用とする。
 

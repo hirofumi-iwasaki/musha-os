@@ -55,7 +55,18 @@ impl Framebuffer {
     /// Same mapping/ownership requirements as pixel.
     pub unsafe fn text(&self, text: &str, x: usize, y: usize, color: u32) {
         unsafe {
-            self.text_scaled(text, x, y, color, 3);
+            // Presentation coordinates retain the existing application layout contract.
+            // Keep 42-pixel glyphs even on 768/800-high GOP modes.
+            let py = y.saturating_mul(self.height.saturating_sub(48).min(1100)) / 550;
+            let px = if x >= 240 { x.saturating_mul(2) } else { x };
+            // Counts/addresses on the visitor panel need not carry sixteen zeros.
+            let shown = if text.len() == 16 && text.bytes().all(|b| b.is_ascii_hexdigit()) {
+                let short = text.trim_start_matches('0');
+                if short.is_empty() { "0" } else { short }
+            } else {
+                text
+            };
+            self.text_scaled(shown, px, py, color, 6);
         }
     }
     /// # Safety
@@ -65,7 +76,7 @@ impl Framebuffer {
             self.text_scaled(text, x, y, color, 1);
         }
     }
-    unsafe fn text_scaled(&self, text: &str, x: usize, y: usize, color: u32, scale: usize) {
+    pub unsafe fn text_scaled(&self, text: &str, x: usize, y: usize, color: u32, scale: usize) {
         for (i, ch) in text.bytes().enumerate() {
             let Some(left) = i.checked_mul(6 * scale).and_then(|v| x.checked_add(v)) else {
                 break;

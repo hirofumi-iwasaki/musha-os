@@ -44,6 +44,16 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(tar.extractfile('musha-os-0.1.0-candidate/MUSHA.TXT').read(), b'Hello Musha-OS!\n')
             self.assertTrue(all(m.mtime == 0 and m.uid == 0 for m in tar.getmembers()))
 
+    def test_release_metadata_and_readme(self):
+        output = release.stage(self.root / 'release', self.efi,
+                               {'commit': 'fixture', 'features': []}, release=True)
+        bundle = output / 'musha-os-0.1.0'
+        manifest = json.loads((bundle / 'manifest.json').read_text())
+        self.assertEqual(manifest['status'], 'initial-development-release')
+        self.assertEqual(manifest['features'], [])
+        self.assertTrue((bundle / 'README.md').is_file())
+        self.assertTrue((output / 'musha-os-0.1.0.tar.gz').is_file())
+
     def test_existing_output_is_untouched(self):
         out = self.root / 'existing'; out.mkdir(); (out / 'keep').write_text('important')
         with self.assertRaises(FileExistsError): release.stage(out, self.efi, {})

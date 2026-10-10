@@ -26,7 +26,7 @@ def digest(path):
 def command(*args):
     return subprocess.check_output(args, cwd=ROOT, text=True).strip()
 
-def stage(destination, efi, provenance):
+def stage(destination, efi, provenance, release=False):
     """Package an already-built candidate into a new directory only."""
     destination = Path(destination).absolute()
     if destination.exists() or destination.is_symlink():
@@ -36,11 +36,12 @@ def stage(destination, efi, provenance):
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.musha-stage-', dir=destination.parent) as tmp:
         work = Path(tmp)
-        bundle = work / 'musha-os-0.1.0-candidate'
+        name = 'musha-os-0.1.0' if release else 'musha-os-0.1.0-candidate'
+        bundle = work / name
         (bundle / 'EFI/BOOT').mkdir(parents=True)
         shutil.copyfile(efi, bundle / 'EFI/BOOT/BOOTX64.EFI')
         (bundle / 'MUSHA.TXT').write_bytes(b'Hello Musha-OS!\n')
-        for name in ['LICENSE', 'NOTICE']:
+        for name in ['LICENSE', 'NOTICE', 'README.md']:
             shutil.copyfile(ROOT / name, bundle / name)
         for name in sorted(p.name for p in (ROOT / 'docs').glob('*.md')):
             (bundle / 'docs').mkdir(exist_ok=True)
@@ -59,9 +60,10 @@ def stage(destination, efi, provenance):
         spec = importlib.util.spec_from_file_location('usb_image', ROOT / 'tools/make-usb-image.py')
         usb = importlib.util.module_from_spec(spec); spec.loader.exec_module(usb)
         usb.create(bundle / 'musha-qemu-64MiB.img', bundle / 'EFI/BOOT/BOOTX64.EFI')
-        provenance = dict(provenance, status='unreleased-candidate', version='0.1.0',
+        provenance = dict(provenance, status='initial-development-release' if release else 'unreleased-candidate', version='0.1.0',
                           image_scope='64MiB QEMU image; physical USB needs exact-capacity regeneration',
-                          hardware_validation='NOT RUN', release_acceptance='NOT DETERMINED')
+                          hardware_validation='See docs/release-validation-0.1.0.md and docs/pci-h19-hardware-results.md' if release else 'NOT RUN',
+                          release_acceptance='Limited scope: docs/release-scope-0.1.0.md' if release else 'NOT DETERMINED')
         provenance['files'] = {p.relative_to(bundle).as_posix():
                                {'bytes': p.stat().st_size, 'sha256': digest(p)}
                                for p in sorted(bundle.rglob('*')) if p.is_file()}
@@ -69,7 +71,7 @@ def stage(destination, efi, provenance):
         files = sorted(p for p in bundle.rglob('*') if p.is_file())
         (bundle / 'SHA256SUMS').write_text(''.join(
             f'{digest(p)}  {p.relative_to(bundle).as_posix()}\n' for p in files))
-        archive = work / 'musha-os-0.1.0-candidate.tar.gz'
+        archive = work / (bundle.name + '.tar.gz')
         with archive.open('wb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as gz:
             with tarfile.open(fileobj=gz, mode='w') as tar:
                 for p in sorted(bundle.rglob('*')):
@@ -90,7 +92,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=ROOT / 'dist/mi68-candidate')
     parser.add_argument('--allow-dirty', action='store_true', help='Preview only; record uncommitted changes')
+    parser.add_argument('--release', action='store_true', help='Package the approved initial development release; does not publish')
     args = parser.parse_args()
+    if args.release and args.allow_dirty: parser.error('Release packaging requires a clean commit')
     if args.output.exists() or args.output.is_symlink(): parser.error('Output must be new')
     dirty = command('git', 'status', '--porcelain')
     if dirty and not args.allow_dirty: parser.error('Commit changes first, or use --allow-dirty for a preview')
@@ -107,7 +111,7 @@ def main():
                         'x86_64-unknown-uefi', '-p', 'musha-boot', '--no-default-features',
                         '--target-dir', tmp], cwd=ROOT, check=True)
         efi = Path(tmp) / 'x86_64-unknown-uefi/release/musha-boot.efi'
-        print('Candidate staged:', stage(args.output, efi, provenance))
+        print('Candidate staged:', stage(args.output, efi, provenance, release=args.release))
     print('No device write, tag creation or publication performed.')
 
 if __name__ == '__main__':

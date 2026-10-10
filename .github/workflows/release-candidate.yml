@@ -63,6 +63,10 @@ jobs:
           for case in traffic input-idle no-keyboard keyboard-disconnect link-down; do
             python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/debug.img --case "$case"
           done
+      - name: QEMU multi-controller and hub regression
+        run: |
+          python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --fat-fixture gpt --extra-xhci --devices-second
+          python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --fat-fixture gpt --hub-depth 5 --keyboard-usb-version 1
       - name: QEMU exception and timeout regression
         run: |
           for case in ud gp df pf ro nx guard xhci-timeout xhci-command-timeout usb-descriptor-timeout storage-timeout; do

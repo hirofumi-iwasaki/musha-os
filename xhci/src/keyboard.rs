@@ -23,6 +23,7 @@ pub fn configuration(b: &[u8], speed: Speed) -> Result<Option<Keyboard>, &'stati
     let mut offset = 9;
     let mut active = None;
     let mut found = None;
+    let mut interface_endpoint = false;
     let mut hid = false;
     let mut endpoints = 0u8;
     let mut expected = 0u8;
@@ -43,6 +44,7 @@ pub fn configuration(b: &[u8], speed: Speed) -> Result<Option<Keyboard>, &'stati
                 if length != 9 {
                     return Err("INTERFACE LENGTH");
                 }
+                interface_endpoint = false;
                 active = if d[3] == 0 && d[5..8] == [3, 1, 1] {
                     Some(d[2])
                 } else {
@@ -70,7 +72,7 @@ pub fn configuration(b: &[u8], speed: Speed) -> Result<Option<Keyboard>, &'stati
                 }
                 endpoints = endpoints.checked_add(1).ok_or("ENDPOINT COUNT")?;
                 if d[2] & 0x80 != 0 && d[3] & 3 == 3 {
-                    if found.is_some() || d[2] & 0x70 != 0 || d[2] & 15 == 0 {
+                    if interface_endpoint || d[2] & 0x70 != 0 || d[2] & 15 == 0 {
                         return Err("KEYBOARD ENDPOINT");
                     }
                     let packet = u16::from_le_bytes([d[4], d[5]]);
@@ -89,13 +91,17 @@ pub fn configuration(b: &[u8], speed: Speed) -> Result<Option<Keyboard>, &'stati
                     if packet < 8 || packet > max {
                         return Err("KEYBOARD PACKET");
                     }
-                    found = Some(Keyboard {
+                    interface_endpoint = true;
+                    let candidate = Keyboard {
                         configuration: b[5],
                         interface: active.unwrap(),
                         endpoint: d[2] & 15,
                         packet,
                         interval,
-                    });
+                    };
+                    if found.is_none() {
+                        found = Some(candidate);
+                    }
                 }
             }
             _ => {}
@@ -162,6 +168,33 @@ mod tests {
         b = fixture();
         b[16] = 2;
         assert_eq!(configuration(&b, Speed::Full), Ok(None));
+    }
+    #[test]
+    fn composite_selects_first_but_validates_later_interfaces() {
+        let mut b = std::vec::Vec::from(fixture());
+        let mut second = fixture()[9..].to_vec();
+        second[2] = 1;
+        second[20] = 0x82;
+        b.extend_from_slice(&second);
+        let length = b.len() as u16;
+        b[2..4].copy_from_slice(&length.to_le_bytes());
+        b[4] = 2;
+        assert_eq!(
+            configuration(&b, Speed::Full).unwrap().unwrap().interface,
+            0
+        );
+        let end = b.len();
+        b[end - 3] = 7;
+        assert!(configuration(&b, Speed::Full).is_err());
+    }
+    #[test]
+    fn duplicate_endpoint_in_one_interface_is_rejected() {
+        let mut b = std::vec::Vec::from(fixture());
+        b.extend_from_slice(&fixture()[27..]);
+        b[13] = 2;
+        let length = b.len() as u16;
+        b[2..4].copy_from_slice(&length.to_le_bytes());
+        assert_eq!(configuration(&b, Speed::Full), Err("KEYBOARD ENDPOINT"));
     }
     #[test]
     fn reports_preserve_rollover_and_deduplicate_keys() {

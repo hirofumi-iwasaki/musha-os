@@ -8,6 +8,8 @@ parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--case',choices=['traffic','input-idle','no-keyboard','keyboard-disconnect','link-down','tx-timeout','app-error'],default='traffic')
 parser.add_argument('--usb-image',type=pathlib.Path)
+parser.add_argument('--hub-depth',type=int,choices=range(1,6),help='Place a USB1 keyboard under USB2 hubs')
+parser.add_argument('--extra-xhci',action='store_true',help='Verify no-keyboard behavior with two controllers')
 a=parser.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
 out=root/('out/qemu-cooperative-'+a.case);out.mkdir(parents=True,exist_ok=True)
 f=pathlib.Path(a.firmware_dir);shutil.copyfile(f/'edk2-i386-vars.fd',out/'vars.fd')
@@ -18,10 +20,19 @@ cmd=[a.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev',f'socket,id=net0,li
  '-drive',f'if=pflash,format=raw,readonly=on,file={f / "edk2-x86_64-code.fd"}',
  '-drive',f'if=pflash,format=raw,file={out / "vars.fd"}',
  '-drive',f'if=none,id=esp,format=raw,file=fat:rw:{root / "out/esp"}',
- '-device','qemu-xhci','-device','usb-storage,drive=esp','-device','usb-kbd,id=keyboard','-vga','std','-display','none',
+ '-device','qemu-xhci,id=usbhost','-device','usb-storage,drive=esp,bus=usbhost.0,port=1','-device','usb-kbd,id=keyboard,bus=usbhost.0','-vga','std','-display','none',
  '-debugcon',f'file:{log}','-global','isa-debugcon.iobase=0xe9','-qmp',f'unix:{qmp},server=on,wait=off','-no-reboot']
 if a.case=='no-keyboard':
- index=cmd.index('usb-kbd,id=keyboard');del cmd[index-1:index+1]
+ index=cmd.index('usb-kbd,id=keyboard,bus=usbhost.0');del cmd[index-1:index+1]
+if a.hub_depth:
+ if a.case=='no-keyboard':parser.error('Hub traffic test requires keyboard')
+ index=cmd.index('usb-kbd,id=keyboard,bus=usbhost.0')
+ cmd[index]+= ',usb_version=1,port=3'+'.1'*a.hub_depth
+ hubs=[]
+ for depth in range(a.hub_depth):hubs.extend(['-device','usb-hub,ports=4,port-power=on,bus=usbhost.0,port=3'+'.1'*depth])
+ index=cmd.index('qemu-xhci,id=usbhost')
+ cmd[index+1:index+1]=hubs
+if a.extra_xhci:cmd.extend(['-device','qemu-xhci,id=extra'])
 image_hash=None
 if a.usb_image:
  a.usb_image=a.usb_image.resolve()
@@ -66,6 +77,10 @@ with (out/'qemu.log').open('w') as err:
     if time.monotonic()>end or proc.poll() is not None:raise RuntimeError('Missing '+marker+'\n'+log.read_text())
     time.sleep(.02)
   wait_marker('RUNTIME_POLL_READY')
+  if a.extra_xhci:
+   text=log.read_text();assert text.count('MUSHA: XHCI_SCAN BDF=')==2
+   assert 'MUSHA: XHCI_SCAN_COMPLETE' in text
+   assert text.count('MUSHA: RUNTIME_POLL_READY')==1
   if a.case=='keyboard-disconnect':
    control('device_del',{'id':'keyboard'});wait_marker('XHCI_FAILED KEYBOARD DISCONNECTED')
   if a.case in ['link-down','tx-timeout']:

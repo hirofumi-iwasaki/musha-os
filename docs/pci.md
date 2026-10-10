@@ -81,3 +81,21 @@ PCI列挙そのものは設定レジスタを変更しない。別の[xHCI初期
 
 仕様参照: [Intel E8501 chipset datasheet](https://www.intel.com/content/dam/doc/datasheet/e8501-chipset-north-bridge-datasheet.pdf)
 のPCI configuration access（CF8 / CFC）。
+
+## H16 shared BAR parser
+
+UEFI resource decoding and direct-MMIO policy are separate. Both controller discovery and recovery peer checks use the shared decoder; unsupported translation and malformed resources remain blocking. See [H16 design](pci-h16-resource-parser-plan.md).
+
+## H17 consistency inspection
+
+H17 captures the first rejected peer's complete BAR layout, PCIIO read statuses, bounded before/after snapshots, and segment-0 CF8/CFC comparisons. A descriptor/config type mismatch remains blocking; diagnostic evidence does not grant recovery permission. No machine-specific exception or configuration write is added. See [H17 inspection design](pci-h17-bar-consistency-inspection-plan.md).
+
+H17 stores before/after/repeat config values and per-read status in fixed boot-CPU storage outside BootInfo. Structural descriptor decoding and BAR-slot classification are diagnostic helpers; they do not relax memory recovery policy. Changed or failed config snapshots remain blocking. The fixed diagnostic journal holds 512 lines with an explicit overflow marker. Platform tests (22), UEFI release build, and single/multiple-controller QEMU GPT/input smoke passed; firmware-specific evidence requires the next physical boot.
+
+## H18 logical BAR index mapping
+
+Configuration DWORD slots and UEFI logical resource indices are advanced separately: a 64-bit BAR consumes two slots but one resource index. Zero BAR slots retain an index. Recovery peer memory descriptors must also match the configuration BAR base; mismatch remains blocking. Existing recovery permission conditions are unchanged. See [H18 design and verification](pci-h18-bar-index-plan.md).
+
+## H19 conditional peer overlap proof
+
+With explicit user approval, a mismatched peer's ordinary 32-bit memory BAR may use a conservative naturally aligned aperture bound, checked together with its firmware range. Both ranges must be disjoint from the recovery target. Configuration reads must agree across PCIIO and CF8, remain stable, and be rechecked immediately before restoration. Own-controller mismatches, unsupported BARs, ambiguity, overflow, or evidence-capacity exhaustion remain blocking. No peer writes or BAR sizing probes are added. See [H19 implementation and verification](pci-h19-peer-resource-plan.md).

@@ -1,5 +1,12 @@
 # Musha-OS
 
+**v0.1.0 — initial development release / 初期開発版**
+
+[Download / ダウンロード](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.1.0) · [Release notes / リリースノート](docs/release-notes-0.1.0.md) · [Verified scope / 検証範囲](docs/release-scope-0.1.0.md)
+
+MacBook Pro 2018: H19 USB/FAT32 file reads and external Lenovo A, Shift+A, Esc input verified. Internal keyboard and NUC networking are outside the verified scope.
+MacBook Pro 2018でUSB読出しと外付けLenovo入力を実機確認。内蔵キーボード・NUC通信は未検証／未対応です。
+
 ## English
 
 Musha-OS is a thin bare-metal execution environment based on x86-64 / UEFI.
@@ -39,6 +46,7 @@ An initial read-only [application file API](docs/file-api.md) is implemented for
 The first diagnostic application displays `Hello Musha-OS!` and is designed to
 check the display, input, RAM, file, and UDP status.
 The normal build includes a persistent [hardware diagnostic panel](docs/hardware-diagnostics.md); use the [hardware test record template](docs/hardware-test-record-template.md) for physical tests.
+[USB2 hub boot enumeration](docs/usb-multi-controller-hub-plan.md) now handles bounded child traversal and sequential multi-controller discovery. Up to five full-speed QEMU hub levels have been verified; high-speed TT traffic remains unverified. USB3.0/5Gbps hub initialization is implemented but has not been exercised on hardware; USB3.1/3.2 hubs remain unsupported.
 See [development and build instructions](docs/development.md).
 Build a test image and FAT32 USB bundle with the [one-command USB build](docs/test-usb-build.md).
 
@@ -46,20 +54,22 @@ Build a test image and FAT32 USB bundle with the [one-command USB build](docs/te
 
 - [MI68 release preparation](docs/mi68-release-preparation.md)
 - [Preparation results](docs/mi68-preparation-results.md)
-- [Draft release notes](docs/release-notes-0.1.0-draft.md)
+- [Release notes](docs/release-notes-0.1.0.md)
 
 - [I218-V Rust port plan](docs/i218-rust-port-plan.md)
 - [Experimental I218 PHY probe](docs/i218-phy-probe.md)
+- [Multi-controller and hub implementation plan](docs/usb-multi-controller-hub-plan.md)
+- [Multi-controller USB diagnosis](docs/usb-controller-diagnosis.md)
 - [Hardware diagnostics](docs/hardware-diagnostics.md)
 - [Hardware test record template](docs/hardware-test-record-template.md)
 - [Work plan before hardware arrival](docs/pre-hardware-work-plan.md)
 
 - [Musha-OS baseline policy 0.1.0](docs/policy-v0.1.md)
 - [0.1.0 architecture design](docs/design-0.1.0.md)
+- [Future architecture: Ring 3 application isolation](docs/future-design.md)
 - [0.1.0 implementation plan and design completion criteria](docs/implementation-plan-0.1.0.md)
 
-The first release number is `0.1.0`. Design and implementation are ongoing;
-this version has not been released.
+Version `0.1.0` is an initial development release with the limited scope linked above.
 
 ### Repository layout
 
@@ -89,6 +99,8 @@ and record its source, version, and changes.
 ---
 
 ## 日本語
+
+[USB2ハブ配下の起動時列挙](docs/usb-multi-controller-hub-plan.md)と複数controllerの順次探索を追加。QEMU full-speed hubは最大5段で確認済み。高速TT通信は未検証。USB3.0／5Gbps hubの初期化を実装したが実転送は未検証、USB3.1／3.2 hubは未対応。
 
 Musha-OSは、x86-64 / UEFIベースの薄いベアメタル実行環境です。
 古いPCを活用し、アプリケーションに必要な画面、入力、USBストレージ、
@@ -125,6 +137,8 @@ USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済み
 
 - [I218-V Rust移植方針](docs/i218-rust-port-plan.md)
 - [実験用I218 PHY診断](docs/i218-phy-probe.md)
+- [複数コントローラー・ハブ対応設計](docs/usb-multi-controller-hub-plan.md)
+- [複数USBコントローラーの診断](docs/usb-controller-diagnosis.md)
 - [実機診断](docs/hardware-diagnostics.md)
 - [実機試験記録様式](docs/hardware-test-record-template.md)
 - [実機到着前の作業方針](docs/pre-hardware-work-plan.md)
@@ -132,9 +146,10 @@ USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済み
 - [Musha-OS 基本方針 0.1.0](docs/policy-v0.1.md)
 
 - [0.1.0 アーキテクチャ設計](docs/design-0.1.0.md)
+- [将来設計：Ring 3によるアプリ分離](docs/future-design.md)
 - [0.1.0 実装計画と設計完了条件](docs/implementation-plan-0.1.0.md)
 
-最初のリリース番号は `0.1.0` です。現在は設計と実装を継続中で、リリース済みではありません。
+`0.1.0`は上記の検証範囲に限定した初期開発版です。開発は継続中です。
 
 テストイメージとFAT32 USB用ファイル一式の生成方法は[一括USBビルド](docs/test-usb-build.md)を参照してください。
 
@@ -160,3 +175,17 @@ Copyright 2026 Hirofumi Iwasaki
 
 第三者コードは各コードの元のライセンスと著作権表示を保持します。
 取り込み前に配布条件と互換性を確認し、採用元・版・変更内容を記録します。
+
+- [H3 hardware USB diagnostics plan / H3実機USB診断方針](docs/usb-h3-diagnostics-plan.md)
+
+- [Mac early memory diagnostics / Mac早期メモリ診断](docs/mac-memory-diagnostics.md)
+
+- [Ryzen H4 hardware results / Ryzen H4実機結果](docs/ryzen-h4-hardware-results.md)
+
+- [Memory attribute policy / メモリー属性判定方針](docs/memory-attribute-policy.md)
+
+- [ACPI timer diagnosis plan / ACPIタイマー診断計画](docs/acpi-timer-diagnostics-plan.md)
+
+- [ACPI firmware-table read policy / ACPI表の読取方針](docs/acpi-read-policy.md)
+
+- [Latest physical hardware verification status / 配布資料用の最新実機確認状況](docs/hardware-verification-status.md)（2026-10-10）

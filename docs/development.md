@@ -2,6 +2,8 @@
 
 ## English
 
+For USB2 hub tests, use `tools/smoke-qemu.py --hub-depth 1 --keyboard-usb-version 1 --keyboard-exit --fat-fixture gpt` plus the firmware option; depths 1–5 are supported. `--hub-disconnect` tests idle child removal. Cooperative traffic accepts `--hub-depth 3`. The dedicated build feature `usb-control-probe` requires `--control-ring-probe` in the smoke test; it must never be included in hardware images. See [hub results](usb-multi-controller-hub-plan.md).
+
 For an end-to-end normal build and USB artifacts, see [test USB build](test-usb-build.md).
 
 ### Current implementation scope
@@ -189,6 +191,8 @@ The fixture is not for UEFI boot on physical hardware. See [supported scope](fat
 ---
 
 ## 日本語
+
+USB2ハブ試験は`tools/smoke-qemu.py --hub-depth 1 --keyboard-usb-version 1 --keyboard-exit --fat-fixture gpt`にfirmware指定を追加する。深さ1〜5対応。`--hub-disconnect`は無入力中の子切断試験。協調通信試験も`--hub-depth 3`に対応。専用ビルド機能`usb-control-probe`にはsmoke側`--control-ring-probe`を指定し、実機イメージには含めない。[検証記録](usb-multi-controller-hub-plan.md)を参照。
 
 通常ビルドからUSB用ファイルまでの一括生成は[テストUSBビルド](test-usb-build.md)を参照してください。
 

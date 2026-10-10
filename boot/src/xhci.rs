@@ -61,9 +61,9 @@ fn wait(
     }
     Err("CLOCK STALLED")
 }
-fn reset(info: &BootInfo) -> Result<(), &'static str> {
+fn reset(info: &BootInfo, c: pci::Controller) -> Result<(), &'static str> {
     crate::diagnostics::usb_stage("CAPABILITY");
-    let c = info.xhci;
+    pci::controller_evidence(c);
     if c.bytes == 0 {
         return Err("NOT FOUND");
     }
@@ -164,27 +164,117 @@ pub(crate) enum AppEvent<'a> {
     File(&'a [u8]),
     FileError(musha_api::Error),
 }
+#[derive(Clone, Copy, Default)]
+struct Probe {
+    keyboard: bool,
+    storage: usize,
+}
+use musha_platform::controllers::DMA_SLICE;
+fn probe(
+    info: &BootInfo,
+    c: pci::Controller,
+    index: usize,
+    discovery: bool,
+    tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
+) -> Result<Probe, &'static str> {
+    crate::diagnostics::begin_controller(c);
+    let result = pci::recover(info, c, index)
+        .and_then(|()| reset(info, c))
+        .and_then(|()| {
+            crate::diagnostics::usb_stage("RINGS / COMMANDS");
+            command_probe(info, c, index, discovery, tick)
+        });
+    if let Err(error) = result {
+        crate::diagnostics::usb_failure(error);
+        crate::debug(b"MUSHA: XHCI_FAILED ");
+        crate::debug(error.as_bytes());
+        crate::debug(b"\n");
+    }
+    unsafe {
+        pci::disable_dma(c);
+    }
+    if unsafe { pci::read(c.bus, c.device, c.function, 4) } & 4 != 0 {
+        return Err("QUIESCE FAILED");
+    }
+    crate::diagnostics::controller_result(
+        c,
+        result.as_ref().ok().map(|p| (p.keyboard, p.storage)),
+        result.err(),
+        !discovery,
+    );
+    result
+}
 pub(crate) fn diagnose(
     info: &BootInfo,
     tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
-    let result = reset(info).and_then(|()| {
-        crate::diagnostics::usb_stage("RINGS / COMMANDS");
-        command_probe(info, tick)
-    });
-    let (label, color) = match result {
-        Ok(()) => ("USB ENUMERATED", info.framebuffer.color(0, 240, 100)),
-        Err(error) => {
-            crate::diagnostics::usb_failure(error);
-            crate::debug(b"MUSHA: XHCI_FAILED ");
-            crate::debug(error.as_bytes());
-            crate::debug(b"\n");
-            ("XHCI FAILED", info.framebuffer.color(255, 180, 0))
+    let controllers = &info.xhcis.entries[..info.xhcis.count];
+    crate::diagnostics::controller_limit(info.xhcis.truncated);
+    let mut found_device = false;
+    let result = (|| {
+        if controllers.is_empty() {
+            return Err("NOT FOUND");
         }
-    };
+        if controllers.len() == 1 {
+            return probe(info, controllers[0], 0, false, tick).map(|report| {
+                found_device = report.keyboard || report.storage > 0;
+            });
+        }
+        let mut keyboard = None;
+        let mut success = false;
+        let mut last_error = "NO CONTROLLER";
+        let owner = controllers.iter().position(|c| c.bdf() == info.boot_owner);
+        for index in (0..controllers.len()).map(|step| match owner {
+            Some(i) if step == 0 => i,
+            Some(i) if step <= i => step - 1,
+            _ => step,
+        }) {
+            let c = controllers[index];
+            crate::debug(b"MUSHA: XHCI_SCAN BDF=");
+            crate::debug(&crate::cpu::hex(c.bdf() as u64));
+            crate::debug(b"\n");
+            match probe(info, c, index, true, tick) {
+                Ok(report) => {
+                    success = true;
+                    found_device |= report.keyboard || report.storage > 0;
+                    if report.keyboard && keyboard.is_none() {
+                        keyboard = Some(index);
+                    }
+                }
+                Err(error @ ("QUIESCE FAILED" | "APP INPUT ERROR" | "APP FILE CACHE")) => {
+                    return Err(error);
+                }
+                Err(error) => last_error = error,
+            }
+        }
+        crate::debug(b"MUSHA: XHCI_SCAN_COMPLETE\n");
+        if let Some(index) = keyboard {
+            crate::debug(b"MUSHA: XHCI_INPUT BDF=");
+            crate::debug(&crate::cpu::hex(controllers[index].bdf() as u64));
+            crate::debug(b"\n");
+            probe(info, controllers[index], index, false, tick).map(|_| ())
+        } else {
+            tick(AppEvent::Ready(false))?;
+            if success { Ok(()) } else { Err(last_error) }
+        }
+    })();
     clear_line(info.framebuffer, 292);
     unsafe {
-        info.framebuffer.text(label, 24, 292, color);
+        info.framebuffer.text(
+            if result.is_ok() {
+                if found_device {
+                    "USB DEVICE READY"
+                } else {
+                    "USB NO KBD/STORAGE"
+                }
+            } else {
+                "XHCI FAILED"
+            },
+            24,
+            292,
+            info.framebuffer
+                .color(if result.is_ok() { 0 } else { 255 }, 240, 100),
+        );
     }
     result
 }
@@ -222,6 +312,41 @@ fn event(
     expected_slot: u8,
     transfer: u8,
     timeout_ms: u64,
+) -> Result<[u32; 4], &'static str> {
+    event_dispatch(
+        regs,
+        clock,
+        base,
+        cursor,
+        runtime,
+        ac64,
+        expected,
+        ports,
+        expected_slot,
+        transfer,
+        timeout_ms,
+        None,
+        None,
+        None,
+        None,
+    )
+}
+fn event_dispatch(
+    regs: &Registers,
+    clock: &mut acpi::Time,
+    base: usize,
+    cursor: &mut musha_xhci::Cursor,
+    runtime: usize,
+    ac64: bool,
+    expected: usize,
+    ports: u32,
+    expected_slot: u8,
+    transfer: u8,
+    timeout_ms: u64,
+    deferred: Option<(usize, u8, u8)>,
+    mut saved: Option<&mut Option<[u32; 4]>>,
+    short: Option<(usize, u32)>,
+    mut residual: Option<&mut Option<u32>>,
 ) -> Result<[u32; 4], &'static str> {
     let limit = if cfg!(feature = "xhci-command-timeout")
         || (transfer != 0 && cfg!(feature = "usb-descriptor-timeout"))
@@ -266,7 +391,21 @@ fn event(
                     true
                 }
                 32 => {
-                    if transfer == 0
+                    if let (Some((data, requested)), Some(residual)) =
+                        (short, residual.as_deref_mut())
+                        && let Some(remaining) = musha_xhci::control::short_residual(
+                            words,
+                            data,
+                            expected_slot,
+                            requested,
+                        )
+                    {
+                        if residual.is_some() {
+                            return Err("DUPLICATE SHORT EVENT");
+                        }
+                        *residual = Some(remaining);
+                        false
+                    } else if transfer == 0
                         || !musha_xhci::endpoint_completion(
                             words,
                             expected,
@@ -274,9 +413,35 @@ fn event(
                             transfer,
                         )
                     {
-                        return Err("BAD TRANSFER");
+                        if let (Some((address, slot, endpoint)), Some(saved)) =
+                            (deferred, saved.as_deref_mut())
+                        {
+                            if saved.is_none()
+                                && musha_xhci::endpoint_completion(words, address, slot, endpoint)
+                            {
+                                *saved = Some(words);
+                                false
+                            } else {
+                                crate::diagnostics::transfer_failure(
+                                    words,
+                                    expected,
+                                    expected_slot,
+                                    transfer,
+                                );
+                                return Err("BAD TRANSFER");
+                            }
+                        } else {
+                            crate::diagnostics::transfer_failure(
+                                words,
+                                expected,
+                                expected_slot,
+                                transfer,
+                            );
+                            return Err("BAD TRANSFER");
+                        }
+                    } else {
+                        true
                     }
-                    true
                 }
                 34 => {
                     let port = words[0] >> 24;
@@ -310,12 +475,15 @@ fn event(
 }
 fn command_probe(
     info: &BootInfo,
+    controller: pci::Controller,
+    index: usize,
+    discovery: bool,
     tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
-) -> Result<(), &'static str> {
+) -> Result<Probe, &'static str> {
     use musha_xhci::{Cursor, Pool};
     let regs = Registers {
-        base: info.xhci.base,
-        bytes: info.xhci.bytes,
+        base: controller.base,
+        bytes: controller.bytes,
     };
     let op = (regs.read(0)? & 255) as usize;
     let ac64 = regs.read(0x10)? & 1 != 0;
@@ -331,10 +499,17 @@ fn command_probe(
     if scratch > 128 {
         return Err("SCRATCHPAD LIMIT");
     }
-    let mut pool = Pool::new(info.dma_base, info.dma_bytes).ok_or("DMA POOL")?;
+    let dma_base = musha_platform::controllers::dma_slice(
+        info.dma_base,
+        info.dma_bytes,
+        index,
+        info.xhcis.count,
+    )
+    .ok_or("DMA RANGE")?;
+    let mut pool = Pool::new(dma_base, DMA_SLICE).ok_or("DMA POOL")?;
     // Reset/halt and PCI BME=0 were verified before any allocation/initialization.
     unsafe {
-        core::ptr::write_bytes(info.dma_base as *mut u8, 0, info.dma_bytes);
+        core::ptr::write_bytes(dma_base as *mut u8, 0, DMA_SLICE);
     }
     let dcbaa = pool.allocate(2048, 64).ok_or("DMA FULL")?;
     let command = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
@@ -366,9 +541,10 @@ fn command_probe(
     // reserved for the entire boot, even if halt/cleanup or a command fails.
     let result = (|| {
         unsafe {
-            pci::enable_dma(info.xhci);
+            pci::enable_dma(controller);
         }
-        if unsafe { pci::read(info.xhci.bus, info.xhci.device, info.xhci.function, 4) } & 4 == 0 {
+        if unsafe { pci::read(controller.bus, controller.device, controller.function, 4) } & 4 == 0
+        {
             return Err("DMA ENABLE");
         }
         regs.address(op + 0x30, dcbaa as u64, ac64)?;
@@ -431,9 +607,16 @@ fn command_probe(
             ac64,
             ports,
             framebuffer: info.framebuffer,
+            storage_matches: 0,
+            control_cursors: [musha_xhci::control::Cursor::NEW; 9],
+            keyboard_pending: None,
+            keyboard_saved: None,
         };
-        usb::enumerate(&mut host, &mut pool, dcbaa, tick)?;
-        Ok(())
+        let keyboard = usb::enumerate(&mut host, &mut pool, dcbaa, discovery, tick)?;
+        Ok(Probe {
+            keyboard,
+            storage: host.storage_matches,
+        })
     })();
     if let Err(error) = result {
         crate::diagnostics::usb_failure(error);
@@ -444,10 +627,10 @@ fn command_probe(
         wait(&regs, &mut clock, op + 4, 1, 1, 100)
     })();
     unsafe {
-        pci::disable_dma(info.xhci);
+        pci::disable_dma(controller);
     }
     let disabled =
-        unsafe { pci::read(info.xhci.bus, info.xhci.device, info.xhci.function, 4) } & 4 == 0;
+        unsafe { pci::read(controller.bus, controller.device, controller.function, 4) } & 4 == 0;
     if halted.is_err() || !disabled {
         return Err("QUIESCE FAILED");
     }
@@ -468,6 +651,10 @@ struct Host<'a> {
     ac64: bool,
     ports: u32,
     framebuffer: musha_framebuffer::Framebuffer,
+    storage_matches: usize,
+    control_cursors: [musha_xhci::control::Cursor; 9],
+    keyboard_pending: Option<(usize, u8, u8)>,
+    keyboard_saved: Option<[u32; 4]>,
 }
 impl Host<'_> {
     fn command(
@@ -497,7 +684,7 @@ impl Host<'_> {
             );
         }
         self.regs.write(self.doorbell, 0)?;
-        let result = event(
+        let result = event_dispatch(
             self.regs,
             self.clock,
             self.events,
@@ -509,6 +696,10 @@ impl Host<'_> {
             slot,
             0,
             1000,
+            self.keyboard_pending,
+            Some(&mut self.keyboard_saved),
+            None,
+            None,
         )?;
         self.producer.advance();
         Ok(result)
@@ -526,7 +717,8 @@ impl Host<'_> {
 }
 
 fn clear_line(fb: musha_framebuffer::Framebuffer, y: usize) {
-    for row in y..(y + 24).min(fb.height) {
+    let y = y.saturating_mul(fb.height.saturating_sub(48).min(1100)) / 550;
+    for row in y..(y + 42).min(fb.height) {
         for x in 24..fb.width {
             unsafe {
                 fb.pixel(x, row, fb.color(12, 20, 32));

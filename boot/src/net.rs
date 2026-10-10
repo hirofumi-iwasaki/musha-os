@@ -356,7 +356,7 @@ impl Session {
             musha_lwip_counters(c.as_mut_ptr());
         }
         crate::diagnostics::set(
-            23,
+            40,
             format_args!("NET UDP {:08X} ARP {:08X} ICMP {:08X}", c[2], c[0], c[1]),
         );
         for (label, value) in [
