@@ -1,5 +1,7 @@
 # Development instructions and initial implementation
 
+Current v0.2.0 priorities and release gates: [開発方針と公開条件](release-scope-0.2.0.md).
+
 ## English
 
 For USB2 hub tests, use `tools/smoke-qemu.py --hub-depth 1 --keyboard-usb-version 1 --keyboard-exit --fat-fixture gpt` plus the firmware option; depths 1–5 are supported. `--hub-disconnect` tests idle child removal. Cooperative traffic accepts `--hub-depth 3`. The dedicated build feature `usb-control-probe` requires `--control-ring-probe` in the smoke test; it must never be included in hardware images. See [hub results](usb-multi-controller-hub-plan.md).
