@@ -86,6 +86,20 @@ pub(super) fn partition<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     r: &mut Reader<'_, F>,
     mbr: &[u8],
 ) -> Result<(u64, u64), Error> {
+    let mut candidates = [(0, 0); 128];
+    let count = partitions(r, mbr, &ESP, &mut candidates)?;
+    if count != 1 {
+        return Err(Error::Unsupported);
+    }
+    Ok(candidates[0])
+}
+/// Validate the entire table before the caller uses any returned candidates.
+pub(super) fn partitions<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
+    r: &mut Reader<'_, F>,
+    mbr: &[u8],
+    kind: &[u8; 16],
+    candidates: &mut [(u64, u64); 128],
+) -> Result<usize, Error> {
     if r.blocks < 2 + 2 * (16384 / r.size as u64) + 2 {
         return Err(Error::Corrupt);
     }
@@ -127,7 +141,7 @@ pub(super) fn partition<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     };
     let mut used = [empty; 128];
     let mut count = 0;
-    let mut esp = None;
+    let mut selected = 0;
     let mut crc = !0;
     for sector in 0..16384 / r.size as u64 {
         r.sector(primary.array + sector, &mut a)?;
@@ -157,16 +171,14 @@ pub(super) fn partition<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
             }
             used[count] = part;
             count += 1;
-            if entry[..16] == ESP {
-                if esp.is_some() {
-                    return Err(Error::Unsupported);
-                }
-                esp = Some((part.first, part.last - part.first + 1));
+            if entry[..16] == *kind {
+                candidates[selected] = (part.first, part.last - part.first + 1);
+                selected += 1;
             }
         }
     }
     if !crc != primary.crc {
         return Err(Error::Corrupt);
     }
-    esp.ok_or(Error::Unsupported)
+    Ok(selected)
 }

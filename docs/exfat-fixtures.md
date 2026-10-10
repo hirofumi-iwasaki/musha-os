@@ -64,6 +64,6 @@ CIではこの7件を実行する。仮想ディスクを必要とする外部�
 
 ## 次の追加
 
-[初期設計](exfat-design.md)に従い、GPT/MBR、
-非ASCII/255文字、短いFATチェーン・範囲外参照・各種上限を追加する。
+[初期設計](exfat-design.md)に従い、Rust側の解析器試験ではGPT/MBR、非ASCII/255文字、短いFATチェーン、範囲外参照、
+128/129件を追加済み。これらはPython生成器のCLIオプションではなく、試験内で合成する。
 合成fixtureとMusha-OS解析器の内容比較は実施済み。標準formatter由来のfixtureは未追加。

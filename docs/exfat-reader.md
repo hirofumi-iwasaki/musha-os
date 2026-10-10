@@ -8,11 +8,18 @@ USB・アプリAPI・画面にはまだ組み込んでいない。
 
 `Workspace`を呼出し側が用意し、`FileSystem::mount`へ媒体の総セクター数、論理セクターサイズ、
 選択したボリュームの開始位置と長さ、読出しcallbackを渡す。
-自動パーティション選択は未実装。superfloppyは開始0、既知のpartitionはその範囲を渡す。
+superfloppyは開始0、既知のpartitionはその範囲を渡す。
 開始位置と長さのoverflow、媒体外・ボリューム外参照を拒否する。
 
 callbackは要求された1セクターを全部読み、失敗時はErrorを返す。書込みcallbackは存在しない。
 mountから最後のreadまで媒体は不変でなければならない。
+自動選択には `FileSystem::discover` を使う。superfloppy、MBR primary type 07、
+GPT Microsoft Basic Dataを対象に署名を確認する。exFAT以外の候補は読み飛ばす。
+対象なし、複数のexFAT、MBR拡張partitionはUnsupported。選択後に破損を検出しても別の領域へ切り替えない。
+GPTは両header・両entry arrayのCRCと一致、全領域の範囲・重複を先に検証する。
+128個×128byteのGPT entry arrayに限定し、hybrid MBRと破損した片側からの復旧は未対応。
+MBRは未使用を除く全primary entryの範囲・重複・statusを検証する。
+
 この同期APIのcallbackに対してAgainや非同期DMAを直接接続しない。USB協調処理は後続工程で実装する。
 
 `entries()`は検証済みのルートファイル一覧を返す。名前は元のUTF-16で、表示用短縮名に変換しない。
@@ -51,15 +58,23 @@ heap allocationやunsafeは使わない。Workspaceは256KiB未満をホスト�
 
 ## 検証
 
-新規16試験で、[独立検査済みfixture](exfat-fixtures.md)の5ファイルを読み、
+exFATの27試験で、[独立検査済みfixture](exfat-fixtures.md)の5ファイルを読み、
 1/7/511/512/513/4096byte単位で元の内容と比較した。
 セクター境界・root cluster境界・EOF・空ファイル・4096byteセクター・非ゼロ開始範囲、
 圧縮up-case、破損checksum、bitmap欠落、循環/短い/長いチェーン、範囲外・overflow、
 名前・ValidDataLength異常、I/O失敗時のbuffer不変、root走査上限、ファイルサイズ上限を含む。
 
-既存FAT32の9試験を含む全ホスト182試験が合格。fixture生成器の7試験も合格。統合試験はPython3で再現可能なfixtureを生成し、外部ディスクへ書き込まない。
+追加でGPT/MBRの512/4096byte、複数候補、破損・重複・hybrid、非exFAT候補、
+255 UTF-16 code unit（日本語とsurrogate pairを含む）、128/129件、大小文字違いの重複名、
+benign/critical secondary、不正entry数を確認した。
+実際のFAT32 ESPとexFATを同じ合成GPTイメージへ配置し、両方の読出し内容も一致した。
+これはホスト試験であり、その混在イメージによるUEFI起動試験ではない。
+
+既存FAT32の9試験を含む全ホスト193試験が合格。fixture生成器の7試験も合格。統合試験はPython3で再現可能なfixtureを生成し、外部ディスクへ書き込まない。
 UEFI no_stdのcheckと通常版buildも成功した。
-USB経由のexFAT読出し、QEMU画面操作、実機確認は未実施。
+共通GPT処理の変更後、QEMUの既存GPT/FAT32イメージで通常smoke試験にも合格した。
+起動、既存USBストレージとアプリのファイル読出しを検証した（`out/exfat-discovery-regression.img`）。
+USB経由のexFAT読出し、ファイル選択画面、実機確認は未実施。
 
 ```sh
 cargo test --locked -p musha-fs
@@ -67,4 +82,4 @@ cargo check --locked --target x86_64-unknown-uefi --lib -p musha-fs
 python3 tools/test-exfat-fixture.py
 ```
 
-次はGPT/MBRの選択と追加境界試験を整え、工程4の共通ファイルAPIへ進む。
+次は工程4の共通ファイルAPIへ進む。標準formatter由来の追加互換試験とUSB/実機検証は引き続き必要。

@@ -356,3 +356,372 @@ fn reserved_fat_entries_are_validated() {
         assert_eq!(mount_result(&image), Err(Error::Corrupt));
     }
 }
+
+const BASIC: [u8; 16] = [
+    0xa2, 0xa0, 0xd0, 0xeb, 0xe5, 0xb9, 0x33, 0x44, 0x87, 0xc0, 0x68, 0xb6, 0xb7, 0x26, 0x99, 0xc7,
+];
+const ESP: [u8; 16] = [
+    0x28, 0x73, 0x2a, 0xc1, 0x1f, 0xf8, 0xd2, 0x11, 0xba, 0x4b, 0, 0xa0, 0xc9, 0x3e, 0xc9, 0x3b,
+];
+fn crc(bytes: &[u8]) -> u32 {
+    let mut c = !0u32;
+    for &b in bytes {
+        c ^= b as u32;
+        for _ in 0..8 {
+            c = if c & 1 != 0 {
+                (c >> 1) ^ 0xedb88320
+            } else {
+                c >> 1
+            };
+        }
+    }
+    !c
+}
+fn relocate(image: &mut [u8], size: usize, start: u64) {
+    for base in [0, 12 * size] {
+        put64(image, base + 64, start);
+        let mut sum = 0u32;
+        for (i, &b) in image[base..base + 11 * size].iter().enumerate() {
+            if !matches!(i, 106 | 107 | 112) {
+                sum = sum.rotate_right(1).wrapping_add(b as u32);
+            }
+        }
+        for off in (base + 11 * size..base + 12 * size).step_by(4) {
+            put32(image, off, sum);
+        }
+    }
+}
+fn gpt_resign(d: &mut [u8], size: usize) {
+    let blocks = d.len() / size;
+    let backup = (blocks - 1 - 16384 / size) * size;
+    let table = d[2 * size..2 * size + 16384].to_vec();
+    d[backup..backup + 16384].copy_from_slice(&table);
+    let checksum = crc(&table);
+    for off in [size, (blocks - 1) * size] {
+        put32(d, off + 88, checksum);
+        put32(d, off + 16, 0);
+        let c = crc(&d[off..off + 92]);
+        put32(d, off + 16, c);
+    }
+}
+fn partition_disk(size: usize, gpt: bool, multiple: bool) -> Vec<u8> {
+    let mut volume = if size == 512 {
+        normal()
+    } else {
+        fixture_size("normal", size)
+    };
+    let end = 2048 + 4160 * if multiple { 2 } else { 1 };
+    let blocks = end + if gpt { 1 + 16384 / size } else { 0 };
+    let mut d = vec![0; blocks * size];
+    d[510..512].copy_from_slice(&[0x55, 0xaa]);
+    relocate(&mut volume, size, 2048);
+    d[2048 * size..6208 * size].copy_from_slice(&volume);
+    if multiple {
+        relocate(&mut volume, size, 6208);
+        d[6208 * size..end * size].copy_from_slice(&volume);
+    }
+    if !gpt {
+        // A FAT32-typed partition and a non-exFAT type-07 partition coexist.
+        for (i, (kind, first, len)) in [(0x0c, 64, 64), (7, 128, 64), (7, 2048, 4160)]
+            .into_iter()
+            .enumerate()
+        {
+            let off = 446 + i * 16;
+            d[off + 4] = kind;
+            put32(&mut d, off + 8, first);
+            put32(&mut d, off + 12, len);
+        }
+        if multiple {
+            d[498] = 7;
+            put32(&mut d, 502, 6208);
+            put32(&mut d, 506, 4160);
+        }
+    } else {
+        d[450] = 0xee;
+        put32(&mut d, 454, 1);
+        put32(&mut d, 458, (blocks - 1) as u32);
+        for (i, (kind, first, last)) in [(ESP, 64, 127), (BASIC, 128, 191), (BASIC, 2048, 6207)]
+            .into_iter()
+            .enumerate()
+        {
+            let off = 2 * size + i * 128;
+            d[off..off + 16].copy_from_slice(&kind);
+            d[off + 16] = i as u8 + 1;
+            put64(&mut d, off + 32, first);
+            put64(&mut d, off + 40, last);
+        }
+        if multiple {
+            let off = 2 * size + 384;
+            d[off..off + 16].copy_from_slice(&BASIC);
+            d[off + 16] = 4;
+            put64(&mut d, off + 32, 6208);
+            put64(&mut d, off + 40, end as u64 - 1);
+        }
+        for (current, other, array) in [
+            (1, blocks - 1, 2),
+            (blocks - 1, 1, blocks - 1 - 16384 / size),
+        ] {
+            let off = current * size;
+            d[off..off + 8].copy_from_slice(b"EFI PART");
+            put32(&mut d, off + 8, 0x10000);
+            put32(&mut d, off + 12, 92);
+            put64(&mut d, off + 24, current as u64);
+            put64(&mut d, off + 32, other as u64);
+            put64(&mut d, off + 40, (2 + 16384 / size) as u64);
+            put64(&mut d, off + 48, (end - 1) as u64);
+            d[off + 56] = 42;
+            put64(&mut d, off + 72, array as u64);
+            put32(&mut d, off + 80, 128);
+            put32(&mut d, off + 84, 128);
+        }
+        gpt_resign(&mut d, size);
+    }
+    d
+}
+fn discover_result(d: &[u8], size: usize) -> Result<(), Error> {
+    let mut w = Box::new(Workspace::new());
+    let mut fs = FileSystem::discover((d.len() / size) as u64, size, reader(d), &mut w)?;
+    let mut bytes = [0; 16];
+    assert_eq!(fs.read_at(0, 0, &mut bytes), Ok(16));
+    assert_eq!(&bytes, b"Hello Musha-OS!\n");
+    Ok(())
+}
+#[test]
+fn autodiscovery_superfloppy_mbr_gpt_and_non_exfat_candidates() {
+    assert_eq!(discover_result(&normal(), 512), Ok(()));
+    for size in [512, 4096] {
+        for gpt in [false, true] {
+            assert_eq!(
+                discover_result(&partition_disk(size, gpt, false), size),
+                Ok(())
+            );
+        }
+    }
+}
+#[test]
+fn multiple_exfat_volumes_are_ambiguous() {
+    for gpt in [false, true] {
+        assert_eq!(
+            discover_result(&partition_disk(512, gpt, true), 512),
+            Err(Error::Unsupported)
+        );
+    }
+}
+#[test]
+fn gpt_damage_overlap_duplicate_and_hybrid_are_rejected() {
+    let original = partition_disk(512, true, false);
+    for off in [
+        512 + 16,
+        1024 + 56,
+        original.len() - 512 + 16,
+        original.len() - 33 * 512 + 56,
+    ] {
+        let mut d = original.clone();
+        d[off] ^= 1;
+        assert_eq!(discover_result(&d, 512), Err(Error::Corrupt));
+    }
+    let mut d = original.clone();
+    put64(&mut d, 1024 + 128 + 32, 100);
+    gpt_resign(&mut d, 512);
+    assert_eq!(discover_result(&d, 512), Err(Error::Corrupt));
+    let mut d = original.clone();
+    d[1024 + 128 + 16] = 1;
+    gpt_resign(&mut d, 512);
+    assert_eq!(discover_result(&d, 512), Err(Error::Corrupt));
+    let mut d = original;
+    d[466] = 7;
+    put32(&mut d, 470, 2048);
+    put32(&mut d, 474, 4160);
+    assert_eq!(discover_result(&d, 512), Err(Error::Corrupt));
+}
+#[test]
+fn mbr_overlap_bounds_bad_status_and_extended_are_rejected() {
+    for (off, value) in [(470, 64), (486, 0), (490, u32::MAX)] {
+        let mut d = partition_disk(512, false, false);
+        put32(&mut d, off, value);
+        assert_eq!(discover_result(&d, 512), Err(Error::Corrupt));
+    }
+    let mut d = partition_disk(512, false, false);
+    d[478] = 1;
+    assert_eq!(discover_result(&d, 512), Err(Error::Corrupt));
+    let mut d = partition_disk(512, false, false);
+    d[450] = 0x0f;
+    assert_eq!(discover_result(&d, 512), Err(Error::Unsupported));
+}
+#[test]
+fn no_exfat_and_damaged_selected_volume_do_not_fall_back() {
+    for gpt in [false, true] {
+        let mut d = partition_disk(512, gpt, false);
+        d[2048 * 512 + 3] = b'N';
+        assert_eq!(discover_result(&d, 512), Err(Error::Unsupported));
+        let mut d = partition_disk(512, gpt, false);
+        d[2048 * 512 + 100] ^= 1;
+        assert_eq!(discover_result(&d, 512), Err(Error::Corrupt));
+    }
+}
+
+fn empty_entry(name: &[u16]) -> Vec<u8> {
+    assert!(!name.is_empty() && name.len() <= 255);
+    let mut entry = vec![0; 32 * (2 + name.len().div_ceil(15))];
+    entry[0] = 0x85;
+    entry[1] = (entry.len() / 32 - 1) as u8;
+    entry[32] = 0xc0;
+    entry[33] = 1;
+    entry[35] = name.len() as u8;
+    let mut hash = 0u16;
+    for (i, &unit) in name.iter().enumerate() {
+        let off = 64 + (i / 15) * 32;
+        entry[off] = 0xc1;
+        put16(&mut entry, off + 2 + (i % 15) * 2, unit);
+        let upper = if (97..=122).contains(&unit) {
+            unit - 32
+        } else {
+            unit
+        };
+        for b in upper.to_le_bytes() {
+            hash = hash.rotate_right(1).wrapping_add(b as u16);
+        }
+    }
+    put16(&mut entry, 36, hash);
+    set_sum(&mut entry, 0);
+    entry
+}
+fn root_with(entries: &[Vec<u8>]) -> Vec<u8> {
+    let mut image = normal();
+    let mut root = image[64 * 512..64 * 512 + 64].to_vec();
+    for entry in entries {
+        root.extend_from_slice(entry);
+    }
+    root.resize(root.len() + 32, 0);
+    let mut chain = vec![2];
+    chain.extend((600..).take(root.len().div_ceil(512) - 1));
+    for (i, &n) in chain.iter().enumerate() {
+        put32(
+            &mut image,
+            24 * 512 + n * 4,
+            chain
+                .get(i + 1)
+                .copied()
+                .map(|x| x as u32)
+                .unwrap_or(0xffffffff),
+        );
+        image[65 * 512 + (n - 2) / 8] |= 1 << ((n - 2) % 8);
+        let off = (64 + n - 2) * 512;
+        image[off..off + 512].fill(0);
+        let chunk = &root[i * 512..root.len().min((i + 1) * 512)];
+        image[off..off + chunk.len()].copy_from_slice(chunk);
+    }
+    image
+}
+#[test]
+fn maximum_utf16_name_crosses_sectors_and_preserves_unicode() {
+    let mut name = vec![0x65e5];
+    name.extend(std::iter::repeat_n(b'a' as u16, 252));
+    name.extend([0xd83d, 0xde80]);
+    assert_eq!(name.len(), 255);
+    let image = root_with(&[empty_entry(&name)]);
+    let mut w = Box::new(Workspace::new());
+    let mut fs = FileSystem::discover(4160, 512, reader(&image), &mut w).unwrap();
+    assert_eq!(fs.entries()[0].name(), name);
+    assert_eq!(fs.read_at(0, 0, &mut [0xcc; 8]), Ok(0));
+    let mut broken = name;
+    broken[254] = b'a' as u16;
+    assert_eq!(
+        mount_result(&root_with(&[empty_entry(&broken)])),
+        Err(Error::Corrupt)
+    );
+}
+#[test]
+fn catalogue_limit_accepts_128_and_rejects_129() {
+    let entries: Vec<_> = (0..129)
+        .map(|i| empty_entry(&format!("FILE{i:03}.TXT").encode_utf16().collect::<Vec<_>>()))
+        .collect();
+    let image = root_with(&entries[..128]);
+    let mut w = Box::new(Workspace::new());
+    let fs = FileSystem::discover(4160, 512, reader(&image), &mut w).unwrap();
+    assert_eq!(fs.entries().len(), 128);
+    assert_eq!(mount_result(&root_with(&entries)), Err(Error::Limit));
+}
+#[test]
+fn case_folded_duplicate_names_are_rejected() {
+    let entries: Vec<_> = ["alpha.txt", "ALPHA.TXT"]
+        .iter()
+        .map(|n| empty_entry(&n.encode_utf16().collect::<Vec<_>>()))
+        .collect();
+    assert_eq!(mount_result(&root_with(&entries)), Err(Error::Corrupt));
+}
+#[test]
+fn benign_secondary_is_skipped_critical_secondary_is_rejected() {
+    let base = empty_entry(&[b'A' as u16]);
+    for (kind, expected) in [(0xe0, Ok(())), (0xc2, Err(Error::Unsupported))] {
+        let mut entry = base.clone();
+        let off = entry.len();
+        entry.resize(off + 32, 0);
+        entry[off] = kind;
+        entry[1] += 1;
+        set_sum(&mut entry, 0);
+        assert_eq!(mount_result(&root_with(&[entry])), expected);
+    }
+}
+#[test]
+fn malformed_secondary_counts_and_missing_names_are_rejected() {
+    for count in [0, 1, 3, 255] {
+        let mut entry = empty_entry(&[65]);
+        entry[1] = count;
+        assert_eq!(mount_result(&root_with(&[entry])), Err(Error::Corrupt));
+    }
+    let mut entry = empty_entry(&[65]);
+    entry[64] = 0xc2;
+    set_sum(&mut entry, 0);
+    assert_eq!(mount_result(&root_with(&[entry])), Err(Error::Corrupt));
+}
+
+#[test]
+fn actual_fat32_esp_and_exfat_data_are_both_readable() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/make-fat32-fixture.py");
+    let out=Command::new("python3").arg("-c").arg("import importlib.util,sys,tempfile,pathlib; s=importlib.util.spec_from_file_location('fat',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/'fat.img'; m.create(p,'superfloppy'); sys.stdout.buffer.write(p.read_bytes())").arg(path).output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut fat = out.stdout;
+    let fat_blocks = fat.len() / 512;
+    put32(&mut fat, 28, 2048);
+    put32(&mut fat, 6 * 512 + 28, 2048);
+    let start = (2048 + fat_blocks).div_ceil(2048) * 2048;
+    let end = start + 4160;
+    let blocks = end + 33;
+    let template = partition_disk(512, true, false);
+    let mut disk = vec![0; blocks * 512];
+    disk[..34 * 512].copy_from_slice(&template[..34 * 512]);
+    put32(&mut disk, 458, (blocks - 1) as u32);
+    put64(&mut disk, 1024 + 32, 2048);
+    put64(&mut disk, 1024 + 40, (2048 + fat_blocks - 1) as u64);
+    put64(&mut disk, 1024 + 128 + 32, start as u64);
+    put64(&mut disk, 1024 + 128 + 40, (end - 1) as u64);
+    disk[1024 + 256..1024 + 384].fill(0);
+    put64(&mut disk, 512 + 32, (blocks - 1) as u64);
+    put64(&mut disk, 512 + 48, (end - 1) as u64);
+    let header = disk[512..1024].to_vec();
+    let backup = (blocks - 1) * 512;
+    disk[backup..backup + 512].copy_from_slice(&header);
+    put64(&mut disk, backup + 24, (blocks - 1) as u64);
+    put64(&mut disk, backup + 32, 1);
+    put64(&mut disk, backup + 72, (blocks - 33) as u64);
+    disk[2048 * 512..(2048 + fat_blocks) * 512].copy_from_slice(&fat);
+    let mut exfat = normal();
+    relocate(&mut exfat, 512, start as u64);
+    disk[start * 512..end * 512].copy_from_slice(&exfat);
+    gpt_resign(&mut disk, 512);
+    assert_eq!(discover_result(&disk, 512), Ok(()));
+    let mut output = [0xcc; 4096];
+    let mut read = reader(&disk);
+    let n =
+        musha_fs::read_root(blocks as u64, 512, b"MUSHA   TXT", &mut output, &mut read).unwrap();
+    let mut expected = b"Hello Musha-OS!\n".to_vec();
+    for _ in 0..45 {
+        expected.extend_from_slice(b"FAT32 file read over USB.\n");
+    }
+    assert_eq!(&output[..n], expected);
+}

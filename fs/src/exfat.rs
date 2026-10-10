@@ -272,6 +272,18 @@ pub struct FileSystem<'a, F> {
     count: usize,
 }
 impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
+    /// Select one exFAT volume from superfloppy, primary MBR, or GPT Basic Data.
+    /// Multiple exFAT volumes are ambiguous and return Unsupported. No fallback
+    /// to another volume is attempted after a selected exFAT fails validation.
+    pub fn discover(
+        blocks: u64,
+        size: usize,
+        mut read: F,
+        work: &'a mut Workspace,
+    ) -> Result<Self, Error> {
+        let (start, length) = select_volume(blocks, size, &mut read)?;
+        Self::mount(blocks, size, start, length, read, work)
+    }
     /// `start/length` are sector units, supplied by a trusted partition selector.
     /// On error the workspace is unspecified; no mounted object is returned.
     pub fn mount(
@@ -349,6 +361,9 @@ impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
                     ));
                 }
                 0x85 => {
+                    if e[1] < 2 {
+                        return Err(Error::Corrupt);
+                    }
                     for _ in 0..e[1] {
                         let s = dir.entry(v, &mut r)?.ok_or(Error::Corrupt)?;
                         if s[0] & 0xc0 != 0xc0 {
@@ -357,6 +372,7 @@ impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
                     }
                 }
                 0x83 => {}
+                0xc0 | 0xc1 => return Err(Error::Corrupt),
                 t if t & 0x80 == 0 || t & 0x20 != 0 => {}
                 _ => return Err(Error::Unsupported),
             }
@@ -689,4 +705,81 @@ fn parse_directory<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
         count += 1;
     }
     Ok(count)
+}
+
+const BASIC_DATA: [u8; 16] = [
+    0xa2, 0xa0, 0xd0, 0xeb, 0xe5, 0xb9, 0x33, 0x44, 0x87, 0xc0, 0x68, 0xb6, 0xb7, 0x26, 0x99, 0xc7,
+];
+fn select_volume<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
+    blocks: u64,
+    size: usize,
+    read: &mut F,
+) -> Result<(u64, u64), Error> {
+    if !matches!(size, 512 | 4096) {
+        return Err(Error::Unsupported);
+    }
+    if blocks == 0 {
+        return Err(Error::Corrupt);
+    }
+    let mut r = Reader {
+        read,
+        blocks,
+        size,
+        budget: IO_LIMIT,
+    };
+    let mut boot = [0; 4096];
+    r.sector(0, &mut boot)?;
+    if &boot[3..11] == b"EXFAT   " {
+        return Ok((0, blocks));
+    }
+    if boot[510..512] != [0x55, 0xaa] {
+        return Err(Error::Unsupported);
+    }
+    let mut candidates = [(0, 0); 128];
+    let count = if (0..4).any(|i| boot[446 + i * 16 + 4] == 0xee) {
+        super::gpt::partitions(&mut r, &boot, &BASIC_DATA, &mut candidates)?
+    } else {
+        let mut used = [(0u64, 0u64); 4];
+        let mut used_count = 0;
+        let mut selected = 0;
+        for e in boot[446..510].chunks_exact(16) {
+            if e == [0; 16] {
+                continue;
+            }
+            let first = u32le(e, 8) as u64;
+            let length = u32le(e, 12) as u64;
+            if !matches!(e[0], 0 | 128)
+                || e[4] == 0
+                || first == 0
+                || length == 0
+                || first + length > blocks
+                || used[..used_count]
+                    .iter()
+                    .any(|&(a, b)| first < a + b && a < first + length)
+            {
+                return Err(Error::Corrupt);
+            }
+            used[used_count] = (first, length);
+            used_count += 1;
+            if matches!(e[4], 0x05 | 0x0f | 0x85) {
+                return Err(Error::Unsupported);
+            }
+            if e[4] == 0x07 {
+                candidates[selected] = (first, length);
+                selected += 1;
+            }
+        }
+        selected
+    };
+    let mut selected = None;
+    for &(start, length) in &candidates[..count] {
+        r.sector(start, &mut boot)?;
+        if &boot[3..11] == b"EXFAT   " {
+            if selected.is_some() {
+                return Err(Error::Unsupported);
+            }
+            selected = Some((start, length));
+        }
+    }
+    selected.ok_or(Error::Unsupported)
 }
