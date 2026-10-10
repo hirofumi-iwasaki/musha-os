@@ -1,6 +1,7 @@
 # Development instructions and initial implementation
 
 Current v0.2.0 priorities and release gates: [開発方針と公開条件](release-scope-0.2.0.md).
+Implementation order: [作業順と完了条件](work-plan-0.2.0.md).
 
 ## English
 
