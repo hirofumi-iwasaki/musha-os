@@ -418,3 +418,167 @@ fn gpt_bounded_format_and_missing_esp() {
     disk.checksums();
     assert_eq!(disk.file(), Err(Error::Unsupported));
 }
+
+#[test]
+fn fat32_catalog_atomic_chunks_and_bounds() {
+    for size in [512, 4096] {
+        for start in [0, 2048] {
+            let disk = Disk::new(size, start);
+            let mut fs = fat32::FileSystem::mount(
+                start + disk.total(),
+                size,
+                start,
+                disk.total(),
+                |l, b| disk.read(l, b),
+            )
+            .unwrap();
+            assert_eq!(fs.entries().len(), 1);
+            assert_eq!(fs.entries()[0].name(), b"MUSHA   TXT");
+            let length = fs.entries()[0].len() as usize;
+            for chunk in [1, 7, 511, 512, 513, 4096] {
+                let mut offset = 0;
+                while offset < length {
+                    let mut out = [0xa5; 4096];
+                    let n = fs.read_at(0, offset as u64, &mut out[..chunk]).unwrap();
+                    for (i, &v) in out[..n].iter().enumerate() {
+                        assert_eq!(v, ((offset + i) * 17) as u8);
+                    }
+                    assert!(out[n..].iter().all(|&v| v == 0xa5));
+                    offset += n;
+                }
+                assert_eq!(fs.read_at(0, offset as u64, &mut [0; 1]), Ok(0));
+            }
+            assert_eq!(fs.read_at(0, u64::MAX, &mut [0; 1]), Ok(0));
+            assert_eq!(fs.read_at(1, 0, &mut [0; 1]), Err(Error::NotFound));
+            assert_eq!(fs.read_at(0, 0, &mut [0; 4097]), Err(Error::TooLarge));
+        }
+    }
+}
+#[test]
+fn fat32_stream_chain_errors_and_io_preserve_buffer() {
+    for kind in 0..4 {
+        let mut disk = Disk::new(512, 0);
+        disk.file_cycle = kind == 0;
+        disk.short = kind == 1;
+        let mut fs = fat32::FileSystem::mount(disk.total(), 512, 0, disk.total(), |l, b| {
+            disk.read(l, b)?;
+            if kind == 2 && l == disk.data() + 3 {
+                return Err(Error::Io);
+            }
+            if kind == 3 && l == 32 {
+                put32(b, 7 * 4, 3);
+            }
+            Ok(())
+        })
+        .unwrap();
+        let mut out = [0xa5; 1200];
+        assert_eq!(
+            fs.read_at(0, 0, &mut out),
+            Err(if kind == 2 { Error::Io } else { Error::Corrupt })
+        );
+        assert_eq!(out, [0xa5; 1200]);
+    }
+    let mut disk = Disk::new(512, 0);
+    disk.root_cycle = true;
+    assert!(matches!(
+        fat32::FileSystem::mount(disk.total(), 512, 0, disk.total(), |l, b| disk.read(l, b)),
+        Err(Error::Corrupt)
+    ));
+}
+#[test]
+fn fat32_catalog_through_common_request_api() {
+    use musha_api::stream::{Entry, Error as ApiError, Files, Format};
+    let disk = Disk::new(512, 0);
+    let mut fs =
+        fat32::FileSystem::mount(disk.total(), 512, 0, disk.total(), |l, b| disk.read(l, b))
+            .unwrap();
+    let mut name = [0; 255];
+    for (to, from) in name.iter_mut().zip(b"MUSHA.TXT") {
+        *to = *from as u16;
+    }
+    let entries = [Entry {
+        name,
+        name_len: 9,
+        bytes: fs.entries()[0].len(),
+    }];
+    let mut service = Files::new();
+    service.mount(Format::Fat32, &entries).unwrap();
+    let id = service
+        .list_next(&mut service.list_begin().unwrap())
+        .unwrap()
+        .unwrap()
+        .0;
+    let handle = service.open_id(id).unwrap();
+    let mut position = 0;
+    loop {
+        let mut out = [0xa5; 7];
+        match service.read(handle, &mut out) {
+            Err(ApiError::Again) => {
+                let request = service.take_request().unwrap();
+                let mut owned = [0; 4096];
+                let n = fs
+                    .read_at(
+                        request.index(),
+                        request.offset(),
+                        &mut owned[..request.length()],
+                    )
+                    .unwrap();
+                assert!(service.complete(request, Ok(&owned[..n])));
+            }
+            Ok(0) => break,
+            Ok(n) => {
+                for &byte in &out[..n] {
+                    assert_eq!(byte, (position * 17) as u8);
+                    position += 1;
+                }
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+    assert_eq!(position, 1200);
+    service.close(handle).unwrap();
+}
+
+#[test]
+fn fat32_catalog_empty_oversize_duplicate_and_limits() {
+    let disk = Disk::new(512, 0);
+    for kind in 0..4 {
+        let mounted = fat32::FileSystem::mount(disk.total(), 512, 0, disk.total(), |l, b| {
+            disk.read(l, b)?;
+            if l == disk.data() + 2 {
+                match kind {
+                    0 => {
+                        put16(b, 26, 0);
+                        put32(b, 28, 0);
+                    }
+                    1 => put32(b, 28, 64 * 1024 * 1024 + 1),
+                    2 => {
+                        let first: [u8; 32] = b[..32].try_into().unwrap();
+                        b[32..64].copy_from_slice(&first);
+                    }
+                    _ => put16(b, 20, 0xf000),
+                }
+            }
+            Ok(())
+        });
+        if kind >= 2 {
+            assert!(matches!(mounted, Err(Error::Corrupt)));
+        } else {
+            let mut fs = mounted.unwrap();
+            let mut out = [0xa5; 1];
+            assert_eq!(
+                fs.read_at(0, 0, &mut out),
+                if kind == 0 {
+                    Ok(0)
+                } else {
+                    Err(Error::TooLarge)
+                }
+            );
+            assert_eq!(out, [0xa5]);
+        }
+    }
+    assert!(matches!(
+        fat32::FileSystem::mount(disk.total(), 512, u64::MAX, 2, |l, b| disk.read(l, b)),
+        Err(Error::Corrupt)
+    ));
+}

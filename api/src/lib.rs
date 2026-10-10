@@ -3,6 +3,7 @@
 #![no_std]
 mod files;
 mod input;
+pub mod stream;
 pub use files::FileHandle;
 use musha_framebuffer::Framebuffer;
 pub const API_VERSION: u32 = 4;

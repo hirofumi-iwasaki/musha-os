@@ -53,3 +53,7 @@ FAT32の検証成功後にだけランタイムが内容をコピーする。ア
 QEMUで実際のGPT起動イメージの16byteファイルと、断片化GPT fixtureの1186byteファイルをアプリAPIから読んだ。両方とも長さ・hashがランタイムFAT32読出しと一致し、旧handleを拒否した。破損ファイル、timeout、継続キー入力の終了も統合試験に含める。通常実機版もQEMUで起動し、APP FILE READ OK、Esc終了、RAM完了を目視確認。イメージSHA-256は`f20f4a2fca94ea14f38be34933e695a4d3d21c9620108b212c5c01bd57d5611c`で不変。実機は未検証。
 
 [RustアプリAPI](app-api.md)、[FAT32読出し](fat32.md)、[共通USBイメージ](usb-image.md)を参照。
+
+## v0.2.0 incremental service
+
+The separate backend-neutral service is documented in [stream file API](stream-file-api.md). The Context snapshot API described above remains unchanged.

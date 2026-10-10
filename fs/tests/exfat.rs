@@ -725,3 +725,65 @@ fn actual_fat32_esp_and_exfat_data_are_both_readable() {
     }
     assert_eq!(&output[..n], expected);
 }
+
+#[test]
+fn exfat_catalog_through_common_request_api() {
+    use musha_api::stream::{Entry, Error as ApiError, Files, Format};
+    let image = normal();
+    let mut workspace = Box::new(Workspace::new());
+    let mut fs = FileSystem::discover(
+        (image.len() / 512) as u64,
+        512,
+        reader(&image),
+        &mut workspace,
+    )
+    .unwrap();
+    let catalog: Vec<Entry> = fs
+        .entries()
+        .iter()
+        .map(|e| {
+            let mut name = [0; 255];
+            name[..e.name().len()].copy_from_slice(e.name());
+            Entry {
+                name,
+                name_len: e.name().len() as u8,
+                bytes: e.len(),
+            }
+        })
+        .collect();
+    let mut service = Files::new();
+    service.mount(Format::Exfat, &catalog).unwrap();
+    let mut cursor = service.list_begin().unwrap();
+    let mut index = 0;
+    while let Some((id, entry)) = service.list_next(&mut cursor).unwrap() {
+        let length = entry.bytes as usize;
+        let mut expected = vec![0; length];
+        assert_eq!(fs.read_at(index, 0, &mut expected), Ok(length));
+        let handle = service.open_id(id).unwrap();
+        let mut actual = Vec::new();
+        loop {
+            let mut out = [0xa5; 7];
+            match service.read(handle, &mut out) {
+                Err(ApiError::Again) => {
+                    let request = service.take_request().unwrap();
+                    let mut owned = [0; 4096];
+                    let n = fs
+                        .read_at(
+                            request.index(),
+                            request.offset(),
+                            &mut owned[..request.length()],
+                        )
+                        .unwrap();
+                    assert!(service.complete(request, Ok(&owned[..n])));
+                }
+                Ok(0) => break,
+                Ok(n) => actual.extend_from_slice(&out[..n]),
+                other => panic!("{other:?}"),
+            }
+        }
+        assert_eq!(actual, expected);
+        service.close(handle).unwrap();
+        index += 1;
+    }
+    assert_eq!(index, 5);
+}

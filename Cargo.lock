@@ -39,6 +39,9 @@ version = "0.1.0"
 [[package]]
 name = "musha-fs"
 version = "0.1.0"
+dependencies = [
+ "musha-api",
+]
 
 [[package]]
 name = "musha-input"

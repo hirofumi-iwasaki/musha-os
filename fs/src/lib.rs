@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
 pub mod exfat;
+pub mod fat32;
 mod gpt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
