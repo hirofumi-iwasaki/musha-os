@@ -129,3 +129,36 @@ FreeBSD原本とライセンスは`third_party/freebsd-apple-bce`へ固定保存
 
 追加後の検証: Rust workspace 127 tests passed、共通入力層のUEFI target check成功。
 入力元選択はまだ起動処理へ接続していないため、今回の追加に対するQEMU再検証は行っていない。
+
+## Step 4: regression verification (2026-10-10)
+
+Added public-API integration tests exercising the decoder, source selector and a
+simulated application's held-key set through 1,000 connect/disconnect cycles.
+They check duplicate presses/unmatched releases, changes to inactive sources,
+rollover followed by disconnect, stale session events, inactive-source removal,
+and fallback with identical held modifiers/keys. These host tests run in the
+existing workspace CI suite; they do not simulate a working T2 device.
+
+Results on the step 4 tree:
+
+- 129 Rust tests passed; formatting and diff checks passed.
+- Both shared libraries passed the UEFI target check; normal and T2-D1 builds passed.
+- Rebuilt QEMU debug image: `out/t2-model/step4-debug.img`, SHA-256
+  `ace148a1bb8741a7f01efba67fd74f63e484c64ed64c8f02d328fd4c89d555ab`.
+- Multi-controller GPT/FAT32 plus keyboard exit/ring-wrap regression passed.
+  Added `--keyboard-wrap` to the corresponding existing CI invocation.
+- Cooperative scenarios `traffic`, `input-idle`, `no-keyboard`,
+  `keyboard-disconnect`, `link-down` all passed. The first four validate
+  ARP/ICMP, 257 UDP echoes, file rechecks, ring wraps, checksums and DMA stop;
+  link-down validates continued input/file progress and shutdown of both DMA users.
+- USB image/bundle/release packaging: 10 tests passed.
+
+QEMU checks the existing xHCI execution path using the extracted decoder.
+Source selection/fallback is still host-test-only, not connected to boot, and
+neither QEMU nor these tests establish internal-keyboard or real BCE behavior.
+The qemu-debug build reports the existing unused `diagnostics::page` warning;
+normal and T2-D1 builds succeeded without that warning. No physical USB changed.
+
+項目4の実機不要の回帰検証を完了。新しい入力元切替はhost integration testで検証し、
+既存の外付け入力・USB読出し・通信は再ビルドしたQEMU環境で確認した。
+次の実機依存作業はT2-D1診断結果の採取であり、内蔵キーボード対応の完了は未確認。
