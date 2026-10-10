@@ -6,6 +6,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
+pub mod hid;
 pub mod sources;
 
 #[derive(Default)]

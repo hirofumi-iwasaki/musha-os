@@ -63,7 +63,8 @@ an established reset boundary are required; failure never triggers a blind retry
 Reserved flags and non-success statuses currently cause conservative quarantine.
 This policy may need refinement after comparison with actual firmware behavior.
 
-The shared input layer still supports the existing 8-byte HID boot report only.
+The boot execution path still uses the existing 8-byte HID boot report decoder.
+A separate descriptor-driven decoder is now available (see the follow-up below).
 It does not assume that the internal keyboard supports that report format.
 `musha-input::sources::Sources` now provides external-first selection/fallback
 over normalized usage transitions. Each connected source retains its own held
@@ -74,7 +75,8 @@ Adapters must keep inactive sources updated and explicitly disconnect on failure
 The selector is connected to the external-keyboard boot session (slot 0).
 Slot 1 is reserved; actual T2 integration still requires the hardware adapter
 and descriptor evidence.
-Simultaneous aggregation, report-ID parsing and Touch Bar handling remain absent.
+Simultaneous source aggregation and Touch Bar handling remain absent.
+Report-ID parsing is available in the separate descriptor-driven decoder.
 Runtime cleanup uses selector disconnect to release held keys; decoder
 `release_all` remains an alternative for transport adapters.
 
@@ -193,3 +195,10 @@ multi-controller/ring-wrap, Esc cleanup, cooperative traffic, input-idle,
 no-keyboard, held-Shift+A disconnect and held-A application failure passed.
 Normal and T2-D1 builds passed. The pre-existing unused `diagnostics::page`
 warning remains in debug builds. Physical USB and T2 hardware were not modified.
+
+## HID and simulated I/O follow-up
+
+The bounded report-descriptor decoder and mock register/memory orchestration are
+now implemented; see [HID/BCE pre-hardware report](hid-bce-prehardware.md) for the
+supported subset, fault tests and remaining hardware boundaries. Earlier test
+counts above record each development stage.

@@ -6,12 +6,14 @@
 //! Queue quarantine is a host policy; this model cannot stop real DMA.
 #![no_std]
 #![forbid(unsafe_code)]
+pub mod adapter;
 pub mod mailbox;
 pub mod queue;
 pub mod wire;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
+    Io,
     Invalid,
     Busy,
     Timeout,

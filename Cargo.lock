@@ -12,6 +12,9 @@ dependencies = [
 [[package]]
 name = "musha-bce"
 version = "0.2.0-dev.0"
+dependencies = [
+ "musha-input",
+]
 
 [[package]]
 name = "musha-boot"

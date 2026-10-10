@@ -47,6 +47,6 @@ FreeBSD's kernel services. Original C files are not compiled. The model is not
 linked into the current boot image. NOTICE retains the terms for future use;
 release bundles also carry COPYING and UPSTREAM. No Linux driver code is included.
 
-BCEのwire形式は上記FreeBSD固定版を参考にBSD-2-Clauseで実装した。
+BCEのwire形式と模擬レジスター／時刻通知の順序は上記FreeBSD固定版を参考にBSD-2-Clauseで実装した。
 元のCソースは参照用でcompileしない。通信・所有権モデルもまだbootへ接続していない。
 入力処理の共通化`musha-input`は既存の自作Apache-2.0コードを移動したもの。
