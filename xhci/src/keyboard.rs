@@ -113,36 +113,8 @@ pub fn configuration(b: &[u8], speed: Speed) -> Result<Option<Keyboard>, &'stati
     }
     Ok(found)
 }
-#[derive(Default)]
-pub struct State {
-    previous: [u8; 8],
-}
-impl State {
-    /// Emits modifier transitions and distinct usages; ignores reserved byte.
-    /// Rollover preserves previous state rather than generating false releases.
-    pub fn update(&mut self, report: [u8; 8], mut emit: impl FnMut(u8, bool)) -> bool {
-        if report[2..].iter().any(|v| (1..=3).contains(v)) {
-            return false;
-        }
-        for bit in 0..8 {
-            if (self.previous[0] ^ report[0]) & (1 << bit) != 0 {
-                emit(0xe0 + bit, report[0] & (1 << bit) != 0);
-            }
-        }
-        for (before, after, down) in [
-            (&self.previous[2..], &report[2..], false),
-            (&report[2..], &self.previous[2..], true),
-        ] {
-            for (i, key) in before.iter().enumerate() {
-                if *key != 0 && !before[..i].contains(key) && !after.contains(key) {
-                    emit(*key, down);
-                }
-            }
-        }
-        self.previous = report;
-        true
-    }
-}
+// Compatibility export: existing xHCI callers keep the same interface.
+pub use musha_input::BootKeyboardState as State;
 #[cfg(test)]
 mod tests {
     extern crate std;

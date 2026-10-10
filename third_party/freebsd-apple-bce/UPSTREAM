@@ -1,0 +1,6 @@
+FreeBSD freebsd-src
+Commit: 7a48c3fd3e6ea097a8fa8f3ce3e25fe7c2d37d9e
+Source: https://github.com/freebsd/freebsd-src/tree/7a48c3fd3e6ea097a8fa8f3ce3e25fe7c2d37d9e/sys/dev/apple_bce
+Selected unmodified references, not compiled.
+The Rust BCE wire layout is adapted under BSD-2-Clause.
+The bounded state/ownership policy is Musha-specific, not a port of FreeBSD bus_dma/interrupt code.

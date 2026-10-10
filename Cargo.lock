@@ -10,6 +10,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "musha-bce"
+version = "0.2.0-dev.0"
+
+[[package]]
 name = "musha-boot"
 version = "0.1.0"
 dependencies = [
@@ -32,6 +36,10 @@ name = "musha-fs"
 version = "0.1.0"
 
 [[package]]
+name = "musha-input"
+version = "0.2.0-dev.0"
+
+[[package]]
 name = "musha-memory"
 version = "0.1.0"
 
@@ -46,6 +54,9 @@ version = "0.1.0"
 [[package]]
 name = "musha-xhci"
 version = "0.1.0"
+dependencies = [
+ "musha-input",
+]
 
 [[package]]
 name = "r-efi"

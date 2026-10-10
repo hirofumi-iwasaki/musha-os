@@ -48,7 +48,7 @@ def stage(destination, efi, provenance, release=False):
             shutil.copyfile(ROOT / 'docs' / name, bundle / 'docs' / name)
         (bundle / 'tools').mkdir()
         shutil.copyfile(ROOT / 'tools/make-usb-image.py', bundle / 'tools/make-usb-image.py')
-        for dependency in ['lwip', 'freebsd-e1000']:
+        for dependency in ['lwip', 'freebsd-e1000', 'freebsd-apple-bce']:
             target = bundle / 'third_party' / dependency
             target.mkdir(parents=True)
             for name in ['COPYING', 'UPSTREAM']:

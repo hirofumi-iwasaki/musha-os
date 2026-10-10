@@ -34,3 +34,19 @@ r-efiはApache-2.0の条件を選択して利用する。変更は加えてい�
 依存元の著作権・帰属表示を保持する。依存元ソースはCargoが取得する。
 ソースをvendorする場合は元のライセンスファイルを含める。
 Cargo.lockのチェックサムで取得物を固定する。lwIPは変更していない選択ソースと全headerを`third_party/lwip`へ取り込んだ。`UPSTREAM`、`COPYING`、`SHA256SUMS`へ採用元・条件・file hashを記録した。[公式lwIP repository](https://github.com/lwip-tcpip/lwip)のtag `STABLE-2_2_1_RELEASE`を使用する。元のライセンスを保持し、Apache-2.0へ変更しない。binary/image配布には本体`NOTICE`を添える。lwIP portと82574 driverは自作Apache-2.0コード。I218 PHY/semaphore移植はBSD-3-ClauseでIntelの著作権・条件を保持する。変更しない原本、COPYING、UPSTREAM、SHA256SUMSは`third_party/freebsd-e1000`にある。GPL driverソースは取り込んでいない。`tools/build-esp.sh`は`out/LICENSE`と`out/NOTICE`を配置する。binary/image配布には両方を添付する。[I218移植方針](i218-rust-port-plan.md)と[実験用probe](i218-phy-probe.md)を参照。
+
+
+## v0.2.0 development: Apple BCE reference
+
+`musha-bce` adapts the wire layouts in FreeBSD commit
+`7a48c3fd3e6ea097a8fa8f3ce3e25fe7c2d37d9e` under BSD-2-Clause.
+The selected original header, mailbox and queue sources are retained unmodified in
+`third_party/freebsd-apple-bce`, with `UPSTREAM`, `SHA256SUMS` and `COPYING`.
+The Rust queue/timeout policy is deliberately a bounded host model, not a port of
+FreeBSD's kernel services. Original C files are not compiled. The model is not
+linked into the current boot image. NOTICE retains the terms for future use;
+release bundles also carry COPYING and UPSTREAM. No Linux driver code is included.
+
+BCEのwire形式は上記FreeBSD固定版を参考にBSD-2-Clauseで実装した。
+元のCソースは参照用でcompileしない。通信・所有権モデルもまだbootへ接続していない。
+入力処理の共通化`musha-input`は既存の自作Apache-2.0コードを移動したもの。

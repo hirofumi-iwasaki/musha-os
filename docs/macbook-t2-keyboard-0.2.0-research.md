@@ -101,3 +101,7 @@ suspend/resumeは別の追加範囲として評価する。
 
 読取専用の情報採取を[T2-D1診断](t2-d1-diagnostics.md)として追加した。
 次はMac実機の結果を確認し、BAR範囲検証とBCE通信の最小試作へ進む。
+
+実機待ちの間に[BCEモデルと共通入力層](t2-host-model.md)を追加した。
+通信形式・timeout・キュー所有権をhostで検証し、既存boot report処理を共通化した。
+BCEのMMIO／DMAへの接続、実機descriptorに基づく入力対応は未実装。

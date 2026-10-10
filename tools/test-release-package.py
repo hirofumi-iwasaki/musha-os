@@ -32,7 +32,7 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(manifest['status'], 'unreleased-candidate')
         for name, entry in manifest['files'].items():
             self.assertEqual(release.digest(bundle / name), entry['sha256'])
-        for name in ['LICENSE', 'NOTICE', 'third_party/lwip/COPYING', 'third_party/freebsd-e1000/COPYING', 'third_party/r-efi/AUTHORS']:
+        for name in ['LICENSE', 'NOTICE', 'third_party/lwip/COPYING', 'third_party/freebsd-e1000/COPYING', 'third_party/freebsd-apple-bce/COPYING', 'third_party/r-efi/AUTHORS']:
             self.assertTrue((bundle / name).is_file())
         for line in (bundle / 'SHA256SUMS').read_text().splitlines():
             sha, name = line.split('  ', 1); self.assertEqual(release.digest(bundle / name), sha)

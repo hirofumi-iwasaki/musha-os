@@ -44,7 +44,8 @@ jobs:
         run: |
           cargo fmt --all -- --check
           cargo test --locked --workspace --exclude musha-boot
-          for directory in third_party/lwip third_party/freebsd-e1000 third_party/r-efi; do
+          cargo check --locked --target x86_64-unknown-uefi --lib -p musha-bce -p musha-input
+          for directory in third_party/lwip third_party/freebsd-e1000 third_party/freebsd-apple-bce third_party/r-efi; do
             (cd "$directory" && shasum -a 256 -c SHA256SUMS)
           done
           python3 tools/test-usb-image.py
