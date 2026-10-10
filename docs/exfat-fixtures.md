@@ -1,6 +1,6 @@
 # exFAT試験用イメージ
 
-2026-10-11。工程2の初期データ。Musha-OSのexFAT解析器はまだ未実装。
+2026-10-11。工程2の初期データ。[Musha-OS解析器](exfat-reader.md)のホスト試験でも使用する。
 `tools/make-exfat-fixture.py`は新規の通常ファイルだけを作る。既存ファイルやdevice nodeを開かず、
 フォーマット・USB更新・自動mountを行わない。生成物は試験専用で起動用ではない。
 
@@ -16,9 +16,11 @@ Corruptの期待は将来のMusha-OS試験用であり、外部検査器の全�
 
 ## 初期セット
 
-512byteセクター、1セクター/cluster、4096cluster、FAT1本のsuperfloppy。
+既定は512byteセクター（`--sector-size 4096`も選択可）、1セクター/cluster、4096cluster、FAT1本のsuperfloppy。
 rootはcluster 2→600、up-caseは非圧縮128KiB。独自のup-caseはASCII小文字だけを大文字化し、
 それ以外はidentity mappingとする。一般的なformatterが作る推奨tableの代わりにはならない。
+
+次の内容表と固定SHA-256は既定の512byte版。4096byte版は断片化ファイルが8451byteになる。
 
 | ファイル | 期待内容 | 配置 |
 |---|---|---|
@@ -62,6 +64,6 @@ CIではこの7件を実行する。仮想ディスクを必要とする外部�
 
 ## 次の追加
 
-[初期設計](exfat-design.md)に従い、4096byteセクター、圧縮up-case、GPT/MBR、
+[初期設計](exfat-design.md)に従い、GPT/MBR、
 非ASCII/255文字、短いFATチェーン・範囲外参照・各種上限を追加する。
-標準formatter由来のfixtureとMusha-OS解析器の内容比較は未実施。
+合成fixtureとMusha-OS解析器の内容比較は実施済み。標準formatter由来のfixtureは未追加。

@@ -61,7 +61,10 @@ def entry_set(name, payload, chain, contiguous, valid):
     return result
 
 
-def build(case='normal'):
+def build(case='normal', sector_size=512):
+    if sector_size not in (512, 4096):
+        raise ValueError('unsupported fixture sector size')
+    SECTOR = sector_size
     if case not in CASES:
         raise ValueError('unknown fixture case')
     image = bytearray(BLOCKS * SECTOR)
@@ -79,7 +82,7 @@ def build(case='normal'):
     boot[:11] = b'\xeb\x76\x90EXFAT   '
     struct.pack_into('<QQIIIIIIHH', boot, 64, 0, BLOCKS, FAT, FAT_LENGTH,
                      HEAP, CLUSTERS, 2, 0x4d555348, 0x100, 0)
-    boot[108:113] = bytes((9, 0, 1, 0x80, 0xff))
+    boot[108:113] = bytes((SECTOR.bit_length() - 1, 0, 1, 0x80, 0xff))
     boot[510:512] = b'\x55\xaa'
     for index in range(1, 9):
         struct.pack_into('<I', boot, (index + 1) * SECTOR - 4, 0xaa550000)
@@ -104,7 +107,7 @@ def build(case='normal'):
     roots = [2, 600]
     allocate(roots)
     allocate([3])  # bitmap, 4096 bits
-    upcase_chain = list(range(4, 260))
+    upcase_chain = list(range(4, 4 + 131072 // SECTOR))
     allocate(upcase_chain)
     table = struct.pack('<65536H', *(upper(u) for u in range(65536)))
     for i, n in enumerate(upcase_chain):
@@ -119,10 +122,10 @@ def build(case='normal'):
     # Expected data is defined before image serialization, not recovered from it.
     files = [
         ('MUSHA.TXT', b'Hello Musha-OS!\n', [260], True, 16),
-        ('FRAGMENT.BIN', bytes(range(256)) * 5 + b'end', [270, 272, 271], False, 1283),
+        ('FRAGMENT.BIN', bytes(range(256)) * (2 * SECTOR // 256 + 1) + b'end', [270, 272, 271], False, 2 * SECTOR + 259),
         ('Long name for exFAT test.txt', b'Long file name\n', [280], True, 15),
         ('EMPTY.TXT', b'', [], False, 0),
-        ('ZEROTAIL.BIN', b'valid' + b'\0' * 695, [290, 291], True, 5),
+        ('ZEROTAIL.BIN', b'valid' + b'\0' * 695, list(range(290, 290 + (700 + SECTOR - 1) // SECTOR)), True, 5),
     ]
     expected = []
     offsets = []
@@ -138,7 +141,7 @@ def build(case='normal'):
         expected.append({'name': name, 'length': len(payload), 'valid_length': valid,
                          'clusters': chain, 'no_fat_chain': contiguous,
                          'sha256': hashlib.sha256(payload).hexdigest()})
-    root += bytes(32)  # end marker; last entry set crosses the root cluster boundary
+    root += bytes(32)  # end marker; last entry set crosses the root cluster boundary at 512 bytes
     if len(root) > len(roots) * SECTOR:
         raise ValueError('root overflow')
     if case == 'entry-checksum':
@@ -162,8 +165,8 @@ def build(case='normal'):
     return image, manifest
 
 
-def create(path, case='normal'):
-    image, manifest = build(case)
+def create(path, case='normal', sector_size=512):
+    image, manifest = build(case, sector_size)
     # Exclusive creation rejects existing images, symlinks and device nodes.
     with Path(path).open('xb') as output:
         output.write(image)
@@ -174,5 +177,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output')
     parser.add_argument('--case', choices=CASES, default='normal')
+    parser.add_argument('--sector-size', type=int, choices=(512, 4096), default=512)
     args = parser.parse_args()
-    print(json.dumps(create(args.output, args.case), ensure_ascii=False, indent=2))
+    print(json.dumps(create(args.output, args.case, args.sector_size), ensure_ascii=False, indent=2))

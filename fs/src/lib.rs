@@ -1,6 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
+pub mod exfat;
 mod gpt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
