@@ -9,6 +9,7 @@
 pub mod adapter;
 pub mod mailbox;
 pub mod queue;
+pub mod registration;
 pub mod wire;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

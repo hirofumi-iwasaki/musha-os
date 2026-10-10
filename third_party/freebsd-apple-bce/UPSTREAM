@@ -2,6 +2,6 @@ FreeBSD freebsd-src
 Commit: 7a48c3fd3e6ea097a8fa8f3ce3e25fe7c2d37d9e
 Source: https://github.com/freebsd/freebsd-src/tree/7a48c3fd3e6ea097a8fa8f3ce3e25fe7c2d37d9e/sys/dev/apple_bce
 Selected unmodified references, not compiled.
-The Rust BCE wire layout and simulated register/timestamp sequencing are adapted under BSD-2-Clause.
+The Rust BCE wire layout, queue command encoding, and simulated register/timestamp sequencing are adapted under BSD-2-Clause.
 Retained files: apple_bce.h, apple_bce.c, apple_bce_mailbox.c, apple_bce_queue.c.
 The bounded state/ownership policy is Musha-specific, not a port of FreeBSD bus_dma/interrupt code.

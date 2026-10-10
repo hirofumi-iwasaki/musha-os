@@ -89,3 +89,48 @@ impl Completion {
         })
     }
 }
+
+/// User queue registration payload, matching FreeBSD bce_cmdq_reg_cmd.
+/// Structural validation only; allocation ownership and CQ dependencies are external.
+#[derive(Clone, Copy)]
+pub struct RegistrationConfig<'a> {
+    pub qid: u16,
+    pub count: u16,
+    pub vector_or_cq: u16,
+    pub address: u64,
+    pub stride: u64,
+    pub name: Option<&'a [u8]>,
+    pub out: bool,
+}
+pub fn register_queue(c: RegistrationConfig<'_>) -> Result<[u8; 64], Error> {
+    if !(2..256).contains(&c.qid) {
+        return Err(Error::QueueId);
+    }
+    let cfg = queue_memory(c.qid, c.count, c.vector_or_cq, c.address, c.stride)?;
+    let mut b = [0; 64];
+    b[0] = 0x20;
+    b[2] = u8::from(c.out);
+    b[4..6].copy_from_slice(&cfg[0..2]);
+    b[8..12].copy_from_slice(&cfg[2..6]);
+    if let Some(name) = c.name {
+        // Reject rather than silently truncate an ambiguous queue name.
+        if name.is_empty() || name.len() > 32 || name.contains(&0) {
+            return Err(Error::Length);
+        }
+        b[2] |= 2;
+        b[14..16].copy_from_slice(&(name.len() as u16).to_le_bytes());
+        b[16..16 + name.len()].copy_from_slice(name);
+    }
+    b[48..64].copy_from_slice(&cfg[8..24]);
+    Ok(b)
+}
+/// Full 64-byte command slot, including zeroed padding. true=flush, false=unregister.
+pub fn simple_queue_command(qid: u16, flush: bool) -> Result<[u8; 64], Error> {
+    if !(2..256).contains(&qid) {
+        return Err(Error::QueueId);
+    }
+    let mut b = [0; 64];
+    b[0] = if flush { 0x40 } else { 0x30 };
+    b[4..6].copy_from_slice(&qid.to_le_bytes());
+    Ok(b)
+}

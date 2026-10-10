@@ -119,3 +119,5 @@ parser/adapter is not activated in boot; QEMU was not rerun for these unconnecte
 additions. The preceding runtime-input integration has its own QEMU evidence.
 
 Follow-up: [入力溢れ復元・HIDファジング・実機採取手順](input-prehardware-validation.md).
+
+Follow-up: [BCE登録モデルとHIDメモリー測定](bce-registration-memory.md).

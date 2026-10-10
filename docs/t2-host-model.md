@@ -9,7 +9,9 @@ No BCE driver is activated by this change. T2-D1 remains the next hardware test.
   It has no PCI, MMIO, interrupt, device-memory or boot dependency.
 - Explicit little-endian mailbox message, contiguous submission descriptor,
   queue-memory configuration and completion decoding, based on the pinned
-  FreeBSD layouts. Scatter/gather and named queue registration are not implemented.
+  FreeBSD layouts. Scatter/gather is not implemented. User queue command encoding
+  and lifecycle modeling are now available in the [registration follow-up](bce-registration-memory.md);
+  real command transport registration remains unimplemented.
 - A one-shot firmware protocol handshake. A wrong reply, deadline, backwards time,
   stopped clock (observation budget), or shutdown makes the instance terminal.
   No automatic retry/restart can accept a late reply from the previous attempt.

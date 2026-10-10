@@ -439,3 +439,53 @@ fn simulated_payload_to_hid_decoder_to_shared_input() {
         .unwrap();
     assert_eq!(events, [(0xe1, false), (4, false)]);
 }
+
+#[test]
+fn registration_gate_then_transfer_ack_flush_and_unregister() {
+    use musha_bce::{
+        registration::{Operation, Registration, State},
+        wire::RegistrationConfig,
+    };
+    let mut life = Registration::new(2).unwrap();
+    let mut transfer = Transfer::<4>::new(2, 0, 0, 100).unwrap();
+    let mut peer = Peer::default();
+    // The integrating caller must gate before touching the transfer adapter.
+    assert_eq!(life.begin_transfer(), Err(Error::Busy));
+    assert!(peer.trace.is_empty());
+    let request = life
+        .register(
+            RegistrationConfig {
+                qid: 2,
+                count: 4,
+                vector_or_cq: 0,
+                address: 0x1000,
+                stride: 32,
+                name: Some(b"kbd"),
+                out: false,
+            },
+            0,
+            10,
+            100,
+        )
+        .unwrap();
+    assert_eq!(life.begin_transfer(), Err(Error::Busy));
+    // Scripted command transport completion, not firmware emulation.
+    life.poll(1, Some((request.token, 0))).unwrap();
+    let ticket = life.begin_transfer().unwrap();
+    peer.payload = vec![4, 0, 0, 0];
+    transfer.submit(&mut peer, 0x2000, 4, 2, 10).unwrap();
+    assert!(life.command(Operation::Flush, 2, 10, 10).is_err());
+    peer.complete(0);
+    peer.cq[16..18].copy_from_slice(&2u16.to_le_bytes());
+    let mut output = [0; 4];
+    assert_eq!(transfer.poll(&mut peer, 3, &mut output), Ok(Some(4)));
+    life.finish_transfer(ticket).unwrap();
+    let flush = life.command(Operation::Flush, 4, 10, 10).unwrap();
+    life.poll(5, Some((flush.token, 0))).unwrap();
+    let unregister = life.command(Operation::Unregister, 6, 10, 10).unwrap();
+    life.poll(7, Some((unregister.token, 0))).unwrap();
+    assert_eq!(life.state(), State::Unregistered);
+    assert_eq!(output, [4, 0, 0, 0]);
+    // Transfer's metadata and backing storage still exist; no deallocation API.
+    assert_eq!(life.begin_transfer(), Err(Error::Busy));
+}
