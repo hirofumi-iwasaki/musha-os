@@ -1,11 +1,54 @@
 # Musha-OS
 
-**v0.1.0 — initial development release / 初期開発版**
+**v0.2.0 — read-only file viewer / 読出し専用ファイルビューアー**
 
-[Download / ダウンロード](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.1.0) · [Release notes / リリースノート](docs/release-notes-0.1.0.md) · [Verified scope / 検証範囲](docs/release-scope-0.1.0.md)
+[Download / ダウンロード](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0) · [Release notes / リリースノート](docs/release-notes-0.2.0.md) · [Verified scope / 検証範囲](docs/release-scope-0.2.0.md)
 
-MacBook Pro 2018: H19 USB/FAT32 file reads and external Lenovo A, Shift+A, Esc input verified. Internal keyboard and NUC networking are outside the verified scope.
-MacBook Pro 2018でUSB読出しと外付けLenovo入力を実機確認。内蔵キーボード・NUC通信は未検証／未対応です。
+v0.2.0: FAT32/exFAT file browsing is verified in QEMU. On MacBook Pro 2018, the rc1 viewer boot and FAT32 recognition were observed without a USB keyboard; hardware file navigation and exFAT reads remain unverified.
+v0.2.0はFAT32/exFATの閲覧をQEMUで検証済みです。MacBook Pro 2018ではrc1の起動・FAT32認識まで確認し、外付けキーボード操作とexFAT読出しの実機検証は残っています。内蔵キーボードは未対応です。
+
+## What starts after boot / 起動後に動くもの
+
+Musha-OSは、OSの実行環境を初期化した後、組込みのチェック処理とアプリケーションを自動実行する構成です。
+現在開発中のv0.2.0通常版で表示される **`USB file viewer | READ ONLY` は、Musha-OSに同梱した読出し専用ファイラー（ファイルビューアー）** です。
+OSが提供する画面・キーボード入力・USBファイル読出しを利用し、動作確認とファイル閲覧を行います。
+
+1. **OS起動**：UEFIから起動し、メモリー・CPU・タイマーなどの実行環境を初期化します。
+2. **チェック処理**：RAMの検査やUSBコントローラー・接続機器の探索を行います。これらの処理はアプリケーションの実行と協調して進みます。
+3. **組込みアプリの表示**：v0.2.0通常版では、利用可能なFAT32/exFAT媒体のルートファイルを一覧表示し、選択したファイルの内容を16進数とASCIIで閲覧できます。書込み・削除は行いません。
+
+v0.1.0と診断用ビルドでは、`Hello Musha-OS!` や `RUNTIME READY` などのチェック結果を表示する診断アプリが動きます。
+通常版と診断用ビルドでは、起動後の画面が異なります。
+現在はこれらを起動用EFIに組み込んでおり、起動時にアプリを選択するランチャーはありません。
+ファイルビューアーの操作には外付けUSBキーボードが必要です。Qでアプリのセッションを終了し、再度使う場合は再起動します。
+詳しい操作と制約は[ファイルビューアー](docs/file-viewer.md)、チェック画面は[実機診断表示](docs/hardware-diagnostics.md)を参照してください。
+
+After initializing the OS runtime, Musha-OS automatically runs built-in checks and an application.
+The **`USB file viewer | READ ONLY` screen in the v0.2.0 normal development build is the bundled read-only file browser**.
+It uses the OS display, keyboard input, and USB file services. RAM checks and USB discovery progress cooperatively with application execution.
+The viewer lists root files on an available FAT32/exFAT medium and displays their contents as hexadecimal and ASCII; it does not write or delete files.
+v0.1.0 and diagnostic builds instead show the diagnostic application, including `Hello Musha-OS!` and hardware check results.
+These applications are built into the boot EFI; there is currently no application-selection launcher.
+Connect an external USB keyboard to operate the viewer. Q ends the application session; restart to use it again.
+See the [viewer guide](docs/file-viewer.md) and [diagnostic screen guide](docs/hardware-diagnostics.md).
+
+## Downloads and USB updates / ダウンロードとUSB更新
+
+[GitHub Releases](https://github.com/hirofumi-iwasaki/musha-os/releases) provides OS binaries; GitHub's **Source code** archives are source only.
+The v0.2.0 distribution separates a small initial/recovery image (`*-usb.img.gz`) from a normal file update (`*-files.zip`).
+See [distribution instructions](docs/distribution-usage.md) and [policy](docs/release-distribution-policy.md).
+
+互換性はx64機、NUC5以上を想定。UEFI x64・GOP・対応xHCI・外付けUSB Boot Keyboardが必要です。
+This is a compatibility target, not a guarantee: see [model-specific hardware evidence](docs/hardware-verification-status.md).
+初回作成は対象USBのデータを消去する操作です。取得→ハッシュ照合→対象確認→配置・容量調整→検証→安全な取り外し→UEFI起動の順で進めます。
+小型イメージの実USB向け初回書込みアダプターは未提供です。大容量USBへの単純なraw copyは使わず、既存の検証済みFAT32配置経路を維持します。
+
+通常更新は変更ファイルだけを退避・照合して差し替え、GPT/FAT32とユーザーデータを保持します。
+全容量イメージの生成・書込み・ハッシュ走査や再フォーマットは不要です。
+Normal updates preserve layout and unrelated data; they never fall back to a full disk rewrite.
+See [macOS](docs/usb-install-macos.md), [Windows status](docs/usb-install-windows.md), [Linux status](docs/usb-install-linux.md),
+and [recovery / known limitations](docs/distribution-usage.md). Windows/Linux device adapters remain unimplemented.
+Unsigned EFI requires appropriate Secure Boot settings. Internal Mac keyboard support remains optional.
 
 ## English
 
@@ -124,7 +167,7 @@ USBポートをリセットし、USBメモリとキーボードのDevice Descrip
 [USB列挙の範囲と制約](docs/usb-enumeration.md)を参照。Boot Keyboardの押下・解放診断をQEMUで確認済みです。
 [キーボード診断](docs/usb-keyboard.md)と[NUC5試験準備](docs/nuc5-bringup.md)を参照。
 [I218 Rust移植](docs/i218-rust-port-plan.md)に着手し、BSD由来の上限付きPHYアクセスと実験用識別probeを追加しました。I218での通信は未実装です。
-通常版の[実機診断表示](docs/hardware-diagnostics.md)と[試験記録様式](docs/hardware-test-record-template.md)も追加済みです。
+診断用ビルドの[実機診断表示](docs/hardware-diagnostics.md)と[試験記録様式](docs/hardware-test-record-template.md)も追加済みです。
 v0.2.0開発版は[読出し専用ファイルビューアー](docs/file-viewer.md)を表示します。上下で選択、Enterで開く、Page Up/Downで移動、Escで一覧へ戻り、Qで終了します。FAT32/exFATをホストとQEMUで検証済み、実機確認は工程7です。
 USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済みです。
 [ストレージ診断](docs/usb-storage.md)を参照。[FAT32読出し診断](docs/fat32.md)を追加し、ルートのMUSHA.TXTをQEMUで確認済みです。

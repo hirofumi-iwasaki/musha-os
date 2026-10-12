@@ -106,7 +106,7 @@ impl Application for Diagnostic {
     }
     fn files_closed(&mut self, _ctx: &mut Context<'_>) {
         if VIEWER {
-            self.viewer.closed();
+            self.viewer.closed(false);
         }
     }
     fn init(&mut self, ctx: &mut Context<'_>) -> Result<(), Error> {
@@ -290,6 +290,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
     let mut max_gap = 0u64;
     let mut last_cycle = None;
     let mut over_budget = 0u64;
+    let mut keyboard_missing = false;
     let result = (|| {
         let mut time = crate::acpi::Time::new(info.timer).map_err(|_| Error::Unsupported)?;
         let mut ready = false;
@@ -388,6 +389,9 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         };
         let usb_result = crate::xhci::diagnose(info, &mut cycle);
         drop(cycle);
+        // Only a successful discovery with no input is a missing keyboard.
+        // Hardware/application errors must retain the generic session status.
+        keyboard_missing = ready && !had_keyboard && usb_result.is_ok() && input_error.is_none();
         if input_error.is_none() && usb_result != Err("QUIESCE FAILED") {
             app.files_closed(&mut ctx);
         }
@@ -473,7 +477,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
     if VIEWER {
         // Final backend status drawing can overlap the UI. Repaint after all
         // device owners have stopped; preserve the unavailable/ended screen.
-        app.viewer.closed();
+        app.viewer.closed(result.is_ok() && keyboard_missing);
         while !app.viewer.painted() {
             app.viewer.render_step(&mut ctx)?;
         }

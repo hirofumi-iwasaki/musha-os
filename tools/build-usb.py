@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = 'x86_64-unknown-uefi'
@@ -24,7 +25,7 @@ def digest(path):
     return value.hexdigest()
 
 
-def package(output, efi, size_mib=64, size_bytes=None):
+def package(output, efi, size_mib=64, size_bytes=None, files_only=False):
     # mkdir without exist_ok refuses existing directories and symlinks.
     output.mkdir(parents=True)
     esp = output / 'files'
@@ -35,10 +36,12 @@ def package(output, efi, size_mib=64, size_bytes=None):
     for name in ('LICENSE', 'NOTICE'):
         shutil.copyfile(ROOT / name, esp / name)
     shutil.copyfile(ROOT / 'third_party/r-efi/AUTHORS', esp / 'r-efi-AUTHORS')
-    spec = importlib.util.spec_from_file_location('usb_image', ROOT / 'tools/make-usb-image.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    image = module.create(output / 'musha-os.img', boot / 'BOOTX64.EFI', size_mib, size_bytes)
+    image = None
+    if not files_only:
+        spec = importlib.util.spec_from_file_location('usb_image', ROOT / 'tools/make-usb-image.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        image = module.create(output / 'musha-os.img', boot / 'BOOTX64.EFI', size_mib, size_bytes)
     with zipfile.ZipFile(output / 'musha-os-fat32-files.zip', 'x', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(esp.rglob('*')):
             if path.is_file():
@@ -49,10 +52,10 @@ def package(output, efi, size_mib=64, size_bytes=None):
     for name in ('LICENSE', 'NOTICE'):
         shutil.copyfile(ROOT / name, output / name)
     shutil.copyfile(ROOT / 'third_party/r-efi/AUTHORS', output / 'r-efi-AUTHORS')
-    paths = [image, output / 'musha-os-fat32-files.zip', boot / 'BOOTX64.EFI']
+    paths = ([image] if image else []) + [output / 'musha-os-fat32-files.zip', boot / 'BOOTX64.EFI']
     checksums = {str(path.relative_to(output)): digest(path) for path in paths}
     (output / 'SHA256SUMS').write_text(''.join(f'{value}  {name}\n' for name, value in checksums.items()), encoding='utf-8')
-    return {'image_bytes': image.stat().st_size, 'sha256': checksums, 'features': [],
+    return {'image_bytes': image.stat().st_size if image else 0, 'sha256': checksums, 'features': [],
             'image_use': 'Exact-capacity raw USB image, or QEMU; default 64MiB is for QEMU.',
             'file_bundle_use': 'Extract at the root of an existing FAT32 USB. No formatting performed.'}
 
@@ -64,7 +67,11 @@ def main():
     sizes = parser.add_mutually_exclusive_group()
     sizes.add_argument('--size-mib', type=int, default=64, help='Image size for QEMU (default: 64)')
     sizes.add_argument('--size-bytes', type=int, help='Exact physical USB capacity, multiple of 512')
+    parser.add_argument('--with-image', action='store_true', help='Opt in to a legacy QEMU image; default builds files only')
     args = parser.parse_args()
+    if not args.with_image and (args.size_bytes is not None or args.size_mib != 64): parser.error('Size options require --with-image')
+    if os.environ.get('RUSTFLAGS') or os.environ.get('CARGO_ENCODED_RUSTFLAGS'):
+        parser.error('Custom Rust flags are not allowed in USB bundles')
     output = args.output_dir.resolve()
     if args.output_dir.exists() or args.output_dir.is_symlink():
         parser.error('output directory must not already exist')
@@ -86,19 +93,21 @@ def main():
                               text=True, stdout=subprocess.PIPE if capture else None)
     versions = {'cargo': run(['cargo', '--version'], True).stdout.strip(),
                 'clang': run([compiler, '--version'], True).stdout.splitlines()[0]}
-    target_dir = ROOT / 'target'
+    build_temp = tempfile.TemporaryDirectory(prefix='musha-usb-build-')
+    target_dir = Path(build_temp.name)
     features = ['t2-diagnostics'] if args.t2_diagnostics else []
     run(['cargo', 'build', '--locked', '--release', '--target', TARGET,
          '--target-dir', str(target_dir), '-p', 'musha-boot']
         + (['--features', ','.join(features)] if features else []))
-    manifest = package(output, target_dir / TARGET / 'release/musha-boot.efi', args.size_mib, args.size_bytes)
+    manifest = package(output, target_dir / TARGET / 'release/musha-boot.efi', args.size_mib, args.size_bytes, files_only=not args.with_image)
     manifest.update({'target': TARGET, 'tool_versions': versions, 'features': features,
                      'diagnostic_revision': 'T2-D1' if args.t2_diagnostics else 'H19',
                      'commit': run(['git', 'rev-parse', 'HEAD'], True).stdout.strip(),
                      'working_tree_dirty': bool(run(['git', 'status', '--porcelain'], True).stdout.strip())})
     (output / 'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     print(f'Created {output}')
-    print('FAT32 USB files: musha-os-fat32-files.zip; QEMU/exact-capacity image: musha-os.img')
+    print('Legacy developer bundle: musha-os-fat32-files.zip. Use prepare-release.py for manifest-driven distribution.')
+    build_temp.cleanup()
 
 
 if __name__ == '__main__':

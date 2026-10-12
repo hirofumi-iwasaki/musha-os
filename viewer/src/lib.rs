@@ -89,6 +89,7 @@ pub struct Viewer {
     view: View,
     error: Option<Error>,
     ended: bool,
+    keyboard_missing: bool,
     handle: Option<Handle>,
     closing: bool,
     position: u64,
@@ -122,6 +123,7 @@ impl Viewer {
             view: View::Unavailable,
             error: None,
             ended: false,
+            keyboard_missing: false,
             handle: None,
             closing: false,
             position: 0,
@@ -252,7 +254,8 @@ impl Viewer {
         self.view = View::Error;
         self.repaint();
     }
-    pub fn closed(&mut self) {
+    pub fn closed(&mut self, keyboard_missing: bool) {
+        self.keyboard_missing = keyboard_missing;
         self.handle = None;
         self.cursor = None;
         self.closing = false;
@@ -400,7 +403,11 @@ impl Viewer {
         let mut out = Text::new();
         match row {
             0 => {
-                let _ = write!(out, "Musha-OS 0.2.0-dev  |  USB file viewer  |  READ ONLY");
+                let _ = write!(
+                    out,
+                    "Musha-OS {}  |  USB file viewer  |  READ ONLY",
+                    include_str!("../../VERSION").trim()
+                );
             }
             2 => {
                 let _ = write!(
@@ -436,8 +443,10 @@ impl Viewer {
             }
             7 => {
                 let _ = match self.view {
-                    View::Unavailable => out.write_str(if self.ended {
-                        "Device session ended. Restart to reconnect."
+                    View::Unavailable => out.write_str(if self.keyboard_missing {
+                        "USB keyboard not detected. Connect one, then restart."
+                    } else if self.ended {
+                        "Device session ended. Restart to try again."
                     } else {
                         "No supported FAT32/exFAT medium. External USB keyboard required."
                     }),
@@ -759,7 +768,7 @@ mod tests {
         assert_eq!(v.error(), Some(Error::Corrupt));
         assert!(v.data().is_empty());
         f.disconnect();
-        v.closed();
+        v.closed(false);
         assert_eq!(v.view(), View::Unavailable);
         assert_eq!(v.count(), 0);
         assert!(v.selected_name().is_empty());
@@ -767,6 +776,22 @@ mod tests {
         assert_eq!(v.view(), View::Unavailable);
         v.key(0x14, 0);
         assert!(v.exit_requested());
+    }
+    #[test]
+    fn closure_distinguishes_missing_keyboard_from_other_session_endings() {
+        let mut v = Viewer::new();
+        v.closed(true);
+        assert_eq!(
+            v.line(7).as_str(),
+            "USB keyboard not detected. Connect one, then restart."
+        );
+        assert_eq!(v.view(), View::Unavailable);
+        assert_eq!(v.count(), 0);
+        v.closed(false);
+        assert_eq!(
+            v.line(7).as_str(),
+            "Device session ended. Restart to try again."
+        );
     }
     #[test]
     fn rendering_clips_to_screen_and_preserves_stride_padding() {
