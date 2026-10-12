@@ -133,6 +133,23 @@ jobs:
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/file-app.img --usb-image out/ci/exfat-data.img --live-file --split-controller --file-no-delay
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/file-app.img --case no-keyboard
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/file-app.img --case keyboard-disconnect --split-controller
+      - name: QEMU file viewer selection and page navigation
+        run: |
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features file-viewer-probe
+          python3 tools/make-usb-image.py out/ci/viewer.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer.img --data-image out/ci/viewer.img --format fat32
+          python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer.img --data-image out/ci/exfat-data.img
+          python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer.img --data-image out/ci/exfat-data.img --split-controller
+          python3 tools/make-exfat-fixture.py out/ci/viewer-corrupt.img --case boot-checksum
+          python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer.img --data-image out/ci/viewer-corrupt.img --case no-medium
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features file-viewer-probe,live-file-probe
+          python3 tools/make-usb-image.py out/ci/viewer-delay.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          for case in cancel disconnect; do
+            python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer-delay.img --data-image out/ci/exfat-data.img --split-controller --case "$case"
+          done
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features file-viewer-probe,file-app-timeout
+          python3 tools/make-usb-image.py out/ci/viewer-timeout.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer-timeout.img --data-image out/ci/exfat-data.img --split-controller --case timeout
       - name: QEMU application failure and TX timeout
         run: |
           for pair in "net-tx-timeout tx-timeout" "app-step-error app-error"; do
@@ -161,7 +178,7 @@ jobs:
             out/hid-memory/*.s
             out/qemu-*/debug.log
             out/qemu-*/qemu.log
-            out/qemu-*/screen.ppm
+            out/qemu-*/*.ppm
             dist/mi68-candidate/
           if-no-files-found: warn
 

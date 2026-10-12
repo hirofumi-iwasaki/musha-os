@@ -36,7 +36,7 @@ See [USB enumeration scope and limitations](docs/usb-enumeration.md).
 Boot Keyboard press / release diagnostics have been verified in QEMU.
 See [keyboard diagnostics](docs/usb-keyboard.md) and [NUC5 test preparation](docs/nuc5-bringup.md).
 Continuous input from a single keyboard to the application has been added.
-The normal build ends the diagnostic session with Esc.
+The v0.2.0 development build uses the [read-only file viewer](docs/file-viewer.md): arrows select, Enter opens, Page Up/Down browse, Esc returns, and Q ends the session.
 USB BOT capacity queries and first / last sector reads have been verified in QEMU.
 See [storage diagnostics](docs/usb-storage.md).
 [FAT32 read diagnostics](docs/fat32.md) have been added; reading MUSHA.TXT from the root has been verified in QEMU.
@@ -45,7 +45,7 @@ An initial read-only [application file API](docs/file-api.md) is implemented for
 [Cooperative input, snapshot-file reads and QEMU networking](docs/cooperative-io.md) now run in the same session, including idle input and isolated device failures.
 The first diagnostic application displays `Hello Musha-OS!` and is designed to
 check the display, input, RAM, file, and UDP status.
-The normal build includes a persistent [hardware diagnostic panel](docs/hardware-diagnostics.md); use the [hardware test record template](docs/hardware-test-record-template.md) for physical tests.
+Diagnostic builds retain the [hardware diagnostic panel](docs/hardware-diagnostics.md); use the [hardware test record template](docs/hardware-test-record-template.md) for physical tests.
 [USB2 hub boot enumeration](docs/usb-multi-controller-hub-plan.md) now handles bounded child traversal and sequential multi-controller discovery. Up to five full-speed QEMU hub levels have been verified; high-speed TT traffic remains unverified. USB3.0/5Gbps hub initialization is implemented but has not been exercised on hardware; USB3.1/3.2 hubs remain unsupported.
 See [development and build instructions](docs/development.md).
 Build a test image and FAT32 USB bundle with the [one-command USB build](docs/test-usb-build.md).
@@ -125,7 +125,7 @@ USBポートをリセットし、USBメモリとキーボードのDevice Descrip
 [キーボード診断](docs/usb-keyboard.md)と[NUC5試験準備](docs/nuc5-bringup.md)を参照。
 [I218 Rust移植](docs/i218-rust-port-plan.md)に着手し、BSD由来の上限付きPHYアクセスと実験用識別probeを追加しました。I218での通信は未実装です。
 通常版の[実機診断表示](docs/hardware-diagnostics.md)と[試験記録様式](docs/hardware-test-record-template.md)も追加済みです。
-単一キーボードからアプリへの継続入力を追加しました。通常版はEscで診断を終了します。
+v0.2.0開発版は[読出し専用ファイルビューアー](docs/file-viewer.md)を表示します。上下で選択、Enterで開く、Page Up/Downで移動、Escで一覧へ戻り、Qで終了します。FAT32/exFATをホストとQEMUで検証済み、実機確認は工程7です。
 USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済みです。
 [ストレージ診断](docs/usb-storage.md)を参照。[FAT32読出し診断](docs/fat32.md)を追加し、ルートのMUSHA.TXTをQEMUで確認済みです。
 [GPT対応と共通の起動用USBイメージ](docs/usb-image.md)を実装し、QEMUで確認済みです。

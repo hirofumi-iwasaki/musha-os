@@ -22,6 +22,8 @@ musha-fs = { path = "../fs" }
 
 musha-net = { path = "../net" }
 
+musha-viewer = { path = "../viewer" }
+
 [features]
 qemu-debug = []
 fault-ud = ["qemu-debug"]
@@ -74,3 +76,6 @@ file-app-timeout = ["live-file-probe", "live-storage-timeout"]
 
 # Close from the application while metadata DMA is pending, then reopen.
 file-app-close = ["live-file-probe"]
+
+# Normal interactive viewer with debug output and no diagnostic input deadline.
+file-viewer-probe = ["input-persistent"]

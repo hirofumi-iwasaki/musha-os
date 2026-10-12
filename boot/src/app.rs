@@ -3,7 +3,10 @@
 use musha_api::{Application, Context, Error, Step};
 #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
 mod stream_probe;
+const VIEWER: bool = (!cfg!(feature = "qemu-debug") && !cfg!(feature = "t2-diagnostics"))
+    || cfg!(feature = "file-viewer-probe");
 struct Diagnostic {
+    viewer: musha_viewer::Viewer,
     #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
     stream: stream_probe::Scan,
     page: usize,
@@ -80,26 +83,39 @@ impl Diagnostic {
         crate::debug(b" HASH=");
         crate::debug(&crate::cpu::hex(self.file_hash));
         crate::debug(b" CLOSED_HANDLE_REJECTED\n");
-        if ctx.screen_size().1 >= 508 {
+        if !VIEWER && ctx.screen_size().1 >= 508 {
             ctx.text("APP FILE READ OK", 24, 484, [0, 240, 100]);
         }
         Ok(())
     }
 }
 impl Application for Diagnostic {
-    #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
     fn files(
         &mut self,
-        _ctx: &mut Context<'_>,
+        ctx: &mut Context<'_>,
         files: &mut musha_api::stream::Files<'_>,
     ) -> Result<(), Error> {
-        self.stream.step(files)
+        if VIEWER {
+            self.viewer.service(files, ctx.now_ms());
+        }
+        #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
+        if !VIEWER {
+            self.stream.step(files)?;
+        }
+        Ok(())
+    }
+    fn files_closed(&mut self, _ctx: &mut Context<'_>) {
+        if VIEWER {
+            self.viewer.closed();
+        }
     }
     fn init(&mut self, ctx: &mut Context<'_>) -> Result<(), Error> {
         if ctx.version() != musha_api::API_VERSION {
             return Err(Error::Unsupported);
         }
-        ctx.text("Hello Musha-OS!", 24, 24, [240, 240, 240]);
+        if !VIEWER {
+            ctx.text("Hello Musha-OS!", 24, 24, [240, 240, 240]);
+        }
         Ok(())
     }
     fn step(&mut self, ctx: &mut Context<'_>) -> Result<Step, Error> {
@@ -112,6 +128,27 @@ impl Application for Diagnostic {
             self.request_file_recheck();
         }
         self.file_step(ctx)?;
+        if VIEWER && self.viewer.render_step(ctx)? {
+            crate::debug(b"MUSHA: VIEWER_FRAME ");
+            crate::debug(match self.viewer.view() {
+                musha_viewer::View::List => b"LIST",
+                musha_viewer::View::Loading => b"LOADING",
+                musha_viewer::View::Page => b"PAGE",
+                musha_viewer::View::Error => b"ERROR",
+                musha_viewer::View::Catalog => b"CATALOG",
+                musha_viewer::View::Unavailable => b"UNAVAILABLE",
+            });
+            for value in [
+                self.viewer.selected() as u64,
+                self.viewer.offset(),
+                self.viewer.data().len() as u64,
+                musha_xhci::storage::hash(self.viewer.data()),
+            ] {
+                crate::debug(b" ");
+                crate::debug(&crate::cpu::hex(value));
+            }
+            crate::debug(b"\n");
+        }
         while let Some(event) = ctx.next_key() {
             crate::debug(if event.pressed {
                 b"MUSHA: APP_KEY_DOWN="
@@ -124,10 +161,14 @@ impl Application for Diagnostic {
             if event.pressed && event.usage == 4 {
                 self.stream.request_close();
             }
-            if event.pressed && event.usage == 0x29 {
+            if VIEWER && event.pressed {
+                self.viewer.key(event.usage, ctx.now_ms());
+                self.exit_requested = self.viewer.exit_requested();
+            }
+            if !VIEWER && event.pressed && event.usage == 0x29 {
                 self.exit_requested = true;
             }
-            if event.pressed {
+            if !VIEWER && event.pressed {
                 let (width, height) = ctx.screen_size();
                 if height >= 380 && width > 24 {
                     let py = 356 * height.saturating_sub(48).min(1100) / 550;
@@ -146,11 +187,13 @@ impl Application for Diagnostic {
             }
         }
         if self.complete {
-            return Ok(if ctx.input_active() || !self.file_done {
-                Step::Continue
-            } else {
-                Step::Complete
-            });
+            return Ok(
+                if ctx.input_active() || !self.file_done || (VIEWER && !self.viewer.painted()) {
+                    Step::Continue
+                } else {
+                    Step::Complete
+                },
+            );
         }
         // Bounded work: probe at most 64 pages per callback; the full arena scan
         // is spread across iterations so the runtime can poll its clock/devices.
@@ -189,30 +232,35 @@ impl Application for Diagnostic {
             return Ok(Step::Continue);
         }
         let bytes = ctx.arena_bytes();
-        ctx.text("ARENA READY", 24, 100, [0, 220, 240]);
-        ctx.text("ARENA BYTES", 24, 132, [0, 220, 240]);
+        if !VIEWER {
+            ctx.text("ARENA READY", 24, 100, [0, 220, 240]);
+            ctx.text("ARENA BYTES", 24, 132, [0, 220, 240]);
+            let digits = crate::cpu::hex(bytes as u64);
+            ctx.text(
+                core::str::from_utf8(&digits).map_err(|_| Error::Invalid)?,
+                240,
+                132,
+                [0, 220, 240],
+            );
+        }
         let digits = crate::cpu::hex(bytes as u64);
-        ctx.text(
-            core::str::from_utf8(&digits).map_err(|_| Error::Invalid)?,
-            240,
-            132,
-            [0, 220, 240],
-        );
         crate::debug(b"MUSHA: ARENA_BYTES=");
         crate::debug(&digits);
         crate::debug(b"\n");
         self.complete = true;
-        Ok(if ctx.input_active() || !self.file_done {
-            Step::Continue
-        } else {
-            Step::Complete
-        })
+        Ok(
+            if ctx.input_active() || !self.file_done || (VIEWER && !self.viewer.painted()) {
+                Step::Continue
+            } else {
+                Step::Complete
+            },
+        )
     }
     fn shutdown(&mut self, ctx: &mut Context<'_>) {
         if let Some(handle) = self.file_handle.take() {
             let _ = ctx.file_close(handle);
         }
-        if self.complete {
+        if self.complete && !VIEWER {
             ctx.text("APP COMPLETE", 24, 324, [0, 240, 100]);
         }
     }
@@ -221,6 +269,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
     // Framebuffer, cached file and arena have a single application owner.
     let mut ctx = unsafe { Context::new(arena, info.framebuffer) }?;
     let mut app = Diagnostic {
+        viewer: musha_viewer::Viewer::new(),
         #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
         stream: stream_probe::Scan::new(),
         page: 0,
@@ -269,6 +318,9 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     return Ok(false);
                 }
                 crate::xhci::AppEvent::Ready(input) => {
+                    if VIEWER {
+                        crate::diagnostics::hide(true);
+                    }
                     ctx.finish_file_discovery(false);
                     if input {
                         external = Some(
@@ -361,6 +413,9 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
             return Err(error);
         }
         if !ready {
+            if VIEWER {
+                crate::diagnostics::hide(true);
+            }
             match crate::net::Session::start(info, &mut time) {
                 Ok(session) => network = session,
                 Err(error) => crate::net::failed(error),
@@ -415,6 +470,14 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         }
     }
     drop(network); // Also runs on application/clock errors, before propagating.
+    if VIEWER {
+        // Final backend status drawing can overlap the UI. Repaint after all
+        // device owners have stopped; preserve the unavailable/ended screen.
+        app.viewer.closed();
+        while !app.viewer.painted() {
+            app.viewer.render_step(&mut ctx)?;
+        }
+    }
     result?;
     crate::debug(b"MUSHA: RUNTIME_COOPERATIVE_OK STEPS=");
     crate::debug(&crate::cpu::hex(steps));

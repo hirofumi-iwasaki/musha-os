@@ -7,6 +7,7 @@ use core::{
 use musha_framebuffer::Framebuffer;
 use musha_platform::diagnostics::{Failure, Line};
 struct Panel {
+    hidden: bool,
     fb: Option<Framebuffer>,
     page: Option<[Line; 42]>,
     journal: [Line; 512],
@@ -33,6 +34,7 @@ struct Shared(UnsafeCell<Panel>);
 // rendering never invokes callbacks or firmware, and updates cannot reenter.
 unsafe impl Sync for Shared {}
 static PANEL: Shared = Shared(UnsafeCell::new(Panel {
+    hidden: false,
     fb: None,
     page: None,
     journal: [Line::EMPTY; 512],
@@ -69,7 +71,13 @@ fn update(f: impl FnOnce(&mut Panel)) {
 const DIAGNOSTIC_SCALE: usize = 6;
 const DIAGNOSTIC_LINE_HEIGHT: usize = 50;
 
+pub fn hide(hidden: bool) {
+    update(|p| p.hidden = hidden);
+}
 fn render(p: &Panel) {
+    if p.hidden {
+        return;
+    }
     let Some(fb) = p.fb else { return };
     let x = if fb.width >= 1200 { 800 } else { 0 };
     let y = 24;

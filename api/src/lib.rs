@@ -171,6 +171,25 @@ impl<'a> Context<'a> {
         }
         Ok(())
     }
+    /// Pixel coordinates without the legacy diagnostic layout transform.
+    pub fn text_at(
+        &mut self,
+        text: &str,
+        x: usize,
+        y: usize,
+        rgb: [u8; 3],
+        scale: usize,
+    ) -> Result<(), Error> {
+        if !(1..=4).contains(&scale) || x >= self.screen.width || y >= self.screen.height {
+            return Err(Error::Invalid);
+        }
+        // SAFETY: Context owns the framebuffer; glyph pixels are individually clipped.
+        unsafe {
+            self.screen
+                .text_scaled(text, x, y, self.screen.color(rgb[0], rgb[1], rgb[2]), scale);
+        }
+        Ok(())
+    }
     pub fn text(&mut self, text: &str, x: usize, y: usize, rgb: [u8; 3]) {
         // SAFETY: constructor contract persists and &mut self serializes drawing.
         unsafe {

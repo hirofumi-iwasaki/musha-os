@@ -35,8 +35,11 @@ Currently integer milliseconds report overruns at 2ms or more; strict 1ms detect
 
 pixel and rectangle convert RGB colors to the display format and return Invalid for out-of-bounds access or arithmetic overflow.
 rectangle validates the entire range before writing. text uses the existing fixed font with clipping.
+text_at uses pixel coordinates and scale 1..4, rejects invalid origins/scales and clips each glyph pixel.
 Drawing is synchronous; applications must split large drawing operations across steps.
 The current Error is a Rust enum with Invalid / Unsupported / Io / Again / NotFound / NoMemory / Disconnected, distinct from the future C integer-status contract.
+
+The normal v0.2.0 development build uses the [file viewer](file-viewer.md); the following describes retained diagnostic builds.
 
 ### Diagnostic application and tests
 
@@ -105,14 +108,17 @@ contextのadvanceはランタイム用で、時刻の巻戻しを拒否する。
 
 pixelとrectangleはRGB色を画面形式へ変換し、境界外や算術overflowをInvalidとして返す。
 rectangleは全範囲を検証してから書き込む。textは既存の固定フォントでclipして描画する。
+text_atはピクセル座標と倍率1〜4を使用し、無効な原点・倍率を拒否し、画素ごとにclipする。
 描画は同期処理なので、大きな描画はアプリがstepへ分割する。
 今のErrorはInvalid / Unsupported / Io / Again / NotFound / NoMemory / DisconnectedのRust enum。将来のC整数status契約とは区別する。
+
+v0.2.0開発通常版は[ファイルビューアー](file-viewer.md)を使用する。以下は維持している診断版の説明。
 
 ### 診断アプリと試験
 
 initでHello Musha-OS!を表示する。64ページずつ書込むphaseと読戻すphaseで
 RAM全ページの両端を検証する。64MiBではRAM試験に512step必要。
-RAM完了後も入力セッション中はContinueし、キーを処理する。通常版はEsc押下で終了する。
+RAM完了後も入力セッション中はContinueし、キーを処理する。診断版はEsc押下で終了する。
 shutdown時のAPP COMPLETE表示は正常完了時だけ行う。
 QEMUはライフサイクル成功マーカーを検査する。
 ホストでは時刻巻戻し、描画の境界・overflow・paddingとguard保存を検査した。
