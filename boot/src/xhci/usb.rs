@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 mod hub;
 mod storage;
-use super::{Host, Registers, TRBS, dma_u64, event, publish, wait};
+use super::{Host, Registers, TRBS, dma_u64, publish, wait};
 
 #[derive(Clone, Copy)]
 struct Protocol {
@@ -259,6 +259,8 @@ fn control_read(
         1000,
         host.keyboard_pending,
         Some(&mut host.keyboard_saved),
+        host.bulk_pending,
+        Some(&mut host.bulk_saved),
         if bytes == 0 {
             None
         } else {
@@ -301,6 +303,7 @@ pub(super) fn enumerate(
     host.delay(20)?;
     let mut count = 0u64;
     let mut active_keyboard = None;
+    let mut active_storage = None;
     let mut targets = [None; 32];
     let mut tail = 0;
     let mut retained_hubs = [None; 8];
@@ -539,7 +542,15 @@ pub(super) fn enumerate(
             count += 1;
             continue;
         }
-        if let Configured::Keyboard(mut keyboard) = configured {
+        if let Configured::Storage(mut device) = configured {
+            if !discovery && active_storage.is_none() {
+                device.ancestors = target.ancestors;
+                active_storage = Some(device);
+                crate::debug(b"MUSHA: STORAGE_RETAINED\n");
+                count += 1;
+                continue;
+            }
+        } else if let Configured::Keyboard(mut keyboard) = configured {
             keyboard.ancestors = target.ancestors;
             if active_keyboard.is_none() {
                 active_keyboard = Some(keyboard);
@@ -548,7 +559,7 @@ pub(super) fn enumerate(
             }
             crate::debug(b"MUSHA: HID_ADDITIONAL_UNSUPPORTED\n");
         }
-        // Release non-keyboard slots only after a
+        // Release slots not retained for the live loop only after a
         // Disable Slot completion. The DMA allocation itself is never reused.
         host.command(0, (10 << 10) | ((slot as u32) << 24), slot)?;
         if host
@@ -575,7 +586,7 @@ pub(super) fn enumerate(
         let slot = keyboard.slot;
         crate::diagnostics::usb_stage("KEYBOARD POLLING");
         if !discovery {
-            run_keyboard(host, keyboard, tick)?;
+            run_keyboard(host, keyboard, active_storage.as_mut(), tick)?;
         }
         host.command(0, (10 << 10) | ((slot as u32) << 24), slot)?;
         if host
@@ -589,6 +600,17 @@ pub(super) fn enumerate(
             dma_u64(dcbaa + slot as usize * 8, 0);
             core::arch::asm!("mfence", options(nostack));
         }
+    }
+    if let Some(mut device) = active_storage {
+        // Disable Slot completion is the ownership boundary. On any error the
+        // outer controller stop disables all DMA before this arena is reused.
+        let slot = device.slot();
+        host.command(0, (10 << 10) | ((slot as u32) << 24), slot)?;
+        device.stopped(host);
+        unsafe {
+            dma_u64(dcbaa + slot as usize * 8, 0);
+        }
+        crate::debug(b"MUSHA: STORAGE_RELEASED\n");
     }
     for hub in retained_hubs[..hub_count].iter().rev().flatten() {
         host.command(0, (10 << 10) | ((hub.slot as u32) << 24), hub.slot)?;
@@ -610,6 +632,7 @@ struct Keyboard {
 }
 enum Configured {
     Other,
+    Storage(storage::Device),
     Keyboard(Keyboard),
     Hub(musha_xhci::hub::Configuration),
 }
@@ -685,7 +708,7 @@ fn configure(
             disk,
             tick,
         )
-        .map(|()| Configured::Other);
+        .map(|device| Configured::Storage(device.with_port(port)));
     }
     let Some(kbd) = musha_xhci::keyboard::configuration(&bytes[..length], speed)? else {
         return Ok(Configured::Other);
@@ -745,6 +768,7 @@ fn configure(
 fn run_keyboard(
     host: &mut Host<'_>,
     keyboard: Keyboard,
+    mut storage: Option<&mut storage::Device>,
     tick: &mut dyn FnMut(super::AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
     let Keyboard {
@@ -827,7 +851,7 @@ fn run_keyboard(
         let result = if let Some(words) = host.keyboard_saved.take() {
             Ok(words)
         } else {
-            event(
+            super::event_dispatch(
                 host.regs,
                 host.clock,
                 host.events,
@@ -839,6 +863,12 @@ fn run_keyboard(
                 slot,
                 endpoint,
                 0,
+                None,
+                None,
+                host.bulk_pending,
+                Some(&mut host.bulk_saved),
+                None,
+                None,
             )
         };
         let mut transitions = [(0u8, false); 20];
@@ -871,6 +901,11 @@ fn run_keyboard(
                     crate::debug(b"MUSHA: HID_RING_WRAP_OK\n");
                 }
                 reports += 1;
+            }
+        }
+        if cfg!(feature = "live-storage-probe") {
+            if let Some(device) = storage.as_deref_mut() {
+                device.probe_step(host)?;
             }
         }
         // Hardware poll never waits for a key. Each iteration also advances the

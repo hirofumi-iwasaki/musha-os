@@ -117,3 +117,14 @@ debug/fault機能を含まない通常版`out/musha-usb-cooperative-final.img`�
 ## 2026-10-12 BOT polling foundation
 
 Boot-time BOT now uses a nonblocking transaction state machine through a synchronous compatibility driver. See [BOT polling](bot-polling.md) for verified behavior and remaining live-loop integration. The initialization/live-loop boundary above is unchanged.
+
+
+## 2026-10-12 Retained storage transport
+
+The input controller now retains its first storage slot until the live loop ends.
+The opt-in `live-storage-probe` QEMU build performs actual sector reads alongside
+keyboard and network polling; delayed reads, mid-read Esc, disconnect and timeout
+are covered by `smoke-cooperative.py --live-storage`. See the latest section of
+[BOT polling](bot-polling.md) for commands and limitations. Application file reads
+still use the existing snapshot; stream API and cross-controller storage are not
+connected yet.

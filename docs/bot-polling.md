@@ -1,4 +1,6 @@
-# BOT転送の段階実行（工程5の前半）
+# BOT転送と工程5の接続記録
+
+最新の到達点は末尾の「同一controllerでのlive転送」。以下の各節は段階ごとの記録。
 
 2026-10-12。`musha_xhci::storage::transaction::Transaction`で、読出し専用BOTを
 CBW送信→必要ならDATA受信→CSW受信に分割した。各pollは要求1件の提示または
@@ -102,3 +104,64 @@ bitmapの断片化と循環、要求上限、部分的な結果を公開しな�
 同一/別controllerの入力event配送を実装する。その後に実際のUSB待機と入力・通信が
 重なるQEMU試験を行う。今回の新経路はホスト検証のみで、工程5全体は未完了。
 物理USBの更新は行っていない。
+
+
+## 2026-10-12 同一controllerでのlive転送
+
+入力セッションを実行するcontrollerでは、最初に検出したstorageのslot、bulk ring、
+CBW/DATA/CSWのDMA領域を入力loopの終了まで保持する。探索専用controllerと追加storageは
+従来通り探索後に停止する。現在の通常版には共通ファイルAPIからの要求は未接続で、
+保持したstorageは待機する。キーボードなしでは保持slotを解放して既存fallbackへ進む。
+
+保持したDeviceはbegin_read/poll_readを提供し、pollは最大1転送投入または1event確認。
+CPU出力bufferへのコピーはCSW検証後だけ。Hostはkeyboard/bulkそれぞれ1件の完了を
+保存でき、command・EP0・keyboard・bulkの各pollerが相手の正常完了を配送する。
+TRBアドレス、slot、endpoint、completion code、残byte数を照合し、重複・未知の通知は
+エラーにする。bulkの同時二重投入と異なる所有者からのpollも拒否する。
+
+通常終了ではDisable Slot完了後にpendingと保存通知を消し、親hubを最後に解放する。
+途中エラーは外側のcontroller haltとPCI bus master停止へ進み、DMA領域を再利用しない。
+この段階ではstorage障害時に同じcontrollerの入力も停止する。ネットワークと既存snapshot
+処理はfallbackで継続できる。storageだけを切り離して入力を維持する復旧は未実装。
+
+### QEMU専用の同時転送試験
+
+`live-storage-probe`は入力loop内でLBA 0を反復READ(10)し、起動時のhashと照合する。
+DATA TRBの投入後、doorbellを750ms遅らせ、USB待機中の入力・通信を観測できるようにした。
+`live-storage-timeout`は探索後のこのDATA doorbellだけを抑止し、コマンド全体2秒の期限を
+検証する。どちらもqemu-debugを含む専用機能で、通常版では周期読出しを行わない。
+これはsector transportの試験で、共通ファイルAPIやexFATのlive読出し成功とは区別する。
+
+再現手順（toolchainとQEMU firmwareの設定後、出力像は毎回新しい名前を使用）:
+
+```sh
+cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-storage-probe
+python3 tools/make-usb-image.py out/live.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/live.img --case traffic --live-storage
+```
+
+`--hub-depth 2`でkeyboardを2段hub経由にする。`--live-fault disconnect`でDATA待機中の
+storageをQMPから取り外す。timeoutは`--features live-storage-timeout`で別像を生成し、
+`--live-fault timeout`を付ける。release-candidate workflowにも同じ4caseを追加した。
+
+今回の検証:
+
+- ホスト215試験合格。完了通知の宛先・成功状態・重複拒否を追加検証。
+- QEMU実sector読出し: 内容hash一致、待機中のaキー、ARP/ICMP/257件UDP、snapshot再検査、
+  次のDATA待機中のEsc、slot解放、controller DMA停止を確認。
+- 最初のUDP応答をホスト側で受信した時点で、読出し完了/失敗がまだ発生していないことも検査。
+- 2段hub経由の入力でも合格。EP0状態確認とbulk/keyboardの完了配送を回帰。
+- DATA待機中のstorage切断とタイムアウトで、結果を公開せずDMA停止。
+  入力ソースを解除し、ネットワーク・snapshot処理の継続と最終終了を確認。
+- 周期読出し無効のqemu-debug版でも通常trafficに合格。キーボードなし・2 controllerのfallbackも合格。
+- 通常UEFI release buildに合格し、out/espの起動ファイルも通常版へ復帰。CIへの追加はローカル変更であり、リモートCIの実行結果ではない。
+- 最終成功像SHA-256: `99aab18295e0e9faecef5ee0b39d78884810cb7a12cdc87a1505fbbe1079e285`。
+- 最終timeout像SHA-256: `e10eca1d31d0c4cea007b92579a71173df287041efbf685d754a38b5b544667f`。
+
+### 次の接続範囲
+
+共通stream API→metadata Planner→データExecutor→保持したDeviceの接続、
+mount/catalogの配置とメモリ上限、アプリからのキャンセル伝播が残る。
+MacBookのC0 keyboard/C2 storageのような別controllerは現在も逐次探索なので、
+両Hostを同時保持する実行構造が必要。キーボードなしのlive読出しも接続対象。
+工程5全体は未完了であり、物理USB更新・実機合格・exFAT USB合格は今回に含まない。

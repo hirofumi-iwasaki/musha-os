@@ -329,6 +329,8 @@ fn event(
         None,
         None,
         None,
+        None,
+        None,
     )
 }
 fn event_dispatch(
@@ -345,6 +347,8 @@ fn event_dispatch(
     timeout_ms: u64,
     deferred: Option<(usize, u8, u8)>,
     mut saved: Option<&mut Option<[u32; 4]>>,
+    bulk: Option<(usize, u8, u8)>,
+    mut bulk_saved: Option<&mut Option<[u32; 4]>>,
     short: Option<(usize, u32)>,
     mut residual: Option<&mut Option<u32>>,
 ) -> Result<[u32; 4], &'static str> {
@@ -413,24 +417,12 @@ fn event_dispatch(
                             transfer,
                         )
                     {
-                        if let (Some((address, slot, endpoint)), Some(saved)) =
-                            (deferred, saved.as_deref_mut())
-                        {
-                            if saved.is_none()
-                                && musha_xhci::endpoint_completion(words, address, slot, endpoint)
-                            {
-                                *saved = Some(words);
-                                false
-                            } else {
-                                crate::diagnostics::transfer_failure(
-                                    words,
-                                    expected,
-                                    expected_slot,
-                                    transfer,
-                                );
-                                return Err("BAD TRANSFER");
-                            }
-                        } else {
+                        let stored = saved.as_deref_mut().is_some_and(|saved| {
+                            musha_xhci::defer_completion(words, deferred, saved)
+                        }) || bulk_saved
+                            .as_deref_mut()
+                            .is_some_and(|saved| musha_xhci::defer_completion(words, bulk, saved));
+                        if !stored {
                             crate::diagnostics::transfer_failure(
                                 words,
                                 expected,
@@ -439,6 +431,7 @@ fn event_dispatch(
                             );
                             return Err("BAD TRANSFER");
                         }
+                        false
                     } else {
                         true
                     }
@@ -611,6 +604,8 @@ fn command_probe(
             control_cursors: [musha_xhci::control::Cursor::NEW; 9],
             keyboard_pending: None,
             keyboard_saved: None,
+            bulk_pending: None,
+            bulk_saved: None,
         };
         let keyboard = usb::enumerate(&mut host, &mut pool, dcbaa, discovery, tick)?;
         Ok(Probe {
@@ -655,6 +650,8 @@ struct Host<'a> {
     control_cursors: [musha_xhci::control::Cursor; 9],
     keyboard_pending: Option<(usize, u8, u8)>,
     keyboard_saved: Option<[u32; 4]>,
+    bulk_pending: Option<(usize, u8, u8)>,
+    bulk_saved: Option<[u32; 4]>,
 }
 impl Host<'_> {
     fn command(
@@ -698,6 +695,8 @@ impl Host<'_> {
             1000,
             self.keyboard_pending,
             Some(&mut self.keyboard_saved),
+            self.bulk_pending,
+            Some(&mut self.bulk_saved),
             None,
             None,
         )?;

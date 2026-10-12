@@ -54,3 +54,9 @@ usb-control-probe = ["qemu-debug"]
 
 # Read-only PCI/SMBIOS evidence; no T2 MMIO, DMA or firmware commands.
 t2-diagnostics = []
+
+# Retained-slot concurrent READ(10) exercise with delayed DATA doorbell.
+live-storage-probe = ["qemu-debug"]
+
+# Suppress DATA doorbell only after live polling begins, not during discovery.
+live-storage-timeout = ["live-storage-probe"]

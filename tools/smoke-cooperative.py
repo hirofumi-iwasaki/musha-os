@@ -8,10 +8,12 @@ parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--case',choices=['traffic','input-idle','no-keyboard','keyboard-disconnect','link-down','tx-timeout','app-error'],default='traffic')
 parser.add_argument('--usb-image',type=pathlib.Path)
+parser.add_argument('--live-storage',action='store_true',help='Require live-storage-probe image and real READ(10) during traffic')
+parser.add_argument('--live-fault',choices=['timeout','disconnect'],help='Exercise a pending live read failure')
 parser.add_argument('--hub-depth',type=int,choices=range(1,6),help='Place a USB1 keyboard under USB2 hubs')
 parser.add_argument('--extra-xhci',action='store_true',help='Verify no-keyboard behavior with two controllers')
 a=parser.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
-out=root/('out/qemu-cooperative-'+a.case);out.mkdir(parents=True,exist_ok=True)
+out=root/('out/qemu-cooperative-'+a.case+('-live-'+(a.live_fault or 'read') if a.live_storage else ''));out.mkdir(parents=True,exist_ok=True)
 f=pathlib.Path(a.firmware_dir);shutil.copyfile(f/'edk2-i386-vars.fd',out/'vars.fd')
 log=out/'debug.log';log.write_text('');qmp=out/'qmp.sock'
 if qmp.exists():qmp.unlink()
@@ -20,7 +22,7 @@ cmd=[a.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev',f'socket,id=net0,li
  '-drive',f'if=pflash,format=raw,readonly=on,file={f / "edk2-x86_64-code.fd"}',
  '-drive',f'if=pflash,format=raw,file={out / "vars.fd"}',
  '-drive',f'if=none,id=esp,format=raw,file=fat:rw:{root / "out/esp"}',
- '-device','qemu-xhci,id=usbhost','-device','usb-storage,drive=esp,bus=usbhost.0,port=1','-device','usb-kbd,id=keyboard,bus=usbhost.0','-vga','std','-display','none',
+ '-device','qemu-xhci,id=usbhost','-device','usb-storage,id=storage,drive=esp,bus=usbhost.0,port=1','-device','usb-kbd,id=keyboard,bus=usbhost.0','-vga','std','-display','none',
  '-debugcon',f'file:{log}','-global','isa-debugcon.iobase=0xe9','-qmp',f'unix:{qmp},server=on,wait=off','-no-reboot']
 if a.case=='no-keyboard':
  index=cmd.index('usb-kbd,id=keyboard,bus=usbhost.0');del cmd[index-1:index+1]
@@ -33,6 +35,8 @@ if a.hub_depth:
  index=cmd.index('qemu-xhci,id=usbhost')
  cmd[index+1:index+1]=hubs
 if a.extra_xhci:cmd.extend(['-device','qemu-xhci,id=extra'])
+if a.live_storage and (a.case!='traffic' or not a.usb_image):parser.error('--live-storage requires traffic and --usb-image')
+if a.live_fault and not a.live_storage:parser.error('--live-fault requires --live-storage')
 image_hash=None
 if a.usb_image:
  a.usb_image=a.usb_image.resolve()
@@ -77,6 +81,9 @@ with (out/'qemu.log').open('w') as err:
     if time.monotonic()>end or proc.poll() is not None:raise RuntimeError('Missing '+marker+'\n'+log.read_text())
     time.sleep(.02)
   wait_marker('RUNTIME_POLL_READY')
+  if a.live_storage:
+   wait_marker('LIVE_STORAGE_WAIT')
+   control('send-key',{'keys':[{'type':'qcode','data':'a'}],'hold-time':30})
   if a.extra_xhci:
    text=log.read_text();assert text.count('MUSHA: XHCI_SCAN BDF=')==2
    assert 'MUSHA: XHCI_SCAN_COMPLETE' in text
@@ -162,7 +169,7 @@ with (out/'qemu.log').open('w') as err:
    return b[:6]+struct.pack('!H',checksum(pseudo+b) or 65535)+b[8:]
   for i in range(256 if a.case != 'app-error' else 1):
    payload=struct.pack('!I',i)+b'Musha-OS UDP ring wrap'
-   if a.case=='traffic' and i in [16,64,128]:
+   if a.case=='traffic' and not a.live_fault and i in [16,64,128]:
     key={16:'a',64:'b',128:'c'}[i]
     control('send-key',{'keys':[{'type':'qcode','data':key}],'hold-time':30})
    request=udp(payload);send(ip(17,request,i+2))
@@ -179,6 +186,16 @@ with (out/'qemu.log').open('w') as err:
    answer=parsed(receive(lambda b:parsed(b,17) is not None),17)
    assert struct.unpack('!HHH',answer[:6])==(12345,23456,len(payload)+8) and answer[8:]==payload
    assert checksum(gip+hip+struct.pack('!BBH',0,17,len(answer))+answer)==0 and answer[6:8]!=b'\0\0'
+   if a.live_storage and i==0:
+    # This is a real UDP reply received by the test process before the held
+    # READ(10) completes or fails, independently of application snapshot logs.
+    pending_log=log.read_text()
+    assert 'LIVE_STORAGE_READ_OK' not in pending_log and 'XHCI_FAILED' not in pending_log
+   if a.live_fault=='disconnect' and i==0:
+    wait_marker('APP_KEY_UP=0000000000000004')
+    control('device_del',{'id':'storage'})
+    wait_marker('XHCI_FAILED STORAGE DISCONNECTED')
+
   # Corrupt software-validated checksums, then prove valid traffic still progresses.
   bad=bytearray(ip(17,udp(b'bad-ip'),200));bad[24]^=1;send(bad)
   bad=bytearray(udp(b'bad-udp'));bad[6]^=1;send(ip(17,bad,201))
@@ -186,9 +203,17 @@ with (out/'qemu.log').open('w') as err:
   except (socket.timeout,TimeoutError):pass
   payload=b'valid-after-errors';send(ip(17,udp(payload),202))
   answer=parsed(receive(lambda b:parsed(b,17) is not None),17);assert answer[8:]==payload
-  if a.case=='traffic':
+  if a.case=='traffic' and not a.live_fault:
    wait_marker('APP_KEY_UP=0000000000000006')
    wait_marker('APP_FILE_RECHECK_OK')
+   if a.live_storage:
+    wait_marker('LIVE_STORAGE_READ_OK')
+    # Exit during a subsequent outstanding DATA transfer, not just between reads.
+    seen=log.read_text().count('LIVE_STORAGE_WAIT')
+    until=time.monotonic()+3
+    while log.read_text().count('LIVE_STORAGE_WAIT')==seen:
+     if time.monotonic()>until:raise RuntimeError('next live read did not start')
+     time.sleep(.01)
    control('send-key',{'keys':[{'type':'qcode','data':'esc'}],'hold-time':50})
   while 'EXIT_BOOT_SERVICES_OK' not in log.read_text():
    if time.monotonic()>deadline:raise RuntimeError('network termination timeout')
@@ -199,10 +224,26 @@ with (out/'qemu.log').open('w') as err:
   assert int(re.search(r'TX_WRAP=([0-9A-F]+)',text)[1],16)>=32
   assert 'RUNTIME_COOPERATIVE_OK' in text and 'XHCI_QUIESCED DMA_DISABLED' in text
   if image_hash:assert hash_image()==image_hash and 'APP_FILE_RECHECK_OK' in text
-  if a.case=='traffic':
+  if a.case=='traffic' and not a.live_fault:
    for usage in [4,5,6,0x29]:assert f'APP_KEY_DOWN={usage:016X}' in text
    assert text.index('NET_READY')<text.index('APP_KEY_DOWN=0000000000000004')<text.index('NET_QUIESCED')
   if a.case in ['input-idle','no-keyboard']:assert 'APP_KEY_DOWN' not in text
+  if a.live_storage:
+   begin=text.index('LIVE_STORAGE_WAIT')
+   marker=('XHCI_FAILED '+('TRANSFER TIMEOUT' if a.live_fault=='timeout' else 'STORAGE DISCONNECTED')) if a.live_fault else 'LIVE_STORAGE_READ_OK'
+   done=text.index(marker,begin)
+   window=text[begin:done]
+   assert 'APP_KEY_DOWN=0000000000000004' in window
+   assert 'APP_FILE_RECHECK_OK' in window, 'UDP-triggered app progress missing during real storage wait'
+   if a.live_fault:
+    assert 'LIVE_STORAGE_READ_OK' not in text
+    assert 'STORAGE_RELEASED' not in text
+    assert text.index('XHCI_QUIESCED') < text.index('INPUT_SOURCE_DETACHED') < text.index('NET_QUIESCED')
+    print('PASS: live read',a.live_fault,'input/UDP progress before failure, no result publication, controller DMA stopped')
+   else:
+    assert 'STORAGE_RELEASED' in text and 'XHCI_FAILED' not in text
+    assert text.rindex('LIVE_STORAGE_WAIT') < text.index('APP_KEY_DOWN=0000000000000029') < text.index('STORAGE_RELEASED') < text.index('XHCI_QUIESCED')
+    print('PASS: live READ(10) data hash, key/UDP progress while pending, Esc during DATA, slot release and DMA stop')
   control('screendump',{'filename':str(out/'screen.ppm')});control('quit')
   proc.wait(timeout=5)
   if image_hash:assert hash_image()==image_hash and 'APP_FILE_OK' in text

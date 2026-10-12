@@ -1,6 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-use super::{Host, TRBS, control, dma_word, event, publish, read_word};
+use super::{Host, TRBS, control, dma_word, publish, read_word};
 use musha_xhci::storage::transaction::{Phase, Progress, Transaction};
 use musha_xhci::storage::{self, Command, Endpoint, Storage};
 struct Pipe {
@@ -17,6 +17,9 @@ impl Pipe {
         bytes: usize,
         hold: bool,
     ) -> Result<usize, &'static str> {
+        if host.bulk_pending.is_some() || host.bulk_saved.is_some() {
+            return Err("BULK BUSY");
+        }
         if bytes == 0 || bytes > 4096 {
             return Err("BULK SIZE");
         }
@@ -42,6 +45,7 @@ impl Pipe {
             host.regs
                 .write(host.doorbell + slot as usize * 4, self.dci as u32)?;
         }
+        host.bulk_pending = Some((address, slot, self.dci));
         Ok(address)
     }
     fn poll(
@@ -50,20 +54,38 @@ impl Pipe {
         slot: u8,
         address: usize,
     ) -> Result<bool, &'static str> {
-        match event(
-            host.regs,
-            host.clock,
-            host.events,
-            host.consumer,
-            host.runtime,
-            host.ac64,
-            address,
-            host.ports,
-            slot,
-            self.dci,
-            0,
-        ) {
+        if host.bulk_pending != Some((address, slot, self.dci)) {
+            return Err("BULK OWNER");
+        }
+        let result = if let Some(words) = host.bulk_saved.take() {
+            if !musha_xhci::endpoint_completion(words, address, slot, self.dci) {
+                return Err("BAD TRANSFER");
+            }
+            Ok(words)
+        } else {
+            super::super::event_dispatch(
+                host.regs,
+                host.clock,
+                host.events,
+                host.consumer,
+                host.runtime,
+                host.ac64,
+                address,
+                host.ports,
+                slot,
+                self.dci,
+                0,
+                host.keyboard_pending,
+                Some(&mut host.keyboard_saved),
+                None,
+                None,
+                None,
+                None,
+            )
+        };
+        match result {
             Ok(_) => {
+                host.bulk_pending = None;
                 self.cursor.advance();
                 Ok(true)
             }
@@ -86,6 +108,7 @@ struct Active {
     transaction: Transaction,
     transfer: Option<(Phase, usize, usize)>,
     hold_data: bool,
+    delayed_until: Option<u64>,
 }
 impl Bot {
     fn begin(&mut self, host: &mut Host<'_>, command: Command) -> Result<(), &'static str> {
@@ -113,6 +136,7 @@ impl Bot {
             transaction,
             transfer: None,
             hold_data,
+            delayed_until: None,
         });
         Ok(())
     }
@@ -140,9 +164,14 @@ impl Bot {
                     self.slot,
                     buffer,
                     bytes,
-                    phase == Phase::Data && active.hold_data,
+                    phase == Phase::Data && (active.hold_data || active.delayed_until.is_some()),
                 ) {
-                    Ok(address) => active.transfer = Some((phase, address, bytes)),
+                    Ok(address) => {
+                        active.transfer = Some((phase, address, bytes));
+                        if phase == Phase::Data && active.delayed_until.is_some() {
+                            crate::debug(b"MUSHA: LIVE_STORAGE_WAIT\n");
+                        }
+                    }
                     Err(error) => {
                         active.transaction.cancel();
                         return Err(error);
@@ -152,6 +181,17 @@ impl Bot {
             }
             Progress::Pending => {
                 let (phase, address, bytes) = active.transfer.ok_or("BOT NO TRANSFER")?;
+                if phase == Phase::Data {
+                    if let Some(until) = active.delayed_until {
+                        if !cfg!(feature = "live-storage-timeout") && host.clock.now()? >= until {
+                            host.regs.write(
+                                host.doorbell + self.slot as usize * 4,
+                                self.input.dci as u32,
+                            )?;
+                            active.delayed_until = None;
+                        }
+                    }
+                }
                 let pipe = if phase == Phase::Command {
                     &mut self.output
                 } else {
@@ -260,7 +300,7 @@ pub(super) fn probe(
     buffer: usize,
     disk: Storage,
     tick: &mut dyn FnMut(super::super::AppEvent<'_>) -> Result<bool, &'static str>,
-) -> Result<(), &'static str> {
+) -> Result<Device, &'static str> {
     crate::diagnostics::usb_stage("STORAGE BOT / CAPACITY");
     let in_ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
     let out_ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
@@ -348,8 +388,12 @@ pub(super) fn probe(
     crate::debug(b" SECTOR=");
     crate::debug(&crate::cpu::hex(size as u64));
     crate::debug(b"\n");
+    let mut first_hash = 0;
     for lba in [0, blocks - 1] {
         let hash = bot.read(host, lba, blocks, size)?;
+        if lba == 0 {
+            first_hash = hash;
+        }
         crate::debug(b"MUSHA: STORAGE_READ_OK LBA=");
         crate::debug(&crate::cpu::hex(lba));
         crate::debug(b" HASH=");
@@ -430,5 +474,116 @@ pub(super) fn probe(
         }
     }
     crate::debug(b"MUSHA: STORAGE_PROBE_OK READ_ONLY\n");
-    Ok(())
+    Ok(Device {
+        bot,
+        blocks,
+        size,
+        port: 0,
+        ancestors: [None; 5],
+        first_hash,
+        next_probe: 0,
+        check_at: 0,
+    })
+}
+
+/// Retains the configured slot and exclusively owned DMA allocations. Completion
+/// copies into CPU memory only after CSW validation; failures reserve all buffers
+/// until Disable Slot or outer controller quiescence.
+pub(super) struct Device {
+    bot: Bot,
+    blocks: u64,
+    size: u32,
+    port: usize,
+    pub(super) ancestors: [Option<(super::hub::Hub, u8)>; 5],
+    first_hash: u64,
+    next_probe: u64,
+    check_at: u64,
+}
+impl Device {
+    pub(super) fn with_port(mut self, port: usize) -> Self {
+        self.port = port;
+        self
+    }
+    pub(super) fn slot(&self) -> u8 {
+        self.bot.slot
+    }
+    pub(super) fn begin_read(&mut self, host: &mut Host<'_>, lba: u64) -> Result<(), &'static str> {
+        storage::read(
+            self.bot.tag.checked_add(1).ok_or("BOT TAG")?,
+            lba,
+            self.blocks,
+            self.size,
+        )
+        .ok_or("LBA RANGE")?;
+        self.bot.begin(
+            host,
+            Command::Read {
+                lba: lba as u32,
+                sector_bytes: self.size,
+            },
+        )
+    }
+    pub(super) fn poll_read(
+        &mut self,
+        host: &mut Host<'_>,
+        out: &mut [u8],
+    ) -> Result<bool, &'static str> {
+        if out.len() != self.size as usize {
+            return Err("BULK SIZE");
+        }
+        match self.bot.poll(host)? {
+            None => Ok(false),
+            Some(false) => Err("SCSI READ"),
+            Some(true) => {
+                copy(self.bot.data, out);
+                Ok(true)
+            }
+        }
+    }
+    pub(super) fn stopped(&mut self, host: &mut Host<'_>) {
+        self.bot.pending = None;
+        host.bulk_pending = None;
+        host.bulk_saved = None;
+    }
+    /// QEMU-only live transport exercise; not an application file API request.
+    pub(super) fn probe_step(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        let now = host.clock.now()?;
+        let op = (host.regs.read(0)? & 255) as usize;
+        if host.regs.read(op + 0x400 + (self.port - 1) * 16)? & 1 == 0 {
+            return Err("STORAGE DISCONNECTED");
+        }
+        if now >= self.check_at {
+            for (hub, port) in self.ancestors.iter().flatten().copied() {
+                let status = super::hub::status(host, hub, port)?;
+                if status.overcurrent()
+                    || !status.connected()
+                    || status.ready_speed().is_none()
+                    || status.connection_changed()
+                    || status.configuration_error()
+                {
+                    return Err("STORAGE DISCONNECTED");
+                }
+            }
+            self.check_at = now.checked_add(100).ok_or("CLOCK OVERFLOW")?;
+        }
+        if self.bot.pending.is_none() {
+            if now < self.next_probe {
+                return Ok(());
+            }
+            self.begin_read(host, 0)?;
+            self.bot.pending.as_mut().ok_or("BOT IDLE")?.delayed_until =
+                Some(now.checked_add(750).ok_or("CLOCK OVERFLOW")?);
+            crate::debug(b"MUSHA: LIVE_STORAGE_BEGIN\n");
+        } else {
+            let mut out = [0u8; 4096];
+            if self.poll_read(host, &mut out[..self.size as usize])? {
+                if storage::hash(&out[..self.size as usize]) != self.first_hash {
+                    return Err("LIVE STORAGE CONTENT");
+                }
+                crate::debug(b"MUSHA: LIVE_STORAGE_READ_OK\n");
+                self.next_probe = now.checked_add(50).ok_or("CLOCK OVERFLOW")?;
+            }
+        }
+        Ok(())
+    }
 }
