@@ -10,6 +10,7 @@ p.add_argument('--boot-image',required=True,type=pathlib.Path)
 p.add_argument('--data-image',required=True,type=pathlib.Path)
 p.add_argument('--format',choices=['exfat','fat32'],default='exfat')
 p.add_argument('--split-controller',action='store_true')
+p.add_argument('--apple-double-files',action='store_true',help='macOS fixture has one ._ metadata file after each test file')
 p.add_argument('--case',choices=['normal','cancel','disconnect','timeout','no-medium'],default='normal')
 a=p.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
 out=root/'out'/('qemu-viewer-'+a.format+'-'+a.case+('-split' if a.split_controller else ''));out.mkdir(parents=True,exist_ok=True)
@@ -46,13 +47,17 @@ with (out/'qemu.log').open('w') as err:
     if 'return' in response:return
   control('qmp_capabilities')
   def key(code):
-   start=len(log.read_text());control('send-key',{'keys':[{'type':'qcode','data':code}],'hold-time':30});time.sleep(.08);return start
+   start=len(log.read_text())
+   for _ in range(2 if a.apple_double_files and code=='down' else 1):
+    control('send-key',{'keys':[{'type':'qcode','data':code}],'hold-time':30});time.sleep(.08)
+   return start
   def screen(name):control('screendump',{'filename':str(out/(name+'.ppm'))})
   def fnv(b):
    h=0xcbf29ce484222325
    for x in b:h=((h^x)*0x100000001b3)&0xffffffffffffffff
    return h
   def frame(view,index=0,offset=0,payload=b'',start=0):
+   if a.apple_double_files:index*=2
    wait(f'VIEWER_FRAME {view} {index:016X} {offset:016X} {len(payload):016X} {fnv(payload):016X}',start)
   if a.case=='no-medium':
    frame('UNAVAILABLE');screen('no-medium')

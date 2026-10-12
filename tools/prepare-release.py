@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -26,8 +27,10 @@ def digest(path):
 def command(*args):
     return subprocess.check_output(args, cwd=ROOT, text=True).strip()
 
-def stage(destination, efi, provenance, release=False):
+def stage(destination, efi, provenance, release=False, version="0.2.0"):
     """Package an already-built candidate into a new directory only."""
+    if not re.fullmatch(r"0\.[12]\.0", version):
+        raise ValueError("Supported package versions: 0.1.0, 0.2.0")
     destination = Path(destination).absolute()
     if destination.exists() or destination.is_symlink():
         raise FileExistsError(destination)
@@ -36,7 +39,7 @@ def stage(destination, efi, provenance, release=False):
     destination.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.musha-stage-', dir=destination.parent) as tmp:
         work = Path(tmp)
-        name = 'musha-os-0.1.0' if release else 'musha-os-0.1.0-candidate'
+        name = f'musha-os-{version}' + ('' if release else '-candidate')
         bundle = work / name
         (bundle / 'EFI/BOOT').mkdir(parents=True)
         shutil.copyfile(efi, bundle / 'EFI/BOOT/BOOTX64.EFI')
@@ -60,10 +63,14 @@ def stage(destination, efi, provenance, release=False):
         spec = importlib.util.spec_from_file_location('usb_image', ROOT / 'tools/make-usb-image.py')
         usb = importlib.util.module_from_spec(spec); spec.loader.exec_module(usb)
         usb.create(bundle / 'musha-qemu-64MiB.img', bundle / 'EFI/BOOT/BOOTX64.EFI')
-        provenance = dict(provenance, status='initial-development-release' if release else 'unreleased-candidate', version='0.1.0',
+        if version == '0.2.0':
+            shutil.copyfile(ROOT / 'tools/make-exfat-fixture.py', bundle / 'tools/make-exfat-fixture.py')
+            fixture = subprocess.check_output(['python3', str(ROOT / 'tools/make-exfat-fixture.py'), str(bundle / 'exfat-test-data.img')], text=True)
+            (bundle / 'exfat-test-data.json').write_text(fixture)
+        provenance = dict(provenance, status='initial-development-release' if release else 'unreleased-candidate', version=version,
                           image_scope='64MiB QEMU image; physical USB needs exact-capacity regeneration',
-                          hardware_validation='See docs/release-validation-0.1.0.md and docs/pci-h19-hardware-results.md' if release else 'NOT RUN',
-                          release_acceptance='Limited scope: docs/release-scope-0.1.0.md' if release else 'NOT DETERMINED')
+                          hardware_validation=f'See docs/release-validation-{version}.md' if release else 'NOT RUN',
+                          release_acceptance=f'Limited scope: docs/release-scope-{version}.md' if release else 'NOT DETERMINED')
         provenance['files'] = {p.relative_to(bundle).as_posix():
                                {'bytes': p.stat().st_size, 'sha256': digest(p)}
                                for p in sorted(bundle.rglob('*')) if p.is_file()}
@@ -90,9 +97,10 @@ def stage(destination, efi, provenance, release=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', type=Path, default=ROOT / 'dist/mi68-candidate')
+    parser.add_argument('--output', type=Path, default=ROOT / 'dist/v0.2.0-candidate')
+    parser.add_argument('--version', choices=['0.1.0', '0.2.0'], default='0.2.0')
     parser.add_argument('--allow-dirty', action='store_true', help='Preview only; record uncommitted changes')
-    parser.add_argument('--release', action='store_true', help='Package the approved initial development release; does not publish')
+    parser.add_argument('--release', action='store_true', help='Package an approved development release; does not publish')
     args = parser.parse_args()
     if args.release and args.allow_dirty: parser.error('Release packaging requires a clean commit')
     if args.output.exists() or args.output.is_symlink(): parser.error('Output must be new')
@@ -111,7 +119,7 @@ def main():
                         'x86_64-unknown-uefi', '-p', 'musha-boot', '--no-default-features',
                         '--target-dir', tmp], cwd=ROOT, check=True)
         efi = Path(tmp) / 'x86_64-unknown-uefi/release/musha-boot.efi'
-        print('Candidate staged:', stage(args.output, efi, provenance, release=args.release))
+        print('Candidate staged:', stage(args.output, efi, provenance, release=args.release, version=args.version))
     print('No device write, tag creation or publication performed.')
 
 if __name__ == '__main__':

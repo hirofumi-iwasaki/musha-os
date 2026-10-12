@@ -25,7 +25,7 @@ class PackageTests(unittest.TestCase):
         self.efi.write_bytes(data)  # Format fixture, not a runnable EFI.
 
     def test_archive_hashes_licenses_and_provenance(self):
-        output = release.stage(self.root / 'candidate', self.efi, {'commit': 'fixture', 'features': []})
+        output = release.stage(self.root / 'candidate', self.efi, {'commit': 'fixture', 'features': []}, version='0.1.0')
         bundle = output / 'musha-os-0.1.0-candidate'
         manifest = json.loads((bundle / 'manifest.json').read_text())
         self.assertEqual(manifest['hardware_validation'], 'NOT RUN')
@@ -46,13 +46,28 @@ class PackageTests(unittest.TestCase):
 
     def test_release_metadata_and_readme(self):
         output = release.stage(self.root / 'release', self.efi,
-                               {'commit': 'fixture', 'features': []}, release=True)
+                               {'commit': 'fixture', 'features': []}, release=True, version="0.1.0")
         bundle = output / 'musha-os-0.1.0'
         manifest = json.loads((bundle / 'manifest.json').read_text())
         self.assertEqual(manifest['status'], 'initial-development-release')
         self.assertEqual(manifest['features'], [])
         self.assertTrue((bundle / 'README.md').is_file())
         self.assertTrue((output / 'musha-os-0.1.0.tar.gz').is_file())
+
+    def test_v020_candidate_contains_exfat_and_pending_acceptance(self):
+        output = release.stage(self.root / 'v020', self.efi, {'commit': 'fixture', 'features': []})
+        bundle = output / 'musha-os-0.2.0-candidate'
+        manifest = json.loads((bundle / 'manifest.json').read_text())
+        self.assertEqual(manifest['version'], '0.2.0')
+        self.assertEqual(manifest['hardware_validation'], 'NOT RUN')
+        self.assertEqual(manifest['release_acceptance'], 'NOT DETERMINED')
+        self.assertEqual(manifest['features'], [])
+        fixture = json.loads((bundle / 'exfat-test-data.json').read_text())
+        self.assertTrue((bundle / 'exfat-test-data.img').is_file())
+        for name, entry in manifest['files'].items():
+            self.assertEqual(release.digest(bundle / name), entry['sha256'])
+        with self.assertRaises(ValueError):
+            release.stage(self.root / 'bad-version', self.efi, {}, version='../unsafe')
 
     def test_existing_output_is_untouched(self):
         out = self.root / 'existing'; out.mkdir(); (out / 'keep').write_text('important')

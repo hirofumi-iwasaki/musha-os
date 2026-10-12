@@ -166,12 +166,17 @@ jobs:
           cp target/x86_64-unknown-uefi/release/musha-boot.efi out/esp/EFI/BOOT/BOOTX64.EFI
           python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --case fat-corrupt --fat-fixture gpt
       - name: Build a fresh normal candidate (no publication)
-        run: python3 tools/prepare-release.py --output dist/mi68-candidate
+        run: python3 tools/prepare-release.py --output dist/v0.2.0-candidate
+      - name: Normal candidate display and input acceptance
+        run: |
+          bundle=dist/v0.2.0-candidate/musha-os-0.2.0-candidate
+          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/exfat-test-data.img" --reference out/qemu-viewer-exfat-normal --output out/qemu-normal-exfat
+          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/musha-qemu-64MiB.img" --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-fat32
       - name: Preserve logs and candidate
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mi68-candidate-and-test-records
+          name: v0.2.0-candidate-and-test-records
           path: |
             out/ci/*.txt
             out/hid-memory/report.json
@@ -179,7 +184,8 @@ jobs:
             out/qemu-*/debug.log
             out/qemu-*/qemu.log
             out/qemu-*/*.ppm
-            dist/mi68-candidate/
+            out/qemu-*/result.json
+            dist/v0.2.0-candidate/
           if-no-files-found: warn
 
 # This workflow never creates a tag or GitHub Release, or writes a physical disk.
