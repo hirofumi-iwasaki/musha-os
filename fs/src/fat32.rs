@@ -132,6 +132,36 @@ impl<F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<F> {
     pub fn entries(&self) -> &[Entry] {
         &self.entries[..self.count]
     }
+    /// Builds a resumable metadata validator without performing block I/O.
+    pub fn begin_plan(
+        &self,
+        index: usize,
+        offset: u64,
+        requested: usize,
+    ) -> Result<crate::planner::Planner, Error> {
+        let e = *self.entries().get(index).ok_or(Error::NotFound)?;
+        crate::planner::Planner::new(
+            crate::planner::Geometry {
+                blocks: self.blocks,
+                end: self.volume.start + self.volume.total,
+                fat: self.volume.fat,
+                data: self.volume.data,
+                clusters: self.volume.clusters,
+                spc: self.volume.spc,
+                size: self.size,
+                exfat: false,
+            },
+            crate::planner::File {
+                first: e.first,
+                length: e.bytes,
+                valid: e.bytes,
+                contiguous: false,
+                bitmap: None,
+            },
+            offset,
+            requested,
+        )
+    }
     /// At most 4096 bytes, atomic caller-buffer update. Each call validates the
     /// full declared chain, including its exact end; cyclic/long/short chains fail.
     pub fn read_at(&mut self, index: usize, offset: u64, out: &mut [u8]) -> Result<usize, Error> {
@@ -146,52 +176,7 @@ impl<F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<F> {
         offset: u64,
         requested: usize,
     ) -> Result<crate::read_plan::Plan, Error> {
-        let e = *self.entries().get(index).ok_or(Error::NotFound)?;
-        if e.bytes > MAX_FILE_BYTES {
-            return Err(Error::TooLarge);
-        }
-        if requested > 4096 {
-            return Err(Error::TooLarge);
-        }
-        if offset >= e.bytes || requested == 0 {
-            return Ok(crate::read_plan::Plan::new(0, self.size));
-        }
-        let mut r = Reader {
-            read: &mut self.read,
-            blocks: self.blocks,
-            size: self.size,
-            budget: 1_000_000,
-        };
-        let cluster_bytes = self.volume.spc as u64 * self.size as u64;
-        let clusters = e.bytes.div_ceil(cluster_bytes);
-        let mut cluster = e.first;
-        for i in 0..clusters {
-            match (self.volume.next(&mut r, cluster)?, i + 1 == clusters) {
-                (None, true) => {}
-                (Some(next), false) => cluster = next,
-                _ => return Err(Error::Corrupt),
-            }
-        }
-        cluster = e.first;
-        for _ in 0..offset / cluster_bytes {
-            cluster = self.volume.next(&mut r, cluster)?.ok_or(Error::Corrupt)?;
-        }
-        let count = (e.bytes - offset).min(requested as u64) as usize;
-        let mut plan = crate::read_plan::Plan::new(count, self.size);
-        let mut copied = 0;
-        let mut inside = offset % cluster_bytes;
-        while copied < count {
-            let lba = self.volume.cluster(cluster)? + inside / self.size as u64;
-            let skip = (inside % self.size as u64) as usize;
-            let n = (count - copied).min(self.size - skip);
-            plan.push(lba, skip, n, copied)?;
-            copied += n;
-            inside += n as u64;
-            if inside == cluster_bytes && copied < count {
-                cluster = self.volume.next(&mut r, cluster)?.ok_or(Error::Corrupt)?;
-                inside = 0;
-            }
-        }
-        Ok(plan)
+        let mut planner = self.begin_plan(index, offset, requested)?;
+        planner.run(&mut self.read)
     }
 }

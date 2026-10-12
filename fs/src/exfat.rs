@@ -447,6 +447,39 @@ impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
     pub fn entries(&self) -> &[Entry] {
         &self.work.entries[..self.count]
     }
+    /// Builds a resumable metadata validator without performing block I/O.
+    pub fn begin_plan(
+        &self,
+        index: usize,
+        offset: u64,
+        requested: usize,
+    ) -> Result<crate::planner::Planner, Error> {
+        if requested > 4096 {
+            return Err(Error::Limit);
+        }
+        let e = *self.entries().get(index).ok_or(Error::NotFound)?;
+        crate::planner::Planner::new(
+            crate::planner::Geometry {
+                blocks: self.blocks,
+                end: self.volume.start + self.volume.total,
+                fat: self.volume.start + self.volume.fat,
+                data: self.volume.start + self.volume.heap,
+                clusters: self.volume.count,
+                spc: self.volume.spc,
+                size: self.size,
+                exfat: true,
+            },
+            crate::planner::File {
+                first: e.first,
+                length: e.length,
+                valid: e.valid,
+                contiguous: e.contiguous,
+                bitmap: Some((self.bitmap.first, self.bitmap.length)),
+            },
+            offset,
+            requested,
+        )
+    }
     /// At most 4096 bytes. Output remains unchanged on failure. Index belongs to
     /// this mount only. Each call revalidates allocation; backend must be stable.
     pub fn read_at(&mut self, index: usize, offset: u64, out: &mut [u8]) -> Result<usize, Error> {
@@ -461,63 +494,8 @@ impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
         offset: u64,
         requested: usize,
     ) -> Result<crate::read_plan::Plan, Error> {
-        let e = *self.entries().get(index).ok_or(Error::NotFound)?;
-        if e.length > MAX_FILE_BYTES {
-            return Err(Error::TooLarge);
-        }
-        if requested > 4096 {
-            return Err(Error::Limit);
-        }
-        let mut r = Reader {
-            read: &mut self.read,
-            blocks: self.blocks,
-            size: self.size,
-            budget: IO_LIMIT,
-        };
-        validate_chain(
-            self.volume,
-            &mut r,
-            e.first,
-            e.length,
-            e.contiguous,
-            Some(self.bitmap),
-        )?;
-        let n = e.length.saturating_sub(offset).min(requested as u64) as usize;
-        let mut plan = crate::read_plan::Plan::new(n, self.size);
-        let valid = e.valid.saturating_sub(offset).min(n as u64) as usize;
-        let cb = self.size as u64 * self.volume.spc as u64;
-        let mut chain = Chain::new(e.first);
-        if valid > 0 {
-            let jump = offset / cb;
-            if e.contiguous {
-                chain.current = (e.first as u64 + jump) as u32;
-            } else {
-                for _ in 0..jump {
-                    if !chain.advance(self.volume, &mut r)? {
-                        return Err(Error::Corrupt);
-                    }
-                }
-            }
-            let mut pos = offset % cb;
-            let mut done = 0;
-            while done < valid {
-                if pos == cb {
-                    if e.contiguous {
-                        chain.current += 1;
-                    } else if !chain.advance(self.volume, &mut r)? {
-                        return Err(Error::Corrupt);
-                    }
-                    pos = 0;
-                }
-                let lba = self.volume.cluster(chain.current)? + pos / self.size as u64;
-                let within = (pos % self.size as u64) as usize;
-                let take = (self.size - within).min(valid - done);
-                plan.push(lba, within, take, done)?;
-                done += take;
-                pos += take as u64;
-            }
-        }
-        Ok(plan)
+        let mut planner = self.begin_plan(index, offset, requested)?;
+        planner.run(&mut self.read)
     }
 }
 fn allocated<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(

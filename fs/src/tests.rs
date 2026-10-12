@@ -489,9 +489,8 @@ fn fat32_stream_chain_errors_and_io_preserve_buffer() {
 fn fat32_catalog_through_common_request_api() {
     use musha_api::stream::{Entry, Error as ApiError, Files, Format};
     let disk = Disk::new(512, 0);
-    let mut fs =
-        fat32::FileSystem::mount(disk.total(), 512, 0, disk.total(), |l, b| disk.read(l, b))
-            .unwrap();
+    let fs = fat32::FileSystem::mount(disk.total(), 512, 0, disk.total(), |l, b| disk.read(l, b))
+        .unwrap();
     let mut name = [0; 255];
     for (to, from) in name.iter_mut().zip(b"MUSHA.TXT") {
         *to = *from as u16;
@@ -516,9 +515,24 @@ fn fat32_catalog_through_common_request_api() {
             Err(ApiError::Again) => {
                 let request = service.take_request().unwrap();
                 let mut owned = [0; 4096];
-                let plan = fs
-                    .plan_read(request.index(), request.offset(), request.length())
+                let mut planner = fs
+                    .begin_plan(request.index(), request.offset(), request.length())
                     .unwrap();
+                let plan = loop {
+                    match planner.poll().unwrap() {
+                        crate::planner::Progress::Yield => {}
+                        crate::planner::Progress::Read(r) => {
+                            assert_eq!(planner.poll(), Ok(crate::planner::Progress::Pending));
+                            let mut sector = [0; 4096];
+                            disk.read(r.lba(), &mut sector[..r.bytes()]).unwrap();
+                            assert!(planner.complete(r, Ok(&sector[..r.bytes()])));
+                        }
+                        crate::planner::Progress::Complete => {
+                            break planner.take_plan().unwrap().unwrap();
+                        }
+                        _ => panic!(),
+                    }
+                };
                 let mut transfer = crate::read_plan::Executor::new();
                 transfer.start(plan).unwrap();
                 while let Some(sector_request) = transfer.take_request().unwrap() {

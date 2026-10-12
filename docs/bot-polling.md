@@ -73,3 +73,32 @@ FAT32の断片化fixtureとexFATの全5ファイルを
 今回のホスト検証を工程5全体の完了、または実USBでの非同期ファイル読出し成功とはしない。
 
 今回の最終検証: ホスト210試験合格、musha-fsのUEFI library checkと通常UEFI release buildに合格。新経路のQEMU同時I/O試験は未実施。
+
+
+## 2026-10-12 続き: ファイル配置metadataの再開
+
+FAT32/exFATの`begin_plan`はI/Oなしで`planner::Planner`を作成する。
+`poll`は配置検証を1段階だけ進め、Yield、Pending、Read、Completeを返す。
+ReadはsectorのLBA・長さと識別tokenを持つ。FAT chainとexFAT allocation bitmapの
+検査は1sectorずつ要求し、待機中は重複要求しない。断片化したbitmap自身のchainも
+再開可能で、循環・短いchain・未割当bit・不正sector長・I/O失敗を拒否する。
+全配置の検証が完了して初めて最大4096byteのPlanを取り出せる。
+既存の同期`plan_read`と`read_at`もこの状態機械を使い、検証・配置計算を共通化した。
+
+cancelは未完了tokenをtransport完了/停止の通知まで保持し、届いたデータを破棄する。
+`is_quiescent`はその通知を受けたことだけを示し、DMAを停止する機能ではない。
+tokenは元のPlannerインスタンス内だけで照合する。runtime側は媒体世代と要求の所有者を
+確認し、破棄したPlannerの通知を新しいPlannerへ渡してはならない。
+最大100万sector要求、Planner本体2KiB未満をホストで検査した。
+処理全体の時間制限はlive runtimeへの接続時に設ける必要がある。
+
+FAT32/exFATの共通API統合試験を、metadata要求/完了→Plan→データ要求/完了の経路へ変更。
+追加試験では保留を繰り返した場合、旧token・二重通知、各metadata待機点でのcancel、
+bitmapの断片化と循環、要求上限、部分的な結果を公開しないことを確認した。
+ホスト214試験、UEFI向けlibrary check、通常UEFI release buildに合格した。
+
+**現在の残作業:** mount/discoveryとroot catalog構築は同期のまま。
+起動時の探索とlive処理の境界を確定し、storage slot/DMAの保持、共通API接続、
+同一/別controllerの入力event配送を実装する。その後に実際のUSB待機と入力・通信が
+重なるQEMU試験を行う。今回の新経路はホスト検証のみで、工程5全体は未完了。
+物理USBの更新は行っていない。

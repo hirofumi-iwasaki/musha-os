@@ -767,9 +767,27 @@ fn exfat_catalog_through_common_request_api() {
                 Err(ApiError::Again) => {
                     let request = service.take_request().unwrap();
                     let mut owned = [0; 4096];
-                    let plan = fs
-                        .plan_read(request.index(), request.offset(), request.length())
+                    let mut planner = fs
+                        .begin_plan(request.index(), request.offset(), request.length())
                         .unwrap();
+                    let plan = loop {
+                        match planner.poll().unwrap() {
+                            musha_fs::planner::Progress::Yield => {}
+                            musha_fs::planner::Progress::Read(r) => {
+                                assert_eq!(
+                                    planner.poll(),
+                                    Ok(musha_fs::planner::Progress::Pending)
+                                );
+                                let mut sector = [0; 4096];
+                                reader(&image)(r.lba(), &mut sector[..r.bytes()]).unwrap();
+                                assert!(planner.complete(r, Ok(&sector[..r.bytes()])));
+                            }
+                            musha_fs::planner::Progress::Complete => {
+                                break planner.take_plan().unwrap().unwrap();
+                            }
+                            _ => panic!(),
+                        }
+                    };
                     let mut transfer = musha_fs::read_plan::Executor::new();
                     transfer.start(plan).unwrap();
                     while let Some(sector_request) = transfer.take_request().unwrap() {
