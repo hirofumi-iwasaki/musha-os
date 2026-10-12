@@ -31,6 +31,20 @@ pub struct FileSystem<F> {
     count: usize,
 }
 impl<F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<F> {
+    /// Synchronous startup discovery: superfloppy, primary MBR FAT32, or GPT ESP.
+    /// Shares read_root's partition validation; never call from a live app step.
+    pub fn discover(blocks: u64, size: usize, mut read: F) -> Result<Self, Error> {
+        if !matches!(size, 512 | 4096) || blocks == 0 {
+            return Err(Error::Unsupported);
+        }
+        let volume = crate::discover_volume(&mut Reader {
+            read: &mut read,
+            blocks,
+            size,
+            budget: 1024,
+        })?;
+        Self::mount(blocks, size, volume.start, volume.total, read)
+    }
     /// The caller supplies a partition region, or the entire superfloppy.
     /// Backend contents must remain immutable until this mount is discarded.
     pub fn mount(

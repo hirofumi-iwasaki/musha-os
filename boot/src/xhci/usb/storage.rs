@@ -414,6 +414,32 @@ pub(super) fn probe(
             Ok(())
         },
     );
+    #[cfg(feature = "live-file-probe")]
+    let prepared = {
+        let bytes = *file_result.as_ref().map_err(|_| "LIVE FILE SNAPSHOT")?;
+        let fs = musha_fs::fat32::FileSystem::discover(blocks, size as usize, |lba, out| {
+            bot.read(host, lba, blocks, size)
+                .map_err(|_| musha_fs::Error::Io)?;
+            copy(data, out);
+            Ok(())
+        })
+        .map_err(|_| "LIVE FILE MOUNT")?;
+        let index = fs
+            .entries()
+            .iter()
+            .position(|e| e.name() == b"MUSHA   TXT")
+            .ok_or("LIVE FILE MISSING")?;
+        if fs.entries()[index].len() != bytes as u64 {
+            return Err("LIVE FILE LENGTH");
+        }
+        Some(super::file::Prepared {
+            planner: fs
+                .begin_plan(index, 0, bytes)
+                .map_err(|_| "LIVE FILE PLAN")?,
+            bytes,
+            hash: storage::hash(&file[..bytes]),
+        })
+    };
     match file_result {
         Ok(bytes) => {
             crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT BYTES {:08X}", bytes));
@@ -475,6 +501,8 @@ pub(super) fn probe(
     }
     crate::debug(b"MUSHA: STORAGE_PROBE_OK READ_ONLY\n");
     Ok(Device {
+        #[cfg(feature = "live-file-probe")]
+        prepared,
         bot,
         blocks,
         size,
@@ -490,6 +518,8 @@ pub(super) fn probe(
 /// copies into CPU memory only after CSW validation; failures reserve all buffers
 /// until Disable Slot or outer controller quiescence.
 pub(super) struct Device {
+    #[cfg(feature = "live-file-probe")]
+    pub(super) prepared: Option<super::file::Prepared>,
     bot: Bot,
     blocks: u64,
     size: u32,
@@ -539,6 +569,12 @@ impl Device {
                 Ok(true)
             }
         }
+    }
+    #[cfg(feature = "live-file-probe")]
+    pub(super) fn delay_read(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        self.bot.pending.as_mut().ok_or("BOT IDLE")?.delayed_until =
+            Some(host.clock.now()?.checked_add(200).ok_or("CLOCK OVERFLOW")?);
+        Ok(())
     }
     pub(super) fn stopped(&mut self, host: &mut Host<'_>) {
         self.bot.pending = None;

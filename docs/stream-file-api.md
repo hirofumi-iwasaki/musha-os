@@ -63,3 +63,12 @@ USB上のオンデマンド読出し、応答時間、物理的な切断、実�
 サービスはまだContextに組み込まず、既存UEFI実行経路を変更していない。
 一覧のAPI用変換で名前を二重保持するとexFAT Workspaceとの合計が初期目標256KiBを
 超え得るため、工程5ではメタデータの共有・配置とstack使用量を改めて測定する。
+
+
+## 2026-10-12 接続試験の更新
+
+ホストのFAT32/exFAT統合試験は`operation::Read`を介し、metadataとデータsectorを
+同じ要求/完了経路で進める。QEMU専用`live-file-probe`では共通APIからFAT32の1ファイルを
+実USB転送で読み、内容・EOF・待機中の入力/通信・Esc取消しを確認した。
+[工程5の接続記録](bot-polling.md)に制約と再現手順を記載。
+通常Contextへの組込み、再利用可能なruntime、exFAT USBは未完了。

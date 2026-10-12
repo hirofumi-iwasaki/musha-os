@@ -1,6 +1,6 @@
 # BOT転送と工程5の接続記録
 
-最新の到達点は末尾の「同一controllerでのlive転送」。以下の各節は段階ごとの記録。
+最新の到達点は末尾の「共通ファイルAPIのUSB接続試験」。以下の各節は段階ごとの記録。
 
 2026-10-12。`musha_xhci::storage::transaction::Transaction`で、読出し専用BOTを
 CBW送信→必要ならDATA受信→CSW受信に分割した。各pollは要求1件の提示または
@@ -165,3 +165,59 @@ mount/catalogの配置とメモリ上限、アプリからのキャンセル伝�
 MacBookのC0 keyboard/C2 storageのような別controllerは現在も逐次探索なので、
 両Hostを同時保持する実行構造が必要。キーボードなしのlive読出しも接続対象。
 工程5全体は未完了であり、物理USB更新・実機合格・exFAT USB合格は今回に含まない。
+
+
+## 2026-10-12 共通ファイルAPIのUSB接続試験
+
+`musha_fs::operation::Read`はmetadata PlannerとデータExecutorをまとめ、同じ
+poll/Read/complete経路で1ファイル要求を処理する。pollは最大1段階、sector要求は
+1件だけ。全配置・内容の読出し成功後にfinishでCPU結果を取り出す。途中のエラーや
+cancelは呼出し側bufferを変えず、pending tokenはtransport停止/完了通知まで残す。
+tokenは元のoperation専用で、runtimeは親のAPI要求とともに配送する。
+FAT32/exFATの既存共通API試験をこの経路へ移行した。
+
+FAT32 `FileSystem::discover`は従来read_rootと同じsuperfloppy/MBR/GPT ESP選択を
+使い、検証済みroot catalogを構築する。媒体探索は起動時の同期処理で、live loopからは
+呼び出さない。既存read_rootの媒体検証は共通関数へ移し、破損検査を維持した。
+
+QEMU専用`live-file-probe`で次の一連の接続を実装した:
+
+1. 起動時にFAT32 catalogからMUSHA.TXTを選び、検証用の1件catalogを共通APIへ渡す。
+2. live loopで共通APIのIDをopenし、readが返したAgainの要求を取得する。
+3. metadataとデータの各sector要求を保持Deviceのbegin_read/poll_readで実行する。
+4. 全体が成功してからAPI completeへ渡し、アプリ側readで取り出して内容・EOFを照合する。
+
+この診断は1ファイル最大4096byte・1要求・1セッション限定。catalogとAPI/operationの
+CPU作業領域は静的に保持し、合計32KiB未満をコンパイル時検査する。operation単体は
+ホストで12KiB未満を検査。これはUEFI全経路の最大stack使用量の保証ではない。
+終了時はAPIをdisconnectしてoperationをcancelする。DMAが残る場合、その場でAPI完了を
+偽装せず外側のslot/controller停止に任せ、診断作業領域を再利用しない。
+通常版のContext/snapshot APIは変えていない。
+
+### 検証と再現
+
+```sh
+cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-file-probe
+python3 tools/make-usb-image.py out/live-file.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/live-file.img --case traffic --live-file
+python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/live-file.img --case traffic --live-file --live-file-cancel
+```
+
+各READ(10)のDATA doorbellを200ms遅らせる。通常caseは既知payload
+`Hello Musha-OS!`＋LFの長さ・FNV-1a hashをホスト側でも独立に計算し照合する。
+ファイル要求中のキー入力とUDP応答、257件UDP、結果取得・EOF・close、DMA停止を確認。
+cancel caseは最初のmetadata sector待機中にEscを送り、ファイル成功を公開しないこと、
+slot解放→controller DMA停止の順序、試験像のSHA-256不変を確認した。
+両caseをrelease-candidate workflowへ追加した（リモートCIの実行は未実施）。
+
+ホスト217試験合格。FAT32/exFATの7byte刻み読出しに新operationを使用し、
+FAT32のmetadata/data計6待機点それぞれでcancel・I/O失敗・旧/二重tokenを検査。
+FAT32自動選択の512/4096byte・MBR/GPTも回帰した。
+UEFI library check・通常release buildに合格し、out/espも通常版へ戻した。
+最終QEMU試験像SHA-256:
+`fec5c26e156bd8249900223f225f740d53db9cfce714356da185ac70e117c551`。
+
+**残作業:** 診断限定の1要求を通常版の再利用可能なサービスへ拡張し、全catalogと
+複数chunk・複数ファイル選択を接続する。exFATのUSB mount/読出し、媒体世代とcancel後の
+安全な再利用、別controllerの同時保持、キーボードなしのlive処理も残る。
+今回を工程5全体の完了、exFAT USB合格、実機合格とはしない。物理USBは更新していない。

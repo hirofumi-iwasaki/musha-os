@@ -86,6 +86,12 @@ jobs:
           cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-storage-timeout
           python3 tools/make-usb-image.py out/ci/live-storage-timeout.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-storage-timeout.img --case traffic --live-storage --live-fault timeout
+      - name: QEMU common file API over retained USB
+        run: |
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-file-probe
+          python3 tools/make-usb-image.py out/ci/live-file.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-file.img --case traffic --live-file
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-file.img --case traffic --live-file --live-file-cancel
       - name: QEMU exception and timeout regression
         run: |
           for case in ud gp df pf ro nx guard xhci-timeout xhci-command-timeout usb-descriptor-timeout storage-timeout; do

@@ -767,40 +767,28 @@ fn exfat_catalog_through_common_request_api() {
                 Err(ApiError::Again) => {
                     let request = service.take_request().unwrap();
                     let mut owned = [0; 4096];
-                    let mut planner = fs
-                        .begin_plan(request.index(), request.offset(), request.length())
-                        .unwrap();
-                    let plan = loop {
-                        match planner.poll().unwrap() {
-                            musha_fs::planner::Progress::Yield => {}
-                            musha_fs::planner::Progress::Read(r) => {
+                    let mut operation = musha_fs::operation::Read::new(
+                        fs.begin_plan(request.index(), request.offset(), request.length())
+                            .unwrap(),
+                    );
+                    loop {
+                        match operation.poll().unwrap() {
+                            musha_fs::operation::Progress::Yield => {}
+                            musha_fs::operation::Progress::Read(r) => {
                                 assert_eq!(
-                                    planner.poll(),
-                                    Ok(musha_fs::planner::Progress::Pending)
+                                    operation.poll(),
+                                    Ok(musha_fs::operation::Progress::Pending)
                                 );
+                                assert_eq!(operation.finish(&mut owned), Ok(None));
                                 let mut sector = [0; 4096];
                                 reader(&image)(r.lba(), &mut sector[..r.bytes()]).unwrap();
-                                assert!(planner.complete(r, Ok(&sector[..r.bytes()])));
+                                assert!(operation.complete(r, Ok(&sector[..r.bytes()])));
                             }
-                            musha_fs::planner::Progress::Complete => {
-                                break planner.take_plan().unwrap().unwrap();
-                            }
+                            musha_fs::operation::Progress::Complete => break,
                             _ => panic!(),
                         }
-                    };
-                    let mut transfer = musha_fs::read_plan::Executor::new();
-                    transfer.start(plan).unwrap();
-                    while let Some(sector_request) = transfer.take_request().unwrap() {
-                        assert_eq!(transfer.finish(&mut owned), Ok(None));
-                        let mut sector = [0; 4096];
-                        reader(&image)(sector_request.lba(), &mut sector[..sector_request.bytes()])
-                            .unwrap();
-                        assert!(
-                            transfer
-                                .complete(sector_request, Ok(&sector[..sector_request.bytes()]))
-                        );
                     }
-                    let n = transfer.finish(&mut owned).unwrap().unwrap();
+                    let n = operation.finish(&mut owned).unwrap().unwrap();
                     assert!(service.complete(request, Ok(&owned[..n])));
                 }
                 Ok(0) => break,

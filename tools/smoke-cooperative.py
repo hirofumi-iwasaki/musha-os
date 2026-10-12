@@ -9,11 +9,13 @@ parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--case',choices=['traffic','input-idle','no-keyboard','keyboard-disconnect','link-down','tx-timeout','app-error'],default='traffic')
 parser.add_argument('--usb-image',type=pathlib.Path)
 parser.add_argument('--live-storage',action='store_true',help='Require live-storage-probe image and real READ(10) during traffic')
+parser.add_argument('--live-file',action='store_true',help='Require common API -> filesystem -> USB file read')
+parser.add_argument('--live-file-cancel',action='store_true',help='Exit while the file metadata sector is pending')
 parser.add_argument('--live-fault',choices=['timeout','disconnect'],help='Exercise a pending live read failure')
 parser.add_argument('--hub-depth',type=int,choices=range(1,6),help='Place a USB1 keyboard under USB2 hubs')
 parser.add_argument('--extra-xhci',action='store_true',help='Verify no-keyboard behavior with two controllers')
 a=parser.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
-out=root/('out/qemu-cooperative-'+a.case+('-live-'+(a.live_fault or 'read') if a.live_storage else ''));out.mkdir(parents=True,exist_ok=True)
+out=root/('out/qemu-cooperative-'+a.case+('-file-cancel' if a.live_file_cancel else '-file' if a.live_file else '')+('-live-'+(a.live_fault or 'read') if a.live_storage else ''));out.mkdir(parents=True,exist_ok=True)
 f=pathlib.Path(a.firmware_dir);shutil.copyfile(f/'edk2-i386-vars.fd',out/'vars.fd')
 log=out/'debug.log';log.write_text('');qmp=out/'qmp.sock'
 if qmp.exists():qmp.unlink()
@@ -37,6 +39,8 @@ if a.hub_depth:
 if a.extra_xhci:cmd.extend(['-device','qemu-xhci,id=extra'])
 if a.live_storage and (a.case!='traffic' or not a.usb_image):parser.error('--live-storage requires traffic and --usb-image')
 if a.live_fault and not a.live_storage:parser.error('--live-fault requires --live-storage')
+if a.live_file and (a.case!='traffic' or not a.usb_image or a.live_storage):parser.error('--live-file requires traffic, --usb-image, and no --live-storage')
+if a.live_file_cancel and not a.live_file:parser.error('--live-file-cancel requires --live-file')
 image_hash=None
 if a.usb_image:
  a.usb_image=a.usb_image.resolve()
@@ -81,6 +85,20 @@ with (out/'qemu.log').open('w') as err:
     if time.monotonic()>end or proc.poll() is not None:raise RuntimeError('Missing '+marker+'\n'+log.read_text())
     time.sleep(.02)
   wait_marker('RUNTIME_POLL_READY')
+  if a.live_file:
+   wait_marker('LIVE_FILE_API_READY');wait_marker('LIVE_STORAGE_WAIT')
+   control('send-key',{'keys':[{'type':'qcode','data':'a'}],'hold-time':30})
+   wait_marker('APP_KEY_DOWN=0000000000000004')
+   if a.live_file_cancel:
+    control('send-key',{'keys':[{'type':'qcode','data':'esc'}],'hold-time':30})
+    wait_marker('EXIT_BOOT_SERVICES_OK')
+    text=log.read_text()
+    assert 'LIVE_FILE_API_OK' not in text and 'XHCI_FAILED' not in text
+    assert text.index('LIVE_STORAGE_WAIT') < text.index('APP_KEY_DOWN=0000000000000029') < text.index('STORAGE_RELEASED') < text.index('XHCI_QUIESCED')
+    assert hash_image()==image_hash
+    control('quit');proc.wait(timeout=5)
+    print('PASS: common file API canceled during metadata DMA wait; slot released, DMA stopped, no file result published')
+    raise SystemExit(0)
   if a.live_storage:
    wait_marker('LIVE_STORAGE_WAIT')
    control('send-key',{'keys':[{'type':'qcode','data':'a'}],'hold-time':30})
@@ -186,6 +204,8 @@ with (out/'qemu.log').open('w') as err:
    answer=parsed(receive(lambda b:parsed(b,17) is not None),17)
    assert struct.unpack('!HHH',answer[:6])==(12345,23456,len(payload)+8) and answer[8:]==payload
    assert checksum(gip+hip+struct.pack('!BBH',0,17,len(answer))+answer)==0 and answer[6:8]!=b'\0\0'
+   if a.live_file and i==0:
+    assert 'LIVE_FILE_API_OK' not in log.read_text(), 'file finished before UDP response'
    if a.live_storage and i==0:
     # This is a real UDP reply received by the test process before the held
     # READ(10) completes or fails, independently of application snapshot logs.
@@ -206,6 +226,7 @@ with (out/'qemu.log').open('w') as err:
   if a.case=='traffic' and not a.live_fault:
    wait_marker('APP_KEY_UP=0000000000000006')
    wait_marker('APP_FILE_RECHECK_OK')
+   if a.live_file:wait_marker('LIVE_FILE_API_OK')
    if a.live_storage:
     wait_marker('LIVE_STORAGE_READ_OK')
     # Exit during a subsequent outstanding DATA transfer, not just between reads.
@@ -244,6 +265,15 @@ with (out/'qemu.log').open('w') as err:
     assert 'STORAGE_RELEASED' in text and 'XHCI_FAILED' not in text
     assert text.rindex('LIVE_STORAGE_WAIT') < text.index('APP_KEY_DOWN=0000000000000029') < text.index('STORAGE_RELEASED') < text.index('XHCI_QUIESCED')
     print('PASS: live READ(10) data hash, key/UDP progress while pending, Esc during DATA, slot release and DMA stop')
+  if a.live_file:
+   expected=b'Hello Musha-OS!\n';h=0xcbf29ce484222325
+   for byte in expected:h=((h^byte)*0x100000001b3)&0xffffffffffffffff
+   assert f'LIVE_FILE_API_OK BYTES={len(expected):016X} HASH={h:016X}' in text
+   begin=text.index('LIVE_FILE_REQUEST');done=text.index('LIVE_FILE_API_OK')
+   assert 'APP_KEY_DOWN=0000000000000004' in text[begin:done]
+   assert 'APP_FILE_RECHECK_OK' in text[begin:done]
+   assert 'XHCI_FAILED' not in text and 'STORAGE_RELEASED' in text
+   print('PASS: common file API, metadata/data USB reads, exact content/EOF, concurrent input and UDP')
   control('screendump',{'filename':str(out/'screen.ppm')});control('quit')
   proc.wait(timeout=5)
   if image_hash:assert hash_image()==image_hash and 'APP_FILE_OK' in text

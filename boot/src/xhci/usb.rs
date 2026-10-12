@@ -1,5 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
+#[cfg(feature = "live-file-probe")]
+mod file;
 mod hub;
 mod storage;
 use super::{Host, Registers, TRBS, dma_u64, publish, wait};
@@ -792,6 +794,11 @@ fn run_keyboard(
         );
     }
 
+    #[cfg(feature = "live-file-probe")]
+    let mut file_session = match storage.as_deref_mut().and_then(|d| d.prepared.take()) {
+        Some(prepared) => Some(file::Session::new(prepared)?),
+        None => return Err("LIVE FILE MISSING"),
+    };
     let op = (host.regs.read(0)? & 255) as usize;
     let deadline = if cfg!(feature = "qemu-debug") && !cfg!(feature = "input-persistent") {
         host.clock
@@ -903,7 +910,11 @@ fn run_keyboard(
                 reports += 1;
             }
         }
-        if cfg!(feature = "live-storage-probe") {
+        #[cfg(feature = "live-file-probe")]
+        if let (Some(session), Some(device)) = (file_session.as_mut(), storage.as_deref_mut()) {
+            session.step(host, device)?;
+        }
+        if cfg!(feature = "live-storage-probe") && !cfg!(feature = "live-file-probe") {
             if let Some(device) = storage.as_deref_mut() {
                 device.probe_step(host)?;
             }

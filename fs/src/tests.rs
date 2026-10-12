@@ -367,6 +367,8 @@ fn gpt_primary_backup_512_and_4096() {
     for size in [512, 4096] {
         let disk = GptDisk::new(size);
         assert_eq!(disk.file(), Ok(if size == 512 { 1200 } else { 9000 }));
+        let fs = fat32::FileSystem::discover(disk.blocks, size, |l, b| disk.read(l, b)).unwrap();
+        assert_eq!(fs.entries()[0].name(), b"MUSHA   TXT");
     }
 }
 #[test]
@@ -515,36 +517,25 @@ fn fat32_catalog_through_common_request_api() {
             Err(ApiError::Again) => {
                 let request = service.take_request().unwrap();
                 let mut owned = [0; 4096];
-                let mut planner = fs
-                    .begin_plan(request.index(), request.offset(), request.length())
-                    .unwrap();
-                let plan = loop {
-                    match planner.poll().unwrap() {
-                        crate::planner::Progress::Yield => {}
-                        crate::planner::Progress::Read(r) => {
-                            assert_eq!(planner.poll(), Ok(crate::planner::Progress::Pending));
+                let mut operation = crate::operation::Read::new(
+                    fs.begin_plan(request.index(), request.offset(), request.length())
+                        .unwrap(),
+                );
+                loop {
+                    match operation.poll().unwrap() {
+                        crate::operation::Progress::Yield => {}
+                        crate::operation::Progress::Read(r) => {
+                            assert_eq!(operation.poll(), Ok(crate::operation::Progress::Pending));
+                            assert_eq!(operation.finish(&mut owned), Ok(None));
                             let mut sector = [0; 4096];
                             disk.read(r.lba(), &mut sector[..r.bytes()]).unwrap();
-                            assert!(planner.complete(r, Ok(&sector[..r.bytes()])));
+                            assert!(operation.complete(r, Ok(&sector[..r.bytes()])));
                         }
-                        crate::planner::Progress::Complete => {
-                            break planner.take_plan().unwrap().unwrap();
-                        }
+                        crate::operation::Progress::Complete => break,
                         _ => panic!(),
                     }
-                };
-                let mut transfer = crate::read_plan::Executor::new();
-                transfer.start(plan).unwrap();
-                while let Some(sector_request) = transfer.take_request().unwrap() {
-                    assert_eq!(transfer.finish(&mut owned), Ok(None));
-                    let mut sector = [0; 4096];
-                    disk.read(sector_request.lba(), &mut sector[..sector_request.bytes()])
-                        .unwrap();
-                    assert!(
-                        transfer.complete(sector_request, Ok(&sector[..sector_request.bytes()]))
-                    );
                 }
-                let n = transfer.finish(&mut owned).unwrap().unwrap();
+                let n = operation.finish(&mut owned).unwrap().unwrap();
                 assert!(service.complete(request, Ok(&owned[..n])));
             }
             Ok(0) => break,
@@ -603,4 +594,65 @@ fn fat32_catalog_empty_oversize_duplicate_and_limits() {
         fat32::FileSystem::mount(disk.total(), 512, u64::MAX, 2, |l, b| disk.read(l, b)),
         Err(Error::Corrupt)
     ));
+}
+
+#[test]
+fn discovered_catalog_uses_validated_partition_selection() {
+    for size in [512, 4096] {
+        for start in [0, 2048] {
+            let disk = Disk::new(size, start);
+            let fs =
+                fat32::FileSystem::discover(start + disk.total(), size, |l, b| disk.read(l, b))
+                    .unwrap();
+            assert_eq!(fs.entries()[0].name(), b"MUSHA   TXT");
+        }
+    }
+}
+#[test]
+fn operation_cancel_or_error_at_every_sector_preserves_output() {
+    use crate::operation::{Progress, Read};
+    let disk = Disk::new(512, 0);
+    let fs = fat32::FileSystem::discover(disk.total(), 512, |l, b| disk.read(l, b)).unwrap();
+    for cancel in [false, true] {
+        for stop in 0..6 {
+            let mut op = Read::new(fs.begin_plan(0, 0, 1200).unwrap());
+            let mut sectors = 0;
+            let mut out = [0xa5; 1200];
+            let mut old = None;
+            for turn in 0..100 {
+                assert!(turn < 99);
+                match op.poll().unwrap() {
+                    Progress::Yield => {}
+                    Progress::Read(r) => {
+                        assert_eq!(op.poll(), Ok(Progress::Pending));
+                        assert_eq!(op.finish(&mut out), Ok(None));
+                        if let Some(previous) = old {
+                            assert!(!op.complete(previous, Err(Error::Io)));
+                        }
+                        if sectors == stop {
+                            if cancel {
+                                op.cancel();
+                                assert!(!op.is_quiescent());
+                                assert_eq!(op.poll(), Err(Error::Io));
+                            }
+                            assert!(op.complete(r, Err(Error::Io)));
+                            assert!(op.is_quiescent());
+                            assert!(!op.complete(r, Err(Error::Io)));
+                            assert_eq!(op.poll(), Err(Error::Io));
+                            assert_eq!(op.finish(&mut out), Err(Error::Io));
+                            assert!(out.iter().all(|&b| b == 0xa5));
+                            break;
+                        }
+                        let mut b = [0; 512];
+                        disk.read(r.lba(), &mut b).unwrap();
+                        assert!(op.complete(r, Ok(&b)));
+                        old = Some(r);
+                        sectors += 1;
+                    }
+                    _ => panic!("fault point was not reached"),
+                }
+            }
+        }
+    }
+    assert!(core::mem::size_of::<Read>() < 12288);
 }
