@@ -113,3 +113,7 @@ QEMU 11.1.2 / Rust 1.99.0で、loopback socket Ethernetと実際のGPT/FAT32読�
 debug/fault機能を含まない通常版`out/musha-usb-cooperative-final.img`も読出し専用で起動し、Shift+AとEscを送信した。`APP FILE READ OK`、`APP COMPLETE`、`NET TEST OK`を表示し、通常版・通信試験の最終画面を目視確認した。通常版のSHA-256は不変:
 `678dbd9cfa6705ab36c43ca0cc463b6e4476870bd820ddc93f096948910c0fc4`。
 これらは64MiBの試験イメージ。実物32GB USBへ書く前に[共通USBイメージの容量指定](usb-image.md)に従い、媒体の正確な容量で再生成する。ローカルbinary成果物へ`out/NOTICE`を添付した。実機起動は未検証。
+
+## 2026-10-12 BOT polling foundation
+
+Boot-time BOT now uses a nonblocking transaction state machine through a synchronous compatibility driver. See [BOT polling](bot-polling.md) for verified behavior and remaining live-loop integration. The initialization/live-loop boundary above is unchanged.

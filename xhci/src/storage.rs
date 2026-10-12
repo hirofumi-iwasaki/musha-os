@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Read-only BOT/SCSI encoding and bounded descriptor validation.
 use crate::Speed;
+pub mod transaction;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Endpoint {
     pub number: u8,

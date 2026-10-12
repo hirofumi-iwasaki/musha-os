@@ -1,6 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 use super::{Host, TRBS, control, dma_word, event, publish, read_word};
+use musha_xhci::storage::transaction::{Phase, Progress, Transaction};
 use musha_xhci::storage::{self, Command, Endpoint, Storage};
 struct Pipe {
     ring: usize,
@@ -8,14 +9,14 @@ struct Pipe {
     cursor: musha_xhci::Cursor,
 }
 impl Pipe {
-    fn transfer(
+    fn submit(
         &mut self,
         host: &mut Host<'_>,
         slot: u8,
         buffer: usize,
         bytes: usize,
         hold: bool,
-    ) -> Result<(), &'static str> {
+    ) -> Result<usize, &'static str> {
         if bytes == 0 || bytes > 4096 {
             return Err("BULK SIZE");
         }
@@ -41,7 +42,15 @@ impl Pipe {
             host.regs
                 .write(host.doorbell + slot as usize * 4, self.dci as u32)?;
         }
-        event(
+        Ok(address)
+    }
+    fn poll(
+        &mut self,
+        host: &mut Host<'_>,
+        slot: u8,
+        address: usize,
+    ) -> Result<bool, &'static str> {
+        match event(
             host.regs,
             host.clock,
             host.events,
@@ -52,10 +61,15 @@ impl Pipe {
             host.ports,
             slot,
             self.dci,
-            if hold { 20 } else { 1000 },
-        )?;
-        self.cursor.advance();
-        Ok(())
+            0,
+        ) {
+            Ok(_) => {
+                self.cursor.advance();
+                Ok(true)
+            }
+            Err("EVENT PENDING") => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 }
 struct Bot {
@@ -66,28 +80,119 @@ struct Bot {
     data: usize,
     csw: usize,
     tag: u32,
+    pending: Option<Active>,
+}
+struct Active {
+    transaction: Transaction,
+    transfer: Option<(Phase, usize, usize)>,
+    hold_data: bool,
 }
 impl Bot {
-    fn command(&mut self, host: &mut Host<'_>, command: Command) -> Result<bool, &'static str> {
+    fn begin(&mut self, host: &mut Host<'_>, command: Command) -> Result<(), &'static str> {
+        if self.pending.is_some() {
+            return Err("BOT BUSY");
+        }
         self.tag = self.tag.checked_add(1).ok_or("BOT TAG")?;
-        let (cbw, bytes) = storage::cbw(self.tag, command).ok_or("SCSI COMMAND")?;
+        let hold_data =
+            cfg!(feature = "storage-timeout") && matches!(command, Command::Read { .. });
+        let transaction = Transaction::new(
+            self.tag,
+            command,
+            host.clock.now()?,
+            if hold_data { 20 } else { 2000 },
+        )
+        .map_err(transaction_error)?;
         unsafe {
             core::ptr::write_bytes(self.data as *mut u8, 0, 4096);
             core::ptr::write_bytes(self.csw as *mut u8, 0, 64);
-            for (i, b) in cbw.iter().enumerate() {
+            for (i, b) in transaction.command().iter().enumerate() {
                 (self.cbw as *mut u8).add(i).write_volatile(*b);
             }
         }
-        self.output.transfer(host, self.slot, self.cbw, 31, false)?;
-        if bytes != 0 {
-            let hold = cfg!(feature = "storage-timeout") && matches!(command, Command::Read { .. });
-            self.input
-                .transfer(host, self.slot, self.data, bytes, hold)?;
+        self.pending = Some(Active {
+            transaction,
+            transfer: None,
+            hold_data,
+        });
+        Ok(())
+    }
+    /// At most one submission or one event observation; never waits for USB.
+    /// An error keeps buffers reserved until outer controller cleanup stops DMA.
+    fn poll(&mut self, host: &mut Host<'_>) -> Result<Option<bool>, &'static str> {
+        let active = self.pending.as_mut().ok_or("BOT IDLE")?;
+        match active
+            .transaction
+            .poll(host.clock.now()?)
+            .map_err(transaction_error)?
+        {
+            Progress::Complete(ok) => {
+                self.pending = None;
+                Ok(Some(ok))
+            }
+            Progress::Submit(phase, bytes) => {
+                let (pipe, buffer) = match phase {
+                    Phase::Command => (&mut self.output, self.cbw),
+                    Phase::Data => (&mut self.input, self.data),
+                    Phase::Status => (&mut self.input, self.csw),
+                };
+                match pipe.submit(
+                    host,
+                    self.slot,
+                    buffer,
+                    bytes,
+                    phase == Phase::Data && active.hold_data,
+                ) {
+                    Ok(address) => active.transfer = Some((phase, address, bytes)),
+                    Err(error) => {
+                        active.transaction.cancel();
+                        return Err(error);
+                    }
+                }
+                Ok(None)
+            }
+            Progress::Pending => {
+                let (phase, address, bytes) = active.transfer.ok_or("BOT NO TRANSFER")?;
+                let pipe = if phase == Phase::Command {
+                    &mut self.output
+                } else {
+                    &mut self.input
+                };
+                match pipe.poll(host, self.slot, address) {
+                    Ok(false) => {}
+                    Ok(true) => {
+                        let mut status = [0; 13];
+                        if phase == Phase::Status {
+                            copy(self.csw, &mut status);
+                        }
+                        active
+                            .transaction
+                            .complete(
+                                phase,
+                                bytes,
+                                if phase == Phase::Status { &status } else { &[] },
+                            )
+                            .map_err(transaction_error)?;
+                        active.transfer = None;
+                    }
+                    Err(error) => {
+                        active.transaction.cancel();
+                        return Err(error);
+                    }
+                }
+                Ok(None)
+            }
         }
-        self.input.transfer(host, self.slot, self.csw, 13, false)?;
-        let mut status = [0u8; 13];
-        copy(self.csw, &mut status);
-        storage::csw(&status, self.tag).ok_or("BOT STATUS")
+    }
+    // Compatibility driver for boot-time discovery. The live scheduler will call
+    // begin/poll separately; this wrapper still completes discovery synchronously.
+    fn command(&mut self, host: &mut Host<'_>, command: Command) -> Result<bool, &'static str> {
+        self.begin(host, command)?;
+        loop {
+            if let Some(result) = self.poll(host)? {
+                return Ok(result);
+            }
+            core::hint::spin_loop();
+        }
     }
     fn read(
         &mut self,
@@ -110,6 +215,18 @@ impl Bot {
         let mut bytes = [0u8; 4096];
         copy(self.data, &mut bytes[..size as usize]);
         Ok(storage::hash(&bytes[..size as usize]))
+    }
+}
+fn transaction_error(error: musha_xhci::storage::transaction::Error) -> &'static str {
+    use musha_xhci::storage::transaction::Error;
+    match error {
+        Error::Timeout => "TRANSFER TIMEOUT",
+        Error::Stalled => "CLOCK STALLED",
+        Error::Clock => "CLOCK OVERFLOW",
+        Error::Status => "BOT STATUS",
+        Error::Invalid => "SCSI COMMAND",
+        Error::Transfer => "BAD TRANSFER",
+        Error::Canceled => "BOT CANCELED",
     }
 }
 fn copy(base: usize, out: &mut [u8]) {
@@ -193,6 +310,7 @@ pub(super) fn probe(
         data,
         csw,
         tag: 0,
+        pending: None,
     };
     let mut ready = false;
     for _ in 0..3 {
