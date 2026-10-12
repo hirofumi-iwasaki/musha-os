@@ -153,8 +153,13 @@ impl<F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<F> {
         offset: u64,
         requested: usize,
     ) -> Result<crate::planner::Planner, Error> {
+        self.source(index)?.begin_plan(offset, requested)
+    }
+    /// Detach validated file metadata from the synchronous startup reader.
+    /// The returned source remains valid only for this immutable mounted medium.
+    pub fn source(&self, index: usize) -> Result<crate::planner::Source, Error> {
         let e = *self.entries().get(index).ok_or(Error::NotFound)?;
-        crate::planner::Planner::new(
+        Ok(crate::planner::Source::new(
             crate::planner::Geometry {
                 blocks: self.blocks,
                 end: self.volume.start + self.volume.total,
@@ -172,9 +177,7 @@ impl<F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<F> {
                 contiguous: false,
                 bitmap: None,
             },
-            offset,
-            requested,
-        )
+        ))
     }
     /// At most 4096 bytes, atomic caller-buffer update. Each call validates the
     /// full declared chain, including its exact end; cyclic/long/short chains fail.

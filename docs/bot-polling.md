@@ -221,3 +221,29 @@ UEFI library check・通常release buildに合格し、out/espも通常版へ戻
 複数chunk・複数ファイル選択を接続する。exFATのUSB mount/読出し、媒体世代とcancel後の
 安全な再利用、別controllerの同時保持、キーボードなしのlive処理も残る。
 今回を工程5全体の完了、exFAT USB合格、実機合格とはしない。物理USBは更新していない。
+
+
+## 2026-10-12 分割要求に向けた起動時readerの分離
+
+FAT32/exFATの `FileSystem::source(index)` は、同期readerやexFAT Workspaceを
+借用しない `planner::Source` を返す。検証済みのgeometryとfile情報だけを保持し、
+任意のoffset/lengthから新しいPlannerを作れる。各要求でallocationを再検証する。
+Source自体に媒体世代は含めないため、所有者は元のmountのAPI要求にだけ対応付け、
+媒体交換・切断時に破棄する。異なる媒体への再利用は禁止。
+
+共通APIのホスト接続試験は同期FileSystemをdropした後で要求を処理する。
+FAT32は1200byteを7byteずつ読み、exFATはWorkspaceも解放した後、5ファイルを
+open/read/closeして内容を照合する。名前やcatalogはAPI側に保持する。
+
+QEMU診断はMUSHA.TXTの1回限りのPlannerを保持する方式からSource保持へ変更し、
+7byteごとにAPI要求を受け付ける。15byteの既知payloadは3要求で読出し、累積hashとEOFを
+検査する。試験側も3要求発生したことを確認する。途中終了試験はEsc前のsector待ちが
+1回だけであることを検査し、最初のmetadata待機での取消しを明確にした。
+
+これは通常版のサービス化と複数ファイル選択の準備であり、USB診断の対象は引き続き
+FAT32の1ファイル。通常版Context、exFATのUSB起動時探索、全catalogの公開、
+別controller間の同時保持は未接続。
+
+検証: ホスト217試験、QEMU通常/取消し両case、UEFI library checkと通常版ビルドに合格。
+通常版out/espを再生成済み。実機試験・リモートCIは未実施。
+今回のQEMU試験像SHA-256: `cf74a348b04a352772682eca07a4f1e3c0fae86a8c3842ff7a9de807aa17f309`。

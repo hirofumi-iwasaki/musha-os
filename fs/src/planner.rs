@@ -21,6 +21,26 @@ pub(crate) struct File {
     pub contiguous: bool,
     pub bitmap: Option<(u32, u64)>,
 }
+/// Detached immutable file metadata. Contains no backend closure or workspace borrow.
+/// The owner must discard it when its mounted medium is replaced or disconnected;
+/// route requests through that mount's API generation before creating a planner.
+#[derive(Clone, Copy)]
+pub struct Source {
+    geometry: Geometry,
+    file: File,
+}
+impl Source {
+    pub(crate) fn new(geometry: Geometry, file: File) -> Self {
+        Self { geometry, file }
+    }
+    /// No I/O. Every range revalidates allocation using fresh sector requests.
+    pub fn begin_plan(self, offset: u64, requested: usize) -> Result<Planner, Error> {
+        if self.geometry.exfat && requested > 4096 {
+            return Err(Error::Limit);
+        }
+        Planner::new(self.geometry, self.file, offset, requested)
+    }
+}
 impl Geometry {
     fn cluster(self, n: u32) -> Result<u64, Error> {
         if n < 2 || n as u64 >= self.clusters as u64 + 2 {

@@ -1,6 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-//! Opt-in end-to-end adapter exercise. One selected FAT32 file, one session.
+//! Opt-in end-to-end adapter exercise. One selected FAT32 file, repeated bounded requests.
 //! Catalog discovery precedes input polling; metadata/data reads below do not.
 use super::{Host, storage::Device};
 use core::{
@@ -10,10 +10,10 @@ use core::{
 use musha_api::stream::{Entry, Error as ApiError, Files, Format, Handle, Request as FileRequest};
 use musha_fs::{
     operation::{Progress, Read, Request},
-    planner::Planner,
+    planner::Source,
 };
 pub(super) struct Prepared {
-    pub planner: Planner,
+    pub source: Source,
     pub bytes: usize,
     pub hash: u64,
 }
@@ -50,7 +50,9 @@ static CATALOG: Shared<[Entry; 1]> = Shared(UnsafeCell::new([Entry {
 const _: () = assert!(core::mem::size_of::<State>() + core::mem::size_of::<[Entry; 1]>() < 32768);
 pub(super) struct Session {
     state: &'static mut State,
-    prepared: Option<Prepared>,
+    source: Source,
+    position: usize,
+    hash: u64,
     expected: u64,
     bytes: usize,
 }
@@ -81,7 +83,9 @@ impl Session {
         crate::debug(b"MUSHA: LIVE_FILE_API_READY\n");
         Ok(Self {
             state,
-            prepared: Some(prepared),
+            source: prepared.source,
+            position: 0,
+            hash: 0xcbf29ce484222325,
             expected,
             bytes,
         })
@@ -135,19 +139,32 @@ impl Session {
             return Ok(());
         }
         let handle = s.handle.ok_or("LIVE FILE HANDLE")?;
-        match s.files.read(handle, &mut s.result[..self.bytes.max(1)]) {
+        match s.files.read(handle, &mut s.result[..7]) {
             Err(ApiError::Again) => {
                 let r = s.files.take_request().ok_or("LIVE FILE REQUEST")?;
-                if r.index() != 0 || r.offset() != 0 || r.length() != self.bytes {
+                if r.index() != 0
+                    || r.offset() != self.position as u64
+                    || r.length() != (self.bytes - self.position).min(7)
+                {
                     return Err("LIVE FILE REQUEST RANGE");
                 }
-                let prepared = self.prepared.take().ok_or("LIVE FILE REPEAT")?;
-                s.operation = Some(Read::new(prepared.planner));
+                s.operation = Some(Read::new(
+                    self.source
+                        .begin_plan(r.offset(), r.length())
+                        .map_err(|_| "LIVE FILE PLAN")?,
+                ));
                 s.request = Some(r);
                 crate::debug(b"MUSHA: LIVE_FILE_REQUEST\n");
             }
             Ok(n) => {
-                if n != self.bytes || musha_xhci::storage::hash(&s.result[..n]) != self.expected {
+                if n != 0 {
+                    for &b in &s.result[..n] {
+                        self.hash = (self.hash ^ b as u64).wrapping_mul(0x100000001b3);
+                    }
+                    self.position += n;
+                    return Ok(());
+                }
+                if self.position != self.bytes || self.hash != self.expected {
                     return Err("LIVE FILE CONTENT");
                 }
                 if s.files.read(handle, &mut s.result[..1]) != Ok(0) {
@@ -156,7 +173,7 @@ impl Session {
                 s.files.close(handle).map_err(|_| "LIVE FILE CLOSE")?;
                 s.done = true;
                 crate::debug(b"MUSHA: LIVE_FILE_API_OK BYTES=");
-                crate::debug(&crate::cpu::hex(n as u64));
+                crate::debug(&crate::cpu::hex(self.position as u64));
                 crate::debug(b" HASH=");
                 crate::debug(&crate::cpu::hex(self.expected));
                 crate::debug(b"\n");

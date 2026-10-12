@@ -502,6 +502,8 @@ fn fat32_catalog_through_common_request_api() {
         name_len: 9,
         bytes: fs.entries()[0].len(),
     }];
+    let sources = [fs.source(0).unwrap()];
+    drop(fs);
     let mut service = Files::new();
     service.mount(Format::Fat32, &entries).unwrap();
     let id = service
@@ -518,7 +520,8 @@ fn fat32_catalog_through_common_request_api() {
                 let request = service.take_request().unwrap();
                 let mut owned = [0; 4096];
                 let mut operation = crate::operation::Read::new(
-                    fs.begin_plan(request.index(), request.offset(), request.length())
+                    sources[request.index()]
+                        .begin_plan(request.offset(), request.length())
                         .unwrap(),
                 );
                 loop {

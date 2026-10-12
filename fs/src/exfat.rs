@@ -457,8 +457,13 @@ impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
         if requested > 4096 {
             return Err(Error::Limit);
         }
+        self.source(index)?.begin_plan(offset, requested)
+    }
+    /// Detach validated file metadata from the synchronous startup reader.
+    /// The returned source remains valid only for this immutable mounted medium.
+    pub fn source(&self, index: usize) -> Result<crate::planner::Source, Error> {
         let e = *self.entries().get(index).ok_or(Error::NotFound)?;
-        crate::planner::Planner::new(
+        Ok(crate::planner::Source::new(
             crate::planner::Geometry {
                 blocks: self.blocks,
                 end: self.volume.start + self.volume.total,
@@ -476,9 +481,7 @@ impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
                 contiguous: e.contiguous,
                 bitmap: Some((self.bitmap.first, self.bitmap.length)),
             },
-            offset,
-            requested,
-        )
+        ))
     }
     /// At most 4096 bytes. Output remains unchanged on failure. Index belongs to
     /// this mount only. Each call revalidates allocation; backend must be stable.

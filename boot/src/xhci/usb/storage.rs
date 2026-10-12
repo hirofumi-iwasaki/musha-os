@@ -433,9 +433,7 @@ pub(super) fn probe(
             return Err("LIVE FILE LENGTH");
         }
         Some(super::file::Prepared {
-            planner: fs
-                .begin_plan(index, 0, bytes)
-                .map_err(|_| "LIVE FILE PLAN")?,
+            source: fs.source(index).map_err(|_| "LIVE FILE PLAN")?,
             bytes,
             hash: storage::hash(&file[..bytes]),
         })

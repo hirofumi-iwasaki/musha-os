@@ -94,6 +94,7 @@ with (out/'qemu.log').open('w') as err:
     wait_marker('EXIT_BOOT_SERVICES_OK')
     text=log.read_text()
     assert 'LIVE_FILE_API_OK' not in text and 'XHCI_FAILED' not in text
+    assert text[:text.index('APP_KEY_DOWN=0000000000000029')].count('LIVE_STORAGE_WAIT') == 1
     assert text.index('LIVE_STORAGE_WAIT') < text.index('APP_KEY_DOWN=0000000000000029') < text.index('STORAGE_RELEASED') < text.index('XHCI_QUIESCED')
     assert hash_image()==image_hash
     control('quit');proc.wait(timeout=5)
@@ -270,6 +271,7 @@ with (out/'qemu.log').open('w') as err:
    for byte in expected:h=((h^byte)*0x100000001b3)&0xffffffffffffffff
    assert f'LIVE_FILE_API_OK BYTES={len(expected):016X} HASH={h:016X}' in text
    begin=text.index('LIVE_FILE_REQUEST');done=text.index('LIVE_FILE_API_OK')
+   assert text[begin:done].count('LIVE_FILE_REQUEST') == (len(expected)+6)//7, 'missing split requests'
    assert 'APP_KEY_DOWN=0000000000000004' in text[begin:done]
    assert 'APP_FILE_RECHECK_OK' in text[begin:done]
    assert 'XHCI_FAILED' not in text and 'STORAGE_RELEASED' in text

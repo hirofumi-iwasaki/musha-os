@@ -751,14 +751,25 @@ fn exfat_catalog_through_common_request_api() {
             }
         })
         .collect();
+    let sources: Vec<_> = (0..catalog.len()).map(|i| fs.source(i).unwrap()).collect();
+    let expected_files: Vec<_> = (0..catalog.len())
+        .map(|i| {
+            let mut bytes = vec![0; catalog[i].bytes as usize];
+            let n = fs.read_at(i, 0, &mut bytes).unwrap();
+            assert_eq!(n, bytes.len());
+            bytes
+        })
+        .collect();
+    drop(fs);
+    drop(workspace);
     let mut service = Files::new();
     service.mount(Format::Exfat, &catalog).unwrap();
     let mut cursor = service.list_begin().unwrap();
     let mut index = 0;
     while let Some((id, entry)) = service.list_next(&mut cursor).unwrap() {
         let length = entry.bytes as usize;
-        let mut expected = vec![0; length];
-        assert_eq!(fs.read_at(index, 0, &mut expected), Ok(length));
+        let expected = &expected_files[index];
+        assert_eq!(expected.len(), length);
         let handle = service.open_id(id).unwrap();
         let mut actual = Vec::new();
         loop {
@@ -768,7 +779,8 @@ fn exfat_catalog_through_common_request_api() {
                     let request = service.take_request().unwrap();
                     let mut owned = [0; 4096];
                     let mut operation = musha_fs::operation::Read::new(
-                        fs.begin_plan(request.index(), request.offset(), request.length())
+                        sources[request.index()]
+                            .begin_plan(request.offset(), request.length())
                             .unwrap(),
                     );
                     loop {
@@ -796,7 +808,7 @@ fn exfat_catalog_through_common_request_api() {
                 other => panic!("{other:?}"),
             }
         }
-        assert_eq!(actual, expected);
+        assert_eq!(&actual, expected);
         service.close(handle).unwrap();
         index += 1;
     }
