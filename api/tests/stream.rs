@@ -66,12 +66,16 @@ fn cancellation_quarantines_running_request_and_disconnect_invalidates_ids() {
     let h = f.open_id(id).unwrap();
     assert_eq!(f.read(h, &mut out), Err(Error::Again));
     let req = f.take_request().unwrap();
+    assert!(!f.request_canceled(req));
     f.close(h).unwrap();
+    assert!(f.request_canceled(req));
     assert_eq!(f.open_id(id), Err(Error::Again));
     assert_eq!(f.mount(Format::Fat32, &entries), Err(Error::Again));
     f.disconnect();
+    assert!(f.request_canceled(req));
     assert_eq!(f.read(h, &mut out), Err(Error::Disconnected));
     assert!(f.complete(req, Ok(b"a")));
+    assert!(!f.request_canceled(req));
     assert_eq!(out, [0xa5]);
     f.mount(Format::Fat32, &entries).unwrap();
     assert_eq!(f.open_id(id), Err(Error::Invalid));

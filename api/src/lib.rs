@@ -6,7 +6,7 @@ mod input;
 pub mod stream;
 pub use files::FileHandle;
 use musha_framebuffer::Framebuffer;
-pub const API_VERSION: u32 = 4;
+pub const API_VERSION: u32 = 5;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Invalid,
@@ -27,6 +27,19 @@ pub trait Application {
     fn init(&mut self, context: &mut Context<'_>) -> Result<(), Error>;
     fn step(&mut self, context: &mut Context<'_>) -> Result<Step, Error>;
     fn shutdown(&mut self, context: &mut Context<'_>);
+    /// Runtime calls this after the file transport is stopped. Drop any saved
+    /// stream IDs/handles. Default preserves applications using snapshots only.
+    fn files_closed(&mut self, _context: &mut Context<'_>) {}
+    /// Bounded file-service callback. The runtime lends its mounted service for
+    /// this call only; read returns Again while USB completes outside app code.
+    /// Use IDs/handles across calls, never retain a reference to the service.
+    fn files(
+        &mut self,
+        _context: &mut Context<'_>,
+        _files: &mut stream::Files<'_>,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KeyEvent {

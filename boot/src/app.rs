@@ -1,7 +1,11 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 use musha_api::{Application, Context, Error, Step};
+#[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
+mod stream_probe;
 struct Diagnostic {
+    #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
+    stream: stream_probe::Scan,
     page: usize,
     complete: bool,
     writing: bool,
@@ -83,6 +87,14 @@ impl Diagnostic {
     }
 }
 impl Application for Diagnostic {
+    #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
+    fn files(
+        &mut self,
+        _ctx: &mut Context<'_>,
+        files: &mut musha_api::stream::Files<'_>,
+    ) -> Result<(), Error> {
+        self.stream.step(files)
+    }
     fn init(&mut self, ctx: &mut Context<'_>) -> Result<(), Error> {
         if ctx.version() != musha_api::API_VERSION {
             return Err(Error::Unsupported);
@@ -108,6 +120,10 @@ impl Application for Diagnostic {
             });
             crate::debug(&crate::cpu::hex(event.usage as u64));
             crate::debug(b"\n");
+            #[cfg(feature = "file-app-close")]
+            if event.pressed && event.usage == 4 {
+                self.stream.request_close();
+            }
             if event.pressed && event.usage == 0x29 {
                 self.exit_requested = true;
             }
@@ -205,6 +221,8 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
     // Framebuffer, cached file and arena have a single application owner.
     let mut ctx = unsafe { Context::new(arena, info.framebuffer) }?;
     let mut app = Diagnostic {
+        #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
+        stream: stream_probe::Scan::new(),
         page: 0,
         complete: false,
         writing: true,
@@ -234,6 +252,14 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         let mut external = None;
         let mut cycle = |event: crate::xhci::AppEvent<'_>| -> Result<bool, &'static str> {
             let events = match event {
+                crate::xhci::AppEvent::Files(files) => {
+                    if let Err(error) = app.files(&mut ctx, files) {
+                        input_error = Some(error);
+                        return Err("APP INPUT ERROR");
+                    }
+                    return Ok(app.exit_requested);
+                }
+                crate::xhci::AppEvent::Retained(_) => return Err("UNHANDLED STORAGE LOOP"),
                 crate::xhci::AppEvent::File(bytes) => {
                     ctx.install_boot_file(bytes).map_err(|_| "APP FILE CACHE")?;
                     return Ok(false);
@@ -310,6 +336,10 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         };
         let usb_result = crate::xhci::diagnose(info, &mut cycle);
         drop(cycle);
+        if input_error.is_none() && usb_result != Err("QUIESCE FAILED") {
+            app.files_closed(&mut ctx);
+        }
+        crate::debug(b"MUSHA: FILE_SERVICE_CLOSED\n");
         // Every diagnose return (Esc, deadline, disconnect, hardware/app error)
         // detaches the input source. This changes CPU input state only; xHCI owns
         // DMA quiescence. Do not invoke a failed app again solely for cleanup.

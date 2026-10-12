@@ -1,6 +1,5 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-#[cfg(feature = "live-file-probe")]
 mod file;
 mod hub;
 mod storage;
@@ -545,7 +544,10 @@ pub(super) fn enumerate(
             continue;
         }
         if let Configured::Storage(mut device) = configured {
-            if !discovery && active_storage.is_none() {
+            if !discovery
+                && active_storage.is_none()
+                && (device.prepared.is_some() || cfg!(feature = "live-storage-probe"))
+            {
                 device.ancestors = target.ancestors;
                 active_storage = Some(device);
                 crate::debug(b"MUSHA: STORAGE_RETAINED\n");
@@ -581,8 +583,21 @@ pub(super) fn enumerate(
     crate::debug(&crate::cpu::hex(count));
     crate::debug(b"\nMUSHA: USB_DISCOVERY_DONE\n");
     let found_keyboard = active_keyboard.is_some();
-    if !discovery {
+    if !discovery && (found_keyboard || active_storage.is_none()) {
         tick(super::AppEvent::Ready(found_keyboard))?;
+    }
+    if !discovery && !found_keyboard {
+        if let Some(device) = active_storage.as_mut() {
+            let mut session = device.prepared.take().map(file::Session::new).transpose()?;
+            let mut poll = |tick: &mut super::Tick<'_>| {
+                if let Some(session) = session.as_mut() {
+                    session.step(host, device, tick)
+                } else {
+                    Ok(false)
+                }
+            };
+            tick(super::AppEvent::Retained(&mut poll))?;
+        }
     }
     if let Some(keyboard) = active_keyboard {
         let slot = keyboard.slot;
@@ -794,10 +809,9 @@ fn run_keyboard(
         );
     }
 
-    #[cfg(feature = "live-file-probe")]
     let mut file_session = match storage.as_deref_mut().and_then(|d| d.prepared.take()) {
         Some(prepared) => Some(file::Session::new(prepared)?),
-        None => return Err("LIVE FILE MISSING"),
+        None => None,
     };
     let op = (host.regs.read(0)? & 255) as usize;
     let deadline = if cfg!(feature = "qemu-debug") && !cfg!(feature = "input-persistent") {
@@ -910,9 +924,10 @@ fn run_keyboard(
                 reports += 1;
             }
         }
-        #[cfg(feature = "live-file-probe")]
         if let (Some(session), Some(device)) = (file_session.as_mut(), storage.as_deref_mut()) {
-            session.step(host, device)?;
+            if session.step(host, device, tick)? {
+                break;
+            }
         }
         if cfg!(feature = "live-storage-probe") && !cfg!(feature = "live-file-probe") {
             if let Some(device) = storage.as_deref_mut() {

@@ -1,6 +1,6 @@
 # BOT転送と工程5の接続記録
 
-最新の到達点は末尾の「USB上の複数ファイル接続試験」。以下の各節は段階ごとの記録。
+最新の到達点は末尾の「工程5完了: 通常サービスと別controller保持」。以下の各節は段階ごとの記録。
 
 2026-10-12。`musha_xhci::storage::transaction::Transaction`で、読出し専用BOTを
 CBW送信→必要ならDATA受信→CSW受信に分割した。各pollは要求1件の提示または
@@ -328,3 +328,56 @@ FAT32回帰と通常版UEFIビルドに合格。out/espは通常版へ戻した�
 
 残作業は通常版への形式選択・catalog公開、アプリからの選択操作と画面表示、
 別controller保持。工程5/6全体の完了を意味しない。
+
+
+## 工程5完了: 通常サービスと別controller保持
+
+2026-10-12。通常版にFAT32/exFAT自動判別、root catalog、Sourceと共通APIのruntimeを
+組み込んだ。自動巡回クライアントはApplication::filesへ移し、API_VERSIONを5に更新した。
+通常版はサービスとcallback経路を持つが、既存診断アプリのdefault callbackは読出しを
+要求しない。画面からの選択・表示は工程6で同じAPIへ接続する。
+
+複数controllerでは起動媒体ownerを優先した探索順でcatalogを検査し、対応する
+FAT32/exFAT媒体がある最初のcontrollerと最初のkeyboard controllerを選ぶ。
+対応媒体がなければkeyboard controllerを優先し、keyboardもなければ最初のBOTへ戻す。
+探索中はcatalogを公開しない。storage Hostと専用DMA sliceを外側に保持し、必要なら別sliceを持つ
+keyboard Hostを内側で動かす。各入力pollで外側のfile pollを1段進める。
+同じcontrollerでも既存event振分けを利用する。keyboard無しでもfile/通信を進める。
+未対応形式の起動ディスクが先に見つかっても、別controllerの対応媒体を選べる。
+公開後の媒体切替UIは含まない。別controllerの実行中は診断表示の保存先も分離する。
+
+準備に成功したcatalogは1起動1媒体で固定し、公開後の書換え・領域再利用を禁止する。
+公開前にmountが失敗した場合だけ予約を解除する。State、catalog、Source配列、exFAT
+Workspaceの静的CPU領域の合計を384KiB未満にコンパイル時検査する。DMA領域とは別。
+readごとのPlannerは毎回allocationを再検証し、最大1sector要求または状態遷移ずつ進める。
+起動時の形式判別・catalog検証・任意snapshotは同期処理のままであり、live callback外で行う。
+
+closeは追加要求を止め、進行中DMAの完了確認までopenをAgainにする。Esc、USB切断、
+timeout、アプリ失敗は内側から外側へ停止してDMAを無効化する。アプリbufferはDMAに渡さず、
+失敗途中の結果は公開しない。停止を確認できない場合はfiles_closed callbackも呼ばない。
+
+検証コマンドの共通条件: `--firmware-dir /opt/homebrew/share/qemu`、QEMU TCG、
+512byte sector。exFATは従来の5ファイルfixtureと同じSHA-256。
+
+- `live-file-probe`: FAT32、およびexFAT＋`--split-controller`の内容・EOF・全名・9要求を照合。
+- exFAT別controllerで`--live-file-cancel`と`--file-fault disconnect`。結果未公開、両側DMA停止。
+- `file-app-timeout`＋`--file-fault timeout`。pending転送の期限切れ後、両側DMA停止。
+- `file-app-close`＋`--file-close`。metadata待機中のキー入力からclose、隔離中open拒否、
+  完了確認後の再open、全5ファイルの内容一致まで確認。
+- `file-app-probe`＋`--file-no-delay`: 故意の遅延を入れない通常の転送経路でFAT32/exFATを照合。
+- keyboard無し、および別controllerのkeyboard切断で入力状態解放と停止を回帰。
+- 正常読出し試験ではキー入力、ARP/ICMP、257件UDP echo、ring wrapと媒体hash不変も検査。
+
+これらのケースをCI定義にも追加する。ローカルQEMU合格とリモートCI合格は区別する。
+物理USBの更新と実機試験は行わず、MacBook Pro実機の合否は工程7に残す。
+工程6の一覧・キー選択・ページ表示は未着手。
+
+
+最終ローカル検証: ホスト217試験、UEFI向けAPI/FS library check、通常UEFI release build、
+format・Python構文・CI YAML・差分検査に合格。QEMUは上記9ケースに加えて既存GPT/FAT32
+別controller＋入力ring wrap、ハブ、破損chain拒否、未対応媒体＋別controller入力の4ケースが合格。
+最後にout/espを通常版へ戻した。ローカル記録はout/phase5-final3-*.log、
+out/phase5-legacy-*.log、out/phase5-corrupt.log、out/phase5-unsupported-input.log、
+out/phase5-host-final.log。ログとイメージは生成物としてGitには含めない。
+通常版BOOTX64.EFI SHA-256: `5b7d6186d52598203accf8a51c311bb829d75875b4f9afacdf3e941852675e5c`。
+リモートCIは未実行。実機未検証、物理USB更新なし。

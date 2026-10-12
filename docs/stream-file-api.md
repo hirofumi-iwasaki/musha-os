@@ -1,8 +1,8 @@
 # 共通の逐次ファイル読出しAPI
 
-2026-10-11、工程4のホスト実装。`musha_api::stream::Files`はFAT32/exFAT共通の
-読出し専用サービス。既存Contextのsnapshot APIとAPI_VERSION=4は変更しない。
-新サービスのContextへの組込みとUSB実行は工程5で行う。
+2026-10-12更新。`musha_api::stream::Files`はFAT32/exFAT共通の読出し専用サービス。
+API_VERSION=5で`Application::files(context, files)`から利用できる。通常版にもUSB実行経路を
+組み込み、既存Contextのsnapshot APIを維持する。後半の追記は実装段階ごとの履歴。
 
 ## 呼出し契約
 
@@ -88,3 +88,26 @@ Sourceの寿命は元の媒体に限る。通常版への公開とUSBでの複�
 2026-10-12追記: exFAT USB診断でroot catalogを共通APIに公開し、5ファイルの
 list/open/read/closeをQEMU検証した。名前・サイズ・内容hashを試験側で照合。
 現段階は診断用自動巡回であり、通常版Context経由のアプリ操作・画面選択は未接続。
+
+
+## 工程5: アプリケーションへの公開
+
+`Application::files`では一時的に借りたFilesにlist/open/read/closeを発行する。
+サービスへの参照は保存せず、ID/handle/cursorだけを保存する。readのAgainは次のcallbackで
+再試行する。アプリcallback中にディスクI/Oを実行せず、runtimeがその後のpollで進める。
+callbackはstep同様に短く保つ。`files_closed`後はID/handleを破棄する。
+旧snapshotだけを使うアプリでは両callbackのdefault実装で互換性を保つ。
+
+close/disconnectしたRunning要求は`request_canceled`でruntimeへ伝え、追加sectorの
+計画を止める。投入済みsectorの完了確認までは要求を隔離し、completeで解除する。
+USB切断・timeoutの場合はcontrollerを停止し、未完了結果を公開しない。
+
+通常版では選択したcontroller上のroot catalogを自動判別し、MUSHA.TXTがなくても公開する。
+MUSHA.TXTが4096byte以内なら旧snapshotも用意する。公開catalogは1起動1媒体で不変。
+USB hotplug、媒体交換、複数媒体の切替は未対応。ホストAPIの世代試験はそれらの実機対応を
+意味しない。上限は128件、同時1handle/1要求、1read4096byte、1file64MiB。
+FAT32短名のOEM byteはUTF-16の同値へ保存し、非ASCIIの表示方針は工程6で扱う。
+
+QEMUの適合性アプリをboot/src/app/stream_probe.rsに分離した。driver内の固定読出しではなく、
+Application callbackが完全な名前とIDを列挙して選択する。通常UIのキー選択・内容表示は工程6。
+具体的な構成と検証結果は[工程5完了記録](bot-polling.md#工程5完了-通常サービスと別controller保持)を参照。

@@ -240,6 +240,11 @@ impl<'a> Files<'a> {
             None
         }
     }
+    /// Runtime may stop planning further sectors after close/disconnect. A sector
+    /// already submitted must still be acknowledged before completing this token.
+    pub fn request_canceled(&self, request: Request) -> bool {
+        matches!(self.pending, Pending::Running(active, true) if active == request)
+    }
     /// Runtime reports an exact read or terminal error, after hardware has stopped
     /// touching its own buffers. Short results become Corrupt; Again is not terminal.
     /// False means stale/duplicate token or nonterminal status; slot is unchanged.

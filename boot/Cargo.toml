@@ -66,3 +66,11 @@ live-file-probe = ["qemu-debug"]
 
 # Separate exFAT USB data disk; QEMU boots its EFI from a FAT disk on SATA.
 live-exfat-probe = ["live-file-probe"]
+
+# App-side conformance client; the production file service is always compiled.
+file-app-probe = ["qemu-debug"]
+# Suppress the pending file DATA transfer to test timeout cleanup.
+file-app-timeout = ["live-file-probe", "live-storage-timeout"]
+
+# Close from the application while metadata DMA is pending, then reopen.
+file-app-close = ["live-file-probe"]

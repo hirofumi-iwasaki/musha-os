@@ -11,14 +11,18 @@ parser.add_argument('--usb-image',type=pathlib.Path)
 parser.add_argument('--exfat-boot-image',type=pathlib.Path,help='Boot EFI from this FAT SATA disk; --usb-image is exFAT data')
 parser.add_argument('--live-storage',action='store_true',help='Require live-storage-probe image and real READ(10) during traffic')
 parser.add_argument('--live-file',action='store_true',help='Require common API -> filesystem -> USB file read')
+parser.add_argument('--file-no-delay',action='store_true',help='App probe over production transport without artificial waits')
+parser.add_argument('--file-close',action='store_true',help='App closes a pending request and reopens after acknowledgement')
+parser.add_argument('--file-fault',choices=['disconnect','timeout'])
 parser.add_argument('--live-file-cancel',action='store_true',help='Exit while the file metadata sector is pending')
 parser.add_argument('--live-fault',choices=['timeout','disconnect'],help='Exercise a pending live read failure')
 parser.add_argument('--hub-depth',type=int,choices=range(1,6),help='Place a USB1 keyboard under USB2 hubs')
+parser.add_argument('--split-controller',action='store_true',help='Place the keyboard on a second xHCI controller')
 parser.add_argument('--extra-xhci',action='store_true',help='Verify no-keyboard behavior with two controllers')
 a=parser.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
-out=root/('out/qemu-cooperative-'+a.case+('-exfat' if a.exfat_boot_image else '')+('-file-cancel' if a.live_file_cancel else '-file' if a.live_file else '')+('-live-'+(a.live_fault or 'read') if a.live_storage else ''));out.mkdir(parents=True,exist_ok=True)
+out=root/('out/qemu-cooperative-'+a.case+('-split' if a.split_controller else '')+('-exfat' if a.exfat_boot_image else '')+('-'+a.file_fault if a.file_fault else '')+('-normal' if a.file_no_delay else '')+('-close' if a.file_close else '')+('-file-cancel' if a.live_file_cancel else '-file' if a.live_file else '')+('-live-'+(a.live_fault or 'read') if a.live_storage else ''));out.mkdir(parents=True,exist_ok=True)
 f=pathlib.Path(a.firmware_dir);shutil.copyfile(f/'edk2-i386-vars.fd',out/'vars.fd')
-log=out/'debug.log';log.write_text('');qmp=out/'qmp.sock'
+log=out/'debug.log';log.write_text('');qmp=root/'out'/('qmp-'+hashlib.sha256(str(out).encode()).hexdigest()[:12]+'.sock')
 if qmp.exists():qmp.unlink()
 probe=socket.socket();probe.bind(('127.0.0.1',0));port=probe.getsockname()[1];probe.close()
 cmd=[a.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev',f'socket,id=net0,listen=127.0.0.1:{port}','-device','e1000e,netdev=net0',
@@ -37,10 +41,18 @@ if a.hub_depth:
  for depth in range(a.hub_depth):hubs.extend(['-device','usb-hub,ports=4,port-power=on,bus=usbhost.0,port=3'+'.1'*depth])
  index=cmd.index('qemu-xhci,id=usbhost')
  cmd[index+1:index+1]=hubs
+if a.split_controller:
+ if a.hub_depth or a.case=='no-keyboard':parser.error('Split-controller case requires a direct keyboard')
+ index=cmd.index('usb-kbd,id=keyboard,bus=usbhost.0')
+ cmd[index]='usb-kbd,id=keyboard,bus=inputhost.0'
+ index=cmd.index('-device',cmd.index('qemu-xhci,id=usbhost')+1)
+ cmd[index:index]=['-device','qemu-xhci,id=inputhost']
 if a.extra_xhci:cmd.extend(['-device','qemu-xhci,id=extra'])
 if a.live_storage and (a.case!='traffic' or not a.usb_image):parser.error('--live-storage requires traffic and --usb-image')
 if a.live_fault and not a.live_storage:parser.error('--live-fault requires --live-storage')
 if a.live_file and (a.case!='traffic' or not a.usb_image or a.live_storage):parser.error('--live-file requires traffic, --usb-image, and no --live-storage')
+if (a.file_no_delay or a.file_fault or a.file_close) and not a.live_file:parser.error('file options require --live-file')
+if a.file_no_delay and (a.live_file_cancel or a.file_fault or a.file_close):parser.error('file fault/cancel tests require delayed transport')
 if a.live_file_cancel and not a.live_file:parser.error('--live-file-cancel requires --live-file')
 if a.exfat_boot_image and not a.live_file:parser.error('--exfat-boot-image requires --live-file')
 image_hash=None
@@ -93,17 +105,34 @@ with (out/'qemu.log').open('w') as err:
     time.sleep(.02)
   wait_marker('RUNTIME_POLL_READY')
   if a.live_file:
-   wait_marker('LIVE_FILE_API_READY');wait_marker('LIVE_STORAGE_WAIT')
-   if a.exfat_boot_image:wait_marker('EXFAT_FILE_OK')
+   wait_marker('LIVE_FILE_API_READY')
+   if not a.file_no_delay:wait_marker('LIVE_STORAGE_WAIT')
+   if a.exfat_boot_image:wait_marker('STREAM_MOUNT_EXFAT')
+   if a.split_controller:wait_marker('CROSS_CONTROLLER_LIVE')
    control('send-key',{'keys':[{'type':'qcode','data':'a'}],'hold-time':30})
    wait_marker('APP_KEY_DOWN=0000000000000004')
+   if a.file_close:
+    wait_marker('APP_FILE_CLOSE_QUARANTINED');wait_marker('APP_FILE_REOPENED')
+   if a.file_fault:
+    if a.file_fault=='disconnect':control('device_del',{'id':'storage'})
+    wait_marker('XHCI_FAILED',15);wait_marker('INPUT_SOURCE_DETACHED',15)
+    text=log.read_text()
+    assert 'LIVE_FILE_ENTRY_OK' not in text and 'LIVE_FILE_API_OK' not in text
+    assert 'STORAGE DISCONNECTED' in text if a.file_fault=='disconnect' else 'TIMEOUT' in text
+    assert text.count('XHCI_QUIESCED DMA_DISABLED') >= (4 if a.split_controller else 1)
+    assert text.index('APP_KEY_DOWN=0000000000000004') < text.index('INPUT_SOURCE_DETACHED')
+    assert hash_image()==image_hash
+    if a.exfat_boot_image:assert hashlib.sha256(a.exfat_boot_image.read_bytes()).hexdigest()==boot_hash
+    control('quit');proc.wait(timeout=5)
+    print('PASS: pending file '+a.file_fault+', no result publication, all participating controllers quiesced')
+    raise SystemExit(0)
    if a.live_file_cancel:
     control('send-key',{'keys':[{'type':'qcode','data':'esc'}],'hold-time':30})
     wait_marker('EXIT_BOOT_SERVICES_OK')
     text=log.read_text()
     assert 'LIVE_FILE_API_OK' not in text and 'XHCI_FAILED' not in text
     assert text[:text.index('APP_KEY_DOWN=0000000000000029')].count('LIVE_STORAGE_WAIT') == 1
-    assert text.index('LIVE_STORAGE_WAIT') < text.index('APP_KEY_DOWN=0000000000000029') < text.index('STORAGE_RELEASED') < text.index('XHCI_QUIESCED')
+    assert text.index('LIVE_STORAGE_WAIT') < text.index('APP_KEY_DOWN=0000000000000029') < text.index('STORAGE_RELEASED') < text.rindex('XHCI_QUIESCED')
     assert hash_image()==image_hash
     if a.exfat_boot_image:assert hashlib.sha256(a.exfat_boot_image.read_bytes()).hexdigest()==boot_hash
     control('quit');proc.wait(timeout=5)
@@ -214,7 +243,7 @@ with (out/'qemu.log').open('w') as err:
    answer=parsed(receive(lambda b:parsed(b,17) is not None),17)
    assert struct.unpack('!HHH',answer[:6])==(12345,23456,len(payload)+8) and answer[8:]==payload
    assert checksum(gip+hip+struct.pack('!BBH',0,17,len(answer))+answer)==0 and answer[6:8]!=b'\0\0'
-   if a.live_file and i==0:
+   if a.live_file and not a.file_no_delay and i==0:
     assert 'LIVE_FILE_API_OK' not in log.read_text(), 'file finished before UDP response'
    if a.live_storage and i==0:
     # This is a real UDP reply received by the test process before the held
@@ -273,7 +302,7 @@ with (out/'qemu.log').open('w') as err:
     print('PASS: live read',a.live_fault,'input/UDP progress before failure, no result publication, controller DMA stopped')
    else:
     assert 'STORAGE_RELEASED' in text and 'XHCI_FAILED' not in text
-    assert text.rindex('LIVE_STORAGE_WAIT') < text.index('APP_KEY_DOWN=0000000000000029') < text.index('STORAGE_RELEASED') < text.index('XHCI_QUIESCED')
+    assert text.rindex('LIVE_STORAGE_WAIT') < text.index('APP_KEY_DOWN=0000000000000029') < text.index('STORAGE_RELEASED') < text.rindex('XHCI_QUIESCED')
     print('PASS: live READ(10) data hash, key/UDP progress while pending, Esc during DATA, slot release and DMA stop')
   if a.live_file:
    expected=b'Hello Musha-OS!\n';h=0xcbf29ce484222325
@@ -292,10 +321,15 @@ with (out/'qemu.log').open('w') as err:
     chunk=7 if index==0 else 512
     requests+=(len(payload)+chunk-1)//chunk
    assert text.count('LIVE_FILE_ENTRY_OK')==len(payloads)
-   assert text[begin:done].count('LIVE_FILE_REQUEST') == requests, 'missing split requests'
-   assert 'APP_KEY_DOWN=0000000000000004' in text[begin:done]
-   assert 'APP_FILE_RECHECK_OK' in text[begin:done]
+   assert text[begin:done].count('LIVE_FILE_REQUEST') == requests + int(a.file_close), 'missing split requests'
+   if a.file_close:
+    assert text.index('LIVE_STORAGE_WAIT') < text.index('APP_FILE_CLOSE_QUARANTINED') < text.index('APP_FILE_REOPENED') < done
+    assert text[text.index('APP_FILE_CLOSE_QUARANTINED'):text.index('APP_FILE_REOPENED')].count('LIVE_STORAGE_WAIT') == 0
+   if not a.file_no_delay:
+    assert 'APP_KEY_DOWN=0000000000000004' in text[begin:done]
+    assert 'APP_FILE_RECHECK_OK' in text[begin:done]
    assert 'XHCI_FAILED' not in text and 'STORAGE_RELEASED' in text
+   if a.split_controller:assert text.count('XHCI_QUIESCED DMA_DISABLED') >= 4
    print('PASS: common file API, metadata/data USB reads, exact content/EOF, concurrent input and UDP')
   control('screendump',{'filename':str(out/'screen.ppm')});control('quit')
   proc.wait(timeout=5)

@@ -3,9 +3,9 @@
 ## English
 
 `musha-api` provides a safe API for Rust applications statically linked into a single EFI.
-The runtime calls `init`, `step`, and `shutdown` on the `Application` trait.
-The API version is 4. Rust types carry no external binary-compatibility guarantee.
-A bounded read-only [file API](file-api.md) is implemented. The C ABI, C headers, UDP, and general device-backed file APIs remain unimplemented.
+The runtime calls `init`, `step`, and `shutdown` on the `Application` trait, plus bounded `files` callbacks while the mounted file service is available. `files_closed` invalidates saved stream IDs after transport shutdown (except failed apps or unconfirmed DMA shutdown).
+The API version is 5. Rust types carry no external binary-compatibility guarantee.
+The [snapshot API](file-api.md) remains available. The [stream API](stream-file-api.md) now supports root-file selection and read-only FAT32/exFAT requests backed by USB. C ABI, C headers, application UDP handles and file writes remain unimplemented.
 
 ### Ownership and execution
 
@@ -23,7 +23,7 @@ Do not call shutdown after init failure; init is responsible for partial-initial
 Cleanup is not guaranteed on panic / CPU exceptions.
 While a Boot Keyboard is connected, call step between nonblocking USB polls.
 RAM diagnostics continue without input. After the input session ends, call shutdown and halt.
-The initial [cooperative runtime](cooperative-io.md) now services the first keyboard, [QEMU networking](network.md), and application snapshot-file reads together. USB/BOT boot discovery is still synchronous and completes before this session. Multiple active keyboards, general asynchronous disk requests and application UDP handles remain pending.
+The initial [cooperative runtime](cooperative-io.md) now services the first keyboard, [QEMU networking](network.md), and application snapshot-file reads together. USB/BOT boot discovery is still synchronous and completes before this session. The mounted file service also advances bounded metadata/data requests in this loop, including when storage and input use separate xHCI controllers. Multiple active keyboards and application UDP handles remain pending.
 
 now_ms is a monotonic PM-timer millisecond sample in the runtime-owned clock epoch, updated immediately before every step. Applications measure durations by differences within this session.
 The runtime-only context advance operation rejects backward time.
@@ -73,9 +73,10 @@ Host tests verified FIFO order, wraparound, overflow, and timestamps.
 **RustアプリAPIの初期契約**
 
 `musha-api`は単一EFIへ静的リンクするRustアプリ向けの安全なAPI。
-`Application` traitの`init`、`step`、`shutdown`をランタイムが呼ぶ。
-API版は4。Rust型には外部バイナリ互換性を約束しない。
-上限付き読出し専用の[ファイルAPI](file-api.md)を実装済み。C ABI、Cヘッダー、UDP、一般のdevice-backed file APIは未実装。
+`Application` traitの`init`、`step`、`shutdown`に加え、媒体利用中は`files`を呼ぶ。
+`files_closed`では保存した逐次APIのID/handleを破棄する。失敗済みアプリ、DMA停止を確認できない場合は呼ばない。
+API版は5。Rust型には外部バイナリ互換性を約束しない。
+既存の[snapshot API](file-api.md)を維持し、USBに接続した[FAT32/exFAT逐次API](stream-file-api.md)を実装済み。C ABI、Cヘッダー、アプリUDP handle、ファイル書込みは未実装。
 
 ### 所有権と実行
 
@@ -92,7 +93,7 @@ init失敗時はshutdownを呼ばず、部分初期化の後始末はinitの責�
 panic / CPU例外では終了処理を保証しない。
 Boot Keyboard接続中は非ブロッキングUSB pollの合間にstepを呼ぶ。
 無入力中もRAM診断を進める。入力セッション終了後にshutdownし、停止する。
-初期の[協調ランタイム](cooperative-io.md)で、最初のキーボード、[QEMU通信](network.md)、アプリsnapshot file readを同時に進める。起動時のUSB/BOT探索は同期処理としてこのセッション前に完了する。複数キーボード、一般の非同期disk要求、アプリUDP handleは未実装。
+初期の[協調ランタイム](cooperative-io.md)で、最初のキーボード、[QEMU通信](network.md)、アプリsnapshot file readを同時に進める。起動時のUSB/BOT探索は同期処理としてこのセッション前に完了する。同じループでファイルのmetadata/data要求を分割実行し、入力とstorageが別xHCI controllerでも進める。複数キーボードとアプリUDP handleは未実装。
 
 now_msはランタイム所有clockのepochにおけるPM timerの単調なミリ秒値で、毎step直前に更新する。セッション内の差分で経過時間を測る。
 contextのadvanceはランタイム用で、時刻の巻戻しを拒否する。

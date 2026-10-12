@@ -76,6 +76,7 @@ jobs:
         run: |
           python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --keyboard-wrap --fat-fixture gpt --extra-xhci --devices-second
           python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --fat-fixture gpt --hub-depth 5 --keyboard-usb-version 1
+          python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --extra-xhci --keyboard-second
       - name: QEMU live storage with input and network
         run: |
           cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-storage-probe
@@ -110,6 +111,28 @@ jobs:
           python3 tools/make-exfat-fixture.py out/ci/exfat-data.img > out/ci/exfat-manifest.txt
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --case traffic --live-file
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --case traffic --live-file --live-file-cancel
+      - name: QEMU split-controller file service and faults
+        run: |
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --live-file --split-controller
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --live-file --split-controller --live-file-cancel
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --live-file --split-controller --file-fault disconnect
+          for probe in close timeout; do
+            cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features "file-app-$probe"
+            python3 tools/make-usb-image.py "out/ci/file-$probe.img" --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+            if [ "$probe" = close ]; then
+              python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image "out/ci/file-$probe.img" --usb-image out/ci/exfat-data.img --live-file --split-controller --file-close
+            else
+              python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image "out/ci/file-$probe.img" --usb-image out/ci/exfat-data.img --live-file --split-controller --file-fault timeout
+            fi
+          done
+      - name: QEMU app file API without artificial transport delays
+        run: |
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features file-app-probe
+          python3 tools/make-usb-image.py out/ci/file-app.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/file-app.img --live-file --file-no-delay
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/file-app.img --usb-image out/ci/exfat-data.img --live-file --split-controller --file-no-delay
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/file-app.img --case no-keyboard
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/file-app.img --case keyboard-disconnect --split-controller
       - name: QEMU application failure and TX timeout
         run: |
           for pair in "net-tx-timeout tx-timeout" "app-step-error app-error"; do

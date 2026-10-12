@@ -406,110 +406,94 @@ pub(super) fn probe(
     } else {
         "FAT32 FILE READ"
     });
-    #[cfg(not(feature = "live-exfat-probe"))]
-    let file_result = musha_fs::read_root(
-        blocks,
-        size as usize,
-        b"MUSHA   TXT",
-        &mut file,
-        &mut |lba, out| {
+    let mounted = if !host.discovery {
+        super::file::prepare(
+            blocks,
+            size as usize,
+            |lba, out| {
+                bot.read(host, lba, blocks, size)
+                    .map_err(|_| musha_fs::Error::Io)?;
+                copy(data, out);
+                Ok(())
+            },
+            &mut file,
+        )
+    } else {
+        let supported = super::file::supported(blocks, size as usize, |lba, out| {
             bot.read(host, lba, blocks, size)
                 .map_err(|_| musha_fs::Error::Io)?;
             copy(data, out);
             Ok(())
-        },
-    );
-    #[cfg(all(feature = "live-file-probe", not(feature = "live-exfat-probe")))]
-    let prepared = {
-        let bytes = *file_result.as_ref().map_err(|_| "LIVE FILE SNAPSHOT")?;
-        let fs = musha_fs::fat32::FileSystem::discover(blocks, size as usize, |lba, out| {
-            bot.read(host, lba, blocks, size)
-                .map_err(|_| musha_fs::Error::Io)?;
-            copy(data, out);
-            Ok(())
-        })
-        .map_err(|_| "LIVE FILE MOUNT")?;
-        let index = fs
-            .entries()
-            .iter()
-            .position(|e| e.name() == b"MUSHA   TXT")
-            .ok_or("LIVE FILE MISSING")?;
-        if fs.entries()[index].len() != bytes as u64 {
-            return Err("LIVE FILE LENGTH");
+        });
+        match supported {
+            Ok(true) => {
+                host.readable_storage += 1;
+                Ok(None)
+            }
+            Ok(false) => Ok(None),
+            Err(e) => Err(e),
         }
-        Some(super::file::Prepared {
-            source: fs.source(index).map_err(|_| "LIVE FILE PLAN")?,
-            format: musha_api::stream::Format::Fat32,
-            count: 1,
-            bytes,
-            hash: storage::hash(&file[..bytes]),
-        })
     };
-    #[cfg(feature = "live-exfat-probe")]
-    let prepared = Some(super::file::prepare_exfat(
-        blocks,
-        size as usize,
-        |lba, out| {
-            bot.read(host, lba, blocks, size)
-                .map_err(|_| musha_fs::Error::Io)?;
-            copy(data, out);
-            Ok(())
-        },
-        &mut file,
-    )?);
-    #[cfg(feature = "live-exfat-probe")]
-    let file_result: Result<usize, musha_fs::Error> = Ok(prepared.as_ref().unwrap().bytes);
-    let format_name = if cfg!(feature = "live-exfat-probe") {
+    let skip_snapshot = matches!(mounted, Ok(None));
+    let (prepared, file_result) = match mounted {
+        Ok(Some((p, bytes))) => (Some(p), bytes.ok_or(musha_fs::Error::NotFound)),
+        Ok(None) => (None, Err(musha_fs::Error::Unsupported)),
+        Err(e) => (None, Err(e)),
+    };
+    let exfat = prepared.as_ref().is_some_and(|p| p.is_exfat());
+    let format_name = if exfat {
         "exFAT READ OK"
     } else {
         "FAT32 READ OK"
     };
-    match file_result {
-        Ok(bytes) => {
-            crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT BYTES {:08X}", bytes));
-            crate::diagnostics::set(
-                39,
-                format_args!("FILE HASH {:016X}", storage::hash(&file[..bytes])),
-            );
-            tick(super::super::AppEvent::File(&file[..bytes]))?;
-            if cfg!(feature = "live-exfat-probe") {
-                crate::debug(b"MUSHA: EXFAT_FILE_OK BYTES=");
-            } else {
-                crate::debug(b"MUSHA: FAT32_FILE_OK BYTES=");
-            }
-            crate::debug(&crate::cpu::hex(bytes as u64));
-            crate::debug(b" HASH=");
-            crate::debug(&crate::cpu::hex(storage::hash(&file[..bytes])));
-            crate::debug(b"\n");
-            if host.framebuffer.height >= 476 {
-                super::super::clear_line(host.framebuffer, 452);
-                unsafe {
-                    host.framebuffer.text(
-                        format_name,
-                        24,
-                        452,
-                        host.framebuffer.color(0, 240, 100),
-                    );
+    if !skip_snapshot {
+        match file_result {
+            Ok(bytes) => {
+                crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT BYTES {:08X}", bytes));
+                crate::diagnostics::set(
+                    39,
+                    format_args!("FILE HASH {:016X}", storage::hash(&file[..bytes])),
+                );
+                tick(super::super::AppEvent::File(&file[..bytes]))?;
+                if exfat {
+                    crate::debug(b"MUSHA: EXFAT_FILE_OK BYTES=");
+                } else {
+                    crate::debug(b"MUSHA: FAT32_FILE_OK BYTES=");
+                }
+                crate::debug(&crate::cpu::hex(bytes as u64));
+                crate::debug(b" HASH=");
+                crate::debug(&crate::cpu::hex(storage::hash(&file[..bytes])));
+                crate::debug(b"\n");
+                if host.framebuffer.height >= 476 {
+                    super::super::clear_line(host.framebuffer, 452);
+                    unsafe {
+                        host.framebuffer.text(
+                            format_name,
+                            24,
+                            452,
+                            host.framebuffer.color(0, 240, 100),
+                        );
+                    }
                 }
             }
+            Err(musha_fs::Error::Unsupported) => {
+                crate::diagnostics::set(38, format_args!("FILE FORMAT UNSUPPORTED"));
+                crate::diagnostics::set(39, format_args!("FILE HASH UNKNOWN"));
+                tick(super::super::AppEvent::FileError(
+                    musha_api::Error::Unsupported,
+                ))?;
+                crate::debug(b"MUSHA: FAT32_UNSUPPORTED\n");
+            }
+            Err(musha_fs::Error::NotFound) => {
+                crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT MISSING"));
+                crate::diagnostics::set(39, format_args!("FILE HASH UNKNOWN"));
+                tick(super::super::AppEvent::FileError(
+                    musha_api::Error::NotFound,
+                ))?;
+                crate::debug(b"MUSHA: FAT32_FILE_MISSING\n");
+            }
+            Err(_) => return Err("FAT32 READ"),
         }
-        Err(musha_fs::Error::Unsupported) => {
-            crate::diagnostics::set(38, format_args!("FILE FORMAT UNSUPPORTED"));
-            crate::diagnostics::set(39, format_args!("FILE HASH UNKNOWN"));
-            tick(super::super::AppEvent::FileError(
-                musha_api::Error::Unsupported,
-            ))?;
-            crate::debug(b"MUSHA: FAT32_UNSUPPORTED\n");
-        }
-        Err(musha_fs::Error::NotFound) => {
-            crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT MISSING"));
-            crate::diagnostics::set(39, format_args!("FILE HASH UNKNOWN"));
-            tick(super::super::AppEvent::FileError(
-                musha_api::Error::NotFound,
-            ))?;
-            crate::debug(b"MUSHA: FAT32_FILE_MISSING\n");
-        }
-        Err(_) => return Err("FAT32 READ"),
     }
     if host.framebuffer.height >= 444 {
         super::super::clear_line(host.framebuffer, 388);
@@ -529,7 +513,6 @@ pub(super) fn probe(
     }
     crate::debug(b"MUSHA: STORAGE_PROBE_OK READ_ONLY\n");
     Ok(Device {
-        #[cfg(feature = "live-file-probe")]
         prepared,
         bot,
         blocks,
@@ -546,7 +529,6 @@ pub(super) fn probe(
 /// copies into CPU memory only after CSW validation; failures reserve all buffers
 /// until Disable Slot or outer controller quiescence.
 pub(super) struct Device {
-    #[cfg(feature = "live-file-probe")]
     pub(super) prepared: Option<super::file::Prepared>,
     bot: Bot,
     blocks: u64,
@@ -609,8 +591,7 @@ impl Device {
         host.bulk_pending = None;
         host.bulk_saved = None;
     }
-    /// QEMU-only live transport exercise; not an application file API request.
-    pub(super) fn probe_step(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+    pub(super) fn check_connected(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
         let now = host.clock.now()?;
         let op = (host.regs.read(0)? & 255) as usize;
         if host.regs.read(op + 0x400 + (self.port - 1) * 16)? & 1 == 0 {
@@ -630,6 +611,12 @@ impl Device {
             }
             self.check_at = now.checked_add(100).ok_or("CLOCK OVERFLOW")?;
         }
+        Ok(())
+    }
+    /// QEMU-only live transport exercise; not an application file API request.
+    pub(super) fn probe_step(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        self.check_connected(host)?;
+        let now = host.clock.now()?;
         if self.bot.pending.is_none() {
             if now < self.next_probe {
                 return Ok(());

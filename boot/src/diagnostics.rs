@@ -313,6 +313,55 @@ pub fn begin_controller(c: crate::pci::Controller) {
         c.bdf(),
     );
 }
+// Preserve the outer storage view while a separate input controller is live.
+// Its lines use the existing archive; only small counters travel on the stack.
+pub struct ControllerState {
+    index: usize,
+    usb: usize,
+    keyboards: usize,
+    storage: usize,
+    class: [u8; 3],
+    failure: Failure,
+}
+pub fn suspend_controller() -> ControllerState {
+    let mut saved = ControllerState {
+        index: 0,
+        usb: 0,
+        keyboards: 0,
+        storage: 0,
+        class: [0; 3],
+        failure: Failure::EMPTY,
+    };
+    update(|p| {
+        p.archived[p.current_controller] = p.lines;
+        saved = ControllerState {
+            index: p.current_controller,
+            usb: p.usb,
+            keyboards: p.keyboards,
+            storage: p.storage,
+            class: p.device_class,
+            failure: p.usb_fail,
+        };
+    });
+    saved
+}
+pub fn resume_controller(saved: ControllerState) {
+    update(|p| {
+        let mut summary = [Line::EMPTY; 8];
+        summary.copy_from_slice(&p.lines[27..35]);
+        let mut net = [Line::EMPTY; 3];
+        net.copy_from_slice(&p.lines[7..10]);
+        p.lines = p.archived[saved.index];
+        p.lines[27..35].copy_from_slice(&summary);
+        p.lines[7..10].copy_from_slice(&net);
+        p.current_controller = saved.index;
+        p.usb = saved.usb;
+        p.keyboards = saved.keyboards;
+        p.storage = saved.storage;
+        p.device_class = saved.class;
+        p.usb_fail = saved.failure;
+    });
+}
 pub fn controller_result(
     c: crate::pci::Controller,
     result: Option<(bool, usize)>,
