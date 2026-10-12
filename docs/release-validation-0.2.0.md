@@ -55,3 +55,19 @@ tools/smoke-normal-viewer.py はdebug出力に依存せず、工程6で検証し
 候補の一覧→開く→一覧の画像を画素単位で比較する。Q終了画面も保存する。
 内部DMA停止の証拠は診断版の回帰試験が担当し、この通常版試験とは区別する。
 候補の生成commitと最終SHAは候補manifest／SHA256SUMSを正とする。
+
+## v0.2.0-rc1 の作成・検査結果
+
+候補ビルド元: ec0481954ef31ddcf124db026e4d4e083ca28279（working tree空、features空）。
+生成先: dist/v0.2.0-rc1/musha-os-0.2.0-candidate.tar.gz。
+この結果の追記コミットは候補ビルド元とは別。バイナリーを再生成・差替えしていない。
+
+- 通常EFI: 432640 bytes、SHA-256 d724447d6fe16b019a4c735fa9bc852fed8ee362e98c47cda40efb03c3afdaf0
+- アーカイブSHA-256: c8d4ebe4ce78b325ff9277747a1e2847e859adf3736e26b29d01ba7a9cc47a06
+- manifestの全同梱ファイルと内外SHA256SUMSを再照合し、一致。
+- 候補内の起動像・exFAT像を直接使い、FAT32／exFATの一覧→開く→一覧が検証版の画面と画素単位で一致。
+- 通常候補はdebugログ0バイト、試験前後のイメージSHA不変。Q後のセッション終了画面を目視確認。
+- 結果JSON: out/p7-normal-fat/result.json、out/p7-normal-exfat/result.json。
+
+工程7の自動検証・候補準備は完了。実機受入と所有者の公開承認が残るため、
+工程7全体・v0.2.0公開を完了扱いにしない。実機用の物理USBはまだ更新していない。
