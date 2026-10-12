@@ -1,6 +1,7 @@
-# 次版の配布・配備手順 / Next-version distribution
+# 配布・配備手順 / Distribution and deployment
 
-この手順の成果物はまだGitHub Releasesに公開していません。
+v0.2.0は[GitHub Releases](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0)で公開済みです。
+README・Release本文の作成と公開後の訂正は[リリース文書規約](release-editorial-policy.md)に従ってください。
 v0.1.0の確認実績とv0.2.0候補の確認は別です。
 [配布方針](release-distribution-policy.md)・[実機確認状況](hardware-verification-status.md)・
 [v0.2.0実機受入](hardware-acceptance-0.2.0.md)を参照してください。
@@ -11,7 +12,7 @@ v0.1.0の確認実績とv0.2.0候補の確認は別です。
 - `musha-os-v0.2.0-x64-files.zip`: 通常更新用。update-manifest.jsonが配置先・長さ・SHA-256を定義。
 - `musha-os-v0.2.0-x64-deployment.zip`: ホストツール、方針、手順、ライセンス・帰属表示。
 - `build-manifest.json`と`SHA256SUMS`: ビルド元、dirty状態、タグ、条件、各成果物識別。
-- `musha-os-0.2.0-candidate.tar.gz`: 開発・QEMU検証資料。Source code ZIPも起動媒体ではありません。
+- `musha-os-0.2.0.tar.gz`: 開発・QEMU検証資料。Source code ZIPも起動媒体ではありません。
 
 イメージとファイルZIPは同じEFIから生成します。イメージはEFIとMUSHA.TXTを保持し、
 ライセンスはfiles.zipとdeployment.zipに同梱します。イメージだけを再配布せず、
@@ -62,7 +63,7 @@ applyなしはdry-run。既存出力・device path・4Kn・64 MiB未満・128 Gi
 読戻しも固定ESPと管理情報のみで、全空き容量を走査しません。exFATの作成・拡張は含みません。
 一般的なUSB書込みソフトとの組合せは未検証です。
 
-## 通常更新（macOS、次版ツール）
+## 通常更新（macOS）
 
 既存のMusha-OS FAT32ボリュームをマウントし、必要な個人データは事前に別媒体へ保存してください。
 別プロセスによる同時更新やマウント変更を避けてください。ZIPは信頼できる配布元のSHA256SUMSと照合します。
@@ -110,5 +111,7 @@ PR・手動既定・v*タグpushは候補と試験記録のみ保存します。
 そのジョブではdefault branchのレビュー済みスクリプトだけを実行し、取得したassetはデータとして扱います。
 同じタグの実行を直列化し、公開済みRelease・異なる下書き・不完全な下書きは拒否。
 完全一致の下書きだけ再利用。タグ作成・clobber・公開コマンドはありません。
-workflow_dispatchと信頼済み添付スクリプトをdefault branchへ導入してから運用してください。
-Actions実行、下書き作成、実機確認、最終公開は今回未実施。公開時の再ビルドはしません。
+workflow_dispatchと信頼済み添付スクリプトはdefault branchへ導入済みです。
+v0.2.0はPRのActions試験、タグのソースからのビルド、公開対象EFIそのもののQEMU確認を経て公開しました。
+実機確認の残件と配布物の来歴は[v0.2.0リリースノート](release-notes-0.2.0.md)を参照してください。
+公開時に検証済み配布物を再ビルド・置換しません。
