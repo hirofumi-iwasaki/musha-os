@@ -291,6 +291,12 @@ impl Session {
 }
 impl Drop for Session {
     fn drop(&mut self) {
+        // Observe cancellation itself, not the host-dependent number of sectors
+        // reached before a QMP key event arrives.
+        #[cfg(feature = "live-file-probe")]
+        if self.state.request.is_some() && self.state.sector.is_some() {
+            crate::debug(b"MUSHA: LIVE_FILE_CANCEL_PENDING_SECTOR\n");
+        }
         self.state.files.disconnect();
         if let Some(o) = self.state.operation.as_mut() {
             o.cancel();
