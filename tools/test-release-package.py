@@ -25,34 +25,49 @@ class PackageTests(unittest.TestCase):
         self.efi.write_bytes(data)  # Format fixture, not a runnable EFI.
 
     def test_archive_hashes_licenses_and_provenance(self):
-        output = release.stage(self.root / 'candidate', self.efi, {'commit': 'fixture', 'features': []})
-        bundle = output / 'musha-os-0.1.0-candidate'
+        output = release.stage(self.root / 'candidate', self.efi, {'commit': 'fixture', 'features': []}, version='0.2.0')
+        bundle = output / 'musha-os-0.2.0-candidate'
         manifest = json.loads((bundle / 'manifest.json').read_text())
         self.assertEqual(manifest['hardware_validation'], 'NOT RUN')
         self.assertEqual(manifest['status'], 'unreleased-candidate')
         for name, entry in manifest['files'].items():
             self.assertEqual(release.digest(bundle / name), entry['sha256'])
-        for name in ['LICENSE', 'NOTICE', 'third_party/lwip/COPYING', 'third_party/freebsd-e1000/COPYING', 'third_party/r-efi/AUTHORS']:
+        for name in ['LICENSE', 'NOTICE', 'third_party/lwip/COPYING', 'third_party/freebsd-e1000/COPYING', 'third_party/freebsd-apple-bce/COPYING', 'third_party/r-efi/AUTHORS']:
             self.assertTrue((bundle / name).is_file())
         for line in (bundle / 'SHA256SUMS').read_text().splitlines():
             sha, name = line.split('  ', 1); self.assertEqual(release.digest(bundle / name), sha)
-        archive = output / 'musha-os-0.1.0-candidate.tar.gz'
-        self.assertEqual((output / 'SHA256SUMS').read_text().split()[0], release.digest(archive))
+        archive = output / 'musha-os-0.2.0-candidate.tar.gz'
+        self.assertIn(f'{release.digest(archive)}  {archive.name}', (output / 'SHA256SUMS').read_text())
         with tarfile.open(archive) as tar:
-            entry = tar.extractfile('musha-os-0.1.0-candidate/EFI/BOOT/BOOTX64.EFI').read()
+            entry = tar.extractfile('musha-os-0.2.0-candidate/EFI/BOOT/BOOTX64.EFI').read()
             self.assertEqual(entry, self.efi.read_bytes())
-            self.assertEqual(tar.extractfile('musha-os-0.1.0-candidate/MUSHA.TXT').read(), b'Hello Musha-OS!\n')
+            self.assertEqual(tar.extractfile('musha-os-0.2.0-candidate/MUSHA.TXT').read(), b'Hello Musha-OS!\n')
             self.assertTrue(all(m.mtime == 0 and m.uid == 0 for m in tar.getmembers()))
 
     def test_release_metadata_and_readme(self):
         output = release.stage(self.root / 'release', self.efi,
-                               {'commit': 'fixture', 'features': []}, release=True)
-        bundle = output / 'musha-os-0.1.0'
+                               {'commit': 'fixture', 'features': []}, release=True, version="0.2.0")
+        bundle = output / 'musha-os-0.2.0'
         manifest = json.loads((bundle / 'manifest.json').read_text())
         self.assertEqual(manifest['status'], 'initial-development-release')
         self.assertEqual(manifest['features'], [])
         self.assertTrue((bundle / 'README.md').is_file())
-        self.assertTrue((output / 'musha-os-0.1.0.tar.gz').is_file())
+        self.assertTrue((output / 'musha-os-0.2.0.tar.gz').is_file())
+
+    def test_v020_candidate_contains_exfat_and_pending_acceptance(self):
+        output = release.stage(self.root / 'v020', self.efi, {'commit': 'fixture', 'features': []})
+        bundle = output / 'musha-os-0.2.0-candidate'
+        manifest = json.loads((bundle / 'manifest.json').read_text())
+        self.assertEqual(manifest['version'], '0.2.0')
+        self.assertEqual(manifest['hardware_validation'], 'NOT RUN')
+        self.assertEqual(manifest['release_acceptance'], 'NOT DETERMINED')
+        self.assertEqual(manifest['features'], [])
+        fixture = json.loads((bundle / 'exfat-test-data.json').read_text())
+        self.assertTrue((bundle / 'exfat-test-data.img').is_file())
+        for name, entry in manifest['files'].items():
+            self.assertEqual(release.digest(bundle / name), entry['sha256'])
+        with self.assertRaises(ValueError):
+            release.stage(self.root / 'bad-version', self.efi, {}, version='../unsafe')
 
     def test_existing_output_is_untouched(self):
         out = self.root / 'existing'; out.mkdir(); (out / 'keep').write_text('important')

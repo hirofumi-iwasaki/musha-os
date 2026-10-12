@@ -1,0 +1,9 @@
+[package]
+name = "musha-bce"
+version = "0.2.0-dev.0"
+edition = "2024"
+license = "BSD-2-Clause"
+publish = false
+
+[dev-dependencies]
+musha-input = { path = "../input" }

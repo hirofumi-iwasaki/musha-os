@@ -7,6 +7,14 @@ name = "musha-api"
 version = "0.1.0"
 dependencies = [
  "musha-framebuffer",
+ "musha-input",
+]
+
+[[package]]
+name = "musha-bce"
+version = "0.2.0-dev.0"
+dependencies = [
+ "musha-input",
 ]
 
 [[package]]
@@ -16,9 +24,11 @@ dependencies = [
  "musha-api",
  "musha-framebuffer",
  "musha-fs",
+ "musha-input",
  "musha-memory",
  "musha-net",
  "musha-platform",
+ "musha-viewer",
  "musha-xhci",
  "r-efi",
 ]
@@ -30,6 +40,13 @@ version = "0.1.0"
 [[package]]
 name = "musha-fs"
 version = "0.1.0"
+dependencies = [
+ "musha-api",
+]
+
+[[package]]
+name = "musha-input"
+version = "0.2.0-dev.0"
 
 [[package]]
 name = "musha-memory"
@@ -44,8 +61,19 @@ name = "musha-platform"
 version = "0.1.0"
 
 [[package]]
+name = "musha-viewer"
+version = "0.2.0"
+dependencies = [
+ "musha-api",
+ "musha-framebuffer",
+]
+
+[[package]]
 name = "musha-xhci"
 version = "0.1.0"
+dependencies = [
+ "musha-input",
+]
 
 [[package]]
 name = "r-efi"

@@ -158,8 +158,11 @@ fn reset(info: &BootInfo, c: pci::Controller) -> Result<(), &'static str> {
     crate::debug(b" DMA_DISABLED\n");
     Ok(())
 }
+pub(crate) type Tick<'a> = dyn for<'e> FnMut(AppEvent<'e>) -> Result<bool, &'static str> + 'a;
 pub(crate) enum AppEvent<'a> {
     Ready(bool),
+    Files(&'a mut musha_api::stream::Files<'static>),
+    Retained(&'a mut dyn FnMut(&mut Tick<'_>) -> Result<bool, &'static str>),
     Keys(&'a [(u8, bool)]),
     File(&'a [u8]),
     FileError(musha_api::Error),
@@ -168,6 +171,7 @@ pub(crate) enum AppEvent<'a> {
 struct Probe {
     keyboard: bool,
     storage: usize,
+    readable_storage: usize,
 }
 use musha_platform::controllers::DMA_SLICE;
 fn probe(
@@ -200,9 +204,56 @@ fn probe(
         c,
         result.as_ref().ok().map(|p| (p.keyboard, p.storage)),
         result.err(),
-        !discovery,
+        !discovery && result.as_ref().is_ok_and(|p| p.keyboard),
     );
     result
+}
+// Keep the storage Host and its exclusive DMA slice alive on the outer frame.
+// A nested input Host has a disjoint controller/DMA slice. Every keyboard cycle
+// advances the outer file transport once; errors unwind and quiesce both Hosts.
+fn live_probe(
+    info: &BootInfo,
+    index: usize,
+    keyboard: Option<usize>,
+    tick: &mut Tick<'_>,
+) -> Result<Probe, &'static str> {
+    let mut bridge = |event: AppEvent<'_>| {
+        if let AppEvent::Retained(poll) = event {
+            if let Some(k) = keyboard.filter(|&k| k != index) {
+                crate::debug(b"MUSHA: CROSS_CONTROLLER_LIVE\n");
+                let mut input = |event: AppEvent<'_>| {
+                    if matches!(event, AppEvent::Keys(_)) && poll(tick)? {
+                        return Ok(true);
+                    }
+                    if matches!(event, AppEvent::Retained(_)) {
+                        return Err("NESTED STORAGE LOOP");
+                    }
+                    tick(event)
+                };
+                let saved = crate::diagnostics::suspend_controller();
+                let result = probe(info, info.xhcis.entries[k], k, false, &mut input);
+                crate::diagnostics::resume_controller(saved);
+                result?;
+            } else {
+                tick(AppEvent::Ready(false))?;
+                let mut clock = acpi::Time::new(info.timer)?;
+                let end = if cfg!(feature = "qemu-debug") {
+                    clock.now()?.checked_add(10000).ok_or("CLOCK OVERFLOW")?
+                } else {
+                    u64::MAX
+                };
+                while clock.now()? < end {
+                    if poll(tick)? || tick(AppEvent::Keys(&[]))? {
+                        break;
+                    }
+                }
+            }
+            Ok(true)
+        } else {
+            tick(event)
+        }
+    };
+    probe(info, info.xhcis.entries[index], index, false, &mut bridge)
 }
 pub(crate) fn diagnose(
     info: &BootInfo,
@@ -216,11 +267,13 @@ pub(crate) fn diagnose(
             return Err("NOT FOUND");
         }
         if controllers.len() == 1 {
-            return probe(info, controllers[0], 0, false, tick).map(|report| {
+            return live_probe(info, 0, None, tick).map(|report| {
                 found_device = report.keyboard || report.storage > 0;
             });
         }
         let mut keyboard = None;
+        let mut storage = None;
+        let mut readable_storage = None;
         let mut success = false;
         let mut last_error = "NO CONTROLLER";
         let owner = controllers.iter().position(|c| c.bdf() == info.boot_owner);
@@ -236,6 +289,12 @@ pub(crate) fn diagnose(
             match probe(info, c, index, true, tick) {
                 Ok(report) => {
                     success = true;
+                    if report.storage > 0 && storage.is_none() {
+                        storage = Some(index);
+                    }
+                    if report.readable_storage > 0 && readable_storage.is_none() {
+                        readable_storage = Some(index);
+                    }
                     found_device |= report.keyboard || report.storage > 0;
                     if report.keyboard && keyboard.is_none() {
                         keyboard = Some(index);
@@ -248,11 +307,13 @@ pub(crate) fn diagnose(
             }
         }
         crate::debug(b"MUSHA: XHCI_SCAN_COMPLETE\n");
-        if let Some(index) = keyboard {
+        if let Some(k) = keyboard {
             crate::debug(b"MUSHA: XHCI_INPUT BDF=");
-            crate::debug(&crate::cpu::hex(controllers[index].bdf() as u64));
+            crate::debug(&crate::cpu::hex(controllers[k].bdf() as u64));
             crate::debug(b"\n");
-            probe(info, controllers[index], index, false, tick).map(|_| ())
+        }
+        if let Some(index) = readable_storage.or(keyboard).or(storage) {
+            live_probe(info, index, keyboard, tick).map(|_| ())
         } else {
             tick(AppEvent::Ready(false))?;
             if success { Ok(()) } else { Err(last_error) }
@@ -329,6 +390,8 @@ fn event(
         None,
         None,
         None,
+        None,
+        None,
     )
 }
 fn event_dispatch(
@@ -345,6 +408,8 @@ fn event_dispatch(
     timeout_ms: u64,
     deferred: Option<(usize, u8, u8)>,
     mut saved: Option<&mut Option<[u32; 4]>>,
+    bulk: Option<(usize, u8, u8)>,
+    mut bulk_saved: Option<&mut Option<[u32; 4]>>,
     short: Option<(usize, u32)>,
     mut residual: Option<&mut Option<u32>>,
 ) -> Result<[u32; 4], &'static str> {
@@ -413,24 +478,12 @@ fn event_dispatch(
                             transfer,
                         )
                     {
-                        if let (Some((address, slot, endpoint)), Some(saved)) =
-                            (deferred, saved.as_deref_mut())
-                        {
-                            if saved.is_none()
-                                && musha_xhci::endpoint_completion(words, address, slot, endpoint)
-                            {
-                                *saved = Some(words);
-                                false
-                            } else {
-                                crate::diagnostics::transfer_failure(
-                                    words,
-                                    expected,
-                                    expected_slot,
-                                    transfer,
-                                );
-                                return Err("BAD TRANSFER");
-                            }
-                        } else {
+                        let stored = saved.as_deref_mut().is_some_and(|saved| {
+                            musha_xhci::defer_completion(words, deferred, saved)
+                        }) || bulk_saved
+                            .as_deref_mut()
+                            .is_some_and(|saved| musha_xhci::defer_completion(words, bulk, saved));
+                        if !stored {
                             crate::diagnostics::transfer_failure(
                                 words,
                                 expected,
@@ -439,6 +492,7 @@ fn event_dispatch(
                             );
                             return Err("BAD TRANSFER");
                         }
+                        false
                     } else {
                         true
                     }
@@ -596,6 +650,7 @@ fn command_probe(
         crate::debug(&crate::cpu::hex(COMMANDS as u64));
         crate::debug(b" COMMAND_WRAP_OK EVENT_WRAP_OK\n");
         let mut host = Host {
+            discovery,
             regs: &regs,
             clock: &mut clock,
             command,
@@ -608,14 +663,18 @@ fn command_probe(
             ports,
             framebuffer: info.framebuffer,
             storage_matches: 0,
+            readable_storage: 0,
             control_cursors: [musha_xhci::control::Cursor::NEW; 9],
             keyboard_pending: None,
             keyboard_saved: None,
+            bulk_pending: None,
+            bulk_saved: None,
         };
         let keyboard = usb::enumerate(&mut host, &mut pool, dcbaa, discovery, tick)?;
         Ok(Probe {
             keyboard,
             storage: host.storage_matches,
+            readable_storage: host.readable_storage,
         })
     })();
     if let Err(error) = result {
@@ -640,6 +699,7 @@ fn command_probe(
 }
 
 struct Host<'a> {
+    discovery: bool,
     regs: &'a Registers,
     clock: &'a mut acpi::Time,
     command: usize,
@@ -652,9 +712,12 @@ struct Host<'a> {
     ports: u32,
     framebuffer: musha_framebuffer::Framebuffer,
     storage_matches: usize,
+    readable_storage: usize,
     control_cursors: [musha_xhci::control::Cursor; 9],
     keyboard_pending: Option<(usize, u8, u8)>,
     keyboard_saved: Option<[u32; 4]>,
+    bulk_pending: Option<(usize, u8, u8)>,
+    bulk_saved: Option<[u32; 4]>,
 }
 impl Host<'_> {
     fn command(
@@ -698,6 +761,8 @@ impl Host<'_> {
             1000,
             self.keyboard_pending,
             Some(&mut self.keyboard_saved),
+            self.bulk_pending,
+            Some(&mut self.bulk_saved),
             None,
             None,
         )?;

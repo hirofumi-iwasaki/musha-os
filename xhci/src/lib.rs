@@ -90,6 +90,24 @@ pub fn endpoint_completion(words: [u32; 4], expected: usize, slot: u8, endpoint:
         && words[3] & (4 | 0xe00000) == 0
 }
 
+/// Save one successful completion for an outstanding transfer owned by another
+/// poller. Never overwrite an undelivered event or accept a different TRB/slot/DCI.
+pub fn defer_completion(
+    words: [u32; 4],
+    pending: Option<(usize, u8, u8)>,
+    saved: &mut Option<[u32; 4]>,
+) -> bool {
+    if let Some((address, slot, endpoint)) = pending
+        && saved.is_none()
+        && endpoint_completion(words, address, slot, endpoint)
+    {
+        *saved = Some(words);
+        true
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,3 +305,32 @@ pub mod storage;
 pub mod hub;
 
 pub mod control;
+
+#[cfg(test)]
+mod deferred_tests {
+    use super::*;
+    #[test]
+    fn completion_mailbox_checks_identity_status_and_duplicates() {
+        let valid = [0x1000, 0, 1 << 24, (32 << 10) | (2 << 24) | (3 << 16)];
+        let pending = Some((0x1000, 2, 3));
+        for (word, mask) in [
+            (0, 1),
+            (1, 1),
+            (2, 1 << 24),
+            (2, 1),
+            (3, 1 << 16),
+            (3, 1 << 24),
+            (3, 1 << 10),
+        ] {
+            let mut bad = valid;
+            bad[word] ^= mask;
+            assert!(!defer_completion(bad, pending, &mut None));
+        }
+        assert!(!defer_completion(valid, None, &mut None));
+        let mut saved = None;
+        assert!(defer_completion(valid, pending, &mut saved));
+        assert!(!defer_completion(valid, pending, &mut saved));
+        assert_eq!(saved.take(), Some(valid));
+        assert!(defer_completion(valid, pending, &mut saved));
+    }
+}

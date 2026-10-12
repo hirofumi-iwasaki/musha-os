@@ -2,10 +2,23 @@ name: Release candidate preparation
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Approved existing vVERSION tag; empty builds current candidate only'
+        type: string
+        default: ''
+      create_draft:
+        description: 'Attach passed artifacts as an unpublished draft (requires tag)'
+        type: boolean
+        default: false
+  push:
+    tags: ['v*']
   pull_request:
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
+      - VERSION
+      - README.md
       - Cargo.lock
       - rust-toolchain.toml
       - .cargo/**
@@ -20,12 +33,32 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-candidate-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   macos-candidate:
     runs-on: macos-14
     timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      commit: ${{ steps.identity.outputs.commit }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+      - name: Validate source identity
+        id: identity
+        env:
+          REQUEST_TAG: ${{ inputs.tag }}
+          EVENT_REF: ${{ github.ref }}
+          CREATE_DRAFT: ${{ inputs.create_draft }}
+        run: |
+          python3 tools/candidate-identity.py
+
       - name: Install pinned Rust and UEFI target
         run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt --target x86_64-unknown-uefi
       - name: Install Clang and QEMU
@@ -44,12 +77,22 @@ jobs:
         run: |
           cargo fmt --all -- --check
           cargo test --locked --workspace --exclude musha-boot
-          for directory in third_party/lwip third_party/freebsd-e1000 third_party/r-efi; do
+          cargo check --locked --target x86_64-unknown-uefi --lib -p musha-bce -p musha-input -p musha-fs
+          for directory in third_party/lwip third_party/freebsd-e1000 third_party/freebsd-apple-bce third_party/r-efi; do
             (cd "$directory" && shasum -a 256 -c SHA256SUMS)
           done
+          python3 tools/test-exfat-fixture.py
           python3 tools/test-usb-image.py
           python3 tools/test-usb-build.py
           python3 tools/test-release-package.py
+          python3 tools/test-distribution.py
+      - name: HID mutation and state properties
+        timeout-minutes: 2
+        run: |
+          cargo run --locked --release -p musha-input --example hid_fuzz -- 100000 7445454
+          cargo run --locked --release -p musha-input --example hid_fuzz -- 100000 123456789
+      - name: Measure HID UEFI memory layout
+        run: python3 tools/measure-hid-memory.py
       - name: Build diagnostic USB image
         run: |
           cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features qemu-debug
@@ -65,8 +108,25 @@ jobs:
           done
       - name: QEMU multi-controller and hub regression
         run: |
-          python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --fat-fixture gpt --extra-xhci --devices-second
+          python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --keyboard-wrap --fat-fixture gpt --extra-xhci --devices-second
           python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --fat-fixture gpt --hub-depth 5 --keyboard-usb-version 1
+          python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --extra-xhci --keyboard-second
+      - name: QEMU live storage with input and network
+        run: |
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-storage-probe
+          python3 tools/make-usb-image.py out/ci/live-storage.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-storage.img --case traffic --live-storage
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-storage.img --case traffic --live-storage --hub-depth 2
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-storage.img --case traffic --live-storage --live-fault disconnect
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-storage-timeout
+          python3 tools/make-usb-image.py out/ci/live-storage-timeout.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-storage-timeout.img --case traffic --live-storage --live-fault timeout
+      - name: QEMU common file API over retained USB
+        run: |
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-file-probe
+          python3 tools/make-usb-image.py out/ci/live-file.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-file.img --case traffic --live-file
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-file.img --case traffic --live-file --live-file-cancel
       - name: QEMU exception and timeout regression
         run: |
           for case in ud gp df pf ro nx guard xhci-timeout xhci-command-timeout usb-descriptor-timeout storage-timeout; do
@@ -78,6 +138,52 @@ jobs:
             cp target/x86_64-unknown-uefi/release/musha-boot.efi out/esp/EFI/BOOT/BOOTX64.EFI
             python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --case "$case"
           done
+      - name: QEMU exFAT common file API
+        run: |
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-exfat-probe
+          python3 tools/make-usb-image.py out/ci/exfat-boot.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/make-exfat-fixture.py out/ci/exfat-data.img > out/ci/exfat-manifest.txt
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --case traffic --live-file
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --case traffic --live-file --live-file-cancel
+      - name: QEMU split-controller file service and faults
+        run: |
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --live-file --split-controller
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --live-file --split-controller --live-file-cancel
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --live-file --split-controller --file-fault disconnect
+          for probe in close timeout; do
+            cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features "file-app-$probe"
+            python3 tools/make-usb-image.py "out/ci/file-$probe.img" --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+            if [ "$probe" = close ]; then
+              python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image "out/ci/file-$probe.img" --usb-image out/ci/exfat-data.img --live-file --split-controller --file-close
+            else
+              python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image "out/ci/file-$probe.img" --usb-image out/ci/exfat-data.img --live-file --split-controller --file-fault timeout
+            fi
+          done
+      - name: QEMU app file API without artificial transport delays
+        run: |
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features file-app-probe
+          python3 tools/make-usb-image.py out/ci/file-app.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/file-app.img --live-file --file-no-delay
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/file-app.img --usb-image out/ci/exfat-data.img --live-file --split-controller --file-no-delay
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/file-app.img --case no-keyboard
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/file-app.img --case keyboard-disconnect --split-controller
+      - name: QEMU file viewer selection and page navigation
+        run: |
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features file-viewer-probe
+          python3 tools/make-usb-image.py out/ci/viewer.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer.img --data-image out/ci/viewer.img --format fat32
+          python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer.img --data-image out/ci/exfat-data.img
+          python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer.img --data-image out/ci/exfat-data.img --split-controller
+          python3 tools/make-exfat-fixture.py out/ci/viewer-corrupt.img --case boot-checksum
+          python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer.img --data-image out/ci/viewer-corrupt.img --case no-medium
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features file-viewer-probe,live-file-probe
+          python3 tools/make-usb-image.py out/ci/viewer-delay.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          for case in cancel disconnect; do
+            python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer-delay.img --data-image out/ci/exfat-data.img --split-controller --case "$case"
+          done
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features file-viewer-probe,file-app-timeout
+          python3 tools/make-usb-image.py out/ci/viewer-timeout.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/smoke-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/viewer-timeout.img --data-image out/ci/exfat-data.img --split-controller --case timeout
       - name: QEMU application failure and TX timeout
         run: |
           for pair in "net-tx-timeout tx-timeout" "app-step-error app-error"; do
@@ -94,20 +200,68 @@ jobs:
           cp target/x86_64-unknown-uefi/release/musha-boot.efi out/esp/EFI/BOOT/BOOTX64.EFI
           python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --case fat-corrupt --fat-fixture gpt
       - name: Build a fresh normal candidate (no publication)
-        run: python3 tools/prepare-release.py --output dist/mi68-candidate
-      - name: Preserve logs and candidate
-        if: always()
-        uses: actions/upload-artifact@v4
+        env:
+          RELEASE_TAG: ${{ steps.identity.outputs.tag }}
+        run: |
+          args=()
+          if [ -n "$RELEASE_TAG" ]; then args+=(--tag "$RELEASE_TAG"); fi
+          python3 tools/prepare-release.py --output dist/candidate "${args[@]}"
+      - name: Normal candidate display and input acceptance
+        run: |
+          bundle="dist/candidate/musha-os-$(cat VERSION)-candidate"
+          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/exfat-test-data.img" --reference out/qemu-viewer-exfat-normal --output out/qemu-normal-exfat
+          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/musha-qemu-64MiB.img" --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-fat32
+      - name: Fixed ESP on a larger virtual medium
+        run: |
+          bundle="dist/candidate/musha-os-$(cat VERSION)-candidate"
+          python3 tools/deploy-image.py "$bundle/musha-qemu-64MiB.img" out/ci/normal-128MiB.img --capacity-bytes 134217728 --apply
+          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/normal-128MiB.img --data-image out/ci/normal-128MiB.img --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-larger
+      - name: Preserve passed distribution only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mi68-candidate-and-test-records
+          name: passed-distribution
+          path: |
+            dist/candidate/*.gz
+            dist/candidate/*.zip
+            dist/candidate/build-manifest.json
+            dist/candidate/SHA256SUMS
+          if-no-files-found: error
+      - name: Preserve test records
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-records
           path: |
             out/ci/*.txt
+            out/hid-memory/report.json
+            out/hid-memory/*.s
             out/qemu-*/debug.log
             out/qemu-*/qemu.log
-            out/qemu-*/screen.ppm
-            dist/mi68-candidate/
+            out/qemu-*/*.ppm
+            out/qemu-*/result.json
           if-no-files-found: warn
 
-# This workflow never creates a tag or GitHub Release, or writes a physical disk.
-# QEMU diagnostics test a debug build; the normal candidate still needs its own
-# boot/display/input verification and physical hardware acceptance.
+  draft:
+    needs: macos-candidate
+    if: github.repository == 'hirofumi-iwasaki/musha-os' && github.event_name == 'workflow_dispatch' && inputs.create_draft && needs.macos-candidate.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      # Execute only the reviewed default-branch attachment script, never tag/PR code.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: tools/draft-release.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: passed-distribution
+          path: incoming
+      - name: Validate exact tag and attach without publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.macos-candidate.outputs.tag }}
+          SOURCE_SHA: ${{ needs.macos-candidate.outputs.commit }}
+        run: python3 tools/draft-release.py incoming --tag "$RELEASE_TAG" --commit "$SOURCE_SHA" --apply

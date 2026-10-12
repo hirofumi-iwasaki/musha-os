@@ -1,0 +1,12 @@
+[package]
+name = "musha-viewer"
+version = "0.2.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+musha-api = { path = "../api" }
+
+[dev-dependencies]
+musha-framebuffer = { path = "../framebuffer" }

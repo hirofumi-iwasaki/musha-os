@@ -1,5 +1,12 @@
 # Shared GPT/FAT32 USB image
 
+> 2026-10-12: 次版の配布は[配布方針](release-distribution-policy.md)と
+> [配備手順](distribution-usage.md)に従います。初回用64 MiB像と更新ZIPを分離し、
+> 通常更新では全媒体の生成・転送・ハッシュ走査を行いません。
+> 容量調整は通常ファイル用に実装、実USBへの初回書込みアダプターは未提供です。
+> 以下の古い検証日・イメージ例を現在の全機種の実機実績として扱わないでください。
+
+
 ## English
 
 The [one-command build](test-usb-build.md) creates both a raw image and a FAT32 file-copy bundle.

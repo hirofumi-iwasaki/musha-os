@@ -7,6 +7,7 @@ use core::{
 use musha_framebuffer::Framebuffer;
 use musha_platform::diagnostics::{Failure, Line};
 struct Panel {
+    hidden: bool,
     fb: Option<Framebuffer>,
     page: Option<[Line; 42]>,
     journal: [Line; 512],
@@ -33,6 +34,7 @@ struct Shared(UnsafeCell<Panel>);
 // rendering never invokes callbacks or firmware, and updates cannot reenter.
 unsafe impl Sync for Shared {}
 static PANEL: Shared = Shared(UnsafeCell::new(Panel {
+    hidden: false,
     fb: None,
     page: None,
     journal: [Line::EMPTY; 512],
@@ -69,7 +71,13 @@ fn update(f: impl FnOnce(&mut Panel)) {
 const DIAGNOSTIC_SCALE: usize = 6;
 const DIAGNOSTIC_LINE_HEIGHT: usize = 50;
 
+pub fn hide(hidden: bool) {
+    update(|p| p.hidden = hidden);
+}
 fn render(p: &Panel) {
+    if p.hidden {
+        return;
+    }
     let Some(fb) = p.fb else { return };
     let x = if fb.width >= 1200 { 800 } else { 0 };
     let y = 24;
@@ -107,7 +115,14 @@ fn render(p: &Panel) {
 pub fn start(fb: Framebuffer) {
     update(|p| {
         p.fb = Some(fb);
-        p.lines[0] = line(format_args!("MUSHA-OS 0.1.0 HARDWARE H19"));
+        p.lines[0] = line(format_args!(
+            "{}",
+            if cfg!(feature = "t2-diagnostics") {
+                "MUSHA-OS 0.2.0 DEV T2-D1"
+            } else {
+                "MUSHA-OS 0.1.0 HARDWARE H19"
+            }
+        ));
     });
 }
 pub fn set(row: usize, args: fmt::Arguments<'_>) {
@@ -306,6 +321,55 @@ pub fn begin_controller(c: crate::pci::Controller) {
         c.bdf(),
     );
 }
+// Preserve the outer storage view while a separate input controller is live.
+// Its lines use the existing archive; only small counters travel on the stack.
+pub struct ControllerState {
+    index: usize,
+    usb: usize,
+    keyboards: usize,
+    storage: usize,
+    class: [u8; 3],
+    failure: Failure,
+}
+pub fn suspend_controller() -> ControllerState {
+    let mut saved = ControllerState {
+        index: 0,
+        usb: 0,
+        keyboards: 0,
+        storage: 0,
+        class: [0; 3],
+        failure: Failure::EMPTY,
+    };
+    update(|p| {
+        p.archived[p.current_controller] = p.lines;
+        saved = ControllerState {
+            index: p.current_controller,
+            usb: p.usb,
+            keyboards: p.keyboards,
+            storage: p.storage,
+            class: p.device_class,
+            failure: p.usb_fail,
+        };
+    });
+    saved
+}
+pub fn resume_controller(saved: ControllerState) {
+    update(|p| {
+        let mut summary = [Line::EMPTY; 8];
+        summary.copy_from_slice(&p.lines[27..35]);
+        let mut net = [Line::EMPTY; 3];
+        net.copy_from_slice(&p.lines[7..10]);
+        p.lines = p.archived[saved.index];
+        p.lines[27..35].copy_from_slice(&summary);
+        p.lines[7..10].copy_from_slice(&net);
+        p.current_controller = saved.index;
+        p.usb = saved.usb;
+        p.keyboards = saved.keyboards;
+        p.storage = saved.storage;
+        p.device_class = saved.class;
+        p.usb_fail = saved.failure;
+    });
+}
 pub fn controller_result(
     c: crate::pci::Controller,
     result: Option<(bool, usize)>,
@@ -492,7 +556,16 @@ pub fn page(index: usize) -> usize {
             }
             break;
         }
-        display[0] = line(format_args!("H19 {}/{}", index % total + 1, total));
+        display[0] = line(format_args!(
+            "{} {}/{}",
+            if cfg!(feature = "t2-diagnostics") {
+                "T2-D1"
+            } else {
+                "H19"
+            },
+            index % total + 1,
+            total
+        ));
         p.page = Some(display);
     });
     total

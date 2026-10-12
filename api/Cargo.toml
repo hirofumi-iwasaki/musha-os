@@ -6,3 +6,6 @@ license = "Apache-2.0"
 publish = false
 [dependencies]
 musha-framebuffer = { path = "../framebuffer" }
+
+[dev-dependencies]
+musha-input = { path = "../input" }

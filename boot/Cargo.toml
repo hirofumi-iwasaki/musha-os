@@ -14,12 +14,15 @@ musha-memory = { path = "../memory" }
 musha-platform = { path = "../platform" }
 
 musha-api = { path = "../api" }
+musha-input = { path = "../input" }
 
 musha-xhci = { path = "../xhci" }
 
 musha-fs = { path = "../fs" }
 
 musha-net = { path = "../net" }
+
+musha-viewer = { path = "../viewer" }
 
 [features]
 qemu-debug = []
@@ -50,3 +53,29 @@ i218-phy-probe = []
 
 # Opt-in QEMU EP0 wrap/short-response validation; excluded from normal images.
 usb-control-probe = ["qemu-debug"]
+
+# Read-only PCI/SMBIOS evidence; no T2 MMIO, DMA or firmware commands.
+t2-diagnostics = []
+
+# Retained-slot concurrent READ(10) exercise with delayed DATA doorbell.
+live-storage-probe = ["qemu-debug"]
+
+# Suppress DATA doorbell only after live polling begins, not during discovery.
+live-storage-timeout = ["live-storage-probe"]
+
+# Common file API -> metadata/data requests -> retained USB transport.
+live-file-probe = ["qemu-debug"]
+
+# Separate exFAT USB data disk; QEMU boots its EFI from a FAT disk on SATA.
+live-exfat-probe = ["live-file-probe"]
+
+# App-side conformance client; the production file service is always compiled.
+file-app-probe = ["qemu-debug"]
+# Suppress the pending file DATA transfer to test timeout cleanup.
+file-app-timeout = ["live-file-probe", "live-storage-timeout"]
+
+# Close from the application while metadata DMA is pending, then reopen.
+file-app-close = ["live-file-probe"]
+
+# Normal interactive viewer with debug output and no diagnostic input deadline.
+file-viewer-probe = ["input-persistent"]

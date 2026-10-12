@@ -444,3 +444,5 @@ mod bar_tests {
 }
 
 pub mod pci_recovery;
+
+pub mod t2_diagnostics;

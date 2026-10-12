@@ -3,9 +3,9 @@
 ## English
 
 `musha-api` provides a safe API for Rust applications statically linked into a single EFI.
-The runtime calls `init`, `step`, and `shutdown` on the `Application` trait.
-The API version is 3. Rust types carry no external binary-compatibility guarantee.
-A bounded read-only [file API](file-api.md) is implemented. The C ABI, C headers, UDP, and general device-backed file APIs remain unimplemented.
+The runtime calls `init`, `step`, and `shutdown` on the `Application` trait, plus bounded `files` callbacks while the mounted file service is available. `files_closed` invalidates saved stream IDs after transport shutdown (except failed apps or unconfirmed DMA shutdown).
+The API version is 5. Rust types carry no external binary-compatibility guarantee.
+The [snapshot API](file-api.md) remains available. The [stream API](stream-file-api.md) now supports root-file selection and read-only FAT32/exFAT requests backed by USB. C ABI, C headers, application UDP handles and file writes remain unimplemented.
 
 ### Ownership and execution
 
@@ -23,7 +23,7 @@ Do not call shutdown after init failure; init is responsible for partial-initial
 Cleanup is not guaranteed on panic / CPU exceptions.
 While a Boot Keyboard is connected, call step between nonblocking USB polls.
 RAM diagnostics continue without input. After the input session ends, call shutdown and halt.
-The initial [cooperative runtime](cooperative-io.md) now services the first keyboard, [QEMU networking](network.md), and application snapshot-file reads together. USB/BOT boot discovery is still synchronous and completes before this session. Multiple active keyboards, general asynchronous disk requests and application UDP handles remain pending.
+The initial [cooperative runtime](cooperative-io.md) now services the first keyboard, [QEMU networking](network.md), and application snapshot-file reads together. USB/BOT boot discovery is still synchronous and completes before this session. The mounted file service also advances bounded metadata/data requests in this loop, including when storage and input use separate xHCI controllers. Multiple active keyboards and application UDP handles remain pending.
 
 now_ms is a monotonic PM-timer millisecond sample in the runtime-owned clock epoch, updated immediately before every step. Applications measure durations by differences within this session.
 The runtime-only context advance operation rejects backward time.
@@ -35,8 +35,11 @@ Currently integer milliseconds report overruns at 2ms or more; strict 1ms detect
 
 pixel and rectangle convert RGB colors to the display format and return Invalid for out-of-bounds access or arithmetic overflow.
 rectangle validates the entire range before writing. text uses the existing fixed font with clipping.
+text_at uses pixel coordinates and scale 1..4, rejects invalid origins/scales and clips each glyph pixel.
 Drawing is synchronous; applications must split large drawing operations across steps.
 The current Error is a Rust enum with Invalid / Unsupported / Io / Again / NotFound / NoMemory / Disconnected, distinct from the future C integer-status contract.
+
+The normal v0.2.0 development build uses the [file viewer](file-viewer.md); the following describes retained diagnostic builds.
 
 ### Diagnostic application and tests
 
@@ -54,9 +57,13 @@ Host tests checked backward time, drawing boundaries / overflow / padding, and g
 `next_key()` returns `KeyEvent { usage, pressed, timestamp_ms }` from a FIFO.
 usage uses USB HID Boot Keyboard values, with modifiers E0–E7; no character or layout conversion is performed.
 The timestamp is when the report is passed to the application, not the physical press time.
-Capacity is 64. When full, discard new events and preserve the existing FIFO.
-`lost_key_events()` returns a saturating cumulative loss count.
-Pressed-key state is not guaranteed after loss; applications can monitor counter changes and discard held-key state.
+Capacity is 64. Overflow preserves queued events and coalesces new events into
+latest held-key state. After the FIFO drains, releases then presses reconcile
+consumer state; each phase emits modifiers first. Recovery timestamps use current
+context time. Drain until None. Intermediate taps, text and original timing are
+not recoverable. `lost_key_events()` counts coalesced events cumulatively with
+saturation; applications can cancel history-dependent operations when it changes.
+See [recovery and validation](input-prehardware-validation.md).
 `push_key()`, `set_input_active()`, and `advance()` are for the statically linked runtime.
 The diagnostic application can access `input_active()` and `screen_size()`.
 The runtime validates reports before enqueuing events; the application consumes them on the next step.
@@ -69,9 +76,10 @@ Host tests verified FIFO order, wraparound, overflow, and timestamps.
 **RustアプリAPIの初期契約**
 
 `musha-api`は単一EFIへ静的リンクするRustアプリ向けの安全なAPI。
-`Application` traitの`init`、`step`、`shutdown`をランタイムが呼ぶ。
-API版は3。Rust型には外部バイナリ互換性を約束しない。
-上限付き読出し専用の[ファイルAPI](file-api.md)を実装済み。C ABI、Cヘッダー、UDP、一般のdevice-backed file APIは未実装。
+`Application` traitの`init`、`step`、`shutdown`に加え、媒体利用中は`files`を呼ぶ。
+`files_closed`では保存した逐次APIのID/handleを破棄する。失敗済みアプリ、DMA停止を確認できない場合は呼ばない。
+API版は5。Rust型には外部バイナリ互換性を約束しない。
+既存の[snapshot API](file-api.md)を維持し、USBに接続した[FAT32/exFAT逐次API](stream-file-api.md)を実装済み。C ABI、Cヘッダー、アプリUDP handle、ファイル書込みは未実装。
 
 ### 所有権と実行
 
@@ -88,7 +96,7 @@ init失敗時はshutdownを呼ばず、部分初期化の後始末はinitの責�
 panic / CPU例外では終了処理を保証しない。
 Boot Keyboard接続中は非ブロッキングUSB pollの合間にstepを呼ぶ。
 無入力中もRAM診断を進める。入力セッション終了後にshutdownし、停止する。
-初期の[協調ランタイム](cooperative-io.md)で、最初のキーボード、[QEMU通信](network.md)、アプリsnapshot file readを同時に進める。起動時のUSB/BOT探索は同期処理としてこのセッション前に完了する。複数キーボード、一般の非同期disk要求、アプリUDP handleは未実装。
+初期の[協調ランタイム](cooperative-io.md)で、最初のキーボード、[QEMU通信](network.md)、アプリsnapshot file readを同時に進める。起動時のUSB/BOT探索は同期処理としてこのセッション前に完了する。同じループでファイルのmetadata/data要求を分割実行し、入力とstorageが別xHCI controllerでも進める。複数キーボードとアプリUDP handleは未実装。
 
 now_msはランタイム所有clockのepochにおけるPM timerの単調なミリ秒値で、毎step直前に更新する。セッション内の差分で経過時間を測る。
 contextのadvanceはランタイム用で、時刻の巻戻しを拒否する。
@@ -100,14 +108,17 @@ contextのadvanceはランタイム用で、時刻の巻戻しを拒否する。
 
 pixelとrectangleはRGB色を画面形式へ変換し、境界外や算術overflowをInvalidとして返す。
 rectangleは全範囲を検証してから書き込む。textは既存の固定フォントでclipして描画する。
+text_atはピクセル座標と倍率1〜4を使用し、無効な原点・倍率を拒否し、画素ごとにclipする。
 描画は同期処理なので、大きな描画はアプリがstepへ分割する。
 今のErrorはInvalid / Unsupported / Io / Again / NotFound / NoMemory / DisconnectedのRust enum。将来のC整数status契約とは区別する。
+
+v0.2.0開発通常版は[ファイルビューアー](file-viewer.md)を使用する。以下は維持している診断版の説明。
 
 ### 診断アプリと試験
 
 initでHello Musha-OS!を表示する。64ページずつ書込むphaseと読戻すphaseで
 RAM全ページの両端を検証する。64MiBではRAM試験に512step必要。
-RAM完了後も入力セッション中はContinueし、キーを処理する。通常版はEsc押下で終了する。
+RAM完了後も入力セッション中はContinueし、キーを処理する。診断版はEsc押下で終了する。
 shutdown時のAPP COMPLETE表示は正常完了時だけ行う。
 QEMUはライフサイクル成功マーカーを検査する。
 ホストでは時刻巻戻し、描画の境界・overflow・paddingとguard保存を検査した。
@@ -117,9 +128,12 @@ QEMUはライフサイクル成功マーカーを検査する。
 `next_key()` はFIFOから `KeyEvent { usage, pressed, timestamp_ms }` を返す。
 usageはUSB HID Boot Keyboardの値で、modifierはE0〜E7。文字や配列へ変換しない。
 timestampは報告をアプリへ渡した時刻で、物理的な押下時刻ではない。
-容量64。満杯なら新規イベントを捨て、既存FIFOを維持する。
-`lost_key_events()` は飽和する累積損失数を返す。損失後の押下状態は保証しないため、
-アプリはカウンタ変化を監視して保持状態を破棄できる。
+容量64。溢れたら既存FIFOを維持し、新規イベントは最新の押下状態に集約する。
+FIFO読出し後に解放→押下の順（それぞれ修飾キー優先）で状態差を補う。
+復元イベントは現在のcontext時刻を用いる。Noneまで読み出すこと。
+途中で失われたタップ・文字・元の時刻は復元できない。
+`lost_key_events()` は集約した件数を飽和加算し、アプリは変化を検出して
+入力履歴に依存する操作を取り消せる。[復元契約と検証](input-prehardware-validation.md)を参照。
 `push_key()`、`set_input_active()`、`advance()` は静的リンクランタイム用。
 `input_active()` と `screen_size()` は診断アプリから参照できる。
 ランタイムは報告を検査してからイベントを入れ、次のstepでアプリが消費する。

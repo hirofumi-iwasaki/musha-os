@@ -1,5 +1,8 @@
 # Development instructions and initial implementation
 
+Current v0.2.0 priorities and release gates: [開発方針と公開条件](release-scope-0.2.0.md).
+Implementation order: [作業順と完了条件](work-plan-0.2.0.md).
+
 ## English
 
 For USB2 hub tests, use `tools/smoke-qemu.py --hub-depth 1 --keyboard-usb-version 1 --keyboard-exit --fat-fixture gpt` plus the firmware option; depths 1–5 are supported. `--hub-disconnect` tests idle child removal. Cooperative traffic accepts `--hub-depth 3`. The dedicated build feature `usb-control-probe` requires `--control-ring-probe` in the smoke test; it must never be included in hardware images. See [hub results](usb-multi-controller-hub-plan.md).
@@ -85,7 +88,7 @@ Firmware SHA-256 values used:
 
 ### Next implementation work
 
-Key input is connected to the API version 3 FIFO.
+Key input is connected to the API version 4 FIFO with overflow state reconciliation.
 USB BOT capacity / sector read diagnostics and MBR / FAT32 root-file reads have been added.
 GPT and shared-image generation are implemented. The initial bounded [application file API](file-api.md) is implemented. Initial [cooperative input/file/network progress](cooperative-io.md) is implemented. Next, prepare hardware diagnostics and test records.
 See [HID input diagnostics](usb-keyboard.md) and [NUC5 test preparation](nuc5-bringup.md).
@@ -271,7 +274,7 @@ QEMU終了時に試験プロセスを停止し、内部ディスクや実機に�
 
 ### 次の実装
 
-キー入力をAPI版3のFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。MBR / FAT32のルートファイル読出しも追加済み。GPTと共通イメージ生成は実装済み。初期の上限付き[アプリfile API](file-api.md)も実装済み。初期の[協調I/O](cooperative-io.md)も実装済み。次は実機診断・試験記録を整える。
+キー入力をAPI版4の状態復元付きFIFOへ接続済み。USB BOTの容量・セクタ読出し診断も追加済み。MBR / FAT32のルートファイル読出しも追加済み。GPTと共通イメージ生成は実装済み。初期の上限付き[アプリfile API](file-api.md)も実装済み。初期の[協調I/O](cooperative-io.md)も実装済み。次は実機診断・試験記録を整える。
 [HID入力診断](usb-keyboard.md)と[NUC5試験準備](nuc5-bringup.md)を参照。
 [USB列挙仕様](usb-enumeration.md)を参照。
 [DMA / ring仕様](xhci-rings.md)を参照。

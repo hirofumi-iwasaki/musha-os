@@ -1,7 +1,12 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
+pub mod exfat;
+pub mod fat32;
 mod gpt;
+pub mod operation;
+pub mod planner;
+pub mod read_plan;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     Io,
@@ -153,25 +158,11 @@ fn visit(seen: &mut [u32; 128], count: &mut usize, cluster: u32) -> Result<(), E
     *count += 1;
     Ok(())
 }
-/// Reads a root-directory short-name file from FAT32, never writes to the disk.
-/// Supports superfloppy, one primary MBR FAT32 partition, or one GPT ESP.
-/// sector_size must match the block device (512 or 4096). At most 1024 reads.
-pub fn read_root<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
-    blocks: u64,
-    sector_size: usize,
-    name: &[u8; 11],
-    out: &mut [u8],
-    read: &mut F,
-) -> Result<usize, Error> {
-    if !matches!(sector_size, 512 | 4096) || blocks == 0 {
-        return Err(Error::Unsupported);
-    }
-    let mut r = Reader {
-        read,
-        blocks,
-        size: sector_size,
-        budget: 1024,
-    };
+fn discover_volume<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
+    r: &mut Reader<'_, F>,
+) -> Result<Volume, Error> {
+    let blocks = r.blocks;
+    let sector_size = r.size;
     let mut boot = [0u8; 4096];
     r.sector(0, &mut boot)?;
     let direct = if matches!(boot[0], 0xeb | 0xe9) {
@@ -188,7 +179,7 @@ pub fn read_root<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
         let mut partition = None;
         let protective = (0..4).any(|i| boot[446 + i * 16 + 4] == 0xee);
         if protective {
-            partition = Some(gpt::partition(&mut r, &boot)?);
+            partition = Some(gpt::partition(r, &boot)?);
         }
         for i in 0..if protective { 0 } else { 4 } {
             let off = 446 + i * 16;
@@ -213,6 +204,30 @@ pub fn read_root<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
         r.sector(start, &mut boot)?;
         Volume::parse(&boot, start, length, sector_size)?
     };
+    Ok(volume)
+}
+
+/// Reads a root-directory short-name file from FAT32, never writes to the disk.
+/// Supports superfloppy, one primary MBR FAT32 partition, or one GPT ESP.
+/// sector_size must match the block device (512 or 4096). At most 1024 reads.
+pub fn read_root<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
+    blocks: u64,
+    sector_size: usize,
+    name: &[u8; 11],
+    out: &mut [u8],
+    read: &mut F,
+) -> Result<usize, Error> {
+    if !matches!(sector_size, 512 | 4096) || blocks == 0 {
+        return Err(Error::Unsupported);
+    }
+    let mut r = Reader {
+        read,
+        blocks,
+        size: sector_size,
+        budget: 1024,
+    };
+    let volume = discover_volume(&mut r)?;
+    let mut boot = [0u8; 4096];
     let mut seen = [0u32; 128];
     let mut count = 0;
     let mut cluster = volume.root;
