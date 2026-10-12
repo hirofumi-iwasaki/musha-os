@@ -4,6 +4,7 @@
 pub mod exfat;
 pub mod fat32;
 mod gpt;
+pub mod read_plan;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     Io,

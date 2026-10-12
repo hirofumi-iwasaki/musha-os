@@ -48,3 +48,28 @@ cancelだけではハードウェアを止めない。停止完了前のbuffer�
 - GPT正常試験像SHA-256: `4940d6fdd020c72493bf262f82d676cc1702bceaa262fc80db53152e0ee83bdd`。
 
 物理USBの更新、MacBookでの実機検証は行っていない。
+
+## 2026-10-12 後半の途中経過: データ読出しの再開境界
+
+FAT32/exFATに`plan_read(index, offset, requested)`を追加した。既存のchain・bitmap・
+サイズの検証を行い、最大4096byteの範囲について、データsectorとコピー範囲だけを返す。
+最大9sector、追加heapなし。exFATのValidDataLength以降はsectorを要求せずゼロで埋める。
+既存`read_at`も同じplanを同期実行するため、配置計算を二重実装しない。
+
+`read_plan::Executor`はplanを受け取り、最大1sectorずつ要求する。
+要求中の再取得はNone、完了は要求tokenとsectorサイズを照合。結果はCPU所有4096byteへ
+蓄積し、全部成功してからfinishで呼出し側へコピーする。途中のエラーやpendingでは
+呼出し側bufferを変更しない。cancel後も実行中slotはtransportの停止/完了通知まで保持し、
+新しいplanを開始しない。要求番号は周回させず、旧通知を拒否する。
+Executorは8KiB未満というホスト検査を追加。これはUEFI全体stackの保証ではない。
+
+FAT32の断片化fixtureとexFATの全5ファイルを
+共通API→plan→sector要求/完了→共通APIの順でホスト検証した。
+非整列4096byte読出しが9sectorにまたがる場合も検査。
+
+**残作業:** plan_readのmetadata検証・探索はまだ同期I/O。
+従ってアプリstepへ直接接続しない。metadataの再開可能化、保持したUSB slotへの接続、
+同一/別controllerのkeyboardとstorageのevent配送、同時動作・切断のQEMU検証が必要。
+今回のホスト検証を工程5全体の完了、または実USBでの非同期ファイル読出し成功とはしない。
+
+今回の最終検証: ホスト210試験合格、musha-fsのUEFI library checkと通常UEFI release buildに合格。新経路のQEMU同時I/O試験は未実施。

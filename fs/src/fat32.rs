@@ -135,15 +135,26 @@ impl<F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<F> {
     /// At most 4096 bytes, atomic caller-buffer update. Each call validates the
     /// full declared chain, including its exact end; cyclic/long/short chains fail.
     pub fn read_at(&mut self, index: usize, offset: u64, out: &mut [u8]) -> Result<usize, Error> {
+        let plan = self.plan_read(index, offset, out.len())?;
+        plan.execute(&mut self.read, out)
+    }
+    /// Validates metadata and maps a range, without reading file data sectors.
+    /// Metadata I/O is still synchronous; do not call from an application step.
+    pub fn plan_read(
+        &mut self,
+        index: usize,
+        offset: u64,
+        requested: usize,
+    ) -> Result<crate::read_plan::Plan, Error> {
         let e = *self.entries().get(index).ok_or(Error::NotFound)?;
         if e.bytes > MAX_FILE_BYTES {
             return Err(Error::TooLarge);
         }
-        if out.len() > 4096 {
+        if requested > 4096 {
             return Err(Error::TooLarge);
         }
-        if offset >= e.bytes || out.is_empty() {
-            return Ok(0);
+        if offset >= e.bytes || requested == 0 {
+            return Ok(crate::read_plan::Plan::new(0, self.size));
         }
         let mut r = Reader {
             read: &mut self.read,
@@ -165,17 +176,15 @@ impl<F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<F> {
         for _ in 0..offset / cluster_bytes {
             cluster = self.volume.next(&mut r, cluster)?.ok_or(Error::Corrupt)?;
         }
-        let count = (e.bytes - offset).min(out.len() as u64) as usize;
-        let mut result = [0; 4096];
-        let mut sector = [0; 4096];
+        let count = (e.bytes - offset).min(requested as u64) as usize;
+        let mut plan = crate::read_plan::Plan::new(count, self.size);
         let mut copied = 0;
         let mut inside = offset % cluster_bytes;
         while copied < count {
             let lba = self.volume.cluster(cluster)? + inside / self.size as u64;
-            r.sector(lba, &mut sector)?;
             let skip = (inside % self.size as u64) as usize;
             let n = (count - copied).min(self.size - skip);
-            result[copied..copied + n].copy_from_slice(&sector[skip..skip + n]);
+            plan.push(lba, skip, n, copied)?;
             copied += n;
             inside += n as u64;
             if inside == cluster_bytes && copied < count {
@@ -183,7 +192,6 @@ impl<F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<F> {
                 inside = 0;
             }
         }
-        out[..count].copy_from_slice(&result[..count]);
-        Ok(count)
+        Ok(plan)
     }
 }

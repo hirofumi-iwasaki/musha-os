@@ -516,13 +516,21 @@ fn fat32_catalog_through_common_request_api() {
             Err(ApiError::Again) => {
                 let request = service.take_request().unwrap();
                 let mut owned = [0; 4096];
-                let n = fs
-                    .read_at(
-                        request.index(),
-                        request.offset(),
-                        &mut owned[..request.length()],
-                    )
+                let plan = fs
+                    .plan_read(request.index(), request.offset(), request.length())
                     .unwrap();
+                let mut transfer = crate::read_plan::Executor::new();
+                transfer.start(plan).unwrap();
+                while let Some(sector_request) = transfer.take_request().unwrap() {
+                    assert_eq!(transfer.finish(&mut owned), Ok(None));
+                    let mut sector = [0; 4096];
+                    disk.read(sector_request.lba(), &mut sector[..sector_request.bytes()])
+                        .unwrap();
+                    assert!(
+                        transfer.complete(sector_request, Ok(&sector[..sector_request.bytes()]))
+                    );
+                }
+                let n = transfer.finish(&mut owned).unwrap().unwrap();
                 assert!(service.complete(request, Ok(&owned[..n])));
             }
             Ok(0) => break,

@@ -450,11 +450,22 @@ impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
     /// At most 4096 bytes. Output remains unchanged on failure. Index belongs to
     /// this mount only. Each call revalidates allocation; backend must be stable.
     pub fn read_at(&mut self, index: usize, offset: u64, out: &mut [u8]) -> Result<usize, Error> {
+        let plan = self.plan_read(index, offset, out.len())?;
+        plan.execute(&mut self.read, out)
+    }
+    /// Validates allocation and maps a range; data sectors are deferred.
+    /// Metadata I/O remains synchronous and must not run in an application step.
+    pub fn plan_read(
+        &mut self,
+        index: usize,
+        offset: u64,
+        requested: usize,
+    ) -> Result<crate::read_plan::Plan, Error> {
         let e = *self.entries().get(index).ok_or(Error::NotFound)?;
         if e.length > MAX_FILE_BYTES {
             return Err(Error::TooLarge);
         }
-        if out.len() > 4096 {
+        if requested > 4096 {
             return Err(Error::Limit);
         }
         let mut r = Reader {
@@ -471,8 +482,8 @@ impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
             e.contiguous,
             Some(self.bitmap),
         )?;
-        let n = e.length.saturating_sub(offset).min(out.len() as u64) as usize;
-        let mut result = [0; 4096];
+        let n = e.length.saturating_sub(offset).min(requested as u64) as usize;
+        let mut plan = crate::read_plan::Plan::new(n, self.size);
         let valid = e.valid.saturating_sub(offset).min(n as u64) as usize;
         let cb = self.size as u64 * self.volume.spc as u64;
         let mut chain = Chain::new(e.first);
@@ -489,7 +500,6 @@ impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
             }
             let mut pos = offset % cb;
             let mut done = 0;
-            let mut sector = [0; 4096];
             while done < valid {
                 if pos == cb {
                     if e.contiguous {
@@ -499,19 +509,15 @@ impl<'a, F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<'a, F> {
                     }
                     pos = 0;
                 }
-                r.sector(
-                    self.volume.cluster(chain.current)? + pos / self.size as u64,
-                    &mut sector,
-                )?;
+                let lba = self.volume.cluster(chain.current)? + pos / self.size as u64;
                 let within = (pos % self.size as u64) as usize;
                 let take = (self.size - within).min(valid - done);
-                result[done..done + take].copy_from_slice(&sector[within..within + take]);
+                plan.push(lba, within, take, done)?;
                 done += take;
                 pos += take as u64;
             }
         }
-        out[..n].copy_from_slice(&result[..n]);
-        Ok(n)
+        Ok(plan)
     }
 }
 fn allocated<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
