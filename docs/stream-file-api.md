@@ -78,3 +78,8 @@ USB上のオンデマンド読出し、応答時間、物理的な切断、実�
 API要求ごとにPlannerを作れるようにした。FAT32/exFATの共通API試験で利用し、
 exFATは5ファイルの選択と分割読出しを検証。USB診断も7byte単位の複数要求へ移行した。
 Sourceの寿命は元の媒体に限る。通常版への公開とUSBでの複数ファイル選択は残作業。
+
+
+2026-10-12追記: QEMU専用 `live-exfat-probe` でexFATのSourceを保持し、共通APIの
+7byte分割要求をUSBへ接続した。MUSHA.TXTの内容/EOFとmetadata待機中の取消しを検証。
+通常版での形式選択、catalog公開と複数ファイル選択は未接続。

@@ -103,6 +103,13 @@ jobs:
             cp target/x86_64-unknown-uefi/release/musha-boot.efi out/esp/EFI/BOOT/BOOTX64.EFI
             python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --case "$case"
           done
+      - name: QEMU exFAT common file API
+        run: |
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-exfat-probe
+          python3 tools/make-usb-image.py out/ci/exfat-boot.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+          python3 tools/make-exfat-fixture.py out/ci/exfat-data.img > out/ci/exfat-manifest.txt
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --case traffic --live-file
+          python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --case traffic --live-file --live-file-cancel
       - name: QEMU application failure and TX timeout
         run: |
           for pair in "net-tx-timeout tx-timeout" "app-step-error app-error"; do

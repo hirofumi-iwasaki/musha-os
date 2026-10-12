@@ -63,3 +63,6 @@ live-storage-timeout = ["live-storage-probe"]
 
 # Common file API -> metadata/data requests -> retained USB transport.
 live-file-probe = ["qemu-debug"]
+
+# Separate exFAT USB data disk; QEMU boots its EFI from a FAT disk on SATA.
+live-exfat-probe = ["live-file-probe"]

@@ -8,6 +8,7 @@ parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--case',choices=['traffic','input-idle','no-keyboard','keyboard-disconnect','link-down','tx-timeout','app-error'],default='traffic')
 parser.add_argument('--usb-image',type=pathlib.Path)
+parser.add_argument('--exfat-boot-image',type=pathlib.Path,help='Boot EFI from this FAT SATA disk; --usb-image is exFAT data')
 parser.add_argument('--live-storage',action='store_true',help='Require live-storage-probe image and real READ(10) during traffic')
 parser.add_argument('--live-file',action='store_true',help='Require common API -> filesystem -> USB file read')
 parser.add_argument('--live-file-cancel',action='store_true',help='Exit while the file metadata sector is pending')
@@ -15,7 +16,7 @@ parser.add_argument('--live-fault',choices=['timeout','disconnect'],help='Exerci
 parser.add_argument('--hub-depth',type=int,choices=range(1,6),help='Place a USB1 keyboard under USB2 hubs')
 parser.add_argument('--extra-xhci',action='store_true',help='Verify no-keyboard behavior with two controllers')
 a=parser.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
-out=root/('out/qemu-cooperative-'+a.case+('-file-cancel' if a.live_file_cancel else '-file' if a.live_file else '')+('-live-'+(a.live_fault or 'read') if a.live_storage else ''));out.mkdir(parents=True,exist_ok=True)
+out=root/('out/qemu-cooperative-'+a.case+('-exfat' if a.exfat_boot_image else '')+('-file-cancel' if a.live_file_cancel else '-file' if a.live_file else '')+('-live-'+(a.live_fault or 'read') if a.live_storage else ''));out.mkdir(parents=True,exist_ok=True)
 f=pathlib.Path(a.firmware_dir);shutil.copyfile(f/'edk2-i386-vars.fd',out/'vars.fd')
 log=out/'debug.log';log.write_text('');qmp=out/'qmp.sock'
 if qmp.exists():qmp.unlink()
@@ -41,6 +42,7 @@ if a.live_storage and (a.case!='traffic' or not a.usb_image):parser.error('--liv
 if a.live_fault and not a.live_storage:parser.error('--live-fault requires --live-storage')
 if a.live_file and (a.case!='traffic' or not a.usb_image or a.live_storage):parser.error('--live-file requires traffic, --usb-image, and no --live-storage')
 if a.live_file_cancel and not a.live_file:parser.error('--live-file-cancel requires --live-file')
+if a.exfat_boot_image and not a.live_file:parser.error('--exfat-boot-image requires --live-file')
 image_hash=None
 if a.usb_image:
  a.usb_image=a.usb_image.resolve()
@@ -53,6 +55,11 @@ if a.usb_image:
  image_hash=hash_image()
  index=next(i for i,arg in enumerate(cmd) if arg.startswith('if=none,id=esp,'))
  cmd[index]=f'if=none,id=esp,format=raw,readonly=on,file={a.usb_image}'
+if a.exfat_boot_image:
+ a.exfat_boot_image=a.exfat_boot_image.resolve()
+ if not a.exfat_boot_image.is_file():parser.error('Boot image must be a regular file')
+ boot_hash=hashlib.sha256(a.exfat_boot_image.read_bytes()).hexdigest()
+ cmd.extend(['-drive',f'if=ide,format=raw,snapshot=on,file={a.exfat_boot_image}','-boot','order=c'])
 def checksum(b):
  if len(b)%2:b+=b'\0'
  n=sum(struct.unpack('!'+str(len(b)//2)+'H',b))
@@ -87,6 +94,7 @@ with (out/'qemu.log').open('w') as err:
   wait_marker('RUNTIME_POLL_READY')
   if a.live_file:
    wait_marker('LIVE_FILE_API_READY');wait_marker('LIVE_STORAGE_WAIT')
+   if a.exfat_boot_image:wait_marker('EXFAT_FILE_OK')
    control('send-key',{'keys':[{'type':'qcode','data':'a'}],'hold-time':30})
    wait_marker('APP_KEY_DOWN=0000000000000004')
    if a.live_file_cancel:
@@ -97,6 +105,7 @@ with (out/'qemu.log').open('w') as err:
     assert text[:text.index('APP_KEY_DOWN=0000000000000029')].count('LIVE_STORAGE_WAIT') == 1
     assert text.index('LIVE_STORAGE_WAIT') < text.index('APP_KEY_DOWN=0000000000000029') < text.index('STORAGE_RELEASED') < text.index('XHCI_QUIESCED')
     assert hash_image()==image_hash
+    if a.exfat_boot_image:assert hashlib.sha256(a.exfat_boot_image.read_bytes()).hexdigest()==boot_hash
     control('quit');proc.wait(timeout=5)
     print('PASS: common file API canceled during metadata DMA wait; slot released, DMA stopped, no file result published')
     raise SystemExit(0)
@@ -279,6 +288,7 @@ with (out/'qemu.log').open('w') as err:
   control('screendump',{'filename':str(out/'screen.ppm')});control('quit')
   proc.wait(timeout=5)
   if image_hash:assert hash_image()==image_hash and 'APP_FILE_OK' in text
+  if a.exfat_boot_image:assert hashlib.sha256(a.exfat_boot_image.read_bytes()).hexdigest()==boot_hash
   print('PASS:',a.case,'ARP/ICMP, 257 UDP echoes, file rechecks, ring wraps, checksums, DMA stop')
  finally:
   if peer:peer.close()

@@ -401,7 +401,12 @@ pub(super) fn probe(
         crate::debug(b"\n");
     }
     let mut file = [0u8; 4096];
-    crate::diagnostics::usb_stage("FAT32 FILE READ");
+    crate::diagnostics::usb_stage(if cfg!(feature = "live-exfat-probe") {
+        "EXFAT FILE READ"
+    } else {
+        "FAT32 FILE READ"
+    });
+    #[cfg(not(feature = "live-exfat-probe"))]
     let file_result = musha_fs::read_root(
         blocks,
         size as usize,
@@ -414,7 +419,7 @@ pub(super) fn probe(
             Ok(())
         },
     );
-    #[cfg(feature = "live-file-probe")]
+    #[cfg(all(feature = "live-file-probe", not(feature = "live-exfat-probe")))]
     let prepared = {
         let bytes = *file_result.as_ref().map_err(|_| "LIVE FILE SNAPSHOT")?;
         let fs = musha_fs::fat32::FileSystem::discover(blocks, size as usize, |lba, out| {
@@ -434,9 +439,29 @@ pub(super) fn probe(
         }
         Some(super::file::Prepared {
             source: fs.source(index).map_err(|_| "LIVE FILE PLAN")?,
+            format: musha_api::stream::Format::Fat32,
             bytes,
             hash: storage::hash(&file[..bytes]),
         })
+    };
+    #[cfg(feature = "live-exfat-probe")]
+    let prepared = Some(super::file::prepare_exfat(
+        blocks,
+        size as usize,
+        |lba, out| {
+            bot.read(host, lba, blocks, size)
+                .map_err(|_| musha_fs::Error::Io)?;
+            copy(data, out);
+            Ok(())
+        },
+        &mut file,
+    )?);
+    #[cfg(feature = "live-exfat-probe")]
+    let file_result: Result<usize, musha_fs::Error> = Ok(prepared.as_ref().unwrap().bytes);
+    let format_name = if cfg!(feature = "live-exfat-probe") {
+        "exFAT READ OK"
+    } else {
+        "FAT32 READ OK"
     };
     match file_result {
         Ok(bytes) => {
@@ -446,7 +471,11 @@ pub(super) fn probe(
                 format_args!("FILE HASH {:016X}", storage::hash(&file[..bytes])),
             );
             tick(super::super::AppEvent::File(&file[..bytes]))?;
-            crate::debug(b"MUSHA: FAT32_FILE_OK BYTES=");
+            if cfg!(feature = "live-exfat-probe") {
+                crate::debug(b"MUSHA: EXFAT_FILE_OK BYTES=");
+            } else {
+                crate::debug(b"MUSHA: FAT32_FILE_OK BYTES=");
+            }
             crate::debug(&crate::cpu::hex(bytes as u64));
             crate::debug(b" HASH=");
             crate::debug(&crate::cpu::hex(storage::hash(&file[..bytes])));
@@ -455,7 +484,7 @@ pub(super) fn probe(
                 super::super::clear_line(host.framebuffer, 452);
                 unsafe {
                     host.framebuffer.text(
-                        "FAT32 READ OK",
+                        format_name,
                         24,
                         452,
                         host.framebuffer.color(0, 240, 100),

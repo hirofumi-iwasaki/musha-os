@@ -1,6 +1,6 @@
 # BOT転送と工程5の接続記録
 
-最新の到達点は末尾の「共通ファイルAPIのUSB接続試験」。以下の各節は段階ごとの記録。
+最新の到達点は末尾の「exFATのUSB接続試験」。以下の各節は段階ごとの記録。
 
 2026-10-12。`musha_xhci::storage::transaction::Transaction`で、読出し専用BOTを
 CBW送信→必要ならDATA受信→CSW受信に分割した。各pollは要求1件の提示または
@@ -247,3 +247,45 @@ FAT32の1ファイル。通常版Context、exFATのUSB起動時探索、全catal
 検証: ホスト217試験、QEMU通常/取消し両case、UEFI library checkと通常版ビルドに合格。
 通常版out/espを再生成済み。実機試験・リモートCIは未実施。
 今回のQEMU試験像SHA-256: `cf74a348b04a352772682eca07a4f1e3c0fae86a8c3842ff7a9de807aa17f309`。
+
+
+## 2026-10-12 exFATのUSB接続試験
+
+QEMU専用 `live-exfat-probe`（`live-file-probe`を含む）を追加した。
+USB Deviceの起動時探索でexFATをmountし、MUSHA.TXTのSourceと形式を保持する。
+同期のsnapshot読出しは既存アプリの回帰用に残す。入力受付後は共通APIから新しい
+Plannerを作り、bitmap等のmetadataとデータを保持USB slotのREAD(10)で再読出しする。
+7byteずつの3要求、既知内容の累積hash、EOF、closeを確認する。
+
+exFAT Workspaceは256KiB未満の静的CPU領域に配置し、UEFI stackへの大きな
+一時配置を避ける。startup helperは排他取得し、エラーを含め終了時に解除する。
+FileSystemを破棄した後にはSourceだけが残り、Workspaceへの参照を保持しない。
+これはUEFI経路全体のstack上限の保証ではない。
+
+起動EFIは別のFAT SATAディスクから読み、検証対象のUSBには既存の合成exFAT像を
+接続する。SATAはQEMUの一時snapshot、USBはreadonly。両方の元イメージのSHA-256が
+試験前後で不変であることを確認する。通常版は従来のFAT32経路を使う。
+このfeatureは形式をexFATに固定する診断用で、自動判別の通常サービスではない。
+
+再現（出力イメージは未作成のパスを使う）:
+
+```sh
+cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-exfat-probe
+python3 tools/make-usb-image.py out/exfat-boot.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
+python3 tools/make-exfat-fixture.py out/exfat-data.img
+python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/exfat-boot.img --usb-image out/exfat-data.img --case traffic --live-file
+python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/exfat-boot.img --usb-image out/exfat-data.img --case traffic --live-file --live-file-cancel
+```
+
+検証済み: 全217ホスト試験、exFATのUSB分割読出しと入力・257件UDPとの協調、
+最初のmetadata待機でのEsc取消し・slot解放・DMA停止、FAT32の同じ読出し回帰、
+通常版UEFIビルド。out/espは通常版へ戻した。CIへ両exFAT caseを追加したが、
+リモートCIと実機では未検証。物理USBは更新していない。
+
+最終起動像 SHA-256: `8ca3476ab1d9e18bad56500665b4dfe790d2900c8202446aeda7797f9cbdb8a9`
+
+exFATデータ像 SHA-256: `a00ebb2b662767417172ab188f58c09f0fdd8d82a22e878e6349b92803b16501`
+
+残作業: 通常版での形式選択・catalog公開とファイル選択、USB上の複数ファイル、
+断片化ファイル・長い名前・空ファイルのUSB試験、別controller保持。
+今回のexFAT USB試験は512byte sector・連続配置のMUSHA.TXTに限定する。

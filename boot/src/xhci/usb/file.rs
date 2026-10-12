@@ -1,6 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-//! Opt-in end-to-end adapter exercise. One selected FAT32 file, repeated bounded requests.
+//! Opt-in end-to-end adapter exercise. One selected FAT32/exFAT file, repeated bounded requests.
 //! Catalog discovery precedes input polling; metadata/data reads below do not.
 use super::{Host, storage::Device};
 use core::{
@@ -14,6 +14,7 @@ use musha_fs::{
 };
 pub(super) struct Prepared {
     pub source: Source,
+    pub format: Format,
     pub bytes: usize,
     pub hash: u64,
 }
@@ -69,7 +70,7 @@ impl Session {
         catalog[0].bytes = prepared.bytes as u64;
         state
             .files
-            .mount(Format::Fat32, catalog)
+            .mount(prepared.format, catalog)
             .map_err(|_| "LIVE FILE API MOUNT")?;
         let id = state
             .files
@@ -193,4 +194,57 @@ impl Drop for Session {
         // The outer controller/slot cleanup owns quiescence. CLAIMED stays true,
         // so this diagnostic workspace is never reused after termination.
     }
+}
+
+#[cfg(feature = "live-exfat-probe")]
+const _: () = assert!(core::mem::size_of::<musha_fs::exfat::Workspace>() < 256 * 1024);
+#[cfg(feature = "live-exfat-probe")]
+static EXFAT_WORK: Shared<musha_fs::exfat::Workspace> =
+    Shared(UnsafeCell::new(musha_fs::exfat::Workspace::new()));
+#[cfg(feature = "live-exfat-probe")]
+static EXFAT_BUSY: AtomicBool = AtomicBool::new(false);
+/// Synchronous startup only. The detached source does not borrow this workspace.
+#[cfg(feature = "live-exfat-probe")]
+pub(super) fn prepare_exfat(
+    blocks: u64,
+    size: usize,
+    read: impl FnMut(u64, &mut [u8]) -> Result<(), musha_fs::Error>,
+    snapshot: &mut [u8],
+) -> Result<Prepared, &'static str> {
+    if EXFAT_BUSY.swap(true, Ordering::AcqRel) {
+        return Err("EXFAT WORKSPACE BUSY");
+    }
+    struct Release;
+    impl Drop for Release {
+        fn drop(&mut self) {
+            EXFAT_BUSY.store(false, Ordering::Release);
+        }
+    }
+    let _release = Release;
+    let work = unsafe { &mut *EXFAT_WORK.0.get() };
+    let mut fs = musha_fs::exfat::FileSystem::discover(blocks, size, read, work)
+        .map_err(|_| "EXFAT MOUNT")?;
+    let name = [77, 85, 83, 72, 65, 46, 84, 88, 84];
+    let index = fs
+        .entries()
+        .iter()
+        .position(|e| e.name() == name)
+        .ok_or("EXFAT FILE MISSING")?;
+    let bytes = usize::try_from(fs.entries()[index].len()).map_err(|_| "EXFAT FILE LENGTH")?;
+    if bytes > snapshot.len() {
+        return Err("EXFAT SNAPSHOT LIMIT");
+    }
+    if fs
+        .read_at(index, 0, &mut snapshot[..bytes])
+        .map_err(|_| "EXFAT FILE READ")?
+        != bytes
+    {
+        return Err("EXFAT FILE LENGTH");
+    }
+    Ok(Prepared {
+        source: fs.source(index).map_err(|_| "EXFAT FILE SOURCE")?,
+        format: Format::Exfat,
+        bytes,
+        hash: musha_xhci::storage::hash(&snapshot[..bytes]),
+    })
 }
