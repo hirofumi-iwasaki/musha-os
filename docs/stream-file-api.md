@@ -83,3 +83,8 @@ Sourceの寿命は元の媒体に限る。通常版への公開とUSBでの複�
 2026-10-12追記: QEMU専用 `live-exfat-probe` でexFATのSourceを保持し、共通APIの
 7byte分割要求をUSBへ接続した。MUSHA.TXTの内容/EOFとmetadata待機中の取消しを検証。
 通常版での形式選択、catalog公開と複数ファイル選択は未接続。
+
+
+2026-10-12追記: exFAT USB診断でroot catalogを共通APIに公開し、5ファイルの
+list/open/read/closeをQEMU検証した。名前・サイズ・内容hashを試験側で照合。
+現段階は診断用自動巡回であり、通常版Context経由のアプリ操作・画面選択は未接続。

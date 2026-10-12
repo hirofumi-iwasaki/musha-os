@@ -440,6 +440,7 @@ pub(super) fn probe(
         Some(super::file::Prepared {
             source: fs.source(index).map_err(|_| "LIVE FILE PLAN")?,
             format: musha_api::stream::Format::Fat32,
+            count: 1,
             bytes,
             hash: storage::hash(&file[..bytes]),
         })

@@ -1,6 +1,6 @@
 # BOT転送と工程5の接続記録
 
-最新の到達点は末尾の「exFATのUSB接続試験」。以下の各節は段階ごとの記録。
+最新の到達点は末尾の「USB上の複数ファイル接続試験」。以下の各節は段階ごとの記録。
 
 2026-10-12。`musha_xhci::storage::transaction::Transaction`で、読出し専用BOTを
 CBW送信→必要ならDATA受信→CSW受信に分割した。各pollは要求1件の提示または
@@ -289,3 +289,42 @@ exFATデータ像 SHA-256: `a00ebb2b662767417172ab188f58c09f0fdd8d82a22e878e6349
 残作業: 通常版での形式選択・catalog公開とファイル選択、USB上の複数ファイル、
 断片化ファイル・長い名前・空ファイルのUSB試験、別controller保持。
 今回のexFAT USB試験は512byte sector・連続配置のMUSHA.TXTに限定する。
+
+
+## 2026-10-12 USB上の複数ファイル接続試験
+
+exFAT診断を固定1ファイルから、検証済みroot catalog全体（最大128件）の
+list/open/read/closeへ拡張した。各entryの完全なUTF-16名、長さ、Sourceを保持し、
+APIのindexとSourceの対応を維持する。既存snapshot検証用のMUSHA.TXTを先頭へ並べ、
+残りはディスク上の順序を維持する。MUSHA.TXTが必要な診断上の制約は残っている。
+
+1pollで一覧から1件を開く、1つの読出し要求を進める、結果を取り出す、または
+EOFでcloseする。先頭は7byte、残りは512byte単位。空ファイルはsector要求なしで
+EOFを返す。検証アプリ相当の自動巡回であり、キーによる選択画面は未実装。
+FAT32診断のcatalogは引き続きMUSHA.TXTの1件。
+
+CPU State・catalog・Source配列の合計を128KiB未満に制限する。別途exFAT Workspaceは
+256KiB未満。いずれも静的領域。公開済みcatalogを書き換えないようexFATのstartup
+取得は1回限定とし、失敗時も取得を解除しない。以前のstartup helperの再利用規則を
+置き換える。これは診断限定の寿命管理で、通常版での再接続・媒体交換の実装ではない。
+
+QEMUの512byte sector合成媒体で次の5件を照合した:
+
+- MUSHA.TXT: 16byte、連続配置、3分割要求。
+- FRAGMENT.BIN: 1283byte、断片化FAT chain、3要求。
+- Long name for exFAT test.txt: 完全な名前と15byteの内容、1要求。
+- EMPTY.TXT: 0byte、要求なしでEOFとclose。
+- ZEROTAIL.BIN: 700byte、有効な5byte以降はゼロ、2要求。
+
+試験側でファイルごとに独立に定義したpayloadのFNV-1a hash、サイズ、完全な名前、
+9件の読出し要求と5件の完了を検査する。起動snapshotは最初のファイルだけであり、
+残り4件の内容はUSB経由の逐次読出しから得る。
+
+全217ホスト試験、exFAT複数ファイル＋入力＋257件UDP、最初のmetadata待機での取消し、
+FAT32回帰と通常版UEFIビルドに合格。out/espは通常版へ戻した。既存CIのexFAT caseは
+更新した試験条件を使うが、リモートCIと実機では未検証。物理USB更新なし。
+
+今回の起動像SHA-256: `1e272602f050c63a184e95e0e92892f0a2938e1ce33b98182c4253aeb7d57f97`。
+
+残作業は通常版への形式選択・catalog公開、アプリからの選択操作と画面表示、
+別controller保持。工程5/6全体の完了を意味しない。

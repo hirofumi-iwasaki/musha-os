@@ -280,7 +280,19 @@ with (out/'qemu.log').open('w') as err:
    for byte in expected:h=((h^byte)*0x100000001b3)&0xffffffffffffffff
    assert f'LIVE_FILE_API_OK BYTES={len(expected):016X} HASH={h:016X}' in text
    begin=text.index('LIVE_FILE_REQUEST');done=text.index('LIVE_FILE_API_OK')
-   assert text[begin:done].count('LIVE_FILE_REQUEST') == (len(expected)+6)//7, 'missing split requests'
+   payloads=[('MUSHA.TXT',expected)]
+   if a.exfat_boot_image:
+    payloads += [('FRAGMENT.BIN',bytes(range(256))*5+b'end'),('Long name for exFAT test.txt',b'Long file name\n'),('EMPTY.TXT',b''),('ZEROTAIL.BIN',b'valid'+b'\0'*695)]
+   requests=0
+   for index,(name,payload) in enumerate(payloads):
+    digest=0xcbf29ce484222325
+    for byte in payload:digest=((digest^byte)*0x100000001b3)&0xffffffffffffffff
+    assert f'LIVE_FILE_ENTRY_OK INDEX={index:016X} BYTES={len(payload):016X} HASH={digest:016X}' in text
+    assert 'LIVE_FILE_NAME '+''.join(f'{ord(c):016X}' for c in name) in text
+    chunk=7 if index==0 else 512
+    requests+=(len(payload)+chunk-1)//chunk
+   assert text.count('LIVE_FILE_ENTRY_OK')==len(payloads)
+   assert text[begin:done].count('LIVE_FILE_REQUEST') == requests, 'missing split requests'
    assert 'APP_KEY_DOWN=0000000000000004' in text[begin:done]
    assert 'APP_FILE_RECHECK_OK' in text[begin:done]
    assert 'XHCI_FAILED' not in text and 'STORAGE_RELEASED' in text
