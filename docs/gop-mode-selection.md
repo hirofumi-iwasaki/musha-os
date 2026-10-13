@@ -17,7 +17,9 @@ The diagnostic summary and observation record contain one line:
 `GOP WIDTH/HEIGHT/STRIDE <width>/<height>/<pixels-per-scan-line>`.
 Candidate traces remain behind `qemu-debug`; the normal build emits no debug-port
 output. The viewer renderer and its layout rules are unchanged by mode selection.
-The separately pending external-console change uses native 6×8 text.
+At the GOP validation checkpoint the external console used native 6×8 text.
+The release follow-up uses height-based console scale: <2160 → 1, <2880 → 2,
+otherwise 3, preserving the default QEMU 2048-high scale-1 pixels.
 
 ### Verification and pixel-reference change (2026-10-13)
 
@@ -74,7 +76,7 @@ QueryMode のバッファは解放します。SetMode 失敗時は別モード�
 
 診断サマリーと観測記録へ `GOP WIDTH/HEIGHT/STRIDE` の1行を追加しました。
 通常版の debug ポート出力はありません。ビューアーの描画規則は変更していません。
-先行する外部アプリのログ文字縮小（6×8）は保持しています。
+GOP検証時点では外部ログは6×8でした。公開準備では高さ2160未満を1倍、2880未満を2倍、それ以上を3倍とし、既定QEMUの1倍ピクセルを保持します。
 
 ホスト16件と、通常版のビューアーピクセル回帰・Hello ELF 実行が成功しました。
 QEMU では30モード中、1280×800 から2048×2048へ変わったため、旧参照との初回比較は

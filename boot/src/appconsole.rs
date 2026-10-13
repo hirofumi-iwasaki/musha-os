@@ -25,7 +25,7 @@ pub fn start(fb: Framebuffer, text: &[u8]) {
         }
         let s = &mut *STATE.0.get();
         s.fb = Some(fb);
-        s.console = Console::new();
+        s.console = Console::for_framebuffer(fb);
         s.console.append(text);
         s.console.render(fb);
     }
@@ -68,7 +68,7 @@ pub fn rejected(reason: &[u8]) {
 }
 /// Never borrows STATE: even a fault during drawing can use the fatal display.
 pub unsafe fn fault(fb: Framebuffer, vector: u64, error: u64, rip: u64, rsp: u64) {
-    let mut c = Console::new();
+    let mut c = Console::for_framebuffer(fb);
     c.append(b"MUSHA.ELF faulted\n");
     for (label, value) in [
         (b"VECTOR " as &[u8], vector),

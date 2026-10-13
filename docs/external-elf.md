@@ -4,6 +4,13 @@
 
 The development normal build now loads external ELF and displays application output. [Application usage](external-app.md), [scope](release-scope-0.3.0.md), [2b results](handoff/0.3.0-step2b-results.md) and [2c results](handoff/0.3.0-step2c-results.md) distinguish implementation, local tests and outstanding release gates. ABI candidate r1 is not frozen. Nothing here changes published v0.2.0 assets.
 
+The diagnostic heading reads the repository `VERSION` file and the active test name
+(`EXTERNAL ELF` for the normal build), rather than a hard-coded historical release.
+External application text uses scale 1 below height 2160, scale 2 below 2880,
+and scale 3 at 2880 or above. The default QEMU GOP height is 2048, so its
+existing scale-1 pixels are preserved. Diagnostic text remains scale 6. The bounded
+80×24 console reduces visible columns/rows to fit the framebuffer and wraps/scrolls.
+
 ### Selection, state and lifetime
 
 The existing file service selects the data medium. Its root catalogue is checked for ASCII case-insensitive `MUSHA.ELF`; absence starts the unchanged viewer. Size is 64 bytes–16 MiB; reads are at most 4096 bytes with one outstanding request and a 5000 ms deadline. The viewer is initialized only after the absent/no-service decision. Matching files instead show `Loading MUSHA.ELF ...` and external OS_READY; APP_ENTERING precedes the Ring 3 transition and the first query records APP_RUNNING.
@@ -47,6 +54,9 @@ These are elapsed-to-completion **or deadline-censored** times; the full read ti
 Historical 2a evidence remains `out/external-elf-accepted/report.json` (12 cases), `out/external-elf-final/host-tests.log` (238 tests) and its normal pixel result. Owner-approved 2a was committed/pushed as `506d112`; 2b/2c are separate uncommitted candidates awaiting approval. Hardware cold boots, SDK distribution/relocation gates and publication remain outstanding. C3 OS return, Rust guests, practical user I/O and public ABI compatibility are not claimed.
 
 ## 日本語
+
+診断見出しはリポジトリの `VERSION` と現在の試験名（通常版は `EXTERNAL ELF`）から生成します。外部アプリの文字はGOP高さ2160未満で1倍、2880未満で2倍、それ以上で3倍です。既定QEMUの高さ2048では1倍を維持し、診断ログは6倍のままです。最大80×24セルの範囲で画面寸法に合わせて折返し・スクロールします。
+
 
 開発版の通常構成へ外部ELF読込み・画面出力を統合しました。[利用方法](external-app.md)、[2b記録](handoff/0.3.0-step2b-results.md)、[2c記録](handoff/0.3.0-step2c-results.md)で実装・QEMU・実機未検証を区別しています。ABIは実験候補r1、公開済みv0.2.0配布物は不変です。
 

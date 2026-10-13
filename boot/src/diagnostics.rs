@@ -79,7 +79,21 @@ fn update(f: impl FnOnce(&mut Panel)) {
         f(p);
     }
 }
-const DIAGNOSTIC_SCALE: usize = 6;
+const DIAGNOSTIC_SCALE: usize = musha_framebuffer::LOG_TEXT_SCALE;
+const VERSION: &str = include_str!("../../VERSION");
+fn test_name() -> &'static str {
+    if cfg!(feature = "t2-diagnostics") {
+        "T2-D1"
+    } else if cfg!(feature = "ring3-lifecycle-probe") {
+        "RING3 LIFECYCLE"
+    } else if cfg!(feature = "ring3-elf-probe") {
+        "RING3 ELF"
+    } else if cfg!(feature = "ring3-probe") {
+        "RING3"
+    } else {
+        "EXTERNAL ELF"
+    }
+}
 const DIAGNOSTIC_LINE_HEIGHT: usize = 50;
 
 pub fn hide(hidden: bool) {
@@ -145,14 +159,7 @@ pub fn start(fb: Framebuffer) {
     update(|p| {
         p.fb = Some(fb);
         p.paint_valid = false;
-        p.lines[0] = line(format_args!(
-            "{}",
-            if cfg!(feature = "t2-diagnostics") {
-                "MUSHA-OS 0.2.0 DEV T2-D1"
-            } else {
-                "MUSHA-OS 0.1.0 HARDWARE H19"
-            }
-        ));
+        p.lines[0] = line(format_args!("MUSHA-OS {} {}", VERSION.trim(), test_name()));
     });
 }
 pub fn set(row: usize, args: fmt::Arguments<'_>) {
@@ -617,11 +624,7 @@ pub fn page(index: usize) -> usize {
         }
         display[0] = line(format_args!(
             "{} {}/{}",
-            if cfg!(feature = "t2-diagnostics") {
-                "T2-D1"
-            } else {
-                "H19"
-            },
+            test_name(),
             index % total + 1,
             total
         ));

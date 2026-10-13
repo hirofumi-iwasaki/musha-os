@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
 
+/// Diagnostic panel text magnification; the app console chooses its own scale.
+pub const LOG_TEXT_SCALE: usize = 6;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Framebuffer {

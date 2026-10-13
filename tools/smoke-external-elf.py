@@ -80,16 +80,17 @@ def screen_rows(path):
     import ast, re
     data=path.read_bytes(); header=re.match(rb'P6\s+(\d+)\s+(\d+)\s+255\s',data)
     assert header, 'Expected P6 screenshot'
-    w,h=map(int,header.groups()); pixels=data[header.end():]; scale=1
+    w,h=map(int,header.groups()); pixels=data[header.end():]; scale=1 if h<2160 else (2 if h<2880 else 3)
+    columns=max(1,min(80,(w-16)//(6*scale))); visible_rows=max(1,min(24,(h-16)//(8*scale)))
     font={}
     for key,values in re.findall(r"(b'(?:\\.|[^'])+'|\d+) => \[([\d, ]+)\]",(ROOT/'framebuffer/src/lib.rs').read_text()):
         c=ast.literal_eval(key);c=c[0] if isinstance(c,bytes) else c
         font[tuple(map(int,values.split(',')))]=chr(c)
     font[(0,)*7]=' '
     rows=[]
-    for row in range(24):
+    for row in range(visible_rows):
         line=''
-        for col in range(80):
+        for col in range(columns):
             bits=[]
             for y in range(7):
                 v=0
@@ -142,6 +143,7 @@ def main():
             cases['timing-'+str(size)]=(good.ljust(size,b'\0'),'fat32','timing',0)
         cases['timeout']=(good.ljust(1048576,b'\0'),'fat32','reject','File read deadline exceeded')
         cases['disconnect-while-reading']=(good.ljust(16777216,b'\0'),'fat32','disconnect',0)
+        cases['hello-high-resolution']=(good,'fat32','exit',0)
         cases['absent']=(None,'fat32','absent',0)
         if a.case!='all' and a.case not in cases: raise ValueError('Unknown case '+a.case)
         if a.normal and a.case != 'all' and cases[a.case][2] in ('timing','disconnect'):
@@ -192,6 +194,7 @@ def main():
             if a.boot_from_data and fmt == 'fat32':
                 at=cmd.index(f'if=ide,format=raw,file=fat:rw:{out/"esp"}')
                 del cmd[at-1:at+1]
+            if name=='hello-high-resolution': cmd+=['-global','VGA.xres=3840','-global','VGA.yres=2160','-global','VGA.vgamem_mb=64']
             if name=='hello-split': cmd+=['-device','qemu-xhci,id=k']
             if name!='hello-no-keyboard': cmd+=['-device','usb-kbd,bus='+('k.0' if name=='hello-split' else 'x.0')]
             report['commands'].append(cmd)
@@ -229,6 +232,10 @@ def main():
                     if not a.normal and len(payload)>=1048576 and name!='too-large':
                         loading_text='\n'.join(screen_rows(d/'loading.ppm'));(d/'loading.txt').write_text(loading_text+'\n')
                         assert 'Loading MUSHA.ELF ...' in loading_text,loading_text
+                    if name=='hello-high-resolution':
+                        import re
+                        dimensions=re.match(rb'P6\s+(\d+)\s+(\d+)',(d/'screen.ppm').read_bytes())
+                        assert dimensions and tuple(map(int,dimensions.groups()))==(4096,2160)
                     rows=screen_rows(d/'screen.ppm');screen='\n'.join(rows);(d/'screen.txt').write_text(screen+'\n')
                     if not a.normal and kind in ('exit','fault'):
                         handoff=text.index('EXTERNAL_ELF_DEVICES_STOPPED')
@@ -239,7 +246,10 @@ def main():
                     if kind=='exit':
                         assert f'MUSHA.ELF exited: status {detail}' in screen,screen
                         if name.startswith('hello'): assert 'Hello Musha-OS!' in screen,screen
-                        if name=='log-long': assert rows[0]=='Z'*80 and rows[20]=='Z'*80 and rows[21].rstrip()=='Z'*16,screen
+                        if name=='log-long':
+                            # The 4096-byte log scrolls at the framebuffer's visible width.
+                            columns=len(rows[0]); remainder=4096 % columns
+                            assert rows[0]=='Z'*columns and rows[-3].rstrip()=='Z'*(remainder or columns),screen
                         if name=='log-utf8': assert 'ASCII..... ......' in screen and 'END' in screen,screen
                     elif kind=='fault':
                         vector=14 if name=='fault-pf' else 6
