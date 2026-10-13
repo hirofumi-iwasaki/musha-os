@@ -4,7 +4,7 @@
 
 Candidate notes updated: 2026-10-13. Publication date: not set.
 
-Status: **release candidate, not published.** Candidate source `8f8f0187d365b63d3eb138fc2f46bde5d8eb3d9f` on `release/0.3.0`; documentation HEAD `04d986d`. Items marked PENDING are completed before the tag; the owner decides publication after the [scope conditions](release-scope-0.3.0.md) are met. Published v0.2.0 assets are unchanged.
+Status: **release candidate, not published.** Candidate source `4319b58dda03400032c0307eaaa3b85fe8150ac0` on `release/0.3.0`; display source commit `4319b58`. Items marked PENDING are completed before the tag; the owner decides publication after the [scope conditions](release-scope-0.3.0.md) are met. Published v0.2.0 assets are unchanged.
 
 ### Main changes
 
@@ -52,7 +52,7 @@ Unchanged from v0.2.0: external USB Boot Keyboard required; Up/Down selects, Ent
 
 ### Validation scope
 
-Host tests: 254. QEMU: 186 case/configuration passes covering external ELF loading on Basic Data and legacy ESP media, console/exit/fault/refusal display, absent-file viewer pixel regression with zero debug bytes, viewer/cooperative/hub regressions, and the C1/C2/C3 probes (8/14/20). The SDK was rebuilt in a separate directory containing spaces and reproduced the same Hello hash. Deployment and update tools were tested on virtual images and regular directories.
+Host tests: 255. The new display candidate passed 186 QEMU case/configuration checks (`out/release-display/report.json`), covering external ELF loading on Basic Data and legacy ESP media, console/exit/fault/refusal display, absent-file viewer pixel regression with zero debug bytes, viewer/cooperative/hub regressions, and the C1/C2/C3 probes (8/14/20). The SDK was rebuilt in a separate directory containing spaces and reproduced the same Hello hash. Deployment and update tools were tested on virtual images and regular directories.
 
 Hardware: during development, the external Hello ran at Ring 3 on NUC5i5RYH (GOP 1600×1200) and on a Ryzen 7 machine (GOP 3840×2160) with on-screen output and exit status 0; these runs used development EFIs, not the candidate. Candidate acceptance on the exact release EFI — three cold boots each on NUC5 and Ryzen, and Basic Data boot on MacBook Pro 2018 — is **PENDING** and will be recorded in [hardware acceptance](hardware-acceptance-0.3.0.md). QEMU and host results are not hardware evidence.
 
@@ -60,10 +60,10 @@ Hardware: during development, the external Hello ran at Ring 3 on NUC5i5RYH (GOP
 
 SDK Hello ELF SHA-256: `d60006f88e1e36409867546df31c778cf3d5fb7c077fba376ebb5bd3fbb2810f` (13,312 bytes).
 
-Source: `8f8f0187d365b63d3eb138fc2f46bde5d8eb3d9f` (candidate build). EFI SHA-256: `0a77f57ebbd68079aadb7823fc7e2c115985ecc077606d1759ec6afc1cc3593f` (455,168 bytes). Toolchain: Rust 1.99.0, Apple clang 21.0.0.
-Remote CI: FAILED in the GP fault-injection regression, on documentation commit `04d986da2c22ed100305c7101d53a9e5e796eecd`: [run 38360736372](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38360736372). Normal candidate packaging was skipped. The fault probe used selector 0x28, which became valid after Ring 3 GDT entries were added. A local probe correction is awaiting remote verification; CI has not passed. This run does not attest the local candidate hash above. Asset download and hash verification after upload: PENDING.
+Source: `4319b58dda03400032c0307eaaa3b85fe8150ac0` (candidate build). EFI SHA-256: `41a61efcd96edf6142bf81a37ae2ca90ca4396ea71386da698f8cac8bccd2ae8` (455,680 bytes). Toolchain: Rust 1.99.0, Apple clang 21.0.0.
+Remote CI: SUCCESS on candidate source `4319b58dda03400032c0307eaaa3b85fe8150ac0`: [run 38365638298](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38365638298). GP/DF injection, all remaining workflow regressions and normal candidate packaging passed; draft creation was skipped. This supersedes failed run 38360736372 on 04d986d. Logs are in `out/repro-4319b58/remote-job.log`. The CI-built EFI is a separate artifact, not an attestation of the local USB EFI hash above. Asset download and hash verification after release upload: PENDING.
 
-Publication provenance: UNRESOLVED. Current policy and release tools require the tag commit to match the build-manifest source commit. Tagging a later documentation commit while retaining the `8f8f018` EFI is not currently supported. Resolve the release source and packaging procedure before tagging; preserve the tested EFI hash and do not relabel its build origin.
+Publication provenance: UNRESOLVED (owner decision required). Two clean builds of `4319b58` produced different raw EFI hashes; the differences are confined to COFF/debug timestamps and the CodeView identifier (`out/repro-4319b58/report.json`, `pe-difference.json`). Metadata-excluded equality does not meet byte-identical acceptance. The proposed documentation-only tag exception has therefore not been adopted. Current policy and release tools require the tag commit to match the build-manifest source commit. Tagging a later documentation commit while retaining an earlier candidate EFI is not currently supported. Resolve the release source and packaging procedure before tagging; preserve the tested EFI hash and do not relabel its build origin.
 
 ---
 
@@ -71,7 +71,7 @@ Publication provenance: UNRESOLVED. Current policy and release tools require the
 
 候補ノート更新日：2026-10-13。公開日：未定。
 
-状態：**公開候補、未公開。** 候補ソースは `release/0.3.0` の `8f8f0187d365b63d3eb138fc2f46bde5d8eb3d9f`、文書の HEAD は `04d986d`。「未完了」の項目はタグ作成前に埋め、公開可否は[公開範囲](release-scope-0.3.0.md)の条件を満たした後に所有者が判断します。公開済み v0.2.0 配布物は変更しません。
+状態：**公開候補、未公開。** 候補ソースは `release/0.3.0` の `4319b58dda03400032c0307eaaa3b85fe8150ac0`、表示変更ソースは `4319b58`。「未完了」の項目はタグ作成前に埋め、公開可否は[公開範囲](release-scope-0.3.0.md)の条件を満たした後に所有者が判断します。公開済み v0.2.0 配布物は変更しません。
 
 ### 主な変更
 
@@ -119,7 +119,7 @@ v0.2.0 から変更なし：外付け USB Boot Keyboard が必要。上下で選
 
 ### 検証範囲
 
-ホスト試験 254 件。QEMU 186 件：Basic Data と従来 ESP 両媒体での外部 ELF 読込み、コンソール・終了・例外・拒否の表示、ファイル不在時のビューアーのピクセル回帰（debug 出力 0 byte）、ビューアー・協調 I/O・ハブの回帰、C1/C2/C3 試験（8/14/20）。SDK は空白を含む別ディレクトリーで再ビルドし、同一の Hello ハッシュを再現しました。配備・更新ツールは仮想イメージと通常ディレクトリーで試験しました。
+ホスト試験255件。新表示候補のQEMU全回帰186件合格（`out/release-display/report.json`）：Basic Data と従来 ESP 両媒体での外部 ELF 読込み、コンソール・終了・例外・拒否の表示、ファイル不在時のビューアーのピクセル回帰（debug 出力 0 byte）、ビューアー・協調 I/O・ハブの回帰、C1/C2/C3 試験（8/14/20）。SDK は空白を含む別ディレクトリーで再ビルドし、同一の Hello ハッシュを再現しました。配備・更新ツールは仮想イメージと通常ディレクトリーで試験しました。
 
 実機：開発中に NUC5i5RYH（GOP 1600×1200）と Ryzen 7 機（GOP 3840×2160）で外部 Hello が Ring 3 で動作し、画面出力と終了コード 0 を確認しました。これらは開発版 EFI での結果で、候補 EFI ではありません。候補 EFI での受入——NUC5・Ryzen 各3回の冷間起動、MacBook Pro 2018 の Basic Data 起動——は**未完了**で、[実機受入記録](hardware-acceptance-0.3.0.md)に記録します。QEMU とホストの結果は実機の根拠にしません。
 
@@ -127,7 +127,7 @@ v0.2.0 から変更なし：外付け USB Boot Keyboard が必要。上下で選
 
 SDK Hello ELF SHA-256：`d60006f88e1e36409867546df31c778cf3d5fb7c077fba376ebb5bd3fbb2810f`（13,312 byte）。
 
-ソース：`8f8f0187d365b63d3eb138fc2f46bde5d8eb3d9f`（候補ビルド）。EFI SHA-256：`0a77f57ebbd68079aadb7823fc7e2c115985ecc077606d1759ec6afc1cc3593f`（455,168 byte）。ツールチェーン：Rust 1.99.0、Apple clang 21.0.0。
-リモート CI：GP例外注入の回帰試験で失敗。文書コミット `04d986da2c22ed100305c7101d53a9e5e796eecd` での[実行（38360736372）](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38360736372)。通常候補の梱包はスキップされました。試験のselector 0x28がRing 3用GDT追加により有効になったことが原因です。試験のローカル修正はリモート再検証待ちで、CI合格とは扱いません。上記ローカル候補ハッシュの検証を意味しません。アップロード後の配布物のダウンロードとハッシュ照合：未完了。
+ソース：`4319b58dda03400032c0307eaaa3b85fe8150ac0`（候補ビルド）。EFI SHA-256：`41a61efcd96edf6142bf81a37ae2ca90ca4396ea71386da698f8cac8bccd2ae8`（455,680 byte）。ツールチェーン：Rust 1.99.0、Apple clang 21.0.0。
+リモート CI：候補ソース `4319b58dda03400032c0307eaaa3b85fe8150ac0` の[run 38365638298](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38365638298)でSUCCESS。GP/DF注入、残りの全workflow試験、通常版候補の梱包まで合格し、draft作成はスキップしました。04d986dの失敗run 38360736372に対する再試験結果です。ログは `out/repro-4319b58/remote-job.log`。CI生成EFIは別成果物であり、上記ローカルUSB候補のハッシュを証明するものではありません。Releaseアップロード後の取得・ハッシュ照合は未完了です。
 
-公開来歴：未解決。現行方針と公開ツールはタグのコミットとbuild-manifestのビルド元コミットの一致を要求します。`8f8f018` のEFIを維持して後続の文書コミットへタグを付ける方式は現在未対応です。タグ作成前に公開ソースと梱包手順を確定し、検証済みEFIのハッシュと実際のビルド元を保持してください。
+公開来歴：未解決（所有者判断待ち）。`4319b58`のクリーンビルド2回でEFIの生バイトのSHA-256は不一致でした。差分はCOFF/debugの時刻とCodeView識別子に限定されます（`out/repro-4319b58/report.json`、`pe-difference.json`）。メタデータを除いた一致はバイト一致の受入条件を満たさないため、文書のみの後続コミットをタグ対象にする例外は採用していません。現行方針と公開ツールはタグのコミットとbuild-manifestのビルド元コミットの一致を要求します。先行候補のEFIを維持して後続の文書コミットへタグを付ける方式は現在未対応です。タグ作成前に公開ソースと梱包手順を確定し、検証済みEFIのハッシュと実際のビルド元を保持してください。

@@ -2,6 +2,14 @@
 
 ## English
 
+### Candidate 4319b58 NUC5 cold boot failure (owner report, 2026-10-13)
+
+EFI SHA-256 `41a61efcd96edf6142bf81a37ae2ca90ca4396ea71386da698f8cac8bccd2ae8`, associated with `out/release-display/physical-usb/provenance.json`. Owner reports a cold boot with both USB keyboard and SanDisk attached but no xHCI port detecting a device. This is a failed candidate acceptance attempt, not three successful cold boots. `IMG_7606.mov` is 1.975 seconds; sampled frames show the runtime/CORE READY stage, not the later PORTSC inventory. Thus the all-ports-disconnected detail is the owner's report, not independently visible in this short clip. Frames: `out/intel-routing/video/`. Intel shared-port routing is a hypothesis, not a confirmed cause. This result supersedes “no attempt yet” for this EFI; earlier entries below retain their historical state.
+
+### New boot-display candidate — hardware NOT PERFORMED (2026-10-13)
+
+Source `4319b58dda03400032c0307eaaa3b85fe8150ac0`; release profile, features=[]; EFI SHA-256 `41a61efcd96edf6142bf81a37ae2ca90ca4396ea71386da698f8cac8bccd2ae8` (455,680 bytes). Manifest: `out/release-display/candidate/build-manifest.json`. This replaces the candidate for the next acceptance session, not the historical observations below. QEMU full regression passed 186 cases (`out/release-display/report.json`); USB EFI-only deployment, readback and safe eject completed (`out/release-display/physical-usb/provenance.json`). NUC5 and Ryzen three cold boots each, and MacBook Pro 2018 Basic Data boot, must be performed after the new USB update. No successful physical boot of this EFI is recorded yet.
+
 ### Current development observations (owner report, 2026-10-13)
 
 These results are the owner's supplied interpretation by Claude of the videos below. EFI SHA-256 for the prepared Basic Data USB: `b743ac0129a9692adf865c37c33adb2c23ca2c0238baf5b9437ebe20faee2b1a`. Each session has a retrospective provenance record under `docs/hardware-evidence/2026-10-13/{nuc5,ryzen7,macbook-pro-2018}/provenance.json`, linked to `out/physical-basic-data-a3153d2/result.json` and its verified file update. The videos do not independently attest the hash; this is the deployment/session association, not a fresh EFI measurement.
@@ -51,6 +59,14 @@ The owner requested smaller log text. The local follow-up changes only external-
 Local validation: `out/nuc5-font-review/host-tests.log` (10 framebuffer tests), `report.json` (seven normal-EFI QEMU cases: Hello, long log, UTF-8 replacement, exit 42, PF, UD, absent viewer). The absent case retains the existing pixel reference and zero debug bytes. These are local checks, not additional physical boots.
 
 ## 日本語
+
+### 候補4319b58のNUC5冷間起動失敗（2026-10-13、所有者報告）
+
+EFI SHA-256 `41a61efcd96edf6142bf81a37ae2ca90ca4396ea71386da698f8cac8bccd2ae8`、配備記録は `out/release-display/physical-usb/provenance.json`。USBキーボード・SanDisk接続済みでもxHCI全ポートが未検出だったとの所有者報告です。候補受入の失敗1回として記録し、冷間起動3回成功には数えません。提供動画 `IMG_7606.mov` は1.975秒で、抽出フレームはruntime/CORE READY段階です。全ポート未検出という詳細はこの動画で独立確認できず、所有者報告として区別します。Intelルーティングは未確定の仮説です。このEFIの「未試行」という旧記述は本追記で更新し、以下の過去の記録は保持します。
+
+### 新しい起動表示の候補 — 実機未実施（2026-10-13）
+
+ソース `4319b58dda03400032c0307eaaa3b85fe8150ac0`、release構成・features=[]。EFI SHA-256 `41a61efcd96edf6142bf81a37ae2ca90ca4396ea71386da698f8cac8bccd2ae8`（455,680 byte）。manifestは `out/release-display/candidate/build-manifest.json`。次の受入対象をこの候補へ変更します。以下の過去の実機観測は変更しません。QEMU全回帰186件合格（`out/release-display/report.json`）。USBのEFIのみの更新・読み戻し・安全な取外しを完了しました（`out/release-display/physical-usb/provenance.json`）。更新完了後にNUC5・Ryzen各3回の冷間起動とMacBook Pro 2018のBasic Data起動を行う必要があり、このEFIの実機成功はまだ記録していません。
 
 ### 現行開発版（2026-10-13、所有者報告）
 

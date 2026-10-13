@@ -133,6 +133,27 @@ fn reset(info: &BootInfo, c: pci::Controller) -> Result<(), &'static str> {
         }
         next = next.checked_add(delta).ok_or("EXT CAPABILITY")?;
     }
+    // After firmware ownership handoff, before halt/reset/ring setup.
+    let intel = unsafe { pci::read(c.bus, c.device, c.function, 0) } as u16 == 0x8086;
+    if intel {
+        for port in 1..=ports {
+            crate::diagnostics::observation(format_args!(
+                "ROUTE BEFORE P{} PORTSC {:08X}",
+                port,
+                regs.read(op + 0x400 + (port - 1) * 16)?
+            ));
+        }
+    }
+    pci::route_intel_ports(c);
+    if intel {
+        for port in 1..=ports {
+            crate::diagnostics::observation(format_args!(
+                "ROUTE AFTER P{} PORTSC {:08X}",
+                port,
+                regs.read(op + 0x400 + (port - 1) * 16)?
+            ));
+        }
+    }
     crate::diagnostics::usb_stage("HALT");
     wait(&regs, &mut clock, op + 4, 1 << 11, 0, 1000)?;
     let command = regs.read(op)?;

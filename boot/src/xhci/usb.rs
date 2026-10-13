@@ -301,7 +301,23 @@ pub(super) fn enumerate(
                 .write(offset, musha_xhci::port_control(status) | (1 << 9))?;
         }
     }
-    host.delay(20)?;
+    // One shared upper bound for all ports. Observe CCS/PLS after power and
+    // routing changes rather than declaring absent after one 20 ms sample.
+    // No PORTSC writes here: change bits and reset policy remain untouched.
+    let mut waited = 0;
+    for _ in 0..musha_xhci::intel_ports::ATTACH_POLLS {
+        host.delay(musha_xhci::intel_ports::ATTACH_POLL_MS)?;
+        waited += musha_xhci::intel_ports::ATTACH_POLL_MS;
+        let mut pending = false;
+        for port in 1..=host.ports as usize {
+            let status = host.regs.read(op + 0x400 + (port - 1) * 16)?;
+            pending |= musha_xhci::intel_ports::attach_pending(status, protocols[port].major);
+        }
+        if !pending {
+            break;
+        }
+    }
+    crate::diagnostics::observation(format_args!("ATTACH WAIT {} MS MAX 1000", waited));
     let mut count = 0u64;
     let mut active_keyboard = None;
     let mut active_storage = None;
