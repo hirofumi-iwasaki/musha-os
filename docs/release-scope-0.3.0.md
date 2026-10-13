@@ -21,6 +21,8 @@ and the NOTE format may change in a later version. Release documentation must sa
 
 ### Required goals
 
+**Owner update, 2026-10-13 — NOT PERFORMED:** the release candidate must still be tested on NUC5 and Ryzen with three cold boots each. MacBook Pro 2018 still requires candidate Basic Data boot verification only; its current storage failure is unresolved and investigation is deferred to v0.4.0 or later. These pending acceptance requirements supersede the older one-machine/Ryzen-or-Mac wording below. Historical development Hello success is not candidate acceptance.
+
 | Item | v0.3.0 scope | Completion condition |
 |---|---|---|
 | External ELF loading | The kernel reads one fixed-name ELF from the FAT32/exFAT data medium through the existing bounded stream file service, validates it with the C2 checks and maps it | A SDK-built ELF copied to the medium runs without rebuilding the EFI. Oversized, malformed and missing files are rejected or skipped with an on-screen reason |
@@ -97,6 +99,8 @@ ABIは **実験候補r1** のままとする。v0.3.0の公開は公開互換性
 後続の版で変わりうる。公開資料にはその旨を明記する。
 
 ### 必須目標
+
+**2026-10-13所有者更新・未実施：** 公開候補EFIでNUC5・Ryzen各3回の冷間起動を実施予定です。MacBook Pro 2018の候補Basic Data起動確認も未実施で、確認範囲は起動のみです。現行ストレージ未認識は未解決、調査は0.4.0以降へ先送りします。この未達の受入条件を、下記の旧「1台以上／RyzenまたはMac」条件より優先します。過去の開発版Hello成功を公開候補の合格とは扱いません。
 
 | 項目 | v0.3.0の範囲 | 完了条件 |
 |---|---|---|

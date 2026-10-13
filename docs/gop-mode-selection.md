@@ -59,9 +59,7 @@ python3 tools/smoke-external-elf.py --firmware-dir /opt/homebrew/share/qemu --no
 ```
 
 The reference generator requires a fresh output directory. Use `--reference` to
-select a different resolution's reference. No USB was updated for this change;
-NUC physical results recorded earlier used the previous EFI. Real-firmware
-SetMode failures and the selected physical-monitor resolution remain unverified.
+select a different resolution's reference. This section is the original local checkpoint. Later development-build observations are in hardware-acceptance-0.3.0.md; candidate cold boots remain NOT PERFORMED. Real-firmware SetMode failure remains unverified.
 
 API reference: [UEFI 2.10, Graphics Output Protocol](https://uefi.org/specs/UEFI/2.10/12_Protocols_Console_Support.html).
 
@@ -85,5 +83,4 @@ QEMU では30モード中、1280×800 から2048×2048へ変わったため、�
 参照更新の手順・ハッシュ・証拠パスは英語節に記載しています。
 
 同面積時に現在モードを維持する分岐はホスト試験済みですが、今回の QEMU は
-実際にモードが変わる構成です。実機の選択解像度と SetMode 失敗は未検証です。
-今回の変更は未 commit・未 push で、実USBも更新していません。
+実際にモードが変わる構成です。この節は最初のローカル検証時点の履歴です。後続の開発版観測はhardware-acceptance-0.3.0.mdを参照してください。公開候補の冷間起動は未実施、実機のSetMode失敗も未検証です。

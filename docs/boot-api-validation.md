@@ -2,6 +2,8 @@
 
 ## English
 
+Latest local evidence: [A](handoff/0.3.0-release-a-results.md), [C SDK](handoff/0.3.0-release-c-results.md), [development hardware observations](hardware-acceptance-0.3.0.md), [deferred issues](open-issues-0.3.0.md). Candidate hardware cold boots remain NOT PERFORMED.
+
 Scope: A/B on `release/0.3.0`, starting HEAD `322ee6754b2092f73c663ac39b483a5a3c8b9093`, initially clean. Existing v0.2.0 implementation and branch retained. No commit/push/tag/Release/remote setting/physical USB/PDF operation. Local workflow editing was separately confirmed by the owner after automatic approval review initially rejected it; workflow execution was not requested or performed.
 
 ### Completed local scope
@@ -82,6 +84,8 @@ Design versioned report and opaque kind/owner/permission/generation handles, bou
 Next approval is required before commit/push, external CI execution if requested, tag/Release/publication, remote settings or physical USB changes. None is necessary for retaining these local edits.
 
 ## 日本語
+
+最新のローカル証拠：[A](handoff/0.3.0-release-a-results.md)、[C SDK](handoff/0.3.0-release-c-results.md)、[開発版実機観測](hardware-acceptance-0.3.0.md)、[先送り課題](open-issues-0.3.0.md)。公開候補の実機冷間起動は未実施です。
 
 A/Bのローカル実装を追加しました。ホスト228件、SDK公開型・C ELF・異常ELF/NOTE26件、QEMUのFAT32／exFAT・別controller・取消し／切断／期限・表示モード比較・通常画面・通信／5段ハブ・アプリ障害を確認しました。ブランチとHEADは維持し、commit／push／Release／実USB／PDFは変更していません。
 
