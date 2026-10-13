@@ -25,6 +25,7 @@ on:
       - net/port/**
       - third_party/**
       - tools/**
+      - sdk/**
       - docs/**
       - LICENSE
       - NOTICE
@@ -86,6 +87,8 @@ jobs:
           python3 tools/test-usb-build.py
           python3 tools/test-release-package.py
           python3 tools/test-distribution.py
+      - name: Experimental SDK compile and conformance (no guest execution)
+        run: python3 tools/check-sdk.py
       - name: HID mutation and state properties
         timeout-minutes: 2
         run: |

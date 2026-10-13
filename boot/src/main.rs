@@ -5,11 +5,15 @@
 
 mod acpi;
 mod app;
+mod bootstate;
 mod cpu;
+#[cfg(feature = "ring3-probe")]
+mod ring3;
 mod diagnostics;
 mod memory;
 mod net;
 mod pci;
+mod runtime;
 #[cfg(feature = "t2-diagnostics")]
 mod t2;
 mod xhci;
@@ -97,6 +101,7 @@ unsafe extern "win64" fn enter_runtime(_info: *const BootInfo, _stack_top: usize
     naked_asm!("cli", "cld", "mov rsp, rdx", "and rsp, -16", "sub rsp, 32",
         "call {entry}", "ud2", entry = sym runtime);
 }
+#[cfg_attr(feature = "ring3-probe", allow(unreachable_code))]
 extern "win64" fn runtime(info: *const BootInfo) -> ! {
     // SAFETY: handoff is in dedicated LOADER_DATA pages, not the abandoned
     // firmware stack. Its framebuffer mapping remains firmware identity-mapped.
@@ -140,6 +145,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     unsafe {
         cpu::initialize(info);
     }
+    let _ = acpi::Time::new(info.timer).and_then(|mut t| t.now());
     diagnostics::set(1, format_args!("STATE PAGING / ARENA"));
     let arena = match unsafe { memory::initialize(info) } {
         Ok(arena) => arena,
@@ -155,6 +161,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
             };
             diagnostics::set(1, format_args!("STATE {}", label));
             diagnostics::set(17, format_args!("MEMORY RESULT {:?}", error));
+            diagnostics::failure("CORE MEMORY", label);
             diagnostics::snapshot();
             debug(message);
             unsafe {
@@ -178,14 +185,34 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
             info.framebuffer.color(240, 240, 240),
         );
         info.framebuffer
-            .text("RUNTIME READY", 24, 64, info.framebuffer.color(0, 240, 100));
+            .text("CORE READY", 24, 64, info.framebuffer.color(0, 240, 100));
     }
+    let _ = acpi::Time::new(info.timer).and_then(|mut t| t.now());
+    bootstate::update(|r, t| {
+        r.core(t);
+    });
+    debug(b"MUSHA: CORE_READY\n");
+    if cfg!(feature = "diagnostics-detail") {
+        diagnostics::page(0);
+    }
+    diagnostics::flush();
     diagnostics::set(1, format_args!("STATE PCI / APPLICATION"));
-    acpi::diagnose(info.timer, info.framebuffer);
+    if !acpi::diagnose(info.timer, info.framebuffer) {
+        diagnostics::failure("REQUIRED CLOCK", "UNAVAILABLE OR STALLED");
+        diagnostics::snapshot();
+        debug(b"MUSHA: BOOT_FAILED REQUIRED_CLOCK\n");
+        bootstate::update(|r, _| r.phase = musha_platform::readiness::Phase::BootFailed);
+        stop();
+    }
+    #[cfg(feature = "ring3-lifecycle-probe")]
+    ring3::lifecycle::run(arena, info);
+    #[cfg(all(feature = "ring3-probe", not(feature = "ring3-lifecycle-probe")))]
+    ring3::run(arena, info);
     pci::diagnose(info.framebuffer, info.xhci);
     let arena_base = arena.as_mut_ptr() as usize;
     // Diagnostic app owns the sole mutable arena borrow and exercises every page.
-    if app::run(arena, info).is_err() {
+    if runtime::run(arena, info).is_err() {
+        diagnostics::failure("APPLICATION", "APP FAILED");
         diagnostics::set(1, format_args!("STATE APP FAILED"));
         diagnostics::snapshot();
         debug(b"MUSHA: APP_FAILED\n");
@@ -229,29 +256,10 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         asm!("mov ax, 40","mov ds, ax",out("ax") _,options(nostack));
     }
 
-    #[cfg(not(feature = "qemu-debug"))]
-    if let Ok(mut clock) = acpi::Time::new(info.timer) {
-        let mut page = 0;
-        loop {
-            let total = diagnostics::page(page);
-            page = (page + 1) % total;
-            let Ok(start) = clock.now() else { break };
-            let mut elapsed = false;
-            for _ in 0..500_000_000 {
-                match clock.now() {
-                    Ok(now) if now.saturating_sub(start) >= 8000 => {
-                        elapsed = true;
-                        break;
-                    }
-                    Err(_) => break,
-                    _ => core::hint::spin_loop(),
-                }
-            }
-            if !elapsed {
-                break;
-            }
-        }
+    if cfg!(feature = "diagnostics-detail") {
+        diagnostics::page(0);
     }
+    diagnostics::flush();
     #[cfg(not(feature = "fault-ud"))]
     stop()
 }

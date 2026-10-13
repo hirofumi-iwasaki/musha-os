@@ -1,0 +1,153 @@
+{
+  "status": "experimental; no public compatibility fixed; experimental C2 C guest probe",
+  "constants": {
+    "ABI_MAJOR": 0,
+    "ABI_MINOR": 1,
+    "CANDIDATE_REVISION": 1,
+    "CPU_PROFILE": 1,
+    "START_SIZE": 64,
+    "SYS_QUERY": 256,
+    "SYS_LOG": 257,
+    "SYS_EXIT": 258,
+    "OK": 0,
+    "ERR_UNKNOWN_CALL": -1,
+    "ERR_UNSUPPORTED": -2,
+    "ERR_INVALID": -3,
+    "ERR_DENIED": -4,
+    "ERR_LIMIT": -5,
+    "ERR_AGAIN": -6,
+    "ERR_TIMEOUT": -7,
+    "ERR_CANCELED": -8,
+    "ERR_DISCONNECTED": -9,
+    "ERR_IO": -10,
+    "ERR_NO_MEMORY": -11,
+    "ERR_NOT_FOUND": -12,
+    "NOTE_TYPE": 1297437512,
+    "NOTE_SIZE": 64,
+    "FEATURE_BASE": 1,
+    "PERMISSION_LOG": 1,
+    "MAX_LOG_BYTES": 4096,
+    "IMAGE_BASE": 4194304,
+    "IMAGE_LIMIT": 16777216,
+    "ARENA_BASE": 268435456,
+    "ARENA_LIMIT": 67108864,
+    "STACK_TOP": 1879048192,
+    "STACK_LIMIT": 1048576,
+    "START_BASE": 536870912,
+    "MAX_SEGMENTS": 32
+  },
+  "start_fields": [
+    [
+      "struct_size",
+      "u32",
+      0
+    ],
+    [
+      "abi_major",
+      "u16",
+      4
+    ],
+    [
+      "abi_minor",
+      "u16",
+      6
+    ],
+    [
+      "flags",
+      "u32",
+      8
+    ],
+    [
+      "reserved0",
+      "u32",
+      12
+    ],
+    [
+      "arena_base",
+      "u64",
+      16
+    ],
+    [
+      "arena_bytes",
+      "u64",
+      24
+    ],
+    [
+      "stack_base",
+      "u64",
+      32
+    ],
+    [
+      "stack_bytes",
+      "u64",
+      40
+    ],
+    [
+      "boot_report_handle",
+      "u64",
+      48
+    ],
+    [
+      "reserved1",
+      "u64",
+      56
+    ]
+  ],
+  "note_fields": [
+    [
+      "struct_size",
+      "u32",
+      0
+    ],
+    [
+      "candidate_revision",
+      "u32",
+      4
+    ],
+    [
+      "abi_major",
+      "u16",
+      8
+    ],
+    [
+      "abi_minor",
+      "u16",
+      10
+    ],
+    [
+      "cpu_profile",
+      "u32",
+      12
+    ],
+    [
+      "required_features",
+      "u64",
+      16
+    ],
+    [
+      "requested_permissions",
+      "u64",
+      24
+    ],
+    [
+      "arena_bytes",
+      "u64",
+      32
+    ],
+    [
+      "stack_bytes",
+      "u64",
+      40
+    ],
+    [
+      "flags",
+      "u64",
+      48
+    ],
+    [
+      "reserved",
+      "u64",
+      56
+    ]
+  ]
+}

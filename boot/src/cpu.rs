@@ -1,6 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-//! Fatal-only x86-64 exception setup. No handler returns to interrupted code.
+//! x86-64 exception setup. C3 may terminate selected user faults to a saved
+//! kernel continuation; no handler returns to the interrupted instruction.
 use crate::{BootInfo, stop};
 use core::{
     arch::{asm, naked_asm},
@@ -40,14 +41,15 @@ impl Gate {
         }
     }
 }
+const GDT_COUNT: usize = if cfg!(feature = "ring3-probe") { 7 } else { 5 };
 #[repr(C, align(16))]
 struct Tables {
-    gdt: [u64; 5],
+    gdt: [u64; GDT_COUNT],
     idt: [Gate; 256],
     tss: [u8; 104],
 }
 static mut TABLES: Tables = Tables {
-    gdt: [0; 5],
+    gdt: [0; GDT_COUNT],
     idt: [Gate::EMPTY; 256],
     tss: [0; 104],
 };
@@ -100,6 +102,10 @@ pub unsafe fn initialize(info: *const BootInfo) {
                 0x00cf92000000ffff,
                 descriptor,
                 base >> 32,
+                #[cfg(feature = "ring3-probe")]
+                0x00cff2000000ffff, // ring 3 data, selector 0x2b
+                #[cfg(feature = "ring3-probe")]
+                0x00affa000000ffff, // ring 3 long code, selector 0x33
             ],
         );
         let entries = core::ptr::addr_of_mut!((*table).idt).cast::<Gate>();
@@ -107,7 +113,7 @@ pub unsafe fn initialize(info: *const BootInfo) {
             let handler = if vector < 32 { STUBS[vector] } else { unknown };
             let ist = if vector == 8 {
                 1
-            } else if vector == 2 {
+            } else if vector == 2 || cfg!(feature = "ring3-probe") && matches!(vector, 1 | 18) {
                 2
             } else {
                 0
@@ -117,7 +123,7 @@ pub unsafe fn initialize(info: *const BootInfo) {
                 .write(Gate::new(handler as *const () as usize, ist));
         }
         let gdtr = Descriptor {
-            limit: 39,
+            limit: (GDT_COUNT * 8 - 1) as u16,
             base: core::ptr::addr_of!((*table).gdt) as u64,
         };
         load_gdt(&gdtr);
@@ -134,7 +140,7 @@ pub unsafe fn initialize(info: *const BootInfo) {
         let tr: u16;
         asm!("mov {0:x}, cs","str {1:x}",out(reg) cs,out(reg) tr,options(nomem,nostack,preserves_flags));
         if actual_gdt.base != gdtr.base
-            || actual_gdt.limit != 39
+            || actual_gdt.limit != gdtr.limit
             || actual_idt.base != idtr.base
             || actual_idt.limit != 4095
             || cs != 8
@@ -216,7 +222,8 @@ const STUBS: [extern "win64" fn() -> !; 32] = [
 #[unsafe(naked)]
 extern "win64" fn common() -> ! {
     naked_asm!("cli","cld","mov rcx, rsp","and rsp, -16","sub rsp, 32",
-        "call {handler}","ud2",handler=sym fatal);
+        ".if {recover}","fninit","mov dword ptr [rsp],0x1f80","ldmxcsr [rsp]",".endif",
+        "call {handler}","ud2",handler=sym fatal,recover=const cfg!(feature="ring3-lifecycle-probe") as usize);
 }
 pub(crate) fn hex(value: u64) -> [u8; 16] {
     let mut bytes = [b'0'; 16];
@@ -226,6 +233,15 @@ pub(crate) fn hex(value: u64) -> [u8; 16] {
     bytes
 }
 extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
+    #[cfg(feature = "ring3-lifecycle-probe")]
+    unsafe {
+        crate::ring3::lifecycle::fault(
+            frame as usize,
+            (*frame).cs,
+            (*frame).vector,
+            (*frame).error,
+        );
+    }
     if FAULTING.swap(true, Ordering::AcqRel) {
         stop();
     }
@@ -238,13 +254,30 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
     // never return, so caller registers need not be restored.
     unsafe {
         let frame = &*frame;
-        if frame.vector == 8 || frame.vector == 2 {
+        let ist2 =
+            frame.vector == 2 || cfg!(feature = "ring3-probe") && matches!(frame.vector, 1 | 18);
+        if frame.vector == 8 || ist2 {
             let rsp: usize;
             asm!("mov {}, rsp",out(reg) rsp,options(nomem,nostack,preserves_flags));
-            let low = (*info).emergency_base + if frame.vector == 2 { 16384 } else { 0 };
+            let low = (*info).emergency_base + if ist2 { 16384 } else { 0 };
             if rsp < low || rsp >= low + 16384 {
                 stop();
             }
+            #[cfg(feature = "ring3-probe")]
+            crate::debug(b"MUSHA: RING3_FATAL_IST_OK\n");
+        }
+        #[cfg(feature = "ring3-probe")]
+        {
+            crate::ring3::verify_fault_stack(
+                frame as *const FaultFrame as usize,
+                frame.cs,
+                frame.vector,
+            );
+            crate::debug(b"MUSHA: RING3_FAULT CS=");
+            crate::debug(&hex(frame.cs));
+            crate::debug(b"\nMUSHA: RING3_FAULT_RSP=");
+            crate::debug(&hex(frame.rsp));
+            crate::debug(b"\n");
         }
         let fb = (*info).framebuffer;
         let mut cr2 = 0u64;
@@ -301,3 +334,16 @@ pub unsafe fn inject_double_fault() {
 const _: () = assert!(core::mem::size_of::<Gate>() == 16);
 const _: () = assert!(core::mem::size_of::<Descriptor>() == 10);
 const _: () = assert!(core::mem::size_of::<FaultFrame>() == 56);
+
+// BSP-only probe: both hardware privilege-change exceptions and explicit
+// SYSCALL entry use this supervisor stack. NMI/#DB/#MC use fatal-only IST2.
+#[cfg(feature = "ring3-probe")]
+pub unsafe fn user_kernel_stack(top: usize) {
+    unsafe {
+        core::ptr::addr_of_mut!(TABLES.tss)
+            .cast::<u8>()
+            .add(4)
+            .cast::<u64>()
+            .write_unaligned(top as u64);
+    }
+}

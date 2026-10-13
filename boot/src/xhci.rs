@@ -255,7 +255,7 @@ fn live_probe(
     };
     probe(info, info.xhcis.entries[index], index, false, &mut bridge)
 }
-pub(crate) fn diagnose(
+pub(crate) fn run_session(
     info: &BootInfo,
     tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
@@ -319,6 +319,9 @@ pub(crate) fn diagnose(
             if success { Ok(()) } else { Err(last_error) }
         }
     })();
+    if crate::app::VIEWER {
+        return result;
+    }
     clear_line(info.framebuffer, 292);
     unsafe {
         info.framebuffer.text(

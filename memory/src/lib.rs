@@ -486,3 +486,7 @@ mod tests {
     }
     extern crate std;
 }
+
+pub mod user;
+
+pub mod elf;

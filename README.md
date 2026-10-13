@@ -81,6 +81,10 @@ Diagnostic builds retain the [hardware diagnostic panel](docs/hardware-diagnosti
 See [development and build instructions](docs/development.md).
 Build a test image and FAT32 USB bundle with the [one-command USB build](docs/test-usb-build.md).
 
+### Development: boot/API integration
+
+Policy 3.0 separates readiness, records, rendering and OS service ownership. The development viewer skips diagnostic RAM repetition and eight-second page rotation. The opt-in [C2 ELF probe](docs/ring3-elf.md) runs SDK C Hello at Ring 3. The [C3 lifecycle probe](docs/ring3-lifecycle.md) adds repeated launch, reclamation and OS return. Rust guest execution and external I/O remain pending. See [policy](docs/boot-readiness-policy.md), [ABI](docs/application-abi.md), [SDK](docs/sdk.md) and [validation](docs/boot-api-validation.md). Published v0.2.0 assets are unchanged.
+
 ### Policy documents
 
 - [Release writing and publication rules](docs/release-editorial-policy.md)
@@ -216,6 +220,10 @@ USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済み
 検証済みの起動ファイル（最大4KiB）向けに、初期の読出し専用[アプリファイルAPI](docs/file-api.md)を実装しました。lwIPによる初期の[QEMU ARP・ICMP・UDP診断](docs/network.md)を実装しました。NUC向けNIC初期化とアプリUDP APIは未実装です。[協調I/O](docs/cooperative-io.md)により入力・snapshot file read・QEMU通信が同一セッションで進み、無入力・機器障害時の動作も検証しました。最初の診断アプリは `Hello Musha-OS!` と表示し、
 画面・入力・RAM・ファイル・UDPの状態を確認する構成です。
 [開発・ビルド手順](docs/development.md)を参照してください。
+
+### 開発版：起動とAPIの統合
+
+方針3.0で起動・記録・描画・OSサービスの寿命を分離しました。通常開発版は診断用RAM反復と8秒ページ送りを行いません。SDKはコンパイル用基礎です。[Ring 3遷移試験](docs/ring3-prototype.md)を任意の試験構成として追加し、工程Cに着手しました。[C2 ELF試験](docs/ring3-elf.md)でSDK C HelloのRing 3実行を追加しました。[C3試験](docs/ring3-lifecycle.md)で反復起動・回収・OS復帰を追加しました。Rust実行・実用外部I/Oは後続です。[方針](docs/boot-readiness-policy.md)・[ABI](docs/application-abi.md)・[SDK](docs/sdk.md)・[検証](docs/boot-api-validation.md)を参照してください。公開済みv0.2.0配布物は変更していません。
 
 ### 方針書
 

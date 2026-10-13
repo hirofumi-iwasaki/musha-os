@@ -3,6 +3,8 @@
 use crate::BootInfo;
 use core::arch::{asm, x86_64::__cpuid};
 use musha_memory::{Error, Image, MemoryMap, PAGE, Range};
+#[cfg(feature = "ring3-probe")]
+static mut PROBE_TABLES: Option<Tables> = None;
 const NX: u64 = 1 << 63;
 const ADDRESS: u64 = 0x000f_ffff_ffff_f000;
 struct Tables {
@@ -325,6 +327,17 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         }
         crate::diagnostics::set(10, format_args!("MEM CHECK ARENA"));
         let arena = map.arena(&reserved, 16 * 1024 * 1024, 64 * 1024 * 1024)?;
+        // The one-shot probe needs vacant low virtual addresses. Keep its
+        // backing arena outside the candidate image, record and stack windows.
+        #[cfg(feature = "ring3-probe")]
+        let arena = {
+            let start = arena.start.max(0x0200_0000);
+            let end = arena.end.min(0x1000_0000);
+            if end <= start || end - start < 1024 * 1024 {
+                return Err(Error::NoMemory);
+            }
+            Range::new(start, end - start)?
+        };
         if arena.end > physical_limit {
             return Err(Error::Invalid);
         }
@@ -389,11 +402,190 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         if active != tables.base {
             return Err(Error::Invalid);
         }
+        #[cfg(feature = "ring3-probe")]
+        {
+            core::ptr::addr_of_mut!(PROBE_TABLES).write(Some(tables));
+        }
         // SAFETY: conventional RAM was validated, reserved regions subtracted, and
         // mapped RW/NX. Only this slice is created; allocator retains no Rust borrow.
         Ok(core::slice::from_raw_parts_mut(
             arena.start as *mut u8,
             arena.len(),
         ))
+    }
+}
+
+/// One-shot BSP probe only. New user mappings never replace a present leaf.
+/// Caller owns the physical page, supplies a low canonical virtual page and
+/// retains backing until execution has ended. C3 restores its transaction
+/// before wiping/reusing backing; C1/C2 retain it until the probe stops.
+#[cfg(feature = "ring3-probe")]
+pub unsafe fn probe_user_page(
+    va: usize,
+    pa: usize,
+    writable: bool,
+    executable: bool,
+) -> Result<(), Error> {
+    if va == 0 || va >= 1usize << 47 || va % PAGE != 0 || pa % PAGE != 0 || writable && executable {
+        return Err(Error::Invalid);
+    }
+    unsafe {
+        let tables = (&mut *core::ptr::addr_of_mut!(PROBE_TABLES))
+            .as_mut()
+            .ok_or(Error::Invalid)?;
+        let mut table = tables.base;
+        for shift in [39, 30, 21] {
+            let slot = (table as *mut u64).add((va >> shift) & 511);
+            let mut value = slot.read();
+            if value & 1 == 0 {
+                value = tables.allocate()? as u64 | 3;
+            }
+            if value & (1 << 7) != 0 {
+                return Err(Error::Invalid);
+            }
+            // Old kernel leaves retain U/S=0 even when a shared ancestor is U/S=1.
+            slot.write(value | 4);
+            table = (value & ADDRESS) as usize;
+        }
+        let slot = (table as *mut u64).add((va >> 12) & 511);
+        if slot.read() & 1 != 0 {
+            return Err(Error::Overlap);
+        }
+        let cache = tables.wb as u64;
+        slot.write(
+            pa as u64
+                | 5
+                | if writable { 2 } else { 0 }
+                | if executable { 0 } else { NX }
+                | ((cache & 1) << 3)
+                | ((cache & 2) << 3)
+                | ((cache & 4) << 5),
+        );
+        asm!("invlpg [{}]",in(reg) va,options(nostack));
+        Ok(())
+    }
+}
+/// Remove the probe's supervisor stack guard from the existing identity map.
+#[cfg(feature = "ring3-probe")]
+pub unsafe fn probe_guard(va: usize) -> Result<(), Error> {
+    if va % PAGE != 0 {
+        return Err(Error::Invalid);
+    }
+    unsafe {
+        let tables = (&*core::ptr::addr_of!(PROBE_TABLES))
+            .as_ref()
+            .ok_or(Error::Invalid)?;
+        let mut table = tables.base;
+        for shift in [39, 30, 21] {
+            let v = (table as *const u64).add((va >> shift) & 511).read();
+            if v & 1 == 0 || v & 128 != 0 {
+                return Err(Error::Invalid);
+            }
+            table = (v & ADDRESS) as usize;
+        }
+        let slot = (table as *mut u64).add((va >> 12) & 511);
+        if slot.read() & ADDRESS != va as u64 || slot.read() & 4 != 0 {
+            return Err(Error::Invalid);
+        }
+        slot.write(0);
+        asm!("invlpg [{}]",in(reg) va,options(nostack));
+        Ok(())
+    }
+}
+
+/// Read-only collision check for the one-shot loader, including guard pages.
+#[cfg(feature = "ring3-probe")]
+pub unsafe fn probe_vacant(va: usize, bytes: usize) -> Result<(), Error> {
+    if va == 0 || va % PAGE != 0 || bytes == 0 || bytes % PAGE != 0 {
+        return Err(Error::Invalid);
+    }
+    let end = va
+        .checked_add(bytes)
+        .filter(|e| *e <= 1usize << 47)
+        .ok_or(Error::Invalid)?;
+    let tables = unsafe {
+        (&*core::ptr::addr_of!(PROBE_TABLES))
+            .as_ref()
+            .ok_or(Error::Invalid)?
+    };
+    for address in (va..end).step_by(PAGE) {
+        let mut table = tables.base;
+        for shift in [39, 30, 21, 12] {
+            let value = unsafe { (table as *const u64).add((address >> shift) & 511).read() };
+            if value & 1 == 0 {
+                break;
+            }
+            if shift == 12 || value & 128 != 0 {
+                return Err(Error::Overlap);
+            }
+            table = (value & ADDRESS) as usize;
+        }
+    }
+    Ok(())
+}
+
+// C3 BSP-only transaction: snapshot the bounded table pool before any mapping
+// changes. No concurrent page-table writers or global mappings are permitted.
+#[cfg(feature = "ring3-lifecycle-probe")]
+#[repr(C, align(4096))]
+pub struct ProbeSnapshot {
+    bytes: [u8; 256 * PAGE],
+    used: usize,
+    pages: usize,
+}
+#[cfg(feature = "ring3-lifecycle-probe")]
+impl ProbeSnapshot {
+    pub const fn new() -> Self {
+        Self {
+            bytes: [0; 256 * PAGE],
+            used: 0,
+            pages: 0,
+        }
+    }
+    pub unsafe fn save(&mut self) -> Result<(), Error> {
+        let t = unsafe {
+            (&*core::ptr::addr_of!(PROBE_TABLES))
+                .as_ref()
+                .ok_or(Error::Invalid)?
+        };
+        if t.pages > 256 || t.used > t.pages {
+            return Err(Error::Invalid);
+        }
+        self.used = t.used;
+        self.pages = t.pages;
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                t.base as *const u8,
+                self.bytes.as_mut_ptr(),
+                t.used * PAGE,
+            );
+        }
+        Ok(())
+    }
+    pub unsafe fn restore(&self) -> Result<(), Error> {
+        let t = unsafe {
+            (&mut *core::ptr::addr_of_mut!(PROBE_TABLES))
+                .as_mut()
+                .ok_or(Error::Invalid)?
+        };
+        if t.pages != self.pages || t.used < self.used {
+            return Err(Error::Invalid);
+        }
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                self.bytes.as_ptr(),
+                t.base as *mut u8,
+                self.used * PAGE,
+            );
+            // Clear newly allocated tables and reset the allocator watermark.
+            core::ptr::write_bytes(
+                (t.base + self.used * PAGE) as *mut u8,
+                0,
+                (t.used - self.used) * PAGE,
+            );
+            t.used = self.used;
+            asm!("mov cr3, {}",in(reg) t.base,options(nostack));
+        }
+        Ok(())
     }
 }

@@ -118,7 +118,7 @@ pub(super) fn prepare(
                 .position(|e| e.name() == [77, 85, 83, 72, 65, 46, 84, 88, 84]);
             let mut bytes = None;
             if let Some(i) = first {
-                if fs.entries()[i].len() <= snapshot.len() as u64 {
+                if !crate::app::VIEWER && fs.entries()[i].len() <= snapshot.len() as u64 {
                     bytes = Some(fs.read_at(i, 0, snapshot)?);
                 }
             }
@@ -140,7 +140,7 @@ pub(super) fn prepare(
             let first = fs.entries().iter().position(|e| e.name() == b"MUSHA   TXT");
             let mut bytes = None;
             if let Some(i) = first {
-                if fs.entries()[i].len() <= snapshot.len() as u64 {
+                if !crate::app::VIEWER && fs.entries()[i].len() <= snapshot.len() as u64 {
                     bytes = Some(fs.read_at(i, 0, snapshot)?);
                 }
             }
@@ -205,6 +205,10 @@ impl Session {
             .files
             .mount(p.format, &catalog[..p.count])
             .map_err(|_| "FILE MOUNT")?;
+        // Readiness requires the actual mounted service, before application entry.
+        state.files.format().map_err(|_| "FILE FORMAT")?;
+        state.files.list_begin().map_err(|_| "FILE LIST")?;
+        crate::bootstate::update(|r, _| r.files = musha_platform::readiness::Service::Live);
         crate::debug(b"MUSHA: LIVE_FILE_API_READY\n");
         Ok(Self {
             state,
@@ -298,6 +302,7 @@ impl Drop for Session {
             crate::debug(b"MUSHA: LIVE_FILE_CANCEL_PENDING_SECTOR\n");
         }
         self.state.files.disconnect();
+        crate::bootstate::update(|r, _| r.files = musha_platform::readiness::Service::Stopped);
         if let Some(o) = self.state.operation.as_mut() {
             o.cancel();
         }

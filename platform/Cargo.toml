@@ -4,3 +4,10 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 publish = false
+
+[dev-dependencies]
+musha-framebuffer = { path = "../framebuffer" }
+
+[features]
+diagnostics-off = []
+diagnostics-detail = []

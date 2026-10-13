@@ -434,7 +434,7 @@ pub(super) fn probe(
             Err(e) => Err(e),
         }
     };
-    let skip_snapshot = matches!(mounted, Ok(None));
+    let skip_snapshot = crate::app::VIEWER || matches!(mounted, Ok(None));
     let (prepared, file_result) = match mounted {
         Ok(Some((p, bytes))) => (Some(p), bytes.ok_or(musha_fs::Error::NotFound)),
         Ok(None) => (None, Err(musha_fs::Error::Unsupported)),

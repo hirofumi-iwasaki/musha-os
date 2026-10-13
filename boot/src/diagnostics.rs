@@ -8,6 +8,12 @@ use musha_framebuffer::Framebuffer;
 use musha_platform::diagnostics::{Failure, Line};
 struct Panel {
     hidden: bool,
+    painted: [Line; 42],
+    paint_valid: bool,
+    paint_rows: u64,
+    omitted: u64,
+    first_failure: Option<Line>,
+    last_failure: Option<Line>,
     fb: Option<Framebuffer>,
     page: Option<[Line; 42]>,
     journal: [Line; 512],
@@ -35,6 +41,12 @@ struct Shared(UnsafeCell<Panel>);
 unsafe impl Sync for Shared {}
 static PANEL: Shared = Shared(UnsafeCell::new(Panel {
     hidden: false,
+    painted: [Line::EMPTY; 42],
+    paint_valid: false,
+    paint_rows: 0,
+    omitted: 0,
+    first_failure: None,
+    last_failure: None,
     fb: None,
     page: None,
     journal: [Line::EMPTY; 512],
@@ -65,56 +77,74 @@ fn update(f: impl FnOnce(&mut Panel)) {
     unsafe {
         let p = &mut *PANEL.0.get();
         f(p);
-        render(p);
     }
 }
 const DIAGNOSTIC_SCALE: usize = 6;
 const DIAGNOSTIC_LINE_HEIGHT: usize = 50;
 
 pub fn hide(hidden: bool) {
-    update(|p| p.hidden = hidden);
-}
-fn render(p: &Panel) {
-    if p.hidden {
-        return;
-    }
-    let Some(fb) = p.fb else { return };
-    let x = if fb.width >= 1200 { 800 } else { 0 };
-    let y = 24;
-    let scale = DIAGNOSTIC_SCALE;
-    let columns = (fb.width.saturating_sub(x + 12) / (6 * scale)).clamp(1, 64);
-    let capacity = (fb.height.saturating_sub(y + 24) / DIAGNOSTIC_LINE_HEIGHT).clamp(1, 42);
-    unsafe {
-        for py in y..fb.height {
-            for px in x..fb.width {
-                fb.pixel(px, py, fb.color(12, 20, 32));
-            }
+    update(|p| {
+        if p.hidden != hidden {
+            p.hidden = hidden;
+            p.paint_valid = false;
         }
-        let rows = p.page.as_ref().unwrap_or(&p.lines);
+    });
+}
+/// Explicit BSP safe point. Record updates and view selection never touch devices.
+pub fn flush() {
+    unsafe {
+        let p = &mut *PANEL.0.get();
+        if p.hidden || cfg!(feature = "diagnostics-off") {
+            return;
+        }
+        let Some(fb) = p.fb else { return };
+        let x = if fb.width >= 1200 { 800 } else { 0 };
+        let columns = (fb.width.saturating_sub(x + 12) / (6 * DIAGNOSTIC_SCALE)).clamp(1, 64);
+        let capacity = (fb.height.saturating_sub(48) / DIAGNOSTIC_LINE_HEIGHT).min(42);
+        let mut display = [Line::EMPTY; 42];
         let mut row = 0;
-        for l in rows {
+        for l in p.page.as_ref().unwrap_or(&p.lines) {
             for chunk in l.as_str().as_bytes().chunks(columns) {
                 if row >= capacity {
                     break;
                 }
-                fb.text_scaled(
-                    core::str::from_utf8(chunk).unwrap_or("?"),
-                    x,
-                    y + row * DIAGNOSTIC_LINE_HEIGHT,
-                    fb.color(240, 220, 100),
-                    scale,
-                );
+                display[row] = line(format_args!(
+                    "{}",
+                    core::str::from_utf8(chunk).unwrap_or("?")
+                ));
                 row += 1;
             }
             if row >= capacity {
                 break;
             }
         }
+        for (row, value) in display.iter().enumerate().take(capacity) {
+            if p.paint_valid && p.painted[row] == *value {
+                continue;
+            }
+            let y = 24 + row * DIAGNOSTIC_LINE_HEIGHT;
+            for py in y..(y + DIAGNOSTIC_LINE_HEIGHT).min(fb.height) {
+                for px in x..fb.width {
+                    fb.pixel(px, py, fb.color(12, 20, 32));
+                }
+            }
+            fb.text_scaled(
+                value.as_str(),
+                x,
+                y,
+                fb.color(240, 220, 100),
+                DIAGNOSTIC_SCALE,
+            );
+            p.paint_rows += 1;
+        }
+        p.painted = display;
+        p.paint_valid = true;
     }
 }
 pub fn start(fb: Framebuffer) {
     update(|p| {
         p.fb = Some(fb);
+        p.paint_valid = false;
         p.lines[0] = line(format_args!(
             "{}",
             if cfg!(feature = "t2-diagnostics") {
@@ -141,9 +171,19 @@ pub fn usb_stage(s: &str) {
 pub fn net_stage(s: &str) {
     set(7, format_args!("NET STEP {}", s));
 }
+/// Bounded failure summary independent of optional detail retention.
+pub fn failure(stage: &str, error: &str) {
+    update(|p| {
+        p.first_failure
+            .get_or_insert(line(format_args!("{}", stage)));
+        p.last_failure = Some(line(format_args!("{}", error)));
+    });
+}
 pub fn usb_failure(s: &str) {
     update(|p| {
         p.usb_fail.record(p.lines[4], line(format_args!("{}", s)));
+        p.first_failure.get_or_insert(p.lines[4]);
+        p.last_failure = Some(line(format_args!("{}", s)));
         p.lines[5] = line(format_args!("FAIL AT {}", p.usb_fail.stage.as_str()));
         p.lines[6] = line(format_args!("USB ERROR {}", p.usb_fail.error.as_str()));
     });
@@ -151,6 +191,8 @@ pub fn usb_failure(s: &str) {
 pub fn net_failure(s: &str) {
     update(|p| {
         p.net_fail.record(p.lines[7], line(format_args!("{}", s)));
+        p.first_failure.get_or_insert(p.lines[7]);
+        p.last_failure = Some(line(format_args!("{}", s)));
         p.lines[8] = line(format_args!("FAIL AT {}", p.net_fail.stage.as_str()));
         p.lines[9] = line(format_args!("NET ERROR {}", p.net_fail.error.as_str()));
     });
@@ -216,6 +258,21 @@ pub fn usb(
 pub fn snapshot() {
     unsafe {
         let p = &*PANEL.0.get();
+        crate::debug(b"MUSHA: DIAG_PAINT_ROWS=");
+        crate::debug(&crate::cpu::hex(p.paint_rows));
+        crate::debug(b" OMITTED=");
+        crate::debug(&crate::cpu::hex(p.omitted));
+        crate::debug(b"\n");
+        for (label, value) in [
+            (b"MUSHA: FIRST_FAILURE=".as_slice(), p.first_failure),
+            (b"MUSHA: LAST_FAILURE=".as_slice(), p.last_failure),
+        ] {
+            if let Some(value) = value {
+                crate::debug(label);
+                crate::debug(value.as_str().as_bytes());
+                crate::debug(b"\n");
+            }
+        }
         for l in p
             .archived
             .iter()
@@ -473,12 +530,14 @@ pub fn observation(args: fmt::Arguments<'_>) {
             p.journal[p.journal_count] = entry;
             p.journal_count += 1;
         } else {
+            p.omitted = p.omitted.saturating_add(1);
             p.journal[p.journal.len() - 1] = line(format_args!("JOURNAL LIMIT / MORE OMITTED"));
             p.journal_count = p.journal.len();
         }
     });
 }
 /// Rotate retained diagnostics after all controller work has finished. No USB access.
+#[allow(dead_code)] // On-demand detailed view; never a boot-time wait loop.
 pub fn page(index: usize) -> usize {
     let mut total = 1;
     update(|p| {
@@ -569,4 +628,55 @@ pub fn page(index: usize) -> usize {
         p.page = Some(display);
     });
     total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn records_views_overflow_and_small_screen() {
+        let mut pixels = std::vec![0xdeadbeefu32;320*356+16];
+        let fb = Framebuffer {
+            base: pixels.as_mut_ptr() as usize,
+            bytes: 320 * 356 * 4,
+            width: 320,
+            height: 356,
+            stride: 320,
+            format: 0,
+        };
+        start(fb);
+        set(1, format_args!("CORE READY"));
+        usb_stage("RESET");
+        usb_failure("TIMEOUT");
+        for i in 0..600 {
+            observation(format_args!("EVENT {}", i));
+        }
+        assert!(pixels.iter().all(|p| *p == 0xdeadbeef));
+        unsafe {
+            let p = &*PANEL.0.get();
+            assert!(p.omitted > 0);
+            assert_eq!(p.first_failure.unwrap().as_str(), "USB STEP RESET");
+            assert_eq!(p.last_failure.unwrap().as_str(), "TIMEOUT");
+        }
+        flush();
+        let before = pixels.clone();
+        let rows = unsafe { (*PANEL.0.get()).paint_rows };
+        set(1, format_args!("CORE READY"));
+        flush();
+        assert_eq!(pixels, before);
+        assert_eq!(unsafe { (*PANEL.0.get()).paint_rows }, rows);
+        hide(true);
+        page(3);
+        set(1, format_args!("APP RUNNING"));
+        flush();
+        assert_eq!(pixels, before);
+        hide(false);
+        page(0);
+        flush();
+        assert_eq!(&pixels[320 * 356..], &[0xdeadbeef; 16]);
+        assert_eq!(
+            unsafe { (*PANEL.0.get()).first_failure.unwrap() }.as_str(),
+            "USB STEP RESET"
+        );
+    }
 }

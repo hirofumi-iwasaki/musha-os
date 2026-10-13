@@ -245,14 +245,14 @@ unsafe fn read(port: u16) -> u32 {
     }
     raw
 }
-pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) {
+pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) -> bool {
     if timer.port == 0 {
         show_evidence();
         super::debug(b"MUSHA: ACPI_TIMER_UNAVAILABLE\n");
         unsafe {
             fb.text("TIMER UNAVAILABLE", 24, 260, fb.color(255, 180, 0));
         }
-        return;
+        return false;
     }
     let mut clock = musha_platform::Clock::new(timer, unsafe { read(timer.port) }).unwrap();
     // Bounded probe: a stopped clock cannot hang boot forever. This iteration
@@ -266,7 +266,7 @@ pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) {
                 unsafe {
                     fb.text("TIMER READY", 24, 260, fb.color(0, 240, 100));
                 }
-                return;
+                return true;
             }
         } else {
             break;
@@ -276,6 +276,7 @@ pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) {
     unsafe {
         fb.text("TIMER STALLED", 24, 260, fb.color(255, 0, 0));
     }
+    false
 }
 
 // The runtime owns this clock. All driver waits and app steps poll it on BSP.
@@ -308,8 +309,8 @@ impl Time {
         Err("CLOCK STALLED")
     }
     pub(crate) fn now(&mut self) -> Result<u64, &'static str> {
-        self.clock
-            .sample(unsafe { read(self.timer.port) })
-            .ok_or("CLOCK OVERFLOW")
+        let raw = unsafe { read(self.timer.port) };
+        crate::bootstate::sample(self.timer, raw);
+        self.clock.sample(raw).ok_or("CLOCK OVERFLOW")
     }
 }

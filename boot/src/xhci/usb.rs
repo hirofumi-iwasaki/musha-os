@@ -583,7 +583,7 @@ pub(super) fn enumerate(
     crate::debug(&crate::cpu::hex(count));
     crate::debug(b"\nMUSHA: USB_DISCOVERY_DONE\n");
     let found_keyboard = active_keyboard.is_some();
-    if !discovery && (found_keyboard || active_storage.is_none()) {
+    if !discovery && !found_keyboard && active_storage.is_none() {
         tick(super::AppEvent::Ready(found_keyboard))?;
     }
     if !discovery && !found_keyboard {
@@ -813,6 +813,7 @@ fn run_keyboard(
         Some(prepared) => Some(file::Session::new(prepared)?),
         None => None,
     };
+    tick(super::AppEvent::Ready(true))?;
     let op = (host.regs.read(0)? & 255) as usize;
     let deadline = if cfg!(feature = "qemu-debug") && !cfg!(feature = "input-persistent") {
         host.clock

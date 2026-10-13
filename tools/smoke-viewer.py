@@ -89,7 +89,20 @@ with (out/'qemu.log').open('w') as err:
    wait('RUNTIME_COOPERATIVE_OK')
   elif a.case not in ('disconnect','timeout'):
    start=key('q');wait('INPUT_SOURCE_DETACHED',start);wait('RUNTIME_COOPERATIVE_OK',start)
+  wait('BOOT_TIMES CORE READY ENTRY RUNNING FRAME')
   text=log.read_text();assert 'XHCI_QUIESCED DMA_DISABLED' in text
+  milestones=['CORE_READY','OS_READY STATIC_COOPERATIVE','APP_ENTERING','APP_RUNNING STATIC_LINKED']
+  positions=[text.index('MUSHA: '+m) for m in milestones]
+  assert positions==sorted(positions) and text.count('MUSHA: OS_READY ')==1
+  if a.case!='no-medium':
+   assert text.index('LIVE_FILE_API_READY')<positions[1]
+   assert 'OS_READY STATIC_COOPERATIVE FILE_VIEWER' in text
+  import re
+  sample=re.search(r'BOOT_TIMES CORE READY ENTRY RUNNING FRAME MS UNKNOWN=FFFFFFFFFFFFFFFF ([0-9A-F ]+)',text)
+  assert sample, 'Missing boot timestamps'
+  times=[int(x,16) for x in sample.group(1).split()]
+  assert len(times)==5 and times==sorted(times) and times[-1]!=2**64-1
+
   assert (sha(boot),sha(data))==hashes
   control('quit');proc.wait(timeout=5)
   print('PASS: viewer',a.format,a.case,'split' if a.split_controller else 'same','keys, page hashes, read-only images, DMA cleanup')

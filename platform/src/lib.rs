@@ -4,6 +4,7 @@ pub mod acpi_read;
 pub mod controllers;
 pub mod diagnostics;
 pub mod pci_resources;
+pub mod readiness;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct Timer {
