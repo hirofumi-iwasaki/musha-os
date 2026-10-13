@@ -682,7 +682,7 @@ fn malformed_secondary_counts_and_missing_names_are_rejected() {
 }
 
 #[test]
-fn actual_fat32_esp_and_exfat_data_are_both_readable() {
+fn mixed_esp_and_exfat_prefers_exfat_and_rejects_fat32_discovery() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/make-fat32-fixture.py");
     let out=Command::new("python3").arg("-c").arg("import importlib.util,sys,tempfile,pathlib; s=importlib.util.spec_from_file_location('fat',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/'fat.img'; m.create(p,'superfloppy'); sys.stdout.buffer.write(p.read_bytes())").arg(path).output().unwrap();
     assert!(
@@ -722,8 +722,20 @@ fn actual_fat32_esp_and_exfat_data_are_both_readable() {
     assert_eq!(discover_result(&disk, 512), Ok(()));
     let mut output = [0xcc; 4096];
     let mut read = reader(&disk);
-    let n =
-        musha_fs::read_root(blocks as u64, 512, b"MUSHA   TXT", &mut output, &mut read).unwrap();
+    assert_eq!(
+        musha_fs::read_root(blocks as u64, 512, b"MUSHA   TXT", &mut output, &mut read),
+        Err(Error::Unsupported)
+    );
+    // Explicit mounting still verifies that the FAT32 fixture itself is valid.
+    let mut fs = musha_fs::fat32::FileSystem::mount(
+        blocks as u64,
+        512,
+        2048,
+        fat_blocks as u64,
+        reader(&disk),
+    )
+    .unwrap();
+    let n = fs.read_at(0, 0, &mut output).unwrap();
     let mut expected = b"Hello Musha-OS!\n".to_vec();
     for _ in 0..45 {
         expected.extend_from_slice(b"FAT32 file read over USB.\n");
@@ -818,4 +830,74 @@ fn exfat_catalog_through_common_request_api() {
         index += 1;
     }
     assert_eq!(index, 5);
+}
+
+#[test]
+fn mixed_basic_data_keeps_exfat_first_rule_and_fat32_ambiguity() {
+    // Unsupported product layout: a valid FAT32 and a valid exFAT on one GPT disk.
+    // Fix the existing discovery behavior, without introducing a partition picker.
+    let size = 512;
+    let fat_start = 8192usize;
+    let fat_sectors = 512usize;
+    let fat_total = 32 + 2 * fat_sectors + 65525;
+    let end = fat_start + fat_total;
+    let blocks = end + 33;
+    let mut d = partition_disk(size, true, false);
+    d.resize(blocks * size, 0);
+    // Keep just the exFAT partition and one FAT32 Basic Data partition.
+    let ex = d[1024 + 256..1024 + 384].to_vec();
+    d[1024..1024 + 16384].fill(0);
+    d[1024..1152].copy_from_slice(&ex);
+    let off = 1152;
+    d[off..off + 16].copy_from_slice(&BASIC);
+    d[off + 16] = 9;
+    put64(&mut d, off + 32, fat_start as u64);
+    put64(&mut d, off + 40, (end - 1) as u64);
+    put32(&mut d, 458, (blocks - 1) as u32);
+    let primary = d[512..1024].to_vec();
+    d[(blocks - 1) * size..blocks * size].copy_from_slice(&primary);
+    for (current, other, array) in [(1, blocks - 1, 2), (blocks - 1, 1, blocks - 33)] {
+        let off = current * size;
+        put64(&mut d, off + 24, current as u64);
+        put64(&mut d, off + 32, other as u64);
+        put64(&mut d, off + 48, (end - 1) as u64);
+        put64(&mut d, off + 72, array as u64);
+    }
+    let off = fat_start * size;
+    d[off] = 0xeb;
+    put16(&mut d, off + 11, 512);
+    d[off + 13] = 1;
+    put16(&mut d, off + 14, 32);
+    d[off + 16] = 2;
+    put32(&mut d, off + 32, fat_total as u32);
+    put32(&mut d, off + 36, fat_sectors as u32);
+    put32(&mut d, off + 44, 2);
+    d[off + 510..off + 512].copy_from_slice(&[0x55, 0xaa]);
+    for base in [fat_start + 32, fat_start + 32 + fat_sectors] {
+        put32(&mut d, base * size, 0x0ffffff8);
+        put32(&mut d, base * size + 4, 0xffffffff);
+        put32(&mut d, base * size + 8, 0x0fffffff);
+    }
+    gpt_resign(&mut d, size);
+    assert!(
+        musha_fs::fat32::FileSystem::mount(
+            blocks as u64,
+            size,
+            fat_start as u64,
+            fat_total as u64,
+            reader(&d)
+        )
+        .is_ok()
+    );
+    assert_eq!(discover_result(&d, size), Ok(()));
+    assert!(matches!(
+        musha_fs::fat32::FileSystem::discover(blocks as u64, size, reader(&d)),
+        Err(Error::Unsupported)
+    ));
+    // Entry order cannot turn this into FAT32 selection.
+    let first = d[1024..1152].to_vec();
+    d.copy_within(1152..1280, 1024);
+    d[1152..1280].copy_from_slice(&first);
+    gpt_resign(&mut d, size);
+    assert_eq!(discover_result(&d, size), Ok(()));
 }

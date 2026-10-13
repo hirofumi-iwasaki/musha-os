@@ -1,13 +1,15 @@
 # Shared GPT/FAT32 USB image
 
-> 2026-10-12: 次版の配布は[配布方針](release-distribution-policy.md)と
-> [配備手順](distribution-usage.md)に従います。初回用64 MiB像と更新ZIPを分離し、
-> 通常更新では全媒体の生成・転送・ハッシュ走査を行いません。
-> 容量調整は通常ファイル用に実装、実USBへの初回書込みアダプターは未提供です。
-> 以下の古い検証日・イメージ例を現在の全機種の実機実績として扱わないでください。
-
-
 ## English
+
+Development change, 2026-10-13: new images use one FAT32 **Microsoft Basic Data**
+partition. `--partition-type esp` creates the legacy partition type. **Basic Data
+physical boot is pending on NUC5, MacBook Pro 2018 and Ryzen.** Existing ESP media
+remain ESP and may need manual mounting. No public compatibility claim is made.
+Initial images and ordinary file-only updates remain separate under the
+[distribution policy](release-distribution-policy.md) and [usage guide](distribution-usage.md).
+Ordinary updates never generate, write or hash a whole-medium image.
+
 
 The [one-command build](test-usb-build.md) creates both a raw image and a FAT32 file-copy bundle.
 
@@ -16,7 +18,7 @@ The [one-command build](test-usb-build.md) creates both a raw image and a FAT32 
 Stage 1 of the [pre-hardware work plan](pre-hardware-work-plan.md) is implemented and verified in QEMU. Physical NUC5 / NUC8 boot tests remain pending.
 `tools/make-usb-image.py` uses only Python's standard library and creates a new regular file with exclusive creation. Existing files, symlinks, and device paths are refused. It does not format or write a physical USB drive.
 
-The default image is 64MiB, with 512-byte sectors, a protective MBR, primary and backup GPT headers / 128-entry arrays, and one FAT32 EFI System Partition starting at LBA 2048. It contains `EFI/BOOT/BOOTX64.EFI` and root file `MUSHA.TXT` with `Hello Musha-OS!` followed by a newline. Two FATs, backup boot sectors, and FSInfo are included. UUIDs derive from the EFI hash and image size; directory timestamps are fixed at zero. Identical EFI input and size produce identical bytes. This does not yet promise identical EFI binaries across toolchain installations.
+The default image is 64MiB, with 512-byte sectors, a protective MBR, primary and backup GPT headers / 128-entry arrays, and one FAT32 Microsoft Basic Data partition starting at LBA 2048. It contains `EFI/BOOT/BOOTX64.EFI` and root file `MUSHA.TXT` with `Hello Musha-OS!` followed by a newline. Two FATs, backup boot sectors, and FSInfo are included. UUIDs derive from the EFI hash and image size; directory timestamps are fixed at zero. Identical EFI input, size and partition type produce identical bytes. The GPT partition name is `Musha-OS` for both types. This does not yet promise identical EFI binaries across toolchain installations.
 
 ### Build and boot
 
@@ -27,7 +29,7 @@ sh tools/build-esp.sh
 python3 tools/make-usb-image.py out/musha-usb.img
 ```
 
-The output path must not already exist. Choose another name to retain an earlier image. `--size-mib` accepts 64MiB–128GiB. `--size-bytes` instead accepts the exact medium capacity in bytes, as a multiple of 512; use that value for a physical USB drive. Larger volumes use larger clusters. This image can be used as QEMU USB storage or copied to a physical USB drive after identifying the target. Its GPT backup header is at the end of the image; on a larger physical USB drive, partition metadata must be expanded / relocated before the strict runtime validator can accept it. Raw copying the 64MiB image onto a 32GB drive alone is therefore not yet an accepted deployment method. Exact-capacity generation is implemented; the physical writing procedure requires drive identification after arrival.
+The output path must not already exist. Choose another name to retain an earlier image. `--size-mib` accepts 64MiB–128GiB. `--size-bytes` instead accepts the exact medium capacity in bytes, as a multiple of 512; this option is for explicit geometry tests, not ordinary updates. Larger volumes use larger clusters. This image can be used as QEMU USB storage or copied to a physical USB drive after identifying the target. Its GPT backup header is at the end of the image; on a larger physical USB drive, partition metadata must be expanded / relocated before the strict runtime validator can accept it. Raw copying the 64MiB image onto a 32GB drive alone is therefore not yet an accepted deployment method. Exact-capacity generation is implemented; the physical writing procedure requires drive identification after arrival.
 
 For automated diagnostics, generate the image from a `qemu-debug` EFI build:
 
@@ -42,10 +44,24 @@ The actual image is attached read-only. The script checks UEFI handoff, RAM, key
 
 ### GPT reader contract
 
-The FAT32 reader now accepts one GPT ESP as well as existing MBR / superfloppy layouts. It supports GPT revision 1.0, exactly 128 entries of 128 bytes, and 512 / 4096-byte logical sectors. Other array formats are Unsupported.
-Validate protective MBR coverage without hybrid entries, both header CRCs, array CRC, identical primary / backup arrays, disk GUID and usable-range consistency, metadata bounds, partition bounds, nonzero unique partition GUIDs, and partition overlap. Require exactly one ESP. Corrupt metadata returns Corrupt; no repair, backup-only recovery, or disk writes occur. The existing 1024-read budget includes metadata reads.
+The FAT32 reader accepts exactly one GPT candidate in the combined ESP / Microsoft Basic Data type set, as well as existing MBR / superfloppy layouts. It supports GPT revision 1.0, exactly 128 entries of 128 bytes, and 512 / 4096-byte logical sectors. Other array formats are Unsupported.
+Validate protective MBR coverage without hybrid entries, both header CRCs, array CRC, identical primary / backup arrays, disk GUID and usable-range consistency, metadata bounds, partition bounds, nonzero unique partition GUIDs, and partition overlap. Require exactly one candidate before validating its FAT32 BPB; multiple candidates are Unsupported even if some contain another filesystem. Corrupt metadata returns Corrupt; no repair, backup-only recovery, or disk writes occur. The existing 1024-read budget includes metadata reads.
+
+### Media selection and mixed layouts
+
+The runtime selects the first available supported medium in the existing controller/media
+scan order, not the first medium containing `MUSHA.ELF`. Within each medium it tries
+exFAT first and FAT32 only on `Unsupported`; corruption/I/O errors do not fall back.
+Thus a valid exFAT Basic Data volume alongside FAT32 Basic Data (or ESP) is selected
+as exFAT regardless of partition entry order. FAT32-only discovery rejects that
+combined candidate set. This is a tested consequence, **not a supported mixed layout**;
+no partition picker or second distribution partition is introduced.
 
 ### Verification
+
+Current local evidence and commands: [Basic Data validation](basic-data-validation.md).
+The 2026-10-08 results below describe the previous ESP generator.
+
 
 2026-10-08: 40 Rust host tests and four image-tool tests passed. GPT host tests include both sector sizes, corrupted CRCs, hybrid MBR, invalid ranges, overlap, duplicate GUIDs, metadata overflow, and header mismatch. Image-tool tests independently verify CRCs, FAT copies, nested EFI contents, text contents, reproducibility, invalid-input rejection, and overwrite / symlink refusal, exact capacity, and large-volume cluster geometry.
 QEMU booted the generated 64MiB GPT image and read its root text file successfully; the saved screen showed FAT32 READ OK. Fragmented GPT fixtures also passed. A cyclic file chain was rejected with controller shutdown, DMA disablement, and continued RAM diagnostics. A normal hardware build was also booted from the actual image in QEMU; visual inspection confirmed keyboard input, Esc termination, RAM completion, and FAT32 READ OK. Its SHA-256 was unchanged: `fd3bfad53063e3f2f405fa9ed20e636c613566cdce28a87f3f2fb56a99a8f53e`. Physical media, firmware ownership, and 4096-byte-sector GPT boot remain unverified.
@@ -54,6 +70,13 @@ Reference: [UEFI 2.11 GPT format](https://uefi.org/specs/UEFI/2.11/05_GUID_Parti
 
 ## 日本語
 
+2026-10-13 開発版：新規イメージは単一FAT32 **Microsoft Basic Data** を既定とする。
+`--partition-type esp` で従来種別も生成できる。**NUC5・MacBook Pro 2018・Ryzenでの
+Basic Data実機起動は確認前**。既存ESP媒体の種別は変えず、手動マウントの案内を維持する。
+初回イメージと通常更新ZIPは[配布方針](release-distribution-policy.md)・
+[配備手順](distribution-usage.md)に従い分離し、通常更新で媒体全容量の生成・書込み・ハッシュ計算をしない。
+
+
 [一括ビルド](test-usb-build.md)でディスクイメージとFAT32への配置用ファイル一式を生成できます。
 
 ### 対象範囲と構成
@@ -61,7 +84,7 @@ Reference: [UEFI 2.11 GPT format](https://uefi.org/specs/UEFI/2.11/05_GUID_Parti
 [実機到着前の作業方針](pre-hardware-work-plan.md)の第1段階を実装し、QEMUで確認した。NUC5 / NUC8の実機起動試験は未実施。
 `tools/make-usb-image.py`はPython標準ライブラリだけで新しい通常ファイルを排他的に作成する。既存ファイル、symlink、device pathは拒否する。実物USBのformatや書込みは行わない。
 
-既定は64MiB、512byte sector。protective MBR、主・副GPT header / 128-entry array、LBA 2048から始まる単一FAT32 ESPを持つ。`EFI/BOOT/BOOTX64.EFI`と、Hello Musha-OS!に改行を加えたルートの`MUSHA.TXT`を含む。2つのFAT、backup boot sector、FSInfoを配置する。UUIDはEFI hashとイメージ容量から生成し、directory timestampは0に固定する。同じEFI入力と容量なら同じbyte列になる。ツール環境間でEFIバイナリ自体が一致する保証はまだない。
+既定は64MiB、512byte sector。protective MBR、主・副GPT header / 128-entry array、LBA 2048から始まる単一FAT32 Basic Dataを持つ。`EFI/BOOT/BOOTX64.EFI`と、Hello Musha-OS!に改行を加えたルートの`MUSHA.TXT`を含む。2つのFAT、backup boot sector、FSInfoを配置する。UUIDはEFI hashとイメージ容量から生成し、directory timestampは0に固定する。同じEFI入力・容量・種別なら同じbyte列になる。GPTパーティション名は両種別とも `Musha-OS`。ツール環境間でEFIバイナリ自体が一致する保証はまだない。
 
 ### 生成と起動
 
@@ -72,7 +95,7 @@ sh tools/build-esp.sh
 python3 tools/make-usb-image.py out/musha-usb.img
 ```
 
-出力先は存在しないpathを指定する。以前のイメージを残す場合は別名を使う。`--size-mib`は64MiB～128GiBに対応する。`--size-bytes`で512の倍数の正確な媒体byte容量を指定できる。実物USBにはこの容量を使う。大容量ではclusterも拡大する。QEMUのUSB媒体として使え、対象を特定後に実物USBへ配置できる。ただしGPT backup headerはイメージ末尾にあるため、大きい実物USBではpartition metadataの拡張・移動が必要。64MiBイメージを32GB USBへ単純にraw copyするだけでは、厳密なランタイム検証に合格する配置にはならない。正確な容量に合わせた生成は実装済み。実機への書込みには到着後の対象USB特定が必要。
+出力先は存在しないpathを指定する。以前のイメージを残す場合は別名を使う。`--size-mib`は64MiB～128GiBに対応する。`--size-bytes`で512の倍数の正確な媒体byte容量を指定できる。この指定は明示的な容量試験用で、通常更新には使わない。大容量ではclusterも拡大する。QEMUのUSB媒体として使え、対象を特定後に実物USBへ配置できる。ただしGPT backup headerはイメージ末尾にあるため、大きい実物USBではpartition metadataの拡張・移動が必要。64MiBイメージを32GB USBへ単純にraw copyするだけでは、厳密なランタイム検証に合格する配置にはならない。正確な容量に合わせた生成は実装済み。実機への書込みには到着後の対象USB特定が必要。
 
 自動診断は`qemu-debug`版EFIからイメージを生成する。
 
@@ -87,10 +110,24 @@ python3 tools/smoke-qemu.py --usb-image out/musha-usb-debug.img --qemu /opt/home
 
 ### GPT読出し契約
 
-既存のMBR / superfloppyに加えてGPTの単一ESPを扱う。GPT revision 1.0、128byte entryが128個の配列、512 / 4096byte logical sectorに対応する。他の配列形式はUnsupported。
-protective MBRの範囲とhybridなし、主・副header CRC、array CRC、主・副array一致、disk GUID・usable range一致、metadata境界、partition境界、非ゼロで重複しないpartition GUID、partition非重複を検査する。ESPは一つ必要。破損はCorruptとし、修復、副だけでの復旧、ディスク書込みは行わない。metadata読出しも既存の1024回上限に含める。
+既存のMBR / superfloppyに加えてGPTのESP / Microsoft Basic Dataの合計候補が一つの構成を扱う。GPT revision 1.0、128byte entryが128個の配列、512 / 4096byte logical sectorに対応する。他の配列形式はUnsupported。
+protective MBRの範囲とhybridなし、主・副header CRC、array CRC、主・副array一致、disk GUID・usable range一致、metadata境界、partition境界、非ゼロで重複しないpartition GUID、partition非重複を検査する。FAT32 BPB検証前に候補が一つであることを要求する。複数候補は、他のファイルシステムを含む場合もUnsupported。破損はCorruptとし、修復、副だけでの復旧、ディスク書込みは行わない。metadata読出しも既存の1024回上限に含める。
+
+### 媒体選択と混在構成
+
+既存のcontroller・媒体走査順で最初に利用可能な媒体を選び、`MUSHA.ELF` を探して
+媒体を乗り換えることはしない。各媒体ではexFATを先に試し、Unsupportedの場合だけ
+FAT32を試す。破損・I/Oエラーからはフォールバックしない。
+したがって有効なexFAT Basic DataとFAT32 Basic Data（またはESP）が同居すると、
+GPTエントリー順によらずexFATが選ばれる。FAT32単独の探索は合計候補数で拒否する。
+これは試験で固定した結果であり、混在構成を対応範囲へ追加するものではない。
+パーティション選択UIや配布媒体の第2パーティションは追加しない。
 
 ### 検証
+
+今回のローカル証拠・コマンドは[Basic Data検証記録](basic-data-validation.md)を参照。
+以下の2026-10-08の記録は旧ESP生成方式の結果。
+
 
 2026-10-08: Rustホスト40試験と生成ツール4試験に合格。GPTは両sector長、CRC破損、hybrid MBR、不正範囲、重複、GUID重複、metadata overflow、header不一致を検査した。生成ツールはCRC、FATコピー、階層内EFI内容、text内容、再現性、不正入力、上書き・symlink拒否、正確な容量、大容量cluster構成を独立に確認する。
 QEMUで生成した64MiB GPTイメージから起動し、ルートtextを読出した。保存画面でFAT32 READ OKを確認。断片化GPT fixtureも合格。循環file chainは拒否し、controller停止・DMA無効化とRAM診断継続を確認。通常実機版も実際のイメージからQEMU起動し、キー入力・Esc終了・RAM完了・FAT32 READ OKを目視確認した。SHA-256は不変: `fd3bfad53063e3f2f405fa9ed20e636c613566cdce28a87f3f2fb56a99a8f53e`。実物媒体、firmware ownership、4096byte sector GPT起動は未検証。

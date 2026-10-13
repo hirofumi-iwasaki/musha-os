@@ -74,7 +74,7 @@ def stage(destination, efi, provenance, release=False, version=None):
         fixture = subprocess.check_output(['python3', str(ROOT / 'tools/make-exfat-fixture.py'), str(bundle / 'exfat-test-data.img')], text=True)
         (bundle / 'exfat-test-data.json').write_text(fixture)
         provenance = dict(provenance, status='initial-development-release' if release else 'unreleased-candidate', version=version,
-                          image_scope='64MiB fixed ESP; deploy-image.py adjusts GPT in regular files; physical initial deployment pending',
+                          image_scope='64MiB fixed FAT32 Basic Data; deploy-image.py preserves partition type; physical Basic Data boot pending',
                           hardware_validation=f'See docs/release-validation-{version}.md' if release else 'NOT RUN',
                           release_acceptance=f'Limited scope: docs/release-scope-{version}.md' if release else 'NOT DETERMINED')
         provenance['files'] = {p.relative_to(bundle).as_posix():

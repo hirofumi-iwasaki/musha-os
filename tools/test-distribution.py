@@ -43,6 +43,34 @@ class DistributionTests(unittest.TestCase):
         for name in ['LICENSE','NOTICE','third_party/lwip/COPYING','third_party/freebsd-e1000/COPYING','third_party/freebsd-apple-bce/COPYING','third_party/r-efi/AUTHORS']: self.assertIn(name,payload)
         with zipfile.ZipFile(out/(version+'-deployment.zip')) as z: self.assertIn('tools/update-usb.py',z.namelist())
         draft.validate(out,'v0.2.0','a'*40)
+    def test_partition_types_reproducible_and_preserved(self):
+        for kind in ('basic-data', 'esp'):
+            with self.subTest(kind=kind):
+                src=usb.create(self.root/(kind+'.img'),self.efi,partition_type=kind)
+                twin=usb.create(self.root/(kind+'-twin.img'),self.efi,partition_type=kind)
+                self.assertEqual(digest(src),digest(twin))
+                dst=self.root/(kind+'-deployed.img')
+                deploy.adjust(src,dst,128*1024**2,apply=True)
+                with src.open('rb') as f: original=deploy.inspect(f,src.stat().st_size)
+                with dst.open('rb') as f: result=deploy.inspect(f,dst.stat().st_size)
+                self.assertEqual(result['array'],original['array'])
+                self.assertEqual(result['array'][:16],usb.PARTITION_TYPES[kind])
+                self.assertEqual(result['array'][56:128].decode('utf-16le').rstrip('\0'),'Musha-OS')
+                self.assertEqual(result['efi'],self.efi.read_bytes())
+        with self.assertRaises(ValueError): usb.create(self.root/'bad-kind.img',self.efi,partition_type='unknown')
+        self.assertFalse((self.root/'bad-kind.img').exists())
+
+    def test_update_identity_accepts_both_partition_types_only(self):
+        import plistlib
+        v=self.root/'volume'
+        part={'ParentWholeDisk':'disk99','MountPoint':str(v),'FilesystemName':'MS-DOS FAT32','WritableVolume':True,'VolumeUUID':'test','DiskUUID':'partition'}
+        disk={'Internal':False,'BusProtocol':'USB','VirtualOrPhysical':'Physical','WholeDisk':True,'DeviceBlockSize':512,'DeviceIdentifier':'disk99','MediaName':'fixture','TotalSize':128*1024**2}
+        for kind in ('EFI','Microsoft Basic Data','Apple_APFS'):
+            with patch.object(update.sys,'platform','darwin'), patch('subprocess.check_output',side_effect=[plistlib.dumps(dict(part,Content=kind)),plistlib.dumps(disk)]):
+                if kind=='Apple_APFS':
+                    with self.assertRaises(ValueError): update.mac_identity(v)
+                else: self.assertEqual(update.mac_identity(v)['partition_type'],kind)
+
     def test_gpt_capacity_and_bounded_ranges(self):
         image=usb.create(self.root/'source.img',self.efi)
         for capacity in [64*1024**2,128*1024**2,32*1024**3+512]:

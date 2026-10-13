@@ -10,7 +10,7 @@ It connects to USB BOT READ(10) and reads the short-name root file MUSHA.TXT for
 
 - FAT32 superfloppy (the disk starts with a volume boot sector).
 - MBR primary partition type 0Bh / 0Ch; exactly one target FAT32 partition.
-- GPT revision 1.0 with one ESP; see [GPT validation and images](usb-image.md).
+- GPT revision 1.0 with exactly one ESP / Microsoft Basic Data candidate; see [GPT validation and images](usb-image.md).
 - A BPB matching 512 / 4096-byte block sectors, with one / two FATs.
 - 8.3 short names, fragmented root-directory and file chains, and partial reads of the last sector.
 
@@ -22,6 +22,14 @@ Long File Name entries are skipped, so their short-name aliases can be specified
 
 Check the MBR signature, boot indicators, partition start / length, and disk boundaries.
 Validate GPT protective MBRs and both GPT copies; malformed metadata is rejected.
+Count the combined ESP/Basic Data candidate set before BPB validation; reject
+multiple candidates as Unsupported. All pre-existing GPT checks remain mandatory.
+The runtime tries exFAT before FAT32 on each medium and keeps the first available
+supported medium. A valid mixed exFAT/FAT32 GPT selects exFAT; direct FAT32 discovery
+rejects its multiple candidates. Mixed media remain outside the supported layout.
+See [selection details](usb-image.md#media-selection-and-mixed-layouts).
+Basic Data physical boot on NUC5 / MacBook Pro 2018 / Ryzen is **pending**.
+
 Validate BPB sector size, power-of-two sectors per cluster, reserved sectors,
 FAT count, total sectors, FAT length, root cluster, FAT32 version, and active FAT.
 Determine FAT type from the data-cluster count; do not mount as FAT32 if it is below 65525.
@@ -87,7 +95,7 @@ USB BOTのREAD(10)へ接続し、ルートディレクトリの短名MUSHA.TXT�
 
 - FAT32 superfloppy(ディスク先頭がvolume boot sector)。
 - MBRの一次partition type 0Bh / 0Ch。対象FAT32 partitionは一つだけ。
-- GPT revision 1.0の単一ESP。[GPT検証とイメージ](usb-image.md)を参照。
+- GPT revision 1.0のESP / Microsoft Basic Data候補が合計一つ。[GPT検証とイメージ](usb-image.md)を参照。
 - block sector 512 / 4096byteと一致するBPB、1 / 2 FAT。
 - 8.3短名、断片化したroot directoryとfile chain、最後のsectorの部分読出し。
 
@@ -99,6 +107,12 @@ Long File Name entryは読み飛ばすため、その短名aliasを指定する�
 
 MBRのsignature、boot indicator、partition開始・長さ・ディスク境界を確認する。
 GPT protective MBRと主・副GPTを検証し、破損metadataを拒否する。
+BPB検証前にESP / Basic Dataの合計候補数を数え、複数候補はUnsupportedとする。
+既存のGPT検査はすべて維持する。各媒体はexFAT→FAT32の順で調べ、最初に利用可能な
+媒体を保持する。有効なexFAT/FAT32混在GPTはexFATが選ばれ、FAT32単独探索は複数候補を拒否する。
+混在構成は対象外のまま。[選択規則](usb-image.md)を参照。
+Basic DataのNUC5・MacBook Pro 2018・Ryzen実機起動は**確認前**。
+
 BPBのsector長、power-of-twoのsectors per cluster、reserved sector、FAT数、
 total sector、FAT長、root cluster、FAT32 version、active FATを検査する。
 FAT種別はdata cluster数から判定し、65525未満はFAT32としてmountしない。

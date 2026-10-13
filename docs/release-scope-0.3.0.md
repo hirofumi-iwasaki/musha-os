@@ -38,6 +38,7 @@ The user-facing description is: "You can build a C program with the SDK, put it 
 - The loaded ELF receives the candidate r1 start record, arena and stack; `query`, `log` and `exit` are the only operations. `log` is bounded as in C2. No input, time, file, display-command or network syscall is added.
 - `exit` and faults halt as in C2. Returning to the OS, resource reclamation and relaunch without reboot are not required.
 - Output rendering is kernel text drawing into a bounded region; scrolling, colors and layout are implementation choices and not part of the ABI.
+- The boot FAT32 partition type changes from EFI System Partition to Microsoft Basic Data so that macOS and Windows show the USB and users can place `MUSHA.ELF` (decided 2026-10-13, [distribution policy 4.4](release-distribution-policy.md)). The OS accepts both types; existing ESP media keep booting. Publication requires boot from a Basic Data medium on the recorded machines.
 - Hardware verification of the Ring 3 path (SYSCALL MSRs, NX, TSS stack, CET rejection, user page permissions) is a new risk category separate from v0.2.0 USB/xHCI verification. The build used on hardware must be the release-profile normal build, not a probe feature build.
 
 ### Excluded from v0.3.0
@@ -114,6 +115,7 @@ ABIは **実験候補r1** のままとする。v0.3.0の公開は公開互換性
 - 読み込んだELFには候補r1の起動情報・arena・スタックを渡し、操作は `query`・`log`・`exit` のみ。`log` の上限はC2と同じ。入力・時刻・ファイル・描画命令・通信のsyscallは追加しない。
 - `exit` と障害はC2と同様に停止する。OSへの復帰、資源回収、再起動なしの再実行は要求しない。
 - 出力描画はカーネルによる有界領域へのテキスト描画とする。スクロール・色・配置は実装上の選択であり、ABIには含めない。
+- 起動用FAT32のパーティション種別をEFI System PartitionからMicrosoft Basic Dataへ変更し、macOS・WindowsでUSBが表示され利用者が`MUSHA.ELF`を置ける構成にする（2026-10-13決定、[配布方針4.4](release-distribution-policy.md)）。OSは両種別を受け入れ、既存のESP媒体も起動できる。公開には記録済み実機でのBasic Data媒体からの起動確認を要する。
 - Ring 3経路（SYSCALL用MSR、NX、TSSスタック、CET検出による拒否、ユーザーページ権限）の実機確認は、v0.2.0のUSB/xHCI確認とは別の新しい危険分類として扱う。実機に使うビルドはrelease構成の通常版とし、試験用feature付きビルドを使わない。
 
 ### v0.3.0の必須範囲から外すもの

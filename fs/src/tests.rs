@@ -372,6 +372,39 @@ fn gpt_primary_backup_512_and_4096() {
     }
 }
 #[test]
+fn gpt_single_basic_data_512_and_4096() {
+    for size in [512, 4096] {
+        let mut disk = GptDisk::new(size);
+        disk.array[..16].copy_from_slice(&gpt::BASIC_DATA);
+        disk.checksums();
+        assert_eq!(disk.file(), Ok(if size == 512 { 1200 } else { 9000 }));
+        let fs = fat32::FileSystem::discover(disk.blocks, size, |l, b| disk.read(l, b)).unwrap();
+        assert_eq!(fs.entries()[0].name(), b"MUSHA   TXT");
+    }
+}
+#[test]
+fn gpt_multiple_boot_candidates_rejected_before_bpb() {
+    for size in [512, 4096] {
+        for basic_first in [false, true] {
+            let mut disk = GptDisk::new(size);
+            if basic_first {
+                disk.array[..16].copy_from_slice(&gpt::BASIC_DATA);
+            }
+            disk.array[128..144].copy_from_slice(&gpt::BASIC_DATA);
+            disk.array[144] = 3;
+            put64(&mut disk.array, 160, 100);
+            put64(&mut disk.array, 168, 199);
+            disk.checksums();
+            assert_eq!(disk.file(), Err(Error::Unsupported));
+            assert!(matches!(
+                fat32::FileSystem::discover(disk.blocks, size, |l, b| disk.read(l, b)),
+                Err(Error::Unsupported)
+            ));
+        }
+    }
+}
+
+#[test]
 fn gpt_rejects_crc_corruption_and_hybrid_mbr() {
     for kind in 0..5 {
         let mut disk = GptDisk::new(512);

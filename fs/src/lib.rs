@@ -217,7 +217,7 @@ fn discover_volume<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
 }
 
 /// Reads a root-directory short-name file from FAT32, never writes to the disk.
-/// Supports superfloppy, one primary MBR FAT32 partition, or one GPT ESP.
+/// Supports superfloppy, one primary MBR FAT32 partition, or one GPT ESP/Basic Data candidate.
 /// sector_size must match the block device (512 or 4096). At most 1024 reads.
 pub fn read_root<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     blocks: u64,

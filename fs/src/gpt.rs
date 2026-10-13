@@ -4,6 +4,9 @@ use super::{Error, Reader, u32le};
 const ESP: [u8; 16] = [
     0x28, 0x73, 0x2a, 0xc1, 0x1f, 0xf8, 0xd2, 0x11, 0xba, 0x4b, 0, 0xa0, 0xc9, 0x3e, 0xc9, 0x3b,
 ];
+pub(super) const BASIC_DATA: [u8; 16] = [
+    0xa2, 0xa0, 0xd0, 0xeb, 0xe5, 0xb9, 0x33, 0x44, 0x87, 0xc0, 0x68, 0xb6, 0xb7, 0x26, 0x99, 0xc7,
+];
 fn u64le(b: &[u8], i: usize) -> u64 {
     u64::from_le_bytes(b[i..i + 8].try_into().unwrap())
 }
@@ -87,7 +90,9 @@ pub(super) fn partition<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     mbr: &[u8],
 ) -> Result<(u64, u64), Error> {
     let mut candidates = [(0, 0); 128];
-    let count = partitions(r, mbr, &ESP, &mut candidates)?;
+    // Count type candidates before BPB parsing: adding Basic Data must not
+    // turn ambiguous layouts into a best-effort partition search.
+    let count = partitions(r, mbr, &[ESP, BASIC_DATA], &mut candidates)?;
     if count != 1 {
         return Err(Error::Unsupported);
     }
@@ -97,7 +102,7 @@ pub(super) fn partition<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
 pub(super) fn partitions<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     r: &mut Reader<'_, F>,
     mbr: &[u8],
-    kind: &[u8; 16],
+    kinds: &[[u8; 16]],
     candidates: &mut [(u64, u64); 128],
 ) -> Result<usize, Error> {
     if r.blocks < 2 + 2 * (16384 / r.size as u64) + 2 {
@@ -171,7 +176,7 @@ pub(super) fn partitions<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
             }
             used[count] = part;
             count += 1;
-            if entry[..16] == *kind {
+            if kinds.iter().any(|kind| entry[..16] == *kind) {
                 candidates[selected] = (part.first, part.last - part.first + 1);
                 selected += 1;
             }

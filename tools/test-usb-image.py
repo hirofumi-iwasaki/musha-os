@@ -53,7 +53,7 @@ class ImageTests(unittest.TestCase):
                 arrays.append(array)
             self.assertEqual(*arrays)
             first, last = struct.unpack_from('<QQ', arrays[0], 32)
-            self.assertEqual(arrays[0][:16], usb.ESP_GUID)
+            self.assertEqual(arrays[0][:16], usb.BASIC_DATA_GUID)
             self.assertLess(last, blocks - 33)
             bpb = read(first)
             fatsecs = struct.unpack_from('<I', bpb, 36)[0]

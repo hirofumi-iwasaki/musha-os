@@ -58,10 +58,21 @@ python3 tools/deploy-image.py dist/candidate/musha-os-v0.2.0-x64-usb.img out/vir
 最初のハッシュ照合は`(cd dist/candidate && shasum -a 256 -c SHA256SUMS)`で実行します。
 capacityは仮想容量の例。実媒体について公称容量から推測してはいけません。
 applyなしはdry-run。既存出力・device path・4Kn・64 MiB未満・128 GiB超・破損GPT/FATを拒否。
-固定ESPは拡張せず、残りを未割当てにします。主副GPT、配列CRC、usable range、protective MBRを整合。
+固定FAT32起動パーティションは拡張せず、残りを未割当てにします。主副GPT、配列CRC、usable range、protective MBRを整合。
 書込み範囲は先頭64 MiBから旧副GPTを除いた範囲と媒体末尾33セクターのみ。
-読戻しも固定ESPと管理情報のみで、全空き容量を走査しません。exFATの作成・拡張は含みません。
+読戻しも固定FAT32起動パーティションと管理情報のみで、全空き容量を走査しません。exFATの作成・拡張は含みません。
 一般的なUSB書込みソフトとの組合せは未検証です。
+
+パーティション種別について：v0.2.0までの媒体は起動用FAT32がEFI System Partition（ESP）のため、
+macOSのFinderやWindowsのエクスプローラーには自動表示されません。macOSではディスクユーティリティで
+「すべてのデバイスを表示」にしてマウントするか、`diskutil list`で識別子を確認して`diskutil mount diskNsM`を実行します。
+v0.3.0以降の媒体は種別をMicrosoft Basic Dataに変更し、通常の外付けUSBとして表示される構成にします
+（[配布方針 4.4](release-distribution-policy.md)）。既存のESP媒体も引き続き起動できます。
+この変更は開発版で実装・ローカル検証中です。NUC5・MacBook Pro 2018・RyzenでのBasic Data起動は確認前で、
+3機の確認が完了するまで自動表示・実機起動を検証済みとして案内しません。
+既存ESP媒体の通常更新では種別を変更しないため、引き続き手動マウントが必要です。
+新規生成は `--partition-type basic-data`（既定）、互換試験は `--partition-type esp`。
+配備は両種別を保持し、更新はファイルだけを差し替えます。
 
 ## 通常更新（macOS）
 

@@ -22,10 +22,10 @@ def module(name):
     return result
 
 
-def fixture(path, efi, payload, fmt, declared=None):
+def fixture(path, efi, payload, fmt, declared=None, partition_type='basic-data'):
     """Use existing deterministic fixtures, append one root entry in a NEW file."""
     if fmt == 'fat32':
-        module('make-usb-image').create(path, efi)
+        module('make-usb-image').create(path, efi, partition_type=partition_type)
         if payload is None:
             return
         with path.open('r+b') as f:
@@ -108,11 +108,13 @@ def main():
     p.add_argument('--qemu',default='qemu-system-x86_64')
     p.add_argument('--output',type=Path,default=ROOT/'out/external-elf')
     p.add_argument('--reference',type=Path,default=ROOT/'out/v3-gop-max-pixels',help='Verified viewer pixels for the selected GOP mode')
+    p.add_argument('--boot-from-data', action='store_true', help='Boot FAT32 cases directly from the read-only GPT USB image')
+    p.add_argument('--partition-type', choices=['basic-data','esp'], default='basic-data')
     p.add_argument('--case',default='all',help='Functional cases by default; timing-16384/1048576/16777216 are explicit measurements')
     p.add_argument('--efi',type=Path,help='Use an already built candidate; --normal supplies screen-only checks')
     p.add_argument('--normal',action='store_true',help='Feature-free EFI, screen-only observation; select a hello/exit/fault/log/reject case')
     a=p.parse_args(); out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
-    report={'scope':'local external ELF; no real USB or hardware claim','commands':[],'cases':[]}
+    report={'scope':'local external ELF; no real USB or hardware claim','commands':[],'cases':[],'partition_type':a.partition_type,'boot_from_data':a.boot_from_data}
     def run(cmd,env=None):
         cmd=list(map(str,cmd)); report['commands'].append(cmd)
         return subprocess.check_output(cmd,cwd=ROOT,env=env,stderr=subprocess.STDOUT).decode()
@@ -165,11 +167,11 @@ def main():
                     normalenv=dict(os.environ,CARGO_TARGET_DIR=str(out/'normal-target'))
                     (d/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot'],normalenv))
                     normal=out/'normal-target/x86_64-unknown-uefi/release/musha-boot.efi'
-                fixture(data,normal,None,'fat32')
+                fixture(data,normal,None,'fat32', partition_type=a.partition_type)
                 reference=a.reference.resolve()
                 (d/'pixels.log').write_text(run(['python3','tools/smoke-normal-viewer.py','--firmware-dir',a.firmware_dir,'--qemu',a.qemu,'--boot-image',data,'--data-image',data,'--reference',reference,'--output',d/'pixels']))
                 report['cases'].append({'case':name,'passed':True,'normal_efi_sha256':hashlib.sha256(normal.read_bytes()).hexdigest(),'reference':str(reference),'pixels':str(d/'pixels/result.json')});print('PASS external ELF '+name,flush=True);continue
-            fixture(data,efi,payload,fmt,16777217 if name=='too-large' else None)
+            fixture(data,efi,payload,fmt,16777217 if name=='too-large' else None, partition_type=a.partition_type)
             if name=='duplicate':
                 with data.open('r+b') as f:
                     f.seek(2048*512);boot=f.read(512);root=(2048+32+2*struct.unpack_from('<I',boot,36)[0])*512
@@ -187,6 +189,9 @@ def main():
                  '-qmp',f'unix:{qmp},server=on,wait=off','-netdev','user,id=n','-device','e1000e,netdev=n',
                  '-vga','std','-display','none','-monitor','none','-serial','none',
                  '-debugcon',f'file:{debug}','-global','isa-debugcon.iobase=0xe9','-no-reboot']
+            if a.boot_from_data and fmt == 'fat32':
+                at=cmd.index(f'if=ide,format=raw,file=fat:rw:{out/"esp"}')
+                del cmd[at-1:at+1]
             if name=='hello-split': cmd+=['-device','qemu-xhci,id=k']
             if name!='hello-no-keyboard': cmd+=['-device','usb-kbd,bus='+('k.0' if name=='hello-split' else 'x.0')]
             report['commands'].append(cmd)

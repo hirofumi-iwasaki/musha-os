@@ -35,10 +35,12 @@ def mac_identity(root):
     p=info(root); d=info(p['ParentWholeDisk'])
     if p.get('MountPoint')!=str(root) or p.get('FilesystemName')!='MS-DOS FAT32' or not p.get('WritableVolume'):
         raise ValueError('Select writable FAT32 volume root')
+    if p.get('Content') not in ('EFI', 'Microsoft Basic Data'):
+        raise ValueError('Expected FAT32 boot partition (ESP or Basic Data)')
     if d.get('Internal') is not False or d.get('BusProtocol')!='USB' or d.get('VirtualOrPhysical')!='Physical' or not d.get('WholeDisk'):
         raise ValueError('Refusing internal, virtual or non-USB disk')
     if d.get('DeviceBlockSize')!=512 or not p.get('VolumeUUID'): raise ValueError('Unknown device identity')
-    return {k:v for k,v in {'disk':d['DeviceIdentifier'],'model':d['MediaName'],'capacity':d['TotalSize'],'volume_uuid':p['VolumeUUID'],'partition_uuid':p.get('DiskUUID'),'mount':str(root)}.items()}
+    return {k:v for k,v in {'disk':d['DeviceIdentifier'],'model':d['MediaName'],'capacity':d['TotalSize'],'volume_uuid':p['VolumeUUID'],'partition_uuid':p.get('DiskUUID'),'partition_type':p['Content'],'mount':str(root)}.items()}
 
 def update(package,root,backup,apply=False,identity=None):
     root=Path(root).absolute(); backup=Path(backup).absolute()

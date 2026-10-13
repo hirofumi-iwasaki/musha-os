@@ -694,9 +694,6 @@ fn parse_directory<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     Ok(count)
 }
 
-const BASIC_DATA: [u8; 16] = [
-    0xa2, 0xa0, 0xd0, 0xeb, 0xe5, 0xb9, 0x33, 0x44, 0x87, 0xc0, 0x68, 0xb6, 0xb7, 0x26, 0x99, 0xc7,
-];
 fn select_volume<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     blocks: u64,
     size: usize,
@@ -724,7 +721,7 @@ fn select_volume<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     }
     let mut candidates = [(0, 0); 128];
     let count = if (0..4).any(|i| boot[446 + i * 16 + 4] == 0xee) {
-        super::gpt::partitions(&mut r, &boot, &BASIC_DATA, &mut candidates)?
+        super::gpt::partitions(&mut r, &boot, &[super::gpt::BASIC_DATA], &mut candidates)?
     } else {
         let mut used = [(0u64, 0u64); 4];
         let mut used_count = 0;
