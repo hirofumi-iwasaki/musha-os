@@ -4,7 +4,7 @@
 
 Decided: 2026-10-13, approved by the project owner. Target branch: `release/0.3.0`.
 This document defines the publication scope of v0.3.0. It does not state that any item is implemented.
-Implementation status is tracked in [validation and gates](boot-api-validation.md), [C1](ring3-prototype.md) and [C2](ring3-elf.md).
+Implementation status is tracked in [validation and gates](boot-api-validation.md), [C1](ring3-prototype.md), [C2](ring3-elf.md) and [external loading](external-elf.md).
 The v0.1.0 and v0.2.0 scopes, notes and validation records are unchanged.
 
 ### Positioning
@@ -80,7 +80,7 @@ Rust guest work may continue in parallel only if it does not delay items 2–5.
 
 決定日: 2026-10-13。プロジェクト所有者承認。対象ブランチ: `release/0.3.0`。
 本書はv0.3.0の公開範囲を定めるもので、各項目の実装完了を示すものではない。
-実装状況は[検証と残件](boot-api-validation.md)、[C1](ring3-prototype.md)、[C2](ring3-elf.md)で管理する。
+実装状況は[検証と残件](boot-api-validation.md)、[C1](ring3-prototype.md)、[C2](ring3-elf.md)、[外部読込み](external-elf.md)で管理する。
 v0.1.0・v0.2.0の公開範囲、ノート、検証記録は変更しない。
 
 ### 位置づけ

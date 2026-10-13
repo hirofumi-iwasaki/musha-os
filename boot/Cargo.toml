@@ -93,3 +93,6 @@ ring3-elf-probe = ["ring3-probe"]
 ring3-lifecycle-probe = ["ring3-elf-probe"]
 ring3-lifecycle-map-failure = ["ring3-lifecycle-probe"]
 ring3-lifecycle-kernel-fault = ["ring3-lifecycle-probe"]
+
+# External stream-file C2 integration; local/QEMU only until screen output is ready.
+external-elf-probe = ["ring3-probe", "file-viewer-probe"]

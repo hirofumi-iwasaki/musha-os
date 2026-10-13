@@ -73,6 +73,8 @@ C2 update (2026-10-13): [embedded SDK C ELF execution](ring3-elf.md) adds kernel
 
 C3 follow-up: [lifecycle/reclamation](ring3-lifecycle.md) adds an opt-in saved kernel continuation, bounded page-table rollback, arena scrubbing, repeated launch and continuation into the existing static application. It is not general scheduling or a stable external lifecycle ABI.
 
+External-file follow-up: [bounded stream loading](external-elf.md) connects FAT32/exFAT to C2 in an opt-in local probe. Default-build integration, screen log/exit and hardware gates remain open.
+
 ### D: practical I/O / SDK gate
 
 Design versioned report and opaque kind/owner/permission/generation handles, bounded wait/events, copied drawing, read-only stream operations and cancel/deadline completion. Reuse existing internal drivers through checked adapters. Prove disconnected/stale/canceled requests cannot reuse live DMA memory; validate input overflow/key release and multi-controller/hub paths. Then package reproducible SDK and perform physical hardware tests. Network/write/thread/POSIX support remains separate scope.
@@ -88,3 +90,5 @@ Aは静的リンク・協調実行の移行段階です。Bはコンパイル／
 追記：C2ではSDK C ELFのRing 3実行・カーネルELF検査・BSS／arena初期化・読出し専用起動情報を実装しました。QEMU 14件、C1回帰8件、ホスト233件が合格しました。上記A/Bの記録とは区別し、Rust実行・回復処理・工程C全体の完了は未達です。
 
 未最適化debug EFIでのvector 8は未解決・未検証事項として残します。合格結果は既存手順と同じrelease構成です。初期のfixture選択誤りと終了待ち不足は修正して再試験しました。実機と遠隔Actionsは未実行です。次のcommit・公開・実USB操作には別途承認が必要です。
+
+外部ファイル読込みの追記：[ストリーム読込み経路](external-elf.md)を試験機能としてC2へ接続しました。通常ビルドへの統合・画面ログ／終了表示・実機条件は未完了です。

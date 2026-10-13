@@ -272,3 +272,5 @@ mod tests {
         assert_eq!(ctx.arena_bytes(), 16);
     }
 }
+
+pub mod bootfile;

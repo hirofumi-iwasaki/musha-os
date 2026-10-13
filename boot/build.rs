@@ -2,6 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::{env, path::PathBuf, process::Command};
 fn main() {
+    assert!(
+        !(env::var_os("CARGO_FEATURE_EXTERNAL_ELF_PROBE").is_some()
+            && env::var_os("CARGO_FEATURE_RING3_ELF_PROBE").is_some()),
+        "external and embedded ELF probes are mutually exclusive"
+    );
+    if env::var_os("CARGO_FEATURE_EXTERNAL_ELF_PROBE").is_some() {
+        assert_eq!(
+            env::var("MUSHA_RING3_CASE").unwrap_or_else(|_| "normal".into()),
+            "normal"
+        );
+    }
     println!("cargo:rerun-if-env-changed=MUSHA_USER_ELF");
     if env::var_os("CARGO_FEATURE_RING3_ELF_PROBE").is_some() {
         let source = PathBuf::from(env::var("MUSHA_USER_ELF").expect("MUSHA_USER_ELF required"));

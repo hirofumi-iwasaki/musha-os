@@ -7,12 +7,14 @@ mod acpi;
 mod app;
 mod bootstate;
 mod cpu;
-#[cfg(feature = "ring3-probe")]
-mod ring3;
 mod diagnostics;
+#[cfg(feature = "external-elf-probe")]
+mod external;
 mod memory;
 mod net;
 mod pci;
+#[cfg(feature = "ring3-probe")]
+mod ring3;
 mod runtime;
 #[cfg(feature = "t2-diagnostics")]
 mod t2;
@@ -206,7 +208,10 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     }
     #[cfg(feature = "ring3-lifecycle-probe")]
     ring3::lifecycle::run(arena, info);
-    #[cfg(all(feature = "ring3-probe", not(feature = "ring3-lifecycle-probe")))]
+    #[cfg(all(
+        feature = "ring3-probe",
+        not(any(feature = "ring3-lifecycle-probe", feature = "external-elf-probe"))
+    ))]
     ring3::run(arena, info);
     pci::diagnose(info.framebuffer, info.xhci);
     let arena_base = arena.as_mut_ptr() as usize;
@@ -222,6 +227,8 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         }
         stop();
     }
+    #[cfg(feature = "external-elf-probe")]
+    external::finish(arena, info);
     #[cfg(feature = "fault-pf")]
     unsafe {
         asm!("xor rax, rax","mov byte ptr [rax], 1",out("rax") _,options(nostack));
@@ -333,7 +340,14 @@ pub extern "efiapi" fn efi_main(
         let loaded = &*(image_protocol as *const loaded_image::Protocol);
         let image_base = loaded.image_base as usize;
         let image_bytes = loaded.image_size as usize;
-        if image_base == 0 || image_bytes == 0 || image_bytes > 16 * 1024 * 1024 {
+        // The external probe owns a 16 MiB zero-filled CPU staging section.
+        let image_limit = if cfg!(feature = "external-elf-probe") {
+            32
+        } else {
+            16
+        } * 1024
+            * 1024;
+        if image_base == 0 || image_bytes == 0 || image_bytes > image_limit {
             return efi::Status::UNSUPPORTED;
         }
         #[cfg(feature = "t2-diagnostics")]

@@ -70,6 +70,16 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     if !initialized {
                         return Err("APP INPUT ERROR");
                     }
+                    #[cfg(feature = "external-elf-probe")]
+                    {
+                        let now = time.now().map_err(|_| "APP INPUT ERROR")?;
+                        match crate::external::step(files, now) {
+                            musha_api::bootfile::State::Absent => (),
+                            musha_api::bootfile::State::Ready(_)
+                            | musha_api::bootfile::State::Rejected(_) => return Ok(true),
+                            _ => return Ok(false),
+                        }
+                    }
                     if let Err(error) = app.files(&mut ctx, files) {
                         input_error = Some(error);
                         return Err("APP INPUT ERROR");
@@ -133,6 +143,12 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 }
                 crate::xhci::AppEvent::Keys(events) => events,
             };
+            // The viewer cannot end a no-keyboard session while boot-file I/O
+            // is pending. No file service still follows the existing viewer path.
+            #[cfg(feature = "external-elf-probe")]
+            if crate::external::waiting() {
+                return Ok(false);
+            }
             let step = (|| {
                 let before = time.now().map_err(|_| Error::Io)?;
                 if let Some(last) = last_cycle {
@@ -193,6 +209,17 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 r.files = r.usb;
             }
         });
+        #[cfg(feature = "external-elf-probe")]
+        {
+            crate::external::session_ended(usb_result.is_ok());
+            if crate::external::claimed() {
+                // Never consume/reuse the arena after an unconfirmed DMA stop.
+                if usb_result == Err("QUIESCE FAILED") {
+                    return Err(Error::Io);
+                }
+                return Ok(());
+            }
+        }
         // Only a successful discovery with no input is a missing keyboard.
         // Hardware/application errors must retain the generic session status.
         keyboard_missing = ready && !had_keyboard && usb_result.is_ok() && input_error.is_none();
@@ -300,6 +327,10 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         r.finish(result.is_ok());
     });
     crate::bootstate::dump();
+    #[cfg(feature = "external-elf-probe")]
+    if crate::external::claimed() {
+        return result;
+    }
     if VIEWER {
         // Final backend status drawing can overlap the UI. Repaint after all
         // device owners have stopped; preserve the unavailable/ended screen.

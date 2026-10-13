@@ -2,6 +2,7 @@
 //! C2: immutable embedded ELF, permanent owned backing, one-shot execution.
 use super::{abi, failed};
 use musha_memory::{PAGE, elf::Plan, user::offset};
+#[cfg(feature = "ring3-elf-probe")]
 const FILE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/user.elf"));
 #[derive(Clone, Copy)]
 struct Mapping {
@@ -31,7 +32,11 @@ static mut LOADED: Loaded = Loaded {
     permissions: 0,
 };
 pub unsafe fn load(arena: &mut [u8]) -> usize {
-    let plan = Plan::parse(FILE).unwrap_or_else(|_| failed(b"ELF_FORMAT"));
+    #[cfg(feature = "ring3-elf-probe")]
+    let file = FILE;
+    #[cfg(feature = "external-elf-probe")]
+    let file = crate::external::image();
+    let plan = Plan::parse(file).unwrap_or_else(|_| failed(b"ELF_FORMAT"));
     let needed = plan.backing_bytes().unwrap_or_else(|_| failed(b"ELF_SIZE"));
     let start = 20 * PAGE;
     if needed
@@ -70,7 +75,7 @@ pub unsafe fn load(arena: &mut [u8]) -> usize {
     for i in 0..plan.count {
         let s = plan.segments[i];
         let bytes = s.page_bytes();
-        plan.load_segment(i, FILE, &mut arena[cursor..cursor + bytes])
+        plan.load_segment(i, file, &mut arena[cursor..cursor + bytes])
             .unwrap_or_else(|_| failed(b"ELF_COPY"));
         unsafe {
             map(

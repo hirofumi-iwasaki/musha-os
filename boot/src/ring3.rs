@@ -7,7 +7,7 @@ use musha_memory::PAGE;
 #[allow(dead_code)]
 #[path = "../../sdk/rust/musha-sys/src/generated.rs"]
 mod abi;
-#[cfg(feature = "ring3-elf-probe")]
+#[cfg(any(feature = "ring3-elf-probe", feature = "external-elf-probe"))]
 mod elf;
 #[cfg(feature = "ring3-lifecycle-probe")]
 pub mod lifecycle;
@@ -18,15 +18,15 @@ const USER_CS: u64 = 0x33;
 const USER_SS: u64 = 0x2b;
 static mut KERNEL_TOP: usize = 0;
 static mut USER_SP: usize = 0;
-#[cfg(not(feature = "ring3-elf-probe"))]
+#[cfg(not(any(feature = "ring3-elf-probe", feature = "external-elf-probe")))]
 static mut BACKING: usize = 0;
-#[cfg(not(feature = "ring3-elf-probe"))]
+#[cfg(not(any(feature = "ring3-elf-probe", feature = "external-elf-probe")))]
 static mut CODE_BYTES: usize = 0;
 static mut SEEN_QUERY: bool = false;
 global_asm!(include_str!("ring3/probe.S"), query = const abi::SYS_QUERY,
     log = const abi::SYS_LOG, exit = const abi::SYS_EXIT,
     code = const CODE, stack = const STACK);
-#[cfg(not(feature = "ring3-elf-probe"))]
+#[cfg(not(any(feature = "ring3-elf-probe", feature = "external-elf-probe")))]
 unsafe extern "C" {
     static musha_probe_start: u8;
     static musha_probe_end: u8;
@@ -58,7 +58,7 @@ pub fn run(arena: &mut [u8], _info: &crate::BootInfo) -> ! {
     if arena.len() < 20 * PAGE || pa % PAGE != 0 {
         failed(b"ARENA");
     }
-    #[cfg(not(feature = "ring3-elf-probe"))]
+    #[cfg(not(any(feature = "ring3-elf-probe", feature = "external-elf-probe")))]
     let case = match option_env!("MUSHA_RING3_CASE").unwrap_or("normal") {
         "normal" => 0,
         "ro" => 1,
@@ -91,9 +91,9 @@ pub fn run(arena: &mut [u8], _info: &crate::BootInfo) -> ! {
         asm!("mov cr4, {}",in(reg) cr4,options(nostack));
         core::ptr::write_bytes(pa as *mut u8, 0, 20 * PAGE);
         KERNEL_TOP = pa + 19 * PAGE;
-        #[cfg(feature = "ring3-elf-probe")]
+        #[cfg(any(feature = "ring3-elf-probe", feature = "external-elf-probe"))]
         let (argument, second, entry) = (abi::START_BASE as usize, 0, elf::load(arena));
-        #[cfg(not(feature = "ring3-elf-probe"))]
+        #[cfg(not(any(feature = "ring3-elf-probe", feature = "external-elf-probe")))]
         let (argument, second, entry) = {
             let src = core::ptr::addr_of!(musha_probe_start);
             let size = (core::ptr::addr_of!(musha_probe_end) as usize)
@@ -121,10 +121,13 @@ pub fn run(arena: &mut [u8], _info: &crate::BootInfo) -> ! {
         wrmsr(0xc0000100, 0);
         wrmsr(0xc0000101, 0);
         wrmsr(0xc0000102, 0);
-        #[cfg(not(feature = "ring3-elf-probe"))]
+        #[cfg(not(any(feature = "ring3-elf-probe", feature = "external-elf-probe")))]
         crate::debug(b"MUSHA: RING3_ENTERING C1_PROBE\n");
         // C1 uses test controls; C2 passes the read-only SDK start record.
-        if cfg!(feature = "ring3-elf-probe") {
+        if cfg!(any(
+            feature = "ring3-elf-probe",
+            feature = "external-elf-probe"
+        )) {
             crate::debug(b"MUSHA: RING3_ELF_ENTERING\n");
         }
         enter(argument, second, entry);
@@ -203,9 +206,9 @@ extern "win64" fn dispatch(frame: &mut Frame) {
         if p < KERNEL_TOP - 16 * PAGE || p + 144 != KERNEL_TOP {
             failed(b"KERNEL_STACK");
         }
-        #[cfg(feature = "ring3-elf-probe")]
+        #[cfg(any(feature = "ring3-elf-probe", feature = "external-elf-probe"))]
         let valid = elf::valid_return(frame.rip, frame.rsp);
-        #[cfg(not(feature = "ring3-elf-probe"))]
+        #[cfg(not(any(feature = "ring3-elf-probe", feature = "external-elf-probe")))]
         let valid = musha_memory::user::valid_return(
             frame.rip,
             frame.rsp,
@@ -223,14 +226,14 @@ extern "win64" fn dispatch(frame: &mut Frame) {
                 if !SEEN_QUERY {
                     crate::debug(b"MUSHA: RING3_QUERY KERNEL_STACK_OK\n");
                     SEEN_QUERY = true;
-                    #[cfg(feature = "ring3-elf-probe")]
+                    #[cfg(any(feature = "ring3-elf-probe", feature = "external-elf-probe"))]
                     crate::debug(b"MUSHA: RING3_ELF_RUNNING\n");
                 }
                 (0, abi::FEATURE_BASE)
             }
-            #[cfg(feature = "ring3-elf-probe")]
+            #[cfg(any(feature = "ring3-elf-probe", feature = "external-elf-probe"))]
             abi::SYS_LOG => elf::log(frame.rdi, frame.rsi),
-            #[cfg(not(feature = "ring3-elf-probe"))]
+            #[cfg(not(any(feature = "ring3-elf-probe", feature = "external-elf-probe")))]
             abi::SYS_LOG => {
                 let length = frame.rsi;
                 if length > abi::MAX_LOG_BYTES {
@@ -263,7 +266,7 @@ extern "win64" fn dispatch(frame: &mut Frame) {
                 }
             }
             abi::SYS_EXIT => {
-                #[cfg(feature = "ring3-elf-probe")]
+                #[cfg(any(feature = "ring3-elf-probe", feature = "external-elf-probe"))]
                 {
                     crate::debug(b"MUSHA: RING3_ELF_EXIT_STATUS=");
                     crate::debug(&crate::cpu::hex(frame.rdi));
