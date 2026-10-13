@@ -16,10 +16,10 @@ For an end-to-end normal build and USB artifacts, see [test USB build](test-usb-
 ### Current implementation scope
 
 The Rust no_std UEFI application obtains GOP information and draws
-`Hello Musha-OS!` directly into the framebuffer.
+`Musha-OS <VERSION>  starting...` directly into the framebuffer.
 It obtains the memory map, executes ExitBootServices, switches to a dedicated 64KiB stack,
-and directly draws `RUNTIME READY`.
-It then stops with interrupts disabled. The earlier approach of returning to firmware on key input has ended.
+and, after arena initialization, draws `Musha-OS <VERSION>  runtime` and `CORE READY`.
+Device discovery and application execution follow. Returning to firmware on key input is not supported.
 
 This implements the initial handoff, rather than a runtime with complete CPU initialization.
 GDT / IDT / TSS and four-level page tables are switched to our own configuration.
@@ -59,7 +59,7 @@ This is an ESP directory. Use the [shared USB image generator](usb-image.md) to 
 
 Copy the EFI directory to a FAT32 test USB drive and boot it via UEFI on a test machine with Secure Boot disabled.
 No automatic USB-formatting procedure is provided yet.
-The expected result is the greeting and `RUNTIME READY`, followed by a halt without returning to UEFI.
+The startup displays are `Musha-OS <VERSION>  starting...`, then `Musha-OS <VERSION>  runtime` and `CORE READY`. VERSION comes from the repository file; device discovery and the selected application follow.
 NUC5 / NUC8 hardware boot tests have not been performed.
 
 ### QEMU boot tests
@@ -208,9 +208,9 @@ USB2ハブ試験は`tools/smoke-qemu.py --hub-depth 1 --keyboard-usb-version 1 -
 ### 現在の実装範囲
 
 Rust no_stdのUEFIアプリがGOP情報を取得し、フレームバッファへ直接
-`Hello Musha-OS!` を描画する。メモリマップを取得してExitBootServicesを実行し、
-専用64KiBスタックへ切替後に `RUNTIME READY` を直接描画する。
-その後は割込みを無効にして停止する。キー入力でファームウェアへ戻る方式は終了した。
+`Musha-OS <VERSION>  starting...` を描画する。メモリマップを取得してExitBootServicesを実行し、
+専用64KiBスタックへ切替え、arena初期化後に `Musha-OS <VERSION>  runtime` と `CORE READY` を直接描画する。
+その後は機器探索とアプリ実行へ進む。キー入力でファームウェアへ戻る方式は終了した。
 
 これは初期ハンドオフの実装で、完全なCPU初期化済みランタイムではない。
 GDT / IDT / TSSと4段ページテーブルは自前設定へ切り替える。
@@ -246,7 +246,7 @@ sh tools/build-esp.sh
 
 FAT32の試験用USBへEFIディレクトリをコピーし、Secure Bootを無効にした
 試験機でUEFI起動する。USBをフォーマットする自動処理はまだ提供しない。
-期待結果は挨拶と `RUNTIME READY` の表示。その後は停止し、UEFIへ戻らない。
+起動表示は `Musha-OS <VERSION>  starting...`、続いて `Musha-OS <VERSION>  runtime` と `CORE READY`。VERSIONはリポジトリのファイルから埋め込み、その後に機器探索と対象アプリの実行が続く。
 NUC5 / NUC8の実機起動試験はまだない。
 
 ### QEMUによる起動試験

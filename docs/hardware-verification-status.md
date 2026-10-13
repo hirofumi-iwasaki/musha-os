@@ -6,6 +6,7 @@
 
 | 項目 | 確認状況 | 範囲・留意点 |
 | --- | --- | --- |
+| Ryzen 7機のRing 3 Hello | 開発版で実機成功 | IMG_7603.movでHello・終了0。公開候補の冷間起動3回は未完了。[記録](hardware-acceptance-0.3.0.md) |
 | Ryzen 7機のUSB起動・画面表示 | 実機で確認 | 利用者所有機の特定構成。Ryzen全般の対応保証ではない。マザーボード・CPUの詳細型番は未記録 |
 | Ryzen機のUSBメモリー読出し | 実機で確認 | SanDiskの容量取得、FAT32、MUSHA.TXT 16byte、アプリ側読出しを確認 |
 | Ryzen機の有線キーボード入力 | 実機で確認 | H4でLenovo 17EF:6009のShift・A入力、Escによる終了を確認。任意のHID機器対応ではない |
@@ -13,18 +14,18 @@
 | 複数入力機器の同時接続 | 既知の制約あり | H15でLenovo有線とRazer無線ドングルを同時接続すると、選択されたRazer側だけを監視しLenovo入力を受け付けない状況を確認。未修正 |
 | MacBook Pro 2018のUSB起動・画面表示 | 実機で確認 | H19全10ページとruntime/arena/timer到達を確認。利用者が2018年モデルと明示 |
 | MacBook Pro 2018のOS独自USBストレージ読出し | 0.3.0開発版でストレージ未認識、原因未特定 | 現行IMG_7604 2.mov／IMG_7605.MOVはNo medium、調査は0.4.0以降。以下は過去H19の成功：7D00の条件付き復旧、SanDisk容量取得、FAT32、MUSHA.TXT 16 byteのアプリ読出しまで確認 |
-| MacBook Pro 2018の外付けキーボード入力 | H19で実機成功 | Lenovo 17EF:6009、A・Shift+A・Escの動作を利用者が確認。C0/00A0でINPUT DONE K1、KEY CODE 29、終了を確認 |
+| MacBook Pro 2018の外付けキーボード入力 | 0.3.0開発版で検出、入力成功は過去H19 | IMG_7604 2.mov／IMG_7605.MOVではKEYBOARD READYまで。以下は過去H19： Lenovo 17EF:6009、A・Shift+A・Escの動作を利用者が確認。C0/00A0でINPUT DONE K1、KEY CODE 29、終了を確認 |
 | MacBook Pro 2018の内蔵キーボード入力 | T2未実装のため未対応 | 外付けLenovoの成功とは区別する |
 | 専用SanDisk USBの更新 | Mac実機で実施・照合済み | 既存GPT/FAT32を保った起動EFIの更新、バックアップ、読み戻し、ディスク検査、安全な取り外しを実施。ホスト側の更新作業であり、Musha-OSの書込み機能ではない |
 | H17の実機動作 | Macの診断完了・USB未成功 | 全11診断ページを受領。BAR読取りは安定し、資源番号の混同を特定。RyzenのH17結果は未取得 |
-| NUC5i5RYH | 外部Helloの実行・終了0を実機確認 | GOP対応後IMG_7602.movでHello→終了0、1600/1200/1600。旧devのNo mediumは2回、現行未再現。公開候補で冷間起動3回は未実施。[記録](hardware-acceptance-0.3.0.md) |
+| NUC5i5RYH | 開発版でRing 3 Hello成功、候補の冷間起動は未達・調査中 | IMG_7602.movでHello→終了0、1600/1200/1600。候補41a61efcの冷間起動は失敗。IMG_7609.MOVではルーティング切替後に接続を検出したがAddress Deviceで失敗。公開候補の冷間起動3回成功は未達。[記録](hardware-acceptance-0.3.0.md) |
 | NUC8 | 実機結果未取得 | NUCの実機LAN通信は未実装・未確認 |
 | ネットワーク通信 | QEMUで確認 | Intel 82574経路のARP/ICMP/UDP echo。実機通信成功の記録なし |
 | AHCI/NVMe、Wi-Fi、Bluetooth、音声、GPU直接制御等 | 実機確認なし | 実装範囲は各設計書を参照。対応済みと表示しない |
 
 ## 0.3.0開発版の最新結果
 
-NUC5・RyzenでRing 3 Hello成功。MacBook Pro 2018は起動・外付けキーボード検出までで、ストレージ未認識、原因未特定です。過去のH19／10月12日rc1のFAT32成功を現在の成功として転記しません。内蔵キーボードはT2未実装のため未対応です。公開候補EFIによるNUC5・Ryzen各3回冷間起動とMacのBasic Data起動は未実施。[各回の証拠・ハッシュ紐付け](hardware-acceptance-0.3.0.md)。
+NUC5・Ryzenでは開発版でRing 3 Hello成功（IMG_7602.mov／IMG_7603.mov）。NUC5の候補冷間起動は失敗し、USB機器探索・Address Deviceを調査中です。MacBook Pro 2018は起動・外付けキーボード検出までで、ストレージ未認識、原因未特定です。過去のH19／10月12日rc1のFAT32成功を現在の成功として転記しません。内蔵キーボードはT2未実装のため未対応です。公開候補EFIによるNUC5の冷間起動3回成功は未達、Ryzenの冷間起動3回とMacの候補Basic Data起動受入は未完了です。[各回の証拠・ハッシュ紐付け](hardware-acceptance-0.3.0.md)。
 
 ## 配布用の短い記載例（過去H19の範囲）
 

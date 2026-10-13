@@ -50,87 +50,74 @@ Windows/Linux device adapters remain unimplemented. Unsigned EFI requires approp
 
 ### Current status
 
-Implementation has begun. Direct greeting output through GOP and the display of
-`CORE READY` after exiting UEFI Boot Services and switching to a dedicated stack
-have been verified in QEMU.
-Our own GDT / IDT / TSS and CPU exception diagnostics are implemented;
-#UD / #GP / #DF have been verified in QEMU.
-Our own page tables, reserved-memory management, and RAM arena are also implemented.
-A 64MiB arena and page protection have been verified in QEMU.
-The PM timer, PCI enumeration, xHCI ownership handoff, reset, DMA / ring diagnostics,
-and step-based Rust application execution have been added.
-Completion of 600 No-Op commands, ring wraparound, and controller shutdown have been verified in QEMU.
-USB port reset and Device Descriptor reads from USB storage and a keyboard have been verified.
-See [USB enumeration scope and limitations](docs/usb-enumeration.md).
-Boot Keyboard press / release diagnostics have been verified in QEMU.
-See [keyboard diagnostics](docs/usb-keyboard.md) and [NUC5 test preparation](docs/nuc5-bringup.md).
-Continuous input from a single keyboard to the application has been added.
-The v0.2.0 development build uses the [read-only file viewer](docs/file-viewer.md): arrows select, Enter opens, Page Up/Down browse, Esc returns, and Q ends the session.
-USB BOT capacity queries and first / last sector reads have been verified in QEMU.
-See [storage diagnostics](docs/usb-storage.md).
-[FAT32 read diagnostics](docs/fat32.md) have been added; reading MUSHA.TXT from the root has been verified in QEMU.
-[GPT support and shared bootable USB images](docs/usb-image.md) are implemented and verified in QEMU.
-An initial read-only [application file API](docs/file-api.md) is implemented for the verified boot file, up to 4KiB. Initial [QEMU ARP / ICMP / UDP diagnostics](docs/network.md) are implemented with lwIP. NUC NIC initialization and the application UDP API remain pending. The [I218 Rust port](docs/i218-rust-port-plan.md) has started with a BSD-derived bounded PHY-access library and an opt-in identity probe; I218 networking is not yet implemented.
-[Cooperative input, snapshot-file reads and QEMU networking](docs/cooperative-io.md) now run in the same session, including idle input and isolated device failures.
-The diagnostic application is designed to
-check the display, input, RAM, file, and UDP status.
-Diagnostic builds retain the [hardware diagnostic panel](docs/hardware-diagnostics.md); use the [hardware test record template](docs/hardware-test-record-template.md) for physical tests.
-[USB2 hub boot enumeration](docs/usb-multi-controller-hub-plan.md) now handles bounded child traversal and sequential multi-controller discovery. Up to five full-speed QEMU hub levels have been verified; high-speed TT traffic remains unverified. USB3.0/5Gbps hub initialization is implemented but has not been exercised on hardware; USB3.1/3.2 hubs remain unsupported.
-See [development and build instructions](docs/development.md).
-Build a test image and FAT32 USB bundle with the [one-command USB build](docs/test-usb-build.md).
-
-### Development status
-
 The external application path, kernel console, GOP mode selection and Basic Data partition type are part of the v0.3.0 normal build. The [C1](docs/ring3-prototype.md), [C2](docs/ring3-elf.md) and [C3](docs/ring3-lifecycle.md) probes remain opt-in; returning to the OS after application exit is not a normal-build feature. The [ABI](docs/application-abi.md) is experimental candidate r1. Rust guest execution, practical application I/O (input, files, display commands, network) and physical NIC networking remain pending. See [policy](docs/boot-readiness-policy.md), [validation](docs/boot-api-validation.md) and [open issues](docs/open-issues-0.3.0.md).
 
-### Policy documents
+Development builds ran Ring 3 Hello on NUC5 and Ryzen 7. Candidate cold-boot acceptance remains incomplete; NUC5 device discovery is under investigation. MacBook Pro 2018 reaches boot and external keyboard detection, but USB storage is not recognized. See [hardware acceptance](docs/hardware-acceptance-0.3.0.md).
 
-- [v0.3.0 release notes](docs/release-notes-0.3.0.md)
+### Policy and hardware documentation
+
+#### Current policies and specifications
+
 - [v0.3.0 release scope](docs/release-scope-0.3.0.md)
 - [v0.3.0 hardware acceptance](docs/hardware-acceptance-0.3.0.md)
 - [Release writing and publication rules](docs/release-editorial-policy.md)
-- [v0.2.0 release notes](docs/release-notes-0.2.0.md)
-
-- [MI68 release preparation](docs/mi68-release-preparation.md)
-- [Preparation results](docs/mi68-preparation-results.md)
-- [Release notes](docs/release-notes-0.1.0.md)
-
 - [I218-V Rust port plan](docs/i218-rust-port-plan.md)
 - [Experimental I218 PHY probe](docs/i218-phy-probe.md)
 - [Multi-controller and hub implementation plan](docs/usb-multi-controller-hub-plan.md)
 - [Multi-controller USB diagnosis](docs/usb-controller-diagnosis.md)
 - [Hardware diagnostics](docs/hardware-diagnostics.md)
 - [Hardware test record template](docs/hardware-test-record-template.md)
-- [Work plan before hardware arrival](docs/pre-hardware-work-plan.md)
+- [Memory attribute policy](docs/memory-attribute-policy.md)
+- [ACPI firmware-table read policy](docs/acpi-read-policy.md)
+- [Latest physical hardware verification status](docs/hardware-verification-status.md)
+- [Distribution policy](docs/release-distribution-policy.md)
+- [Boot readiness policy](docs/boot-readiness-policy.md)
+- [External application ABI](docs/application-abi.md)
+- [C SDK](docs/sdk.md)
+- [External applications](docs/external-app.md)
+- [v0.3.0 open issues](docs/open-issues-0.3.0.md)
+- [Development and build instructions](docs/development.md)
+- [Test USB build](docs/test-usb-build.md)
 
+#### Historical records
+
+- [v0.3.0 release notes](docs/release-notes-0.3.0.md)
+- [v0.2.0 release notes](docs/release-notes-0.2.0.md)
+- [MI68 release preparation](docs/mi68-release-preparation.md)
+- [Preparation results](docs/mi68-preparation-results.md)
+- [v0.1.0 release notes](docs/release-notes-0.1.0.md)
+- [Work plan before hardware arrival](docs/pre-hardware-work-plan.md)
 - [Musha-OS baseline policy 0.1.0](docs/policy-v0.1.md)
 - [0.1.0 architecture design](docs/design-0.1.0.md)
 - [Future architecture: Ring 3 application isolation](docs/future-design.md)
 - [0.1.0 implementation plan and design completion criteria](docs/implementation-plan-0.1.0.md)
-
-Version `0.1.0` is an initial development release with the limited scope linked above.
-
-### Additional hardware documentation
-
 - [H3 hardware USB diagnostics plan](docs/usb-h3-diagnostics-plan.md)
 - [Mac early memory diagnostics](docs/mac-memory-diagnostics.md)
 - [Ryzen H4 hardware results](docs/ryzen-h4-hardware-results.md)
-- [Memory attribute policy](docs/memory-attribute-policy.md)
 - [ACPI timer diagnosis plan](docs/acpi-timer-diagnostics-plan.md)
-- [ACPI firmware-table read policy](docs/acpi-read-policy.md)
-- [Latest physical hardware verification status](docs/hardware-verification-status.md)
 
 ### Repository layout
 
 ```text
-README.md             Project overview
-.gitignore            Exclusions for locally generated files
- docs/policy-v0.1.md   Baseline policy, scope, and validation criteria
+boot/         UEFI boot, runtime and driver integration (musha-boot)
+platform/     Boot state and diagnostic records
+memory/       Page tables, arena and ELF validation
+xhci/         xHCI, USB and BOT
+fs/           FAT32, exFAT and GPT
+api/          Internal application API, stream files and bootfile
+viewer/       Read-only file viewer
+framebuffer/  GOP rendering and console
+input/        Input source selection
+net/          lwIP and I218 port (only QEMU 82574 implemented)
+bce/          T2 BCE model (not connected)
+sdk/          C SDK: ABI schema, crt0, libmusha and samples
+tools/        Image creation, deployment, QEMU tests and release preparation
+docs/         Policies, specifications, release and hardware records
 ```
 
 ### Development and publication
 
-The default branch is `main`; the design branch is `design/0.1.0`.
+The default branch is `main`. Releases use a pull request from `release/<version>` to `main`.
 GitHub: https://github.com/hirofumi-iwasaki/musha-os
 
 ### License
@@ -196,70 +183,74 @@ Windows/Linuxの実デバイス用アダプターは未実装です。未署名E
 
 ### 現在の状態
 
-
-[USB2ハブ配下の起動時列挙](docs/usb-multi-controller-hub-plan.md)と複数controllerの順次探索を追加。QEMU full-speed hubは最大5段で確認済み。高速TT通信は未検証。USB3.0／5Gbps hubの初期化を実装したが実転送は未検証、USB3.1／3.2 hubは未対応。
-
-実装を開始しました。GOPで挨拶を直接表示し、UEFI終了・専用スタックへの切替後に
-`CORE READY` を表示するところまでQEMUで確認済みです。
-自前GDT / IDT / TSSとCPU例外診断を実装し、QEMUで#UD / #GP / #DFを確認済みです。
-自前ページテーブルと予約メモリ管理、RAM arenaも実装し、
-QEMUで64MiB arenaとページ保護を確認済みです。
-PM timer、PCI列挙、xHCI所有権移行・リセット・DMA / ring診断とRustアプリのstep実行を追加しました。
-QEMUでNo-Op 600回の完了、リング周回と停止を確認済みです。
-USBポートをリセットし、USBメモリとキーボードのDevice Descriptor読出しを確認済みです。
-[USB列挙の範囲と制約](docs/usb-enumeration.md)を参照。Boot Keyboardの押下・解放診断をQEMUで確認済みです。
-[キーボード診断](docs/usb-keyboard.md)と[NUC5試験準備](docs/nuc5-bringup.md)を参照。
-[I218 Rust移植](docs/i218-rust-port-plan.md)に着手し、BSD由来の上限付きPHYアクセスと実験用識別probeを追加しました。I218での通信は未実装です。
-診断用ビルドの[実機診断表示](docs/hardware-diagnostics.md)と[試験記録様式](docs/hardware-test-record-template.md)も追加済みです。
-v0.2.0開発版は[読出し専用ファイルビューアー](docs/file-viewer.md)を表示します。上下で選択、Enterで開く、Page Up/Downで移動、Escで一覧へ戻り、Qで終了します。FAT32/exFATをホストとQEMUで検証済み、実機確認は工程7です。
-USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済みです。
-[ストレージ診断](docs/usb-storage.md)を参照。[FAT32読出し診断](docs/fat32.md)を追加し、ルートのMUSHA.TXTをQEMUで確認済みです。
-[GPT対応と共通の起動用USBイメージ](docs/usb-image.md)を実装し、QEMUで確認済みです。
-検証済みの起動ファイル（最大4KiB）向けに、初期の読出し専用[アプリファイルAPI](docs/file-api.md)を実装しました。lwIPによる初期の[QEMU ARP・ICMP・UDP診断](docs/network.md)を実装しました。NUC向けNIC初期化とアプリUDP APIは未実装です。[協調I/O](docs/cooperative-io.md)により入力・snapshot file read・QEMU通信が同一セッションで進み、無入力・機器障害時の動作も検証しました。診断アプリは
-画面・入力・RAM・ファイル・UDPの状態を確認する構成です。
-[開発・ビルド手順](docs/development.md)を参照してください。
-
-### 開発状況
-
 外部アプリの実行経路、カーネルコンソール、GOP モード選択、Basic Data 種別は v0.3.0 の通常版に含まれます。[C1](docs/ring3-prototype.md)・[C2](docs/ring3-elf.md)・[C3](docs/ring3-lifecycle.md) は任意試験構成のままで、アプリ終了後の OS 復帰は通常版の機能ではありません。[ABI](docs/application-abi.md) は実験候補 r1 です。Rust guest、アプリ向け実用 I/O（入力・ファイル・描画命令・通信）、実機 NIC 通信は残件です。[方針](docs/boot-readiness-policy.md)・[検証](docs/boot-api-validation.md)・[残件](docs/open-issues-0.3.0.md)を参照してください。
 
-### 方針書
+開発版ではNUC5・Ryzen 7でRing 3 Helloが動作しました。公開候補の冷間起動受入は未達で、NUC5の機器探索を調査中です。MacBook Pro 2018は起動・外付けキーボード検出までで、USBストレージは未認識です。[実機受入](docs/hardware-acceptance-0.3.0.md)を参照してください。
 
-- [v0.3.0 リリースノート](docs/release-notes-0.3.0.md)
+### 方針・実機文書
+
+#### 現行の方針・仕様
+
 - [v0.3.0 公開範囲](docs/release-scope-0.3.0.md)
 - [v0.3.0 実機受入](docs/hardware-acceptance-0.3.0.md)
 - [リリース文書・公開手順の規約](docs/release-editorial-policy.md)
-- [v0.2.0リリースノート](docs/release-notes-0.2.0.md)
-
 - [I218-V Rust移植方針](docs/i218-rust-port-plan.md)
 - [実験用I218 PHY診断](docs/i218-phy-probe.md)
 - [複数コントローラー・ハブ対応設計](docs/usb-multi-controller-hub-plan.md)
 - [複数USBコントローラーの診断](docs/usb-controller-diagnosis.md)
 - [実機診断](docs/hardware-diagnostics.md)
 - [実機試験記録様式](docs/hardware-test-record-template.md)
+- [メモリー属性判定方針](docs/memory-attribute-policy.md)
+- [ACPI表の読取方針](docs/acpi-read-policy.md)
+- [配布資料用の最新実機確認状況](docs/hardware-verification-status.md)
+- [配布方針](docs/release-distribution-policy.md)
+- [起動とAPIの統合方針](docs/boot-readiness-policy.md)
+- [外部アプリABI](docs/application-abi.md)
+- [C SDK](docs/sdk.md)
+- [外部アプリ](docs/external-app.md)
+- [v0.3.0の残件](docs/open-issues-0.3.0.md)
+- [開発・ビルド手順](docs/development.md)
+- [一括USBビルド](docs/test-usb-build.md)
+
+#### 過去の記録
+
+- [v0.3.0 リリースノート](docs/release-notes-0.3.0.md)
+- [v0.2.0リリースノート](docs/release-notes-0.2.0.md)
+- [MI68公開準備](docs/mi68-release-preparation.md)
+- [MI68準備結果](docs/mi68-preparation-results.md)
+- [v0.1.0リリースノート](docs/release-notes-0.1.0.md)
 - [実機到着前の作業方針](docs/pre-hardware-work-plan.md)
-
 - [Musha-OS 基本方針 0.1.0](docs/policy-v0.1.md)
-
 - [0.1.0 アーキテクチャ設計](docs/design-0.1.0.md)
 - [将来設計：Ring 3によるアプリ分離](docs/future-design.md)
 - [0.1.0 実装計画と設計完了条件](docs/implementation-plan-0.1.0.md)
-
-`0.1.0`は上記の検証範囲に限定した初期開発版です。開発は継続中です。
-
-テストイメージとFAT32 USB用ファイル一式の生成方法は[一括USBビルド](docs/test-usb-build.md)を参照してください。
+- [H3実機USB診断方針](docs/usb-h3-diagnostics-plan.md)
+- [Mac早期メモリ診断](docs/mac-memory-diagnostics.md)
+- [Ryzen H4実機結果](docs/ryzen-h4-hardware-results.md)
+- [ACPIタイマー診断計画](docs/acpi-timer-diagnostics-plan.md)
 
 ### リポジトリ構成
 
 ```text
-README.md             プロジェクト概要
-.gitignore            ローカル生成物の除外
- docs/policy-v0.1.md   基本方針・対象範囲・検証条件
+boot/         UEFI 起動・ランタイム・ドライバー統合（musha-boot）
+platform/     起動状態・診断記録
+memory/       ページテーブル・arena・ELF 検査
+xhci/         xHCI・USB・BOT
+fs/           FAT32・exFAT・GPT
+api/          内部アプリ API・stream file・bootfile
+viewer/       読出し専用ファイルビューアー
+framebuffer/  GOP 描画・コンソール
+input/        入力源の選択
+net/          lwIP・I218 移植（QEMU 82574 のみ実装）
+bce/          T2 BCE モデル（未接続）
+sdk/          C SDK（ABI スキーマ・crt0・libmusha・サンプル）
+tools/        イメージ生成・配備・QEMU 試験・リリース準備
+docs/         方針・仕様・公開記録・実機記録
 ```
 
 ### 開発と公開
 
-既定ブランチは `main`、設計ブランチは `design/0.1.0` です。
+既定ブランチは `main` です。リリースは `release/<version>` から `main` へのプルリクエストで取り込みます。
 GitHub: https://github.com/hirofumi-iwasaki/musha-os
 
 ### ライセンス
@@ -271,17 +262,3 @@ Copyright 2026 Hirofumi Iwasaki
 
 第三者コードは各コードの元のライセンスと著作権表示を保持します。
 取り込み前に配布条件と互換性を確認し、採用元・版・変更内容を記録します。
-
-- [H3実機USB診断方針](docs/usb-h3-diagnostics-plan.md)
-
-- [Mac早期メモリ診断](docs/mac-memory-diagnostics.md)
-
-- [Ryzen H4実機結果](docs/ryzen-h4-hardware-results.md)
-
-- [メモリー属性判定方針](docs/memory-attribute-policy.md)
-
-- [ACPIタイマー診断計画](docs/acpi-timer-diagnostics-plan.md)
-
-- [ACPI表の読取方針](docs/acpi-read-policy.md)
-
-- [配布資料用の最新実機確認状況](docs/hardware-verification-status.md)（2026-10-10）

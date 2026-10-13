@@ -13,9 +13,8 @@ Use the [hardware diagnostic panel](hardware-diagnostics.md) and copy the [test 
 ### Hardware secured
 
 The user has reported securing a NUC5 and a 32GB USB drive.
-The exact model, RAM capacity, firmware version, and USB keyboard model are not yet recorded.
 The oldest reference is NUC5i5RYH / RYK (NUC5i5RYB board).
-No hardware test results are available yet.
+For NUC5 results, see [hardware acceptance](hardware-acceptance-0.3.0.md).
 
 ### Boot preparation
 
@@ -75,9 +74,8 @@ QEMU success alone does not establish support for hardware-specific USB routing 
 ### 確保済み
 
 利用者からNUC5機と32GB USBメモリの確保報告あり。
-正確な型番、RAM容量、ファームウェア版、USBキーボード型番は未記録。
 最古リファレンスはNUC5i5RYH / RYK (NUC5i5RYB基板)。
-実機試験結果はまだない。
+NUC5 の結果は[実機受入](hardware-acceptance-0.3.0.md)を参照してください。
 
 ### 起動の用意
 

@@ -2,6 +2,8 @@
 
 ## English
 
+Internal Rust API 5. For the external ABI, see [application-abi.md](application-abi.md).
+
 `musha-api` provides a safe API for Rust applications statically linked into a single EFI.
 The runtime calls `init`, `step`, and `shutdown` on the `Application` trait, plus bounded `files` callbacks while the mounted file service is available. `files_closed` invalidates saved stream IDs after transport shutdown (except failed apps or unconfirmed DMA shutdown).
 The API version is 5. Rust types carry no external binary-compatibility guarantee.
@@ -72,6 +74,8 @@ Host tests verified FIFO order, wraparound, overflow, and timestamps.
 ---
 
 ## 日本語
+
+内部 Rust API 5。外部 ABI は [application-abi.md](application-abi.md) を参照。
 
 **RustアプリAPIの初期契約**
 

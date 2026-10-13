@@ -24,7 +24,7 @@ Copy this document into a new result file for each configuration. Default values
 
 | Check | Result (NOT RUN / PASS / FAIL / UNSUPPORTED) | Exact observation |
 |---|---|---|
-| UEFI boot / Hello Musha-OS! / RUNTIME READY | NOT RUN | UNKNOWN |
+| UEFI boot / `Musha-OS <VERSION> starting...` / runtime / CORE READY | NOT RUN | UNKNOWN |
 | CPU tables / paging / arena size | NOT RUN | UNKNOWN |
 | Timer / PCI IDs / BDF | NOT RUN | UNKNOWN |
 | xHCI ownership / reset / command rings | NOT RUN | UNKNOWN |
@@ -68,7 +68,7 @@ Failure details: UNKNOWN. Reproduction steps and recovery: UNKNOWN. Final result
 
 | 確認 | 結果（未実施／合格／失敗／未対応） | 正確な観測内容 |
 |---|---|---|
-| UEFI起動／Hello Musha-OS!／RUNTIME READY | 未実施 | 不明 |
+| UEFI起動／`Musha-OS <VERSION> starting...`／runtime／CORE READY | 未実施 | 不明 |
 | CPU tables／paging／arena容量 | 未実施 | 不明 |
 | timer／PCI ID／BDF | 未実施 | 不明 |
 | xHCI ownership／reset／command rings | 未実施 | 不明 |
