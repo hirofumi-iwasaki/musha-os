@@ -280,7 +280,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     }
     #[cfg(any(feature = "fault-gp", feature = "fault-df"))]
     unsafe {
-        asm!("mov ax, 40","mov ds, ax",out("ax") _,options(nostack));
+        asm!("mov ax, {selector}", "mov ds, ax", selector = const cpu::FAULT_INVALID_SELECTOR, out("ax") _, options(nostack));
     }
 
     if cfg!(feature = "diagnostics-detail") {

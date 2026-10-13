@@ -42,6 +42,9 @@ impl Gate {
     }
 }
 const GDT_COUNT: usize = 7;
+// First selector beyond the GDT; 0x28 became valid with the Ring 3 data entry.
+#[cfg(any(feature = "fault-gp", feature = "fault-df"))]
+pub(crate) const FAULT_INVALID_SELECTOR: u16 = (GDT_COUNT * 8) as u16;
 #[repr(C, align(16))]
 struct Tables {
     gdt: [u64; GDT_COUNT],
