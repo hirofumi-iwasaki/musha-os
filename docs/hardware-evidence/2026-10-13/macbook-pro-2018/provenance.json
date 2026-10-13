@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "recorded_on": "2026-10-13",
+  "machine": "macbook-pro-2018",
+  "evidence": [
+    {
+      "file": "IMG_7604 2.mov",
+      "sha256": "e7b64d3c624dfdc3409b28f2a33bf39139a3c5c877d385a523697ecc4f4d72ae",
+      "available_locally": true
+    },
+    {
+      "file": "IMG_7605.MOV",
+      "sha256": "42abb31082280167b2a777e011e7dc64dc0f69b05d9284cb8cd5f854cb25b083",
+      "available_locally": true
+    }
+  ],
+  "observation_source": "Owner-provided Claude video interpretation; not an independent remeasurement",
+  "efi_sha256": "b743ac0129a9692adf865c37c33adb2c23ca2c0238baf5b9437ebe20faee2b1a",
+  "efi_hash_source": "out/physical-basic-data-a3153d2/result.json and update-backup/update-result.json",
+  "association": "Retrospective association with the prepared USB and owner session report. Video does not independently attest EFI bytes.",
+  "partition_type": "Microsoft Basic Data",
+  "candidate_acceptance": false,
+  "cold_boot_three_times": "NOT PERFORMED",
+  "source_commit": "a3153d2c390776e73c8ce1e2d6bb3ad00633120c"
+}

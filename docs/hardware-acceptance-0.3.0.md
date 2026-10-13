@@ -1,6 +1,20 @@
-# v0.3.0 hardware observations — NUC5i5RYH
+# v0.3.0 hardware observations
 
 ## English
+
+### Current development observations (owner report, 2026-10-13)
+
+These results are the owner's supplied interpretation by Claude of the videos below. EFI SHA-256 for the prepared Basic Data USB: `b743ac0129a9692adf865c37c33adb2c23ca2c0238baf5b9437ebe20faee2b1a`. Each session has a retrospective provenance record under `docs/hardware-evidence/2026-10-13/{nuc5,ryzen7,macbook-pro-2018}/provenance.json`, linked to `out/physical-basic-data-a3153d2/result.json` and its verified file update. The videos do not independently attest the hash; this is the deployment/session association, not a fresh EFI measurement.
+
+| Machine / evidence | Observations | Acceptance boundary |
+|---|---|---|
+| NUC5i5RYH / IMG_7602.mov | GOP 1600/1200/1600; PCI E, XHCI 1, Intel LAN 1; TIMER READY; IMAGE 0x14000000 SIZE 0x10C8000; TABLE 0x9D170000; MMIO 0 BASE 0xAA120000. MUSHA.ELF → Hello Musha-OS! → exited: status 0. Diagnostic overlap resolved. Boot menu now shows `UEFI : USB : USB : PART 0 : OS Bootloader`. | Ring 3 Hello success. Board/CPU details, RAM, firmware, Secure Boot and topology remain UNKNOWN pending owner response. Old development EFI had two No medium observations; not reproduced on this current build. |
+| Ryzen 7 / IMG_7603.mov | GOP 3840/2160/3840; PCI 34, XHCI 5, Intel LAN 0; USB READ OK; USB BYTES 72AE00000; MMIO 4 BASE 0xFCC00000. Hello → exit 0 reported. | Ring 3 Hello success reported; final video is blurred, still-image supplement pending. Native-scale console is too small at 4K. Exact machine details remain unrecorded. |
+| MacBook Pro 2018 / IMG_7604 2.mov, IMG_7605.MOV | GOP 3360/2100/3584; PCI 23, XHCI 3, Intel LAN 0; MMIO 2 BASE 0x8F900000. External keyboard attached: KEYBOARD READY. Without it: USB keyboard not detected. Both show No medium / No supported FAT32/exFAT medium. | Boot/display and external-keyboard detection only; no external Hello success. Internal keyboard unsupported because T2 is unimplemented. Storage cause unknown, deferred to v0.4.0 or later by owner. Historical 10/12 rc1 FAT32 success is not the current result. |
+
+**Cold boot ×3: NOT PERFORMED; repeat on the public candidate EFI on NUC5 and Ryzen.** Mac candidate acceptance requires Basic Data boot only, not storage recovery. Current development observations do not satisfy that future candidate gate. Network detection is not physical network communication. See [open issues](open-issues-0.3.0.md).
+
+### Historical earlier development EFI (before GOP/Basic Data)
 
 Received 2026-10-13 JST from the owner. **One successful external Hello execution is observed; hardware acceptance is incomplete.** Two attempts were reported, not three successful cold boots. The exact power-off/reset procedure is not yet recorded.
 
@@ -37,6 +51,18 @@ The owner requested smaller log text. The local follow-up changes only external-
 Local validation: `out/nuc5-font-review/host-tests.log` (10 framebuffer tests), `report.json` (seven normal-EFI QEMU cases: Hello, long log, UTF-8 replacement, exit 42, PF, UD, absent viewer). The absent case retains the existing pixel reference and zero debug bytes. These are local checks, not additional physical boots.
 
 ## 日本語
+
+### 現行開発版（2026-10-13、所有者報告）
+
+以下は所有者が提供した、Claudeによる動画読取り結果です。配備済みBasic Data USBのEFI SHA-256は `b743ac0129a9692adf865c37c33adb2c23ca2c0238baf5b9437ebe20faee2b1a`。各回の `docs/hardware-evidence/2026-10-13/{nuc5,ryzen7,macbook-pro-2018}/provenance.json` に配備記録との紐付けを保存しました。動画からハッシュを測定したものではなく、配備内容と所有者の実行報告を事後に対応付けた記録です。
+
+- **NUC5：Ring 3 Hello成功**。IMG_7602.mov、GOP 1600/1200/1600。PCI E、XHCI 1、LAN 1、TIMER READY。IMAGE 0x14000000 / SIZE 0x10C8000、TABLE 0x9D170000、MMIO 0 / BASE 0xAA120000。Hello→終了0、診断パネルの重なり解消、UEFI USBブート項目の表示を確認。RAM・UEFI版等のUNKNOWNは所有者回答待ちのままです。
+- **Ryzen：Ring 3 Hello成功の報告**。IMG_7603.mov、GOP 3840/2160/3840。PCI 34、XHCI 5、LAN 0、USB READ OK、USB BYTES 72AE00000、MMIO 4 / BASE 0xFCC00000。終了0の最終映像はぼけており静止画補足待ち。4Kの等倍文字は小さすぎるためA1で改善します。
+- **Mac：起動・外付けキーボード検出まで**。IMG_7604 2.mov・IMG_7605.MOV、GOP 3360/2100/3584。PCI 23、XHCI 3、LAN 0、MMIO 2 / BASE 0x8F900000。外付け接続時KEYBOARD READY、未接続時USB keyboard not detected。双方No medium／No supported FAT32/exFAT medium。内蔵キーボードはT2未実装のため未対応。10/12 rc1のFAT32成功とは区別し、退行か接続構成差かは未特定。ストレージ調査は所有者判断で0.4.0以降へ先送りします。
+
+**冷間起動3回：未実施（公開候補EFIでNUC5・Ryzen各3回を行う）**。Macの候補確認はBasic Data起動のみです。旧開発版のNUC5 No mediumは2回観測、現行版では未再現。LAN検出は実機通信成功ではありません。[残件一覧](open-issues-0.3.0.md)を参照してください。
+
+### 以下はGOP／Basic Data対応前の履歴
 
 2026-10-13受領。所有者の機種報告は **NUC5i5RYH** です。**外部Helloの実行成功を1回確認しましたが、実機受入は未完了です。** 2回の試行が報告されており、冷間起動3回の連続成功ではありません。電源断／リセット方法、RAM、UEFI版、接続ポート、キーボード型番は未記録です。
 

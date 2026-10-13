@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "recorded_on": "2026-10-13",
+  "machine": "ryzen7",
+  "evidence": [
+    {
+      "file": "IMG_7603.mov",
+      "sha256": "f2c7422a3932221525370a7768cddb60e20ab63459a748ee8825588ca48c4000",
+      "available_locally": true
+    }
+  ],
+  "observation_source": "Owner-provided Claude video interpretation; not an independent remeasurement",
+  "efi_sha256": "b743ac0129a9692adf865c37c33adb2c23ca2c0238baf5b9437ebe20faee2b1a",
+  "efi_hash_source": "out/physical-basic-data-a3153d2/result.json and update-backup/update-result.json",
+  "association": "Retrospective association with the prepared USB and owner session report. Video does not independently attest EFI bytes.",
+  "partition_type": "Microsoft Basic Data",
+  "candidate_acceptance": false,
+  "cold_boot_three_times": "NOT PERFORMED",
+  "source_commit": "a3153d2c390776e73c8ce1e2d6bb3ad00633120c"
+}
