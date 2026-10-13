@@ -301,3 +301,4 @@ mod tests {
 }
 
 pub mod console;
+pub mod mode;

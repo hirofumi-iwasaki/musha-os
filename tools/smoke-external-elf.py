@@ -80,7 +80,7 @@ def screen_rows(path):
     import ast, re
     data=path.read_bytes(); header=re.match(rb'P6\s+(\d+)\s+(\d+)\s+255\s',data)
     assert header, 'Expected P6 screenshot'
-    w,h=map(int,header.groups()); pixels=data[header.end():]; scale=2 if w>=992 and h>=416 else 1
+    w,h=map(int,header.groups()); pixels=data[header.end():]; scale=1
     font={}
     for key,values in re.findall(r"(b'(?:\\.|[^'])+'|\d+) => \[([\d, ]+)\]",(ROOT/'framebuffer/src/lib.rs').read_text()):
         c=ast.literal_eval(key);c=c[0] if isinstance(c,bytes) else c
@@ -107,6 +107,7 @@ def main():
     p.add_argument('--firmware-dir',required=True,type=Path)
     p.add_argument('--qemu',default='qemu-system-x86_64')
     p.add_argument('--output',type=Path,default=ROOT/'out/external-elf')
+    p.add_argument('--reference',type=Path,default=ROOT/'out/v3-gop-max-pixels',help='Verified viewer pixels for the selected GOP mode')
     p.add_argument('--case',default='all',help='Functional cases by default; timing-16384/1048576/16777216 are explicit measurements')
     p.add_argument('--efi',type=Path,help='Use an already built candidate; --normal supplies screen-only checks')
     p.add_argument('--normal',action='store_true',help='Feature-free EFI, screen-only observation; select a hello/exit/fault/log/reject case')
@@ -165,7 +166,7 @@ def main():
                     (d/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot'],normalenv))
                     normal=out/'normal-target/x86_64-unknown-uefi/release/musha-boot.efi'
                 fixture(data,normal,None,'fat32')
-                reference=ROOT/'out/v3-normal-final-pixels'
+                reference=a.reference.resolve()
                 (d/'pixels.log').write_text(run(['python3','tools/smoke-normal-viewer.py','--firmware-dir',a.firmware_dir,'--qemu',a.qemu,'--boot-image',data,'--data-image',data,'--reference',reference,'--output',d/'pixels']))
                 report['cases'].append({'case':name,'passed':True,'normal_efi_sha256':hashlib.sha256(normal.read_bytes()).hexdigest(),'reference':str(reference),'pixels':str(d/'pixels/result.json')});print('PASS external ELF '+name,flush=True);continue
             fixture(data,efi,payload,fmt,16777217 if name=='too-large' else None)

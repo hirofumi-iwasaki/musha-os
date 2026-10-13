@@ -48,12 +48,9 @@ impl Console {
     }
     /// Caller exclusively owns a valid identity-mapped framebuffer. No user pointers.
     pub unsafe fn render(&self, fb: Framebuffer) {
-        // Fixed 80x24 cells, scale 2 where it fits, else scale 1; pixel() clips.
-        let scale = if fb.width >= 992 && fb.height >= 416 {
-            2
-        } else {
-            1
-        };
+        // Native 6x8 cells avoid oversized text on firmware-scaled displays.
+        // Keep the bounded 80x24 model; pixel() clips small framebuffers.
+        let scale = 1;
         let width = COLS * 6 * scale;
         let height = ROWS * 8 * scale;
         for y in 16..(16 + height).min(fb.height) {

@@ -10,7 +10,7 @@ A matching file must be 64 bytes to 16 MiB. The kernel reads at most 4096 bytes 
 
 The display changes to `Loading MUSHA.ELF ...` on detection. After reading and verified device shutdown, the kernel checks ELF/NOTE and memory policy, then starts the application. It records OS_READY for the external application, APP_ENTERING before the privilege transition, and APP_RUNNING on the first `query`. It does not mark the static viewer as running for this path.
 
-`log` displays text in a kernel-owned **80-column × 24-row** console at pixel (16,16). Glyphs are 6×8 cells at scale 2 if the framebuffer is at least 992×416, otherwise scale 1; drawing clips to the framebuffer. Lines wrap and overflow discards the oldest row. Printable ASCII and newline are interpreted. Every other byte becomes `.` like the viewer (a multibyte character can produce several dots). UTF-8 validation still occurs first. The existing log permission, 4096-byte limit, return status and written-byte count are unchanged. All input is copied through the C2 owned supervisor aliases before drawing; applications receive neither framebuffer addresses nor hardware registers.
+`log` displays text in a kernel-owned **80-column × 24-row** console at pixel (16,16). Glyphs use native 6×8 cells at scale 1 on all resolutions; drawing clips to the framebuffer. This replaces the initial scale-2 display after the first NUC5 observation showed oversized text. Lines wrap and overflow discards the oldest row. Printable ASCII and newline are interpreted. Every other byte becomes `.` like the viewer (a multibyte character can produce several dots). UTF-8 validation still occurs first. The existing log permission, 4096-byte limit, return status and written-byte count are unchanged. All input is copied through the C2 owned supervisor aliases before drawing; applications receive neither framebuffer addresses nor hardware registers.
 
 - `exit`: `MUSHA.ELF exited: status <n>` displays the signed 32-bit result, including nonzero results, and halts.
 - User exception: `MUSHA.ELF faulted` displays vector, error code and RIP/RSP in hexadecimal, then halts. Kernel exceptions retain the fatal diagnostic path.
@@ -28,7 +28,7 @@ Reboot to return to the OS. C3 rollback/relaunch/OS return stays opt-in; it is n
 
 検出後は`Loading MUSHA.ELF ...`を表示し、読込みと機器停止を確認してからELF／NOTE・メモリ検査と実行へ進みます。外部アプリ用のOS_READY、特権遷移前のAPP_ENTERING、最初の`query`でAPP_RUNNINGを記録し、静的ビューアーの起動記録と区別します。
 
-`log`はカーネル所有の**80桁×24行**の領域へ描画します。原点は(16,16)、6×8の文字セルを使用し、画面が992×416以上なら2倍、それ以外は1倍で画面内に切り詰めます。折返しと最古行の破棄を行います。ASCII印字可能文字と改行以外は、既存ビューアーと同じ`.`へバイト単位で置換します。UTF-8検査、権限、4096バイト上限、戻り値・バイト数は不変です。C2の所有alias経由コピーを終えてから描画し、アプリに画面アドレスやレジスターを渡しません。
+`log`はカーネル所有の**80桁×24行**の領域へ描画します。原点は(16,16)、6×8の文字セルを全解像度で1倍表示し、画面内に切り詰めます。NUC5初回確認で文字が大きいとの報告を受け、従来の2倍表示を縮小しました。折返しと最古行の破棄を行います。ASCII印字可能文字と改行以外は、既存ビューアーと同じ`.`へバイト単位で置換します。UTF-8検査、権限、4096バイト上限、戻り値・バイト数は不変です。C2の所有alias経由コピーを終えてから描画し、アプリに画面アドレスやレジスターを渡しません。
 
 終了時は`MUSHA.ELF exited: status <n>`に符号付き32ビットの結果を表示して停止します。ユーザー例外では`MUSHA.ELF faulted`とvector／error／RIP／RSPを16進数で表示します。拒否は`MUSHA.ELF rejected: <reason>`で示し、ファイル・期限・中断・ELF・CPU・arena・配置／guardの拒否理由を残します。カーネル例外は従来の致命的停止です。
 

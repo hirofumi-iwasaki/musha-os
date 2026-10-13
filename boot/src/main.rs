@@ -12,6 +12,7 @@ mod cpu;
 mod diagnostics;
 #[cfg(external_app)]
 mod external;
+mod graphics;
 mod memory;
 mod net;
 mod pci;
@@ -113,6 +114,17 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         stop();
     }
     diagnostics::start(info.framebuffer);
+    diagnostics::set(
+        40,
+        format_args!(
+            "GOP WIDTH/HEIGHT/STRIDE {}/{}/{}",
+            info.framebuffer.width, info.framebuffer.height, info.framebuffer.stride
+        ),
+    );
+    diagnostics::observation(format_args!(
+        "GOP WIDTH/HEIGHT/STRIDE {}/{}/{}",
+        info.framebuffer.width, info.framebuffer.height, info.framebuffer.stride
+    ));
     #[cfg(feature = "t2-diagnostics")]
     t2::report();
     pci::report_snapshots(
@@ -315,6 +327,8 @@ pub extern "efiapi" fn efi_main(
         if protocol.is_null() {
             return efi::Status::UNSUPPORTED;
         }
+        graphics::select(protocol as *mut gop::Protocol, bs);
+        // SetMode may replace Mode.Info and the framebuffer; capture only afterward.
         let mode = (*(protocol as *const gop::Protocol)).mode;
         if mode.is_null()
             || (*mode).info.is_null()
