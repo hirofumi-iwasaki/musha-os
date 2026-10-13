@@ -3,6 +3,23 @@
 #![no_std]
 #![no_main]
 
+/// Bounded, allocation-free boot-stage label; VERSION never carries its newline.
+unsafe fn boot_heading(fb: musha_framebuffer::Framebuffer, stage: &str) {
+    use core::fmt::Write;
+    let mut label = musha_platform::diagnostics::Line::EMPTY;
+    let _ = write!(
+        label,
+        "Musha-OS {}  {}",
+        include_str!("../../VERSION").trim(),
+        stage
+    );
+    // Fit the left column without drawing over the diagnostic panel at x=800.
+    let width = fb.width.min(800).saturating_sub(48);
+    let scale = (width / (label.as_str().len().max(1) * 6)).clamp(1, 4);
+    let y = 24 * fb.height.saturating_sub(48).min(1100) / 550;
+    unsafe { fb.text_scaled(label.as_str(), 24, y, fb.color(240, 240, 240), scale) };
+}
+
 mod acpi;
 mod app;
 #[cfg(external_app)]
@@ -193,12 +210,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
                     .pixel(x, y, info.framebuffer.color(12, 20, 32));
             }
         }
-        info.framebuffer.text(
-            "Hello Musha-OS!",
-            24,
-            24,
-            info.framebuffer.color(240, 240, 240),
-        );
+        boot_heading(info.framebuffer, "runtime");
         info.framebuffer
             .text("CORE READY", 24, 64, info.framebuffer.color(0, 240, 100));
     }
@@ -226,6 +238,14 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         not(any(feature = "ring3-lifecycle-probe", feature = "external-elf-probe"))
     ))]
     ring3::run(arena, info);
+    unsafe {
+        info.framebuffer.text(
+            "DEVICE DISCOVERY",
+            24,
+            100,
+            info.framebuffer.color(0, 220, 240),
+        );
+    }
     pci::diagnose(info.framebuffer, info.xhci);
     let arena_base = arena.as_mut_ptr() as usize;
     // Diagnostic app owns the sole mutable arena borrow and exercises every page.
@@ -349,7 +369,7 @@ pub extern "efiapi" fn efi_main(
         if !fb.valid() || fb.width < 320 || fb.height < 356 {
             return efi::Status::UNSUPPORTED;
         }
-        fb.text("Hello Musha-OS!", 24, 24, fb.color(240, 240, 240));
+        boot_heading(fb, "starting...");
         let mut image_protocol = core::ptr::null_mut();
         let mut image_guid = loaded_image::PROTOCOL_GUID;
         let status = ((*bs).handle_protocol)(image, &mut image_guid, &mut image_protocol);

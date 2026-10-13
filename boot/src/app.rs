@@ -119,9 +119,6 @@ impl Application for Diagnostic {
             r.running(t);
         });
         crate::debug(b"MUSHA: APP_RUNNING STATIC_LINKED\n");
-        if !VIEWER {
-            ctx.text("Hello Musha-OS!", 24, 24, [240, 240, 240]);
-        }
         Ok(())
     }
     fn step(&mut self, ctx: &mut Context<'_>) -> Result<Step, Error> {
@@ -248,7 +245,6 @@ impl Application for Diagnostic {
         }
         let bytes = ctx.arena_bytes();
         if !VIEWER {
-            ctx.text("ARENA READY", 24, 100, [0, 220, 240]);
             ctx.text("ARENA BYTES", 24, 132, [0, 220, 240]);
             let digits = crate::cpu::hex(bytes as u64);
             ctx.text(

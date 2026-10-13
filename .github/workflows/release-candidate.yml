@@ -212,13 +212,13 @@ jobs:
       - name: Normal candidate display and input acceptance
         run: |
           bundle="dist/candidate/musha-os-$(cat VERSION)-candidate"
-          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/exfat-test-data.img" --reference out/qemu-viewer-exfat-normal --output out/qemu-normal-exfat
-          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/musha-qemu-64MiB.img" --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-fat32
+          python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/exfat-test-data.img" --reference out/qemu-viewer-exfat-normal --output out/qemu-normal-exfat
+          python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/musha-qemu-64MiB.img" --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-fat32
       - name: Fixed ESP on a larger virtual medium
         run: |
           bundle="dist/candidate/musha-os-$(cat VERSION)-candidate"
           python3 tools/deploy-image.py "$bundle/musha-qemu-64MiB.img" out/ci/normal-128MiB.img --capacity-bytes 134217728 --apply
-          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/normal-128MiB.img --data-image out/ci/normal-128MiB.img --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-larger
+          python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/normal-128MiB.img --data-image out/ci/normal-128MiB.img --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-larger
       - name: Preserve passed distribution only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

@@ -171,7 +171,7 @@ def main():
                     normal=out/'normal-target/x86_64-unknown-uefi/release/musha-boot.efi'
                 fixture(data,normal,None,'fat32', partition_type=a.partition_type)
                 reference=a.reference.resolve()
-                (d/'pixels.log').write_text(run(['python3','tools/smoke-normal-viewer.py','--firmware-dir',a.firmware_dir,'--qemu',a.qemu,'--boot-image',data,'--data-image',data,'--reference',reference,'--output',d/'pixels']))
+                (d/'pixels.log').write_text(run(['python3','tools/smoke-normal-viewer.py','--firmware-dir',a.firmware_dir,'--qemu',a.qemu,'--boot-image',data,'--data-image',data,'--bootfile-absent','--reference',reference,'--output',d/'pixels']))
                 report['cases'].append({'case':name,'passed':True,'normal_efi_sha256':hashlib.sha256(normal.read_bytes()).hexdigest(),'reference':str(reference),'pixels':str(d/'pixels/result.json')});print('PASS external ELF '+name,flush=True);continue
             fixture(data,efi,payload,fmt,16777217 if name=='too-large' else None, partition_type=a.partition_type)
             if name=='duplicate':
@@ -245,6 +245,7 @@ def main():
                         assert 'OS_READY FILE_VIEWER' not in text,text
                     if kind=='exit':
                         assert f'MUSHA.ELF exited: status {detail}' in screen,screen
+                        if name.startswith('hello'): assert 'MUSHA.ELF  (Ring 3)' in screen,screen
                         if name.startswith('hello'): assert 'Hello Musha-OS!' in screen,screen
                         if name=='log-long':
                             # The 4096-byte log scrolls at the framebuffer's visible width.

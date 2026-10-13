@@ -89,7 +89,7 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
             if musha_memory::elf::Plan::parse(image()).is_err() {
                 reject(info, "Invalid ELF or ABI NOTE");
             }
-            crate::appconsole::start(info.framebuffer, b"MUSHA.ELF\n");
+            crate::appconsole::start(info.framebuffer, b"MUSHA.ELF  (Ring 3)\n");
             crate::debug(b"MUSHA: EXTERNAL_ELF_DEVICES_STOPPED\n");
             crate::ring3::run(arena, info);
         }

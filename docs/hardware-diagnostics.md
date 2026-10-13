@@ -8,6 +8,12 @@
 
 ## English
 
+### Current v0.3.0 boot display
+
+Boot screens distinguish OS startup from the SDK example: before ExitBootServices, `Musha-OS <VERSION>  starting...`; after arena initialization, `Musha-OS <VERSION>  runtime` and `CORE READY`; device enumeration adds `DEVICE DISCOVERY` on the left. VERSION is embedded from the repository file. The external console heading is `MUSHA.ELF  (Ring 3)`. `Hello Musha-OS!` is SDK sample output only. When the boot-file reader explicitly reports absence, the viewer list status says `MUSHA.ELF not found in root. Starting file viewer.`; unreadable media keep the existing error and rejected files still halt.
+
+The earlier preparation and validation records below remain historical. Current hardware acceptance is tracked separately in [hardware acceptance](hardware-acceptance-0.3.0.md).
+
 The normal build now shows a persistent hardware panel after leaving UEFI Boot Services. It records the current runtime phase, the actually selected xHCI and first detected Intel Ethernet PCI vendor/device IDs and BDFs, USB initialization stages, up to eight USB Device Descriptor records (port, slot, VID/PID, negotiated speed), the last storage capacity and file result, and final network counters. Discovery is read-only and is not a compatibility claim. The H2 panel lists up to eight xHCI controllers. Retained controllers are probed sequentially in BDF order; `SCANNED` records discovery, `*ACTIVE` identifies the selected input controller, and errors are recorded per controller. USB details show the current controller, while earlier controller summaries and stored file metadata remain visible. See [multi-controller and hub design](usb-multi-controller-hub-plan.md). Device class/subclass/protocol and interface classification distinguish unsupported hubs from matched keyboard/storage interfaces. See [USB controller diagnosis](usb-controller-diagnosis.md). Slot numbers can be reused after a device is released; use the port and VID/PID to identify a USB device.
 
 The full panel appears on the right at resolutions at least 1024 pixels wide and 444 pixels high, or below the main output at widths at least 408 and heights at least 980. Smaller screens show a clipped compact phase/error line at the bottom; this can overlap the lowest main diagnostic row. Use a larger GOP mode to photograph complete details. Drawing is clipped to the framebuffer and requires no allocations. Labels are bounded to 64 printable ASCII bytes. Information not reached remains blank; a blank field is unknown, never a pass.
@@ -65,6 +71,12 @@ Use a fresh output filename; the image generator refuses to replace existing fil
 
 
 ## 日本語
+
+### 現在のv0.3.0起動表示
+
+起動表示はSDKサンプルと区別します。ExitBootServices前は `Musha-OS <VERSION>  starting...`、arena初期化後は `Musha-OS <VERSION>  runtime` と `CORE READY`、機器探索開始時は左列に `DEVICE DISCOVERY` を表示します。版はリポジトリのVERSIONを埋め込みます。外部アプリの見出しは `MUSHA.ELF  (Ring 3)` で、`Hello Musha-OS!` はSDKサンプルの出力専用です。起動ファイルの不在が確定した場合だけ、ファイラー一覧の状態行に `MUSHA.ELF not found in root. Starting file viewer.` を表示します。媒体を読めない場合の文言とrejected時の停止は変更しません。
+
+以下の過去の準備・検証記録は当時の内容を保持しています。今回の受入は[実機受入](hardware-acceptance-0.3.0.md)に分けて記録します。
 
 通常ビルドでも、UEFI Boot Services終了後に実機診断パネルを表示する。実行段階、実際に選択したxHCIと最初に検出したIntel EthernetのPCI vendor/device ID・BDF、USB初期化段階、最大8件のUSB Device Descriptor情報（ポート、slot、VID/PID、接続速度）、最後に調べたストレージの容量・ファイル結果、終了時の通信カウンターを記録する。列挙は読出し専用で、互換性を保証するものではない。H2では最大8個のxHCIを保持しBDF順に調査する。SCANNEDは探索済み、*ACTIVEは入力選択先を示し、失敗をコントローラー別に記録する。USB詳細は現在の候補を表示し、先の候補の概要とファイル情報を保持する。USB2ハブ配下の起動時列挙を追加した。機器行にroot portとrouteを表示する。高速TTは未検証、USB3.0／5Gbps hub初期化は実装済み・実転送未検証、USB3.1／3.2 hubは未対応。slot番号は機器解放後に再利用されるため、USB機器はポートとVID/PIDでも識別する。
 

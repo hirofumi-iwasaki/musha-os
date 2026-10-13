@@ -90,6 +90,7 @@ pub struct Viewer {
     error: Option<Error>,
     ended: bool,
     keyboard_missing: bool,
+    bootfile_absent: bool,
     handle: Option<Handle>,
     closing: bool,
     position: u64,
@@ -124,6 +125,7 @@ impl Viewer {
             error: None,
             ended: false,
             keyboard_missing: false,
+            bootfile_absent: false,
             handle: None,
             closing: false,
             position: 0,
@@ -135,6 +137,13 @@ impl Viewer {
             clear: 0,
             line: 0,
             dirty: true,
+        }
+    }
+    /// Set only after the boot-file reader reports State::Absent, never on I/O failure.
+    pub fn bootfile_absent(&mut self) {
+        if !self.bootfile_absent {
+            self.bootfile_absent = true;
+            self.repaint();
         }
     }
     fn repaint(&mut self) {
@@ -450,6 +459,9 @@ impl Viewer {
                     } else {
                         "No supported FAT32/exFAT medium. External USB keyboard required."
                     }),
+                    View::Catalog | View::List if self.bootfile_absent => {
+                        out.write_str("MUSHA.ELF not found in root. Starting file viewer.")
+                    }
                     View::Catalog => out.write_str("Reading file list..."),
                     View::List if self.count == 0 => {
                         out.write_str("This root directory contains no supported files.")
@@ -584,6 +596,23 @@ mod tests {
     use super::*;
     use musha_api::stream::{Entry, MAX_FILE_BYTES};
     use std::vec::Vec;
+    #[test]
+    fn absent_notice_requires_explicit_result_and_preserves_errors() {
+        let mut v = Viewer::new();
+        let unavailable = v.line(7);
+        v.bootfile_absent();
+        assert_eq!(v.line(7).as_str(), unavailable.as_str());
+        v.view = View::List;
+        assert_eq!(
+            v.line(7).as_str(),
+            "MUSHA.ELF not found in root. Starting file viewer."
+        );
+        v.view = View::Error;
+        assert!(v.line(7).as_str().starts_with("Cannot read:"));
+        let mut ordinary = Viewer::new();
+        ordinary.view = View::List;
+        assert!(!ordinary.line(7).as_str().contains("MUSHA.ELF"));
+    }
     fn entry(name: &str, bytes: u64) -> Entry {
         let mut e = Entry {
             name: [0; 255],

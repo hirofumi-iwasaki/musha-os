@@ -2,11 +2,13 @@
 
 ## English
 
-**v0.2.0 — read-only file viewer**
+**v0.3.0 release candidate (not published) — developer preview: run your own C program at Ring 3**
 
-[Download](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0) · [Release notes](docs/release-notes-0.2.0.md) · [Release scope](docs/release-scope-0.2.0.md)
+[Published v0.2.0 download](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0) · [Release notes](docs/release-notes-0.3.0.md) · [Release scope](docs/release-scope-0.3.0.md) · [C SDK](docs/sdk.md)
 
-FAT32/exFAT browsing is verified in QEMU. On MacBook Pro 2018, rc1 viewer boot and FAT32 recognition were observed without a USB keyboard. Hardware navigation and exFAT reads remain unverified; the internal keyboard is unsupported.
+Build a C program with the SDK, copy it to the USB as `MUSHA.ELF`, and Musha-OS runs it at Ring 3 and shows its output. The ABI is experimental and may change. External Hello was observed on development builds on NUC5 and a Ryzen 7 machine; candidate hardware acceptance is pending; MacBook Pro 2018 boots but does not recognize USB storage in this release. See [known issues](docs/open-issues-0.3.0.md).
+
+Published v0.2.0 assets are unchanged.
 
 Musha-OS is a thin bare-metal execution environment based on x86-64 / UEFI.
 It aims to make use of older PCs and provide applications with a display, input,
@@ -20,24 +22,20 @@ for operations such as switching CPU execution state.
 
 ### What starts after boot
 
-Musha-OS initializes its runtime, then automatically runs built-in checks and an application.
-The **`USB file viewer | READ ONLY` screen in the normal v0.2.0 build is the bundled read-only file browser**.
-It uses the OS display, keyboard input, and USB file services for browsing and verification.
+Musha-OS initializes its runtime, then automatically runs built-in checks and one application.
 
-1. **OS startup:** boot from UEFI and initialize memory, CPU state, timers, and the runtime.
+1. **OS startup:** boot from UEFI, select the largest GOP mode, and initialize memory, CPU state, timers, and the runtime.
 2. **Checks:** test RAM and discover USB controllers and connected devices. These checks progress cooperatively with application execution.
-3. **Built-in application:** list root files on an available FAT32/exFAT medium and display selected contents as hexadecimal and ASCII. The viewer does not write or delete files.
+3. **Application:** if the root of the FAT32/exFAT data medium contains `MUSHA.ELF`, the kernel validates it, stops devices, and runs it at Ring 3; its `log` output, exit status, fault or refusal appears on screen, and the machine halts until reboot. Otherwise the bundled **`USB file viewer | READ ONLY`** starts: it lists root files and shows selected contents as hexadecimal and ASCII. The viewer does not write or delete files.
 
-v0.1.0 and diagnostic builds show a diagnostic application with `Hello Musha-OS!`, `RUNTIME READY`, and hardware check results.
-The normal and diagnostic builds therefore show different screens after boot.
-These applications are built into the boot EFI; there is currently no application-selection launcher.
+Boot screens distinguish OS startup from the SDK example: before ExitBootServices, `Musha-OS <VERSION>  starting...`; after arena initialization, `Musha-OS <VERSION>  runtime` and `CORE READY`; device enumeration adds `DEVICE DISCOVERY` on the left. VERSION is embedded from the repository file. The external console heading is `MUSHA.ELF  (Ring 3)`. `Hello Musha-OS!` is SDK sample output only. When the boot-file reader explicitly reports absence, the viewer list status says `MUSHA.ELF not found in root. Starting file viewer.`; unreadable media keep the existing error and rejected files still halt. There is no application launcher; one application runs per boot.
 Connect an external USB keyboard to operate the viewer. Q ends the application session; restart to use it again.
-See the [viewer guide](docs/file-viewer.md) and [diagnostic screen guide](docs/hardware-diagnostics.md).
+See the [application guide](docs/external-app.md), [SDK](docs/sdk.md), [viewer guide](docs/file-viewer.md) and [diagnostic screen guide](docs/hardware-diagnostics.md).
 
 ### Downloads and USB updates
 
 [GitHub Releases](https://github.com/hirofumi-iwasaki/musha-os/releases) provides OS binaries. GitHub's **Source code** archives contain source only.
-v0.2.0 separates the small initial/recovery image (`*-usb.img.gz`) from the normal file update (`*-files.zip`).
+v0.3.0 separates the small initial/recovery image (`*-usb.img.gz`), the normal file update (`*-files.zip`) and the C SDK (`*-c-sdk.zip`). The boot partition type is now Microsoft Basic Data, so macOS and Windows show the USB as a normal drive; existing ESP media still boot.
 See the [distribution instructions](docs/distribution-usage.md) and [distribution policy](docs/release-distribution-policy.md).
 
 The compatibility target is x64 PCs, with NUC5 as the oldest reference. UEFI x64, GOP, a supported xHCI controller, and an external USB Boot Keyboard are required.
@@ -53,7 +51,7 @@ Windows/Linux device adapters remain unimplemented. Unsigned EFI requires approp
 ### Current status
 
 Implementation has begun. Direct greeting output through GOP and the display of
-`RUNTIME READY` after exiting UEFI Boot Services and switching to a dedicated stack
+`CORE READY` after exiting UEFI Boot Services and switching to a dedicated stack
 have been verified in QEMU.
 Our own GDT / IDT / TSS and CPU exception diagnostics are implemented;
 #UD / #GP / #DF have been verified in QEMU.
@@ -74,19 +72,22 @@ See [storage diagnostics](docs/usb-storage.md).
 [GPT support and shared bootable USB images](docs/usb-image.md) are implemented and verified in QEMU.
 An initial read-only [application file API](docs/file-api.md) is implemented for the verified boot file, up to 4KiB. Initial [QEMU ARP / ICMP / UDP diagnostics](docs/network.md) are implemented with lwIP. NUC NIC initialization and the application UDP API remain pending. The [I218 Rust port](docs/i218-rust-port-plan.md) has started with a BSD-derived bounded PHY-access library and an opt-in identity probe; I218 networking is not yet implemented.
 [Cooperative input, snapshot-file reads and QEMU networking](docs/cooperative-io.md) now run in the same session, including idle input and isolated device failures.
-The first diagnostic application displays `Hello Musha-OS!` and is designed to
+The diagnostic application is designed to
 check the display, input, RAM, file, and UDP status.
 Diagnostic builds retain the [hardware diagnostic panel](docs/hardware-diagnostics.md); use the [hardware test record template](docs/hardware-test-record-template.md) for physical tests.
 [USB2 hub boot enumeration](docs/usb-multi-controller-hub-plan.md) now handles bounded child traversal and sequential multi-controller discovery. Up to five full-speed QEMU hub levels have been verified; high-speed TT traffic remains unverified. USB3.0/5Gbps hub initialization is implemented but has not been exercised on hardware; USB3.1/3.2 hubs remain unsupported.
 See [development and build instructions](docs/development.md).
 Build a test image and FAT32 USB bundle with the [one-command USB build](docs/test-usb-build.md).
 
-### Development: boot/API integration
+### Development status
 
-The v0.3.0 development build runs one external SDK C ELF named `MUSHA.ELF` from the selected FAT32/exFAT data medium, including in the feature-free release-profile build. It displays loading, bounded `log` output and exit/fault/refusal results, then stops; if the file is absent, the existing viewer starts. See [external application usage](docs/external-app.md), [loading and memory limits](docs/external-elf.md) and [validation](docs/boot-api-validation.md). The [C1](docs/ring3-prototype.md), [C2](docs/ring3-elf.md) and [C3](docs/ring3-lifecycle.md) probes remain opt-in; C3 OS return is not a normal-build feature. The [ABI](docs/application-abi.md) is experimental candidate r1. Hardware acceptance, SDK distribution, Rust guest execution and practical user I/O remain pending. Published v0.2.0 assets are unchanged.
+The external application path, kernel console, GOP mode selection and Basic Data partition type are part of the v0.3.0 normal build. The [C1](docs/ring3-prototype.md), [C2](docs/ring3-elf.md) and [C3](docs/ring3-lifecycle.md) probes remain opt-in; returning to the OS after application exit is not a normal-build feature. The [ABI](docs/application-abi.md) is experimental candidate r1. Rust guest execution, practical application I/O (input, files, display commands, network) and physical NIC networking remain pending. See [policy](docs/boot-readiness-policy.md), [validation](docs/boot-api-validation.md) and [open issues](docs/open-issues-0.3.0.md).
 
 ### Policy documents
 
+- [v0.3.0 release notes](docs/release-notes-0.3.0.md)
+- [v0.3.0 release scope](docs/release-scope-0.3.0.md)
+- [v0.3.0 hardware acceptance](docs/hardware-acceptance-0.3.0.md)
 - [Release writing and publication rules](docs/release-editorial-policy.md)
 - [v0.2.0 release notes](docs/release-notes-0.2.0.md)
 
@@ -148,11 +149,13 @@ and record its source, version, and changes.
 
 ## 日本語
 
-**v0.2.0 — 読出し専用ファイルビューアー**
+**v0.3.0 公開候補（未公開）— 開発者プレビュー：自作 C プログラムを Ring 3 で実行**
 
-[ダウンロード](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0) · [リリースノート](docs/release-notes-0.2.0.md) · [公開範囲](docs/release-scope-0.2.0.md)
+[公開済み v0.2.0 のダウンロード](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0) · [リリースノート](docs/release-notes-0.3.0.md) · [公開範囲](docs/release-scope-0.3.0.md) · [C SDK](docs/sdk.md)
 
-FAT32/exFATの閲覧をQEMUで検証済みです。MacBook Pro 2018ではUSBキーボード未接続のrc1でビューアー起動・FAT32認識を確認しました。ファイル操作・exFAT読出しの実機検証は残っています。内蔵キーボードは未対応です。
+SDK で C プログラムを作り、`MUSHA.ELF` として USB へコピーすると、Musha-OS が Ring 3 で実行して出力を表示します。ABI は実験版で変更の可能性があります。外部 Hello は開発版で NUC5 と Ryzen 7 機の動作を観測しました。候補 EFI の実機受入は未完了です。MacBook Pro 2018 は起動しますが本版では USB ストレージを認識しません。[既知の問題](docs/open-issues-0.3.0.md)を参照。
+
+公開済み v0.2.0 配布物は変更していません。
 
 Musha-OSは、x86-64 / UEFIベースの薄いベアメタル実行環境です。
 古いPCを活用し、アプリケーションに必要な画面、入力、USBストレージ、
@@ -165,25 +168,20 @@ QEMUと両実機で同一のUSBイメージを起動する構成を目標とし�
 
 ### 起動後に動くもの
 
-Musha-OSは、OSの実行環境を初期化した後、組込みのチェック処理とアプリケーションを自動実行する構成です。
-v0.2.0通常版で表示される **`USB file viewer | READ ONLY` は、Musha-OSに同梱した読出し専用ファイラー（ファイルビューアー）** です。
-OSが提供する画面・キーボード入力・USBファイル読出しを利用し、動作確認とファイル閲覧を行います。
+Musha-OS は、OS の実行環境を初期化した後、組込みのチェック処理と1つのアプリケーションを自動実行します。
 
-1. **OS起動**：UEFIから起動し、メモリー・CPU・タイマーなどの実行環境を初期化します。
-2. **チェック処理**：RAMの検査やUSBコントローラー・接続機器の探索を行います。これらの処理はアプリケーションの実行と協調して進みます。
-3. **組込みアプリの表示**：v0.2.0通常版では、利用可能なFAT32/exFAT媒体のルートファイルを一覧表示し、選択したファイルの内容を16進数とASCIIで閲覧できます。書込み・削除は行いません。
+1. **OS 起動**：UEFI から起動し、最大の GOP モードを選び、メモリー・CPU・タイマー・ランタイムを初期化します。
+2. **チェック処理**：RAM の検査と USB コントローラー・接続機器の探索を行います。これらはアプリの実行と協調して進みます。
+3. **アプリ**：FAT32/exFAT データ媒体のルートに `MUSHA.ELF` があれば、カーネルが検査し、機器を停止して Ring 3 で実行します。`log` 出力・終了コード・例外・拒否理由を画面に表示し、再起動まで停止します。なければ同梱の **`USB file viewer | READ ONLY`** が起動し、ルートのファイル一覧と選択したファイルの内容を16進数と ASCII で表示します。書込み・削除は行いません。
 
-v0.1.0と診断用ビルドでは、`Hello Musha-OS!` や `RUNTIME READY` などのチェック結果を表示する診断アプリが動きます。
-通常版と診断用ビルドでは、起動後の画面が異なります。
-現在はこれらを起動用EFIに組み込んでおり、起動時にアプリを選択するランチャーはありません。
-ファイルビューアーの操作には外付けUSBキーボードが必要です。Qでアプリのセッションを終了し、再度使う場合は再起動します。
-詳しい操作と制約は[ファイルビューアー](docs/file-viewer.md)、チェック画面は[実機診断表示](docs/hardware-diagnostics.md)を参照してください。
-
+起動表示はSDKサンプルと区別します。ExitBootServices前は `Musha-OS <VERSION>  starting...`、arena初期化後は `Musha-OS <VERSION>  runtime` と `CORE READY`、機器探索開始時は左列に `DEVICE DISCOVERY` を表示します。版はリポジトリのVERSIONを埋め込みます。外部アプリの見出しは `MUSHA.ELF  (Ring 3)` で、`Hello Musha-OS!` はSDKサンプルの出力専用です。起動ファイルの不在が確定した場合だけ、ファイラー一覧の状態行に `MUSHA.ELF not found in root. Starting file viewer.` を表示します。媒体を読めない場合の文言とrejected時の停止は変更しません。アプリを選ぶランチャーはなく、1起動につき1アプリです。
+ビューアーの操作には外付け USB キーボードが必要です。Q でセッションを終了し、再度使う場合は再起動します。
+[アプリの利用方法](docs/external-app.md)、[SDK](docs/sdk.md)、[ファイルビューアー](docs/file-viewer.md)、[実機診断表示](docs/hardware-diagnostics.md)を参照してください。
 
 ### ダウンロードとUSB更新
 
 [GitHub Releases](https://github.com/hirofumi-iwasaki/musha-os/releases)からOSバイナリーを取得できます。GitHubの **Source code** アーカイブはソースコードのみです。
-v0.2.0では初回・復旧用の小型イメージ（`*-usb.img.gz`）と通常更新用ZIP（`*-files.zip`）を分離しています。
+v0.3.0 では初回・復旧用の小型イメージ（`*-usb.img.gz`）、通常更新用 ZIP（`*-files.zip`）、C SDK（`*-c-sdk.zip`）を分けています。起動パーティションの種別を Microsoft Basic Data に変更し、macOS・Windows で通常の USB として表示されます。既存の ESP 媒体も起動できます。
 [配備手順](docs/distribution-usage.md)と[配布方針](docs/release-distribution-policy.md)を参照してください。
 
 互換性の目標はx64機で、最古の基準機はNUC5です。UEFI x64・GOP・対応xHCI・外付けUSB Boot Keyboardが必要です。
@@ -202,7 +200,7 @@ Windows/Linuxの実デバイス用アダプターは未実装です。未署名E
 [USB2ハブ配下の起動時列挙](docs/usb-multi-controller-hub-plan.md)と複数controllerの順次探索を追加。QEMU full-speed hubは最大5段で確認済み。高速TT通信は未検証。USB3.0／5Gbps hubの初期化を実装したが実転送は未検証、USB3.1／3.2 hubは未対応。
 
 実装を開始しました。GOPで挨拶を直接表示し、UEFI終了・専用スタックへの切替後に
-`RUNTIME READY` を表示するところまでQEMUで確認済みです。
+`CORE READY` を表示するところまでQEMUで確認済みです。
 自前GDT / IDT / TSSとCPU例外診断を実装し、QEMUで#UD / #GP / #DFを確認済みです。
 自前ページテーブルと予約メモリ管理、RAM arenaも実装し、
 QEMUで64MiB arenaとページ保護を確認済みです。
@@ -217,16 +215,19 @@ v0.2.0開発版は[読出し専用ファイルビューアー](docs/file-viewer.
 USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済みです。
 [ストレージ診断](docs/usb-storage.md)を参照。[FAT32読出し診断](docs/fat32.md)を追加し、ルートのMUSHA.TXTをQEMUで確認済みです。
 [GPT対応と共通の起動用USBイメージ](docs/usb-image.md)を実装し、QEMUで確認済みです。
-検証済みの起動ファイル（最大4KiB）向けに、初期の読出し専用[アプリファイルAPI](docs/file-api.md)を実装しました。lwIPによる初期の[QEMU ARP・ICMP・UDP診断](docs/network.md)を実装しました。NUC向けNIC初期化とアプリUDP APIは未実装です。[協調I/O](docs/cooperative-io.md)により入力・snapshot file read・QEMU通信が同一セッションで進み、無入力・機器障害時の動作も検証しました。最初の診断アプリは `Hello Musha-OS!` と表示し、
+検証済みの起動ファイル（最大4KiB）向けに、初期の読出し専用[アプリファイルAPI](docs/file-api.md)を実装しました。lwIPによる初期の[QEMU ARP・ICMP・UDP診断](docs/network.md)を実装しました。NUC向けNIC初期化とアプリUDP APIは未実装です。[協調I/O](docs/cooperative-io.md)により入力・snapshot file read・QEMU通信が同一セッションで進み、無入力・機器障害時の動作も検証しました。診断アプリは
 画面・入力・RAM・ファイル・UDPの状態を確認する構成です。
 [開発・ビルド手順](docs/development.md)を参照してください。
 
-### 開発版：起動とAPIの統合
+### 開発状況
 
-v0.3.0開発版は、feature指定なしのrelease構成を含め、選択されたFAT32／exFAT媒体の`MUSHA.ELF`を1個実行します。読込み案内、Cアプリの有界な`log`出力、終了・障害・拒否結果を表示して停止し、不在なら従来ビューアーへ進みます。[外部アプリの利用方法](docs/external-app.md)・[読込みとメモリ制限](docs/external-elf.md)・[検証](docs/boot-api-validation.md)を参照してください。[C1](docs/ring3-prototype.md)・[C2](docs/ring3-elf.md)・[C3](docs/ring3-lifecycle.md)は任意試験構成のままで、C3のOS復帰は通常版に入りません。[ABI](docs/application-abi.md)は実験候補r1です。実機合格・SDK配布・Rust guest・実用アプリI/Oは残件です。公開済みv0.2.0配布物は変更していません。
+外部アプリの実行経路、カーネルコンソール、GOP モード選択、Basic Data 種別は v0.3.0 の通常版に含まれます。[C1](docs/ring3-prototype.md)・[C2](docs/ring3-elf.md)・[C3](docs/ring3-lifecycle.md) は任意試験構成のままで、アプリ終了後の OS 復帰は通常版の機能ではありません。[ABI](docs/application-abi.md) は実験候補 r1 です。Rust guest、アプリ向け実用 I/O（入力・ファイル・描画命令・通信）、実機 NIC 通信は残件です。[方針](docs/boot-readiness-policy.md)・[検証](docs/boot-api-validation.md)・[残件](docs/open-issues-0.3.0.md)を参照してください。
 
 ### 方針書
 
+- [v0.3.0 リリースノート](docs/release-notes-0.3.0.md)
+- [v0.3.0 公開範囲](docs/release-scope-0.3.0.md)
+- [v0.3.0 実機受入](docs/hardware-acceptance-0.3.0.md)
 - [リリース文書・公開手順の規約](docs/release-editorial-policy.md)
 - [v0.2.0リリースノート](docs/release-notes-0.2.0.md)
 

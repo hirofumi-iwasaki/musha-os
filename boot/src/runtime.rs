@@ -72,6 +72,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         let now = time.now().map_err(|_| "APP INPUT ERROR")?;
                         match crate::external::step(files, now, info.framebuffer) {
                             musha_api::bootfile::State::Absent => {
+                                app.viewer.bootfile_absent();
                                 launch(&mut app, &mut ctx, &mut time, &mut initialized)
                                     .map_err(|_| "APP INPUT ERROR")?;
                             }

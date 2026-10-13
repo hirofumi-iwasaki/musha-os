@@ -8,6 +8,7 @@ GOP mode and source revision. This checks displayed pixels, not internal DMA sta
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import shutil
@@ -22,11 +23,17 @@ p.add_argument('--data-image', required=True, type=Path)
 p.add_argument('--reference', required=True, type=Path)
 p.add_argument('--output', required=True, type=Path)
 p.add_argument('--qemu', default='qemu-system-x86_64')
+p.add_argument('--bootfile-absent', action='store_true', help='Derive the normal State::Absent list status from probe reference pixels')
 a = p.parse_args()
 for path in (a.boot_image, a.data_image, a.reference/'list.ppm', a.reference/'text.ppm'):
     if not path.is_file(): p.error(f'Expected regular file: {path}')
 a.output.mkdir(parents=True, exist_ok=False)
 out = a.output.resolve()
+if a.bootfile_absent:
+    spec = importlib.util.spec_from_file_location('viewer_reference', Path(__file__).with_name('viewer-reference.py'))
+    reference = importlib.util.module_from_spec(spec); spec.loader.exec_module(reference)
+    reference.derive(a.reference, out/'expected')
+    a.reference = out/'expected'
 f = a.firmware_dir.resolve()
 shutil.copyfile(f/'edk2-i386-vars.fd', out/'vars.fd')
 qmp = Path(__file__).resolve().parent.parent/'out'/('nv-'+hashlib.sha256(str(out).encode()).hexdigest()[:10]+'.sock')
