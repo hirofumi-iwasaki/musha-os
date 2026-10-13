@@ -192,6 +192,11 @@ pub fn log(pointer: u64, length: u64) -> (i32, u64) {
     if core::str::from_utf8(&bytes[..length as usize]).is_err() {
         return (abi::ERR_INVALID, 0);
     }
+    #[cfg(feature = "external-elf-probe")]
+    {
+        crate::appconsole::append(&bytes[..length as usize]);
+        crate::bootstate::frame();
+    }
     crate::debug(&bytes[..length as usize]);
     (0, length)
 }

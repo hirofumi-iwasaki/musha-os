@@ -434,6 +434,10 @@ pub(super) fn probe(
             Err(e) => Err(e),
         }
     };
+    #[cfg(feature = "external-elf-probe")]
+    if let Err(musha_fs::Error::DuplicateName(name)) = &mounted {
+        crate::external::duplicate_catalog(name, host.framebuffer);
+    }
     let skip_snapshot = crate::app::VIEWER || matches!(mounted, Ok(None));
     let (prepared, file_result) = match mounted {
         Ok(Some((p, bytes))) => (Some(p), bytes.ok_or(musha_fs::Error::NotFound)),

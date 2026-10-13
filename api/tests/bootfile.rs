@@ -138,3 +138,43 @@ fn incomplete_and_completed_images_invalidated_by_session_failure() {
     r.interrupted();
     assert_eq!(r.state(), State::Rejected(Rejection::Interrupted));
 }
+
+#[test]
+fn replacement_after_partial_copy_keeps_old_handle_invalid() {
+    let entries = [entry("MUSHA.ELF", 5000)];
+    let mut f = Files::new();
+    f.mount(Format::Fat32, &entries).unwrap();
+    let mut r = Reader::new();
+    let mut out = [0; 5000];
+    r.step(&mut f, &mut out, 0);
+    let q = f.take_request().unwrap();
+    f.complete(q, Ok(&[7; 4096]));
+    r.step(&mut f, &mut out, 1);
+    assert_eq!(&out[..4096], &[7; 4096]);
+    f.disconnect();
+    f.mount(Format::Exfat, &entries).unwrap();
+    assert!(matches!(
+        r.step(&mut f, &mut out, 2),
+        State::Rejected(Rejection::Stream(_))
+    ));
+    assert_eq!(&out[4096..], &[0; 904]);
+    assert!(f.take_request().is_none());
+}
+
+#[test]
+fn interruption_while_request_is_pending_never_publishes_ready() {
+    let entries = [entry("MUSHA.ELF", 64)];
+    let mut f = Files::new();
+    f.mount(Format::Fat32, &entries).unwrap();
+    let mut r = Reader::new();
+    let mut out = [0; 64];
+    r.step(&mut f, &mut out, 0);
+    let q = f.take_request().unwrap();
+    r.interrupted();
+    f.complete(q, Ok(&[7; 64]));
+    assert_eq!(
+        r.step(&mut f, &mut out, 1),
+        State::Rejected(Rejection::Interrupted)
+    );
+    assert_eq!(out, [0; 64]);
+}

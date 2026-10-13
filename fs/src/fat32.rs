@@ -111,7 +111,13 @@ impl<F: FnMut(u64, &mut [u8]) -> Result<(), Error>> FileSystem<F> {
                         .iter()
                         .any(|e| e.name.eq_ignore_ascii_case(&name))
                     {
-                        return Err(Error::Corrupt);
+                        let stem = name[..8].iter().take_while(|&&c| c != b' ').copied();
+                        let ext = name[8..].iter().take_while(|&&c| c != b' ').copied();
+                        return Err(crate::duplicate_name(
+                            stem.chain((name[8] != b' ').then_some(b'.'))
+                                .chain(ext)
+                                .map(u16::from),
+                        ));
                     }
                     let first = (u16le(raw, 20) as u32) << 16 | u16le(raw, 26) as u32;
                     if first & 0xf0000000 != 0 {

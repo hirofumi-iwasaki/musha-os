@@ -13,9 +13,9 @@ for cn,rn,key in [('musha_start_info_v1','MushaStartInfoV1','start_fields'),('mu
  for n,t,o in s[key]:
   c.append(f'    uint{t[1:]}_t {n};');r.append(f'    pub {n}: {t},')
  c.extend([f'}} {cn};',f'_Static_assert(sizeof({cn})==64,"size");',f'_Static_assert(_Alignof({cn})==8,"alignment");'])
- r.extend(['}','const _: () = {',f'assert!(core::mem::size_of::<{rn}>()==64);',f'assert!(core::mem::align_of::<{rn}>()==8);'])
+ r.extend(['}','const _: () = {',f'    assert!(core::mem::size_of::<{rn}>() == 64);',f'    assert!(core::mem::align_of::<{rn}>() == 8);'])
  for n,t,o in s[key]:
-  c.append(f'_Static_assert(offsetof({cn},{n})=={o},"{n}");');r.append(f'assert!(core::mem::offset_of!({rn},{n})=={o});')
+  c.append(f'_Static_assert(offsetof({cn},{n})=={o},"{n}");');r.append(f'    assert!(core::mem::offset_of!({rn}, {n}) == {o});')
  r.append('};')
 c.append('#endif')
 for path,lines in [('sysroot/include/musha/abi.h',c),('rust/musha-sys/src/generated.rs',r)]:

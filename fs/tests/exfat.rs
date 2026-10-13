@@ -648,7 +648,12 @@ fn case_folded_duplicate_names_are_rejected() {
         .iter()
         .map(|n| empty_entry(&n.encode_utf16().collect::<Vec<_>>()))
         .collect();
-    assert_eq!(mount_result(&root_with(&entries)), Err(Error::Corrupt));
+    assert_eq!(
+        mount_result(&root_with(&entries)),
+        Err(Error::DuplicateName([
+            65, 76, 80, 72, 65, 46, 84, 88, 84, 0, 0, 0
+        ]))
+    );
 }
 #[test]
 fn benign_secondary_is_skipped_critical_secondary_is_rejected() {

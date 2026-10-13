@@ -47,6 +47,8 @@ fn failed(reason: &[u8]) -> ! {
     crate::debug(b"MUSHA: RING3_REJECT ");
     crate::debug(reason);
     crate::debug(b"\n");
+    #[cfg(feature = "external-elf-probe")]
+    crate::appconsole::rejected(reason);
     #[cfg(feature = "ring3-lifecycle-probe")]
     lifecycle::reject(reason);
     #[cfg(not(feature = "ring3-lifecycle-probe"))]
@@ -130,6 +132,8 @@ pub fn run(arena: &mut [u8], _info: &crate::BootInfo) -> ! {
         )) {
             crate::debug(b"MUSHA: RING3_ELF_ENTERING\n");
         }
+        #[cfg(feature = "external-elf-probe")]
+        crate::external::entering();
         enter(argument, second, entry);
     }
 }
@@ -226,6 +230,8 @@ extern "win64" fn dispatch(frame: &mut Frame) {
                 if !SEEN_QUERY {
                     crate::debug(b"MUSHA: RING3_QUERY KERNEL_STACK_OK\n");
                     SEEN_QUERY = true;
+                    #[cfg(feature = "external-elf-probe")]
+                    crate::external::running();
                     #[cfg(any(feature = "ring3-elf-probe", feature = "external-elf-probe"))]
                     crate::debug(b"MUSHA: RING3_ELF_RUNNING\n");
                 }
@@ -272,9 +278,22 @@ extern "win64" fn dispatch(frame: &mut Frame) {
                     crate::debug(&crate::cpu::hex(frame.rdi));
                     crate::debug(b"\n");
                 }
+                #[cfg(feature = "external-elf-probe")]
+                {
+                    crate::appconsole::message(format_args!(
+                        "\nMUSHA.ELF exited: status {}\n",
+                        frame.rdi as i32
+                    ));
+                    crate::bootstate::update(|r, _| r.finish(true));
+                    crate::debug(b"MUSHA: EXTERNAL_APP_EXIT\n");
+                    crate::stop();
+                }
                 #[cfg(feature = "ring3-lifecycle-probe")]
                 lifecycle::exit(frame.rdi);
-                #[cfg(not(feature = "ring3-lifecycle-probe"))]
+                #[cfg(not(any(
+                    feature = "ring3-lifecycle-probe",
+                    feature = "external-elf-probe"
+                )))]
                 {
                     if frame.rdi != 0 || !SEEN_QUERY {
                         failed(b"USER_ASSERT");

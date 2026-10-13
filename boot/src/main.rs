@@ -5,6 +5,8 @@
 
 mod acpi;
 mod app;
+#[cfg(feature = "external-elf-probe")]
+mod appconsole;
 mod bootstate;
 mod cpu;
 mod diagnostics;
@@ -217,6 +219,13 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     let arena_base = arena.as_mut_ptr() as usize;
     // Diagnostic app owns the sole mutable arena borrow and exercises every page.
     if runtime::run(arena, info).is_err() {
+        #[cfg(feature = "external-elf-probe")]
+        if external::claimed() {
+            // Never enter/reuse the arena after an unconfirmed device shutdown.
+            appconsole::rejected(b"Device session did not complete");
+            debug(b"MUSHA: EXTERNAL_ELF_REJECT Device session did not complete\n");
+            stop();
+        }
         diagnostics::failure("APPLICATION", "APP FAILED");
         diagnostics::set(1, format_args!("STATE APP FAILED"));
         diagnostics::snapshot();

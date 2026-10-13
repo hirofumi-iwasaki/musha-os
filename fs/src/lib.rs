@@ -12,9 +12,18 @@ pub enum Error {
     Io,
     Unsupported,
     Corrupt,
+    /// Duplicate directory name, first 12 UTF-16 units (zero padded).
+    DuplicateName([u16; 12]),
     NotFound,
     TooLarge,
     Limit,
+}
+fn duplicate_name(name: impl Iterator<Item = u16>) -> Error {
+    let mut prefix = [0; 12];
+    for (to, unit) in prefix.iter_mut().zip(name) {
+        *to = unit;
+    }
+    Error::DuplicateName(prefix)
 }
 fn u16le(b: &[u8], i: usize) -> u16 {
     u16::from_le_bytes([b[i], b[i + 1]])

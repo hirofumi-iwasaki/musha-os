@@ -682,7 +682,7 @@ fn parse_directory<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
                     .zip(entry.name())
                     .all(|(&a, &b)| w.upper[a as usize] == w.upper[b as usize])
             {
-                return Err(Error::Corrupt);
+                return Err(crate::duplicate_name(entry.name().iter().copied()));
             }
         }
         if count == MAX_FILES {

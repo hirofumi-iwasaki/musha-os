@@ -309,6 +309,10 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
                 fb.color(255, 220, 220),
             );
         }
+        #[cfg(feature = "external-elf-probe")]
+        if frame.cs & 3 == 3 {
+            crate::appconsole::fault(fb, frame.vector, frame.error, frame.rip, frame.rsp);
+        }
         crate::debug(b"MUSHA: EXCEPTION VECTOR=");
         crate::debug(&hex(frame.vector));
         crate::debug(b" ERROR=");

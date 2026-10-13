@@ -578,7 +578,10 @@ fn fat32_catalog_empty_oversize_duplicate_and_limits() {
             Ok(())
         });
         if kind >= 2 {
-            assert!(matches!(mounted, Err(Error::Corrupt)));
+            assert!(matches!(
+                mounted,
+                Err(Error::Corrupt | Error::DuplicateName(_))
+            ));
         } else {
             let mut fs = mounted.unwrap();
             let mut out = [0xa5; 1];

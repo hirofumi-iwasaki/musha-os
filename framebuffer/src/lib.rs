@@ -299,3 +299,5 @@ mod tests {
         );
     }
 }
+
+pub mod console;

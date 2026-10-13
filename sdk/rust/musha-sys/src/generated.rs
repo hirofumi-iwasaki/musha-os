@@ -49,19 +49,19 @@ pub struct MushaStartInfoV1 {
     pub reserved1: u64,
 }
 const _: () = {
-assert!(core::mem::size_of::<MushaStartInfoV1>()==64);
-assert!(core::mem::align_of::<MushaStartInfoV1>()==8);
-assert!(core::mem::offset_of!(MushaStartInfoV1,struct_size)==0);
-assert!(core::mem::offset_of!(MushaStartInfoV1,abi_major)==4);
-assert!(core::mem::offset_of!(MushaStartInfoV1,abi_minor)==6);
-assert!(core::mem::offset_of!(MushaStartInfoV1,flags)==8);
-assert!(core::mem::offset_of!(MushaStartInfoV1,reserved0)==12);
-assert!(core::mem::offset_of!(MushaStartInfoV1,arena_base)==16);
-assert!(core::mem::offset_of!(MushaStartInfoV1,arena_bytes)==24);
-assert!(core::mem::offset_of!(MushaStartInfoV1,stack_base)==32);
-assert!(core::mem::offset_of!(MushaStartInfoV1,stack_bytes)==40);
-assert!(core::mem::offset_of!(MushaStartInfoV1,boot_report_handle)==48);
-assert!(core::mem::offset_of!(MushaStartInfoV1,reserved1)==56);
+    assert!(core::mem::size_of::<MushaStartInfoV1>() == 64);
+    assert!(core::mem::align_of::<MushaStartInfoV1>() == 8);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, struct_size) == 0);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, abi_major) == 4);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, abi_minor) == 6);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, flags) == 8);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, reserved0) == 12);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, arena_base) == 16);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, arena_bytes) == 24);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, stack_base) == 32);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, stack_bytes) == 40);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, boot_report_handle) == 48);
+    assert!(core::mem::offset_of!(MushaStartInfoV1, reserved1) == 56);
 };
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -79,17 +79,17 @@ pub struct MushaNoteV1 {
     pub reserved: u64,
 }
 const _: () = {
-assert!(core::mem::size_of::<MushaNoteV1>()==64);
-assert!(core::mem::align_of::<MushaNoteV1>()==8);
-assert!(core::mem::offset_of!(MushaNoteV1,struct_size)==0);
-assert!(core::mem::offset_of!(MushaNoteV1,candidate_revision)==4);
-assert!(core::mem::offset_of!(MushaNoteV1,abi_major)==8);
-assert!(core::mem::offset_of!(MushaNoteV1,abi_minor)==10);
-assert!(core::mem::offset_of!(MushaNoteV1,cpu_profile)==12);
-assert!(core::mem::offset_of!(MushaNoteV1,required_features)==16);
-assert!(core::mem::offset_of!(MushaNoteV1,requested_permissions)==24);
-assert!(core::mem::offset_of!(MushaNoteV1,arena_bytes)==32);
-assert!(core::mem::offset_of!(MushaNoteV1,stack_bytes)==40);
-assert!(core::mem::offset_of!(MushaNoteV1,flags)==48);
-assert!(core::mem::offset_of!(MushaNoteV1,reserved)==56);
+    assert!(core::mem::size_of::<MushaNoteV1>() == 64);
+    assert!(core::mem::align_of::<MushaNoteV1>() == 8);
+    assert!(core::mem::offset_of!(MushaNoteV1, struct_size) == 0);
+    assert!(core::mem::offset_of!(MushaNoteV1, candidate_revision) == 4);
+    assert!(core::mem::offset_of!(MushaNoteV1, abi_major) == 8);
+    assert!(core::mem::offset_of!(MushaNoteV1, abi_minor) == 10);
+    assert!(core::mem::offset_of!(MushaNoteV1, cpu_profile) == 12);
+    assert!(core::mem::offset_of!(MushaNoteV1, required_features) == 16);
+    assert!(core::mem::offset_of!(MushaNoteV1, requested_permissions) == 24);
+    assert!(core::mem::offset_of!(MushaNoteV1, arena_bytes) == 32);
+    assert!(core::mem::offset_of!(MushaNoteV1, stack_bytes) == 40);
+    assert!(core::mem::offset_of!(MushaNoteV1, flags) == 48);
+    assert!(core::mem::offset_of!(MushaNoteV1, reserved) == 56);
 };

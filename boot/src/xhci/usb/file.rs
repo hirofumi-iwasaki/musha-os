@@ -314,7 +314,7 @@ fn api_error(e: musha_fs::Error) -> musha_api::stream::Error {
     match e {
         musha_fs::Error::Io => A::Io,
         musha_fs::Error::Unsupported => A::Unsupported,
-        musha_fs::Error::Corrupt => A::Corrupt,
+        musha_fs::Error::Corrupt | musha_fs::Error::DuplicateName(_) => A::Corrupt,
         musha_fs::Error::NotFound => A::Invalid,
         musha_fs::Error::TooLarge => A::TooLarge,
         musha_fs::Error::Limit => A::Limit,

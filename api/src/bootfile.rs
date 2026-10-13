@@ -42,6 +42,12 @@ impl Reader {
             started: None,
         }
     }
+    /// A filesystem rejected the matching name before publishing its catalogue.
+    pub fn duplicate(&mut self) {
+        if self.state == State::Searching {
+            self.state = State::Rejected(Rejection::Duplicate);
+        }
+    }
     pub fn state(&self) -> State {
         self.state
     }

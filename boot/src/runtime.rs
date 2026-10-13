@@ -67,18 +67,21 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         let mut cycle = |event: crate::xhci::AppEvent<'_>| -> Result<bool, &'static str> {
             let events = match event {
                 crate::xhci::AppEvent::Files(files) => {
-                    if !initialized {
-                        return Err("APP INPUT ERROR");
-                    }
                     #[cfg(feature = "external-elf-probe")]
                     {
                         let now = time.now().map_err(|_| "APP INPUT ERROR")?;
-                        match crate::external::step(files, now) {
-                            musha_api::bootfile::State::Absent => (),
+                        match crate::external::step(files, now, info.framebuffer) {
+                            musha_api::bootfile::State::Absent => {
+                                launch(&mut app, &mut ctx, &mut time, &mut initialized)
+                                    .map_err(|_| "APP INPUT ERROR")?;
+                            }
                             musha_api::bootfile::State::Ready(_)
                             | musha_api::bootfile::State::Rejected(_) => return Ok(true),
                             _ => return Ok(false),
                         }
+                    }
+                    if !initialized {
+                        return Err("APP INPUT ERROR");
                     }
                     if let Err(error) = app.files(&mut ctx, files) {
                         input_error = Some(error);
@@ -96,6 +99,10 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     return Ok(false);
                 }
                 crate::xhci::AppEvent::Ready(input) => {
+                    #[cfg(feature = "external-elf-probe")]
+                    if crate::external::claimed() {
+                        return Ok(true);
+                    }
                     if initialized {
                         return Ok(false);
                     }
@@ -125,9 +132,15 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         }
                         Err(error) => crate::net::failed(error),
                     }
-                    if let Err(error) = launch(&mut app, &mut ctx, &mut time, &mut initialized) {
-                        input_error = Some(error);
-                        return Err("APP INPUT ERROR");
+                    if !cfg!(feature = "external-elf-probe")
+                        || crate::bootstate::report().files
+                            != musha_platform::readiness::Service::Live
+                    {
+                        if let Err(error) = launch(&mut app, &mut ctx, &mut time, &mut initialized)
+                        {
+                            input_error = Some(error);
+                            return Err("APP INPUT ERROR");
+                        }
                     }
                     crate::bootstate::update(|r, _| {
                         r.usb = musha_platform::readiness::Service::Live;
@@ -247,7 +260,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         if let Some(error) = input_error {
             return Err(error);
         }
-        if !ready {
+        if !initialized {
             if VIEWER {
                 crate::diagnostics::hide(true);
             }
@@ -323,6 +336,10 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
     crate::bootstate::update(|r, _| {
         if r.network == musha_platform::readiness::Service::Live {
             r.network = musha_platform::readiness::Service::Stopped;
+        }
+        #[cfg(feature = "external-elf-probe")]
+        if crate::external::claimed() {
+            return;
         }
         r.finish(result.is_ok());
     });
