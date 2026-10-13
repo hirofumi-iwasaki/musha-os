@@ -5,17 +5,16 @@
 
 mod acpi;
 mod app;
-#[cfg(feature = "external-elf-probe")]
+#[cfg(external_app)]
 mod appconsole;
 mod bootstate;
 mod cpu;
 mod diagnostics;
-#[cfg(feature = "external-elf-probe")]
+#[cfg(external_app)]
 mod external;
 mod memory;
 mod net;
 mod pci;
-#[cfg(feature = "ring3-probe")]
 mod ring3;
 mod runtime;
 #[cfg(feature = "t2-diagnostics")]
@@ -219,7 +218,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     let arena_base = arena.as_mut_ptr() as usize;
     // Diagnostic app owns the sole mutable arena borrow and exercises every page.
     if runtime::run(arena, info).is_err() {
-        #[cfg(feature = "external-elf-probe")]
+        #[cfg(external_app)]
         if external::claimed() {
             // Never enter/reuse the arena after an unconfirmed device shutdown.
             appconsole::rejected(b"Device session did not complete");
@@ -236,7 +235,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         }
         stop();
     }
-    #[cfg(feature = "external-elf-probe")]
+    #[cfg(external_app)]
     external::finish(arena, info);
     #[cfg(feature = "fault-pf")]
     unsafe {
@@ -349,13 +348,8 @@ pub extern "efiapi" fn efi_main(
         let loaded = &*(image_protocol as *const loaded_image::Protocol);
         let image_base = loaded.image_base as usize;
         let image_bytes = loaded.image_size as usize;
-        // The external probe owns a 16 MiB zero-filled CPU staging section.
-        let image_limit = if cfg!(feature = "external-elf-probe") {
-            32
-        } else {
-            16
-        } * 1024
-            * 1024;
+        // CPU-owned zero-fill staging counts toward LoadedImage.ImageSize.
+        let image_limit = 32 * 1024 * 1024;
         if image_base == 0 || image_bytes == 0 || image_bytes > image_limit {
             return efi::Status::UNSUPPORTED;
         }

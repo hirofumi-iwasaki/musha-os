@@ -3,8 +3,8 @@
 """C2 SDK C execution and kernel rejection tests. Local QEMU, never host syscalls."""
 import argparse, hashlib, json, os, pathlib, shutil, struct, subprocess, time
 ROOT=pathlib.Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('--firmware-dir',required=True,type=pathlib.Path);p.add_argument('--qemu',default='qemu-system-x86_64');p.add_argument('--case',default='all');p.add_argument('--lifecycle',action='store_true');a=p.parse_args()
-out=ROOT/('out/ring3-lifecycle' if a.lifecycle else 'out/ring3-elf');out.mkdir(parents=True,exist_ok=True)
+p=argparse.ArgumentParser();p.add_argument('--firmware-dir',required=True,type=pathlib.Path);p.add_argument('--qemu',default='qemu-system-x86_64');p.add_argument('--case',default='all');p.add_argument('--lifecycle',action='store_true');p.add_argument('--output',type=pathlib.Path);a=p.parse_args()
+out=a.output.resolve() if a.output else ROOT/('out/ring3-lifecycle' if a.lifecycle else 'out/ring3-elf');out.mkdir(parents=True,exist_ok=True)
 report={'scope':'C3 repeated launch and OS return' if a.lifecycle else 'C2 embedded SDK C ELF; no Rust guest or production loader','commands':[],'cases':[]}
 def run(cmd,**kw):
  cmd=list(map(str,cmd));report['commands'].append(cmd);return subprocess.check_output(cmd,stderr=subprocess.STDOUT,cwd=ROOT,**kw).decode()

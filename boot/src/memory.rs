@@ -3,7 +3,6 @@
 use crate::BootInfo;
 use core::arch::{asm, x86_64::__cpuid};
 use musha_memory::{Error, Image, MemoryMap, PAGE, Range};
-#[cfg(feature = "ring3-probe")]
 static mut PROBE_TABLES: Option<Tables> = None;
 const NX: u64 = 1 << 63;
 const ADDRESS: u64 = 0x000f_ffff_ffff_f000;
@@ -327,9 +326,8 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         }
         crate::diagnostics::set(10, format_args!("MEM CHECK ARENA"));
         let arena = map.arena(&reserved, 16 * 1024 * 1024, 64 * 1024 * 1024)?;
-        // The one-shot probe needs vacant low virtual addresses. Keep its
+        // One-shot user execution needs vacant low virtual addresses. Keep its
         // backing arena outside the candidate image, record and stack windows.
-        #[cfg(feature = "ring3-probe")]
         let arena = {
             let start = arena.start.max(0x0200_0000);
             let end = arena.end.min(0x1000_0000);
@@ -338,6 +336,33 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             }
             Range::new(start, end - start)?
         };
+        #[cfg(external_app)]
+        {
+            let staging = crate::external::staging_range()?;
+            if staging.start < reserved[0].start
+                || staging.end > reserved[0].end
+                || staging.overlaps(arena)
+                || reserved[1..].iter().any(|r| staging.overlaps(*r))
+            {
+                return Err(Error::Overlap);
+            }
+            #[cfg(feature = "qemu-debug")]
+            for (name, range) in [
+                (b"IMAGE" as &[u8], reserved[0]),
+                (b"STAGING", staging),
+                (b"ARENA", arena),
+                (b"USB_DMA", reserved[7]),
+                (b"NET_DMA", reserved[8]),
+            ] {
+                crate::debug(b"MUSHA: EXTERNAL_MEMORY ");
+                crate::debug(name);
+                crate::debug(b" ");
+                crate::debug(&crate::cpu::hex(range.start as u64));
+                crate::debug(b" ");
+                crate::debug(&crate::cpu::hex(range.end as u64));
+                crate::debug(b"\n");
+            }
+        }
         if arena.end > physical_limit {
             return Err(Error::Invalid);
         }
@@ -402,7 +427,6 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         if active != tables.base {
             return Err(Error::Invalid);
         }
-        #[cfg(feature = "ring3-probe")]
         {
             core::ptr::addr_of_mut!(PROBE_TABLES).write(Some(tables));
         }
@@ -419,7 +443,6 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
 /// Caller owns the physical page, supplies a low canonical virtual page and
 /// retains backing until execution has ended. C3 restores its transaction
 /// before wiping/reusing backing; C1/C2 retain it until the probe stops.
-#[cfg(feature = "ring3-probe")]
 pub unsafe fn probe_user_page(
     va: usize,
     pa: usize,
@@ -466,7 +489,6 @@ pub unsafe fn probe_user_page(
     }
 }
 /// Remove the probe's supervisor stack guard from the existing identity map.
-#[cfg(feature = "ring3-probe")]
 pub unsafe fn probe_guard(va: usize) -> Result<(), Error> {
     if va % PAGE != 0 {
         return Err(Error::Invalid);
@@ -494,7 +516,6 @@ pub unsafe fn probe_guard(va: usize) -> Result<(), Error> {
 }
 
 /// Read-only collision check for the one-shot loader, including guard pages.
-#[cfg(feature = "ring3-probe")]
 pub unsafe fn probe_vacant(va: usize, bytes: usize) -> Result<(), Error> {
     if va == 0 || va % PAGE != 0 || bytes == 0 || bytes % PAGE != 0 {
         return Err(Error::Invalid);

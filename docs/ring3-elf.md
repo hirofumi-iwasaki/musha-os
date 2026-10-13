@@ -44,7 +44,7 @@ The pure host parser also covers all truncations of its fixture and malformed he
 [C3 lifecycle follow-up](ring3-lifecycle.md) adds bounded rollback, repeated launches and OS continuation in a separate opt-in configuration. The one-shot C2 behavior and results above are retained.
 
 - Rust ELF with pinned custom-target core/alloc; mixed C/Rust integer, double, struct and stack arguments; broader FP/register conformance.
-- External-file acquisition and production loader lifecycle: failure rollback, exit/fault cleanup, return to the OS and repeated launches. Current exit/fault halts the machine; nonzero exit is a failed probe.
+- External-file acquisition is implemented in the [normal one-shot path](external-elf.md), with [screen log/exit/fault presentation](external-app.md). Production recovery/rollback and repeated launches remain outside the normal build. The embedded C2 probe still treats nonzero exit as a failed test; the external application path displays any exit code and halts.
 - General copyin/copyout, capabilities/handles, interruption/reentry, CPU budgets/preemption, SMP, current architecture-manual review and physical hardware validation.
 - Readiness/launch/exit integration and practical I/O (stage D). C2 does not claim external OS readiness, a supported SDK or public ABI freeze.
 
@@ -57,3 +57,5 @@ QEMUの14ケースが合格しました。正常なSDK起動、起動情報・�
 ELFはビルド時にEFIへ埋め込む試験方式です。外部ファイルからの通常起動、Rust実行、C/Rust相互呼出し、終了・障害後のOS復帰、資源回収、実用I/Oと実機検証は残ります。終了・障害時は停止します。候補値・実装済み・QEMU検証済みを区別し、公開互換性は固定していません。
 
 commit・push・タグ・Release・遠隔設定・実USB・確定PDFの操作は行っていません。
+
+外部ファイル取得と画面ログ・終了／障害表示は[通常版の一回実行経路](external-app.md)へ統合しました。埋込みC2試験の非0終了判定は維持し、外部アプリは非0コードも表示して停止します。通常版のOS復帰・反復起動と実機検証は残件です。

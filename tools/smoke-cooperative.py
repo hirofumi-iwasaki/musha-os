@@ -19,8 +19,9 @@ parser.add_argument('--live-fault',choices=['timeout','disconnect'],help='Exerci
 parser.add_argument('--hub-depth',type=int,choices=range(1,6),help='Place a USB1 keyboard under USB2 hubs')
 parser.add_argument('--split-controller',action='store_true',help='Place the keyboard on a second xHCI controller')
 parser.add_argument('--extra-xhci',action='store_true',help='Verify no-keyboard behavior with two controllers')
+parser.add_argument('--output',type=pathlib.Path)
 a=parser.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
-out=root/('out/qemu-cooperative-'+a.case+('-split' if a.split_controller else '')+('-exfat' if a.exfat_boot_image else '')+('-'+a.file_fault if a.file_fault else '')+('-normal' if a.file_no_delay else '')+('-close' if a.file_close else '')+('-file-cancel' if a.live_file_cancel else '-file' if a.live_file else '')+('-live-'+(a.live_fault or 'read') if a.live_storage else ''));out.mkdir(parents=True,exist_ok=True)
+out=a.output.resolve() if a.output else root/('out/qemu-cooperative-'+a.case+('-split' if a.split_controller else '')+('-exfat' if a.exfat_boot_image else '')+('-'+a.file_fault if a.file_fault else '')+('-normal' if a.file_no_delay else '')+('-close' if a.file_close else '')+('-file-cancel' if a.live_file_cancel else '-file' if a.live_file else '')+('-live-'+(a.live_fault or 'read') if a.live_storage else ''));out.mkdir(parents=True,exist_ok=True)
 f=pathlib.Path(a.firmware_dir);shutil.copyfile(f/'edk2-i386-vars.fd',out/'vars.fd')
 log=out/'debug.log';log.write_text('');qmp=root/'out'/('qmp-'+hashlib.sha256(str(out).encode()).hexdigest()[:12]+'.sock')
 if qmp.exists():qmp.unlink()

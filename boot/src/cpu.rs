@@ -41,7 +41,7 @@ impl Gate {
         }
     }
 }
-const GDT_COUNT: usize = if cfg!(feature = "ring3-probe") { 7 } else { 5 };
+const GDT_COUNT: usize = 7;
 #[repr(C, align(16))]
 struct Tables {
     gdt: [u64; GDT_COUNT],
@@ -102,9 +102,7 @@ pub unsafe fn initialize(info: *const BootInfo) {
                 0x00cf92000000ffff,
                 descriptor,
                 base >> 32,
-                #[cfg(feature = "ring3-probe")]
                 0x00cff2000000ffff, // ring 3 data, selector 0x2b
-                #[cfg(feature = "ring3-probe")]
                 0x00affa000000ffff, // ring 3 long code, selector 0x33
             ],
         );
@@ -113,7 +111,7 @@ pub unsafe fn initialize(info: *const BootInfo) {
             let handler = if vector < 32 { STUBS[vector] } else { unknown };
             let ist = if vector == 8 {
                 1
-            } else if vector == 2 || cfg!(feature = "ring3-probe") && matches!(vector, 1 | 18) {
+            } else if vector == 2 || matches!(vector, 1 | 18) {
                 2
             } else {
                 0
@@ -254,8 +252,7 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
     // never return, so caller registers need not be restored.
     unsafe {
         let frame = &*frame;
-        let ist2 =
-            frame.vector == 2 || cfg!(feature = "ring3-probe") && matches!(frame.vector, 1 | 18);
+        let ist2 = frame.vector == 2 || matches!(frame.vector, 1 | 18);
         if frame.vector == 8 || ist2 {
             let rsp: usize;
             asm!("mov {}, rsp",out(reg) rsp,options(nomem,nostack,preserves_flags));
@@ -263,10 +260,8 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
             if rsp < low || rsp >= low + 16384 {
                 stop();
             }
-            #[cfg(feature = "ring3-probe")]
             crate::debug(b"MUSHA: RING3_FATAL_IST_OK\n");
         }
-        #[cfg(feature = "ring3-probe")]
         {
             crate::ring3::verify_fault_stack(
                 frame as *const FaultFrame as usize,
@@ -309,7 +304,7 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
                 fb.color(255, 220, 220),
             );
         }
-        #[cfg(feature = "external-elf-probe")]
+        #[cfg(external_app)]
         if frame.cs & 3 == 3 {
             crate::appconsole::fault(fb, frame.vector, frame.error, frame.rip, frame.rsp);
         }
@@ -341,7 +336,6 @@ const _: () = assert!(core::mem::size_of::<FaultFrame>() == 56);
 
 // BSP-only probe: both hardware privilege-change exceptions and explicit
 // SYSCALL entry use this supervisor stack. NMI/#DB/#MC use fatal-only IST2.
-#[cfg(feature = "ring3-probe")]
 pub unsafe fn user_kernel_stack(top: usize) {
     unsafe {
         core::ptr::addr_of_mut!(TABLES.tss)

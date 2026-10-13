@@ -82,7 +82,7 @@ pub(super) fn supported(
     }
     let _reservation = Reservation(false);
     let work = unsafe { &mut *WORK.0.get() };
-    match musha_fs::exfat::FileSystem::discover(blocks, size, &mut read, work) {
+    let result = match musha_fs::exfat::FileSystem::discover(blocks, size, &mut read, work) {
         Ok(_) => Ok(true),
         Err(musha_fs::Error::Unsupported) => {
             match musha_fs::fat32::FileSystem::discover(blocks, size, &mut read) {
@@ -92,7 +92,16 @@ pub(super) fn supported(
             }
         }
         Err(e) => Err(e),
+    };
+    // Preserve normal medium selection: only the subsequently selected medium
+    // may publish the external-app rejection; discovery itself has no UI effect.
+    #[cfg(external_app)]
+    if let Err(musha_fs::Error::DuplicateName(name)) = &result {
+        if crate::external::boot_name(name) {
+            return Ok(true);
+        }
     }
+    result
 }
 /// Select the first successfully mounted medium for this boot. Discovery scans
 /// do not call this function. No data-sector snapshot is needed for the catalog.

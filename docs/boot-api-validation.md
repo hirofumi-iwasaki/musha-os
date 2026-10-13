@@ -73,7 +73,7 @@ C2 update (2026-10-13): [embedded SDK C ELF execution](ring3-elf.md) adds kernel
 
 C3 follow-up: [lifecycle/reclamation](ring3-lifecycle.md) adds an opt-in saved kernel continuation, bounded page-table rollback, arena scrubbing, repeated launch and continuation into the existing static application. It is not general scheduling or a stable external lifecycle ABI.
 
-External-file follow-up: [bounded stream loading](external-elf.md) connects FAT32/exFAT to C2 in an opt-in local probe. Default-build integration, screen log/exit and hardware gates remain open.
+External-file follow-up: [bounded stream loading](external-elf.md) now connects FAT32/exFAT to C2 in the normal build, with [screen log/exit/fault output](external-app.md). [Step 2b](handoff/0.3.0-step2b-results.md) and [step 2c](handoff/0.3.0-step2c-results.md) record evidence, failures/retries, exact EFI hashes and outstanding hardware/publication gates. These extend the historical A/B/C1/C2/C3 results above; they do not complete the broader C/D scope.
 
 ### D: practical I/O / SDK gate
 
@@ -91,4 +91,4 @@ Aは静的リンク・協調実行の移行段階です。Bはコンパイル／
 
 未最適化debug EFIでのvector 8は未解決・未検証事項として残します。合格結果は既存手順と同じrelease構成です。初期のfixture選択誤りと終了待ち不足は修正して再試験しました。実機と遠隔Actionsは未実行です。次のcommit・公開・実USB操作には別途承認が必要です。
 
-外部ファイル読込みの追記：[ストリーム読込み経路](external-elf.md)を試験機能としてC2へ接続しました。通常ビルドへの統合・画面ログ／終了表示・実機条件は未完了です。
+外部ファイル読込みの追記：[ストリーム読込み経路](external-elf.md)を通常版へ統合し、[画面ログ・終了・障害表示](external-app.md)を追加しました。[2b](handoff/0.3.0-step2b-results.md)・[2c](handoff/0.3.0-step2c-results.md)に証拠、不合格と再試験、EFIハッシュ、残件を記録しています。実機と公開条件、工程C／D全体の完了を示すものではありません。

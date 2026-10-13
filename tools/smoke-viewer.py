@@ -12,10 +12,11 @@ p.add_argument('--format',choices=['exfat','fat32'],default='exfat')
 p.add_argument('--split-controller',action='store_true')
 p.add_argument('--apple-double-files',action='store_true',help='macOS fixture has one ._ metadata file after each test file')
 p.add_argument('--case',choices=['normal','cancel','disconnect','timeout','no-medium'],default='normal')
+p.add_argument('--output',type=pathlib.Path)
 a=p.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
-out=root/'out'/('qemu-viewer-'+a.format+'-'+a.case+('-split' if a.split_controller else ''));out.mkdir(parents=True,exist_ok=True)
+out=a.output.resolve() if a.output else root/'out'/('qemu-viewer-'+a.format+'-'+a.case+('-split' if a.split_controller else ''));out.mkdir(parents=True,exist_ok=True)
 f=pathlib.Path(a.firmware_dir);shutil.copyfile(f/'edk2-i386-vars.fd',out/'vars.fd')
-log=out/'debug.log';log.write_text('');qmp=root/'out'/'viewer.sock';qmp.unlink(missing_ok=True)
+log=out/'debug.log';log.write_text('');qmp=root/'out'/('viewer-'+hashlib.sha256(str(out).encode()).hexdigest()[:12]+'.sock');qmp.unlink(missing_ok=True)
 boot=a.boot_image.resolve();data=a.data_image.resolve()
 def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 hashes=(sha(boot),sha(data))
@@ -89,7 +90,7 @@ with (out/'qemu.log').open('w') as err:
    wait('RUNTIME_COOPERATIVE_OK')
   elif a.case not in ('disconnect','timeout'):
    start=key('q');wait('INPUT_SOURCE_DETACHED',start);wait('RUNTIME_COOPERATIVE_OK',start)
-  wait('BOOT_TIMES CORE READY ENTRY RUNNING FRAME')
+  wait('\n', wait('BOOT_TIMES CORE READY ENTRY RUNNING FRAME'))
   text=log.read_text();assert 'XHCI_QUIESCED DMA_DISABLED' in text
   milestones=['CORE_READY','OS_READY STATIC_COOPERATIVE','APP_ENTERING','APP_RUNNING STATIC_LINKED']
   positions=[text.index('MUSHA: '+m) for m in milestones]

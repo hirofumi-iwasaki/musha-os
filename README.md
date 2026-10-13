@@ -83,7 +83,7 @@ Build a test image and FAT32 USB bundle with the [one-command USB build](docs/te
 
 ### Development: boot/API integration
 
-Policy 3.0 separates readiness, records, rendering and OS service ownership. The development viewer skips diagnostic RAM repetition and eight-second page rotation. The opt-in [C2 ELF probe](docs/ring3-elf.md) runs SDK C Hello at Ring 3. The [C3 lifecycle probe](docs/ring3-lifecycle.md) adds repeated launch, reclamation and OS return. Rust guest execution and external I/O remain pending. See [policy](docs/boot-readiness-policy.md), [ABI](docs/application-abi.md), [SDK](docs/sdk.md) and [validation](docs/boot-api-validation.md). Published v0.2.0 assets are unchanged.
+The v0.3.0 development build runs one external SDK C ELF named `MUSHA.ELF` from the selected FAT32/exFAT data medium, including in the feature-free release-profile build. It displays loading, bounded `log` output and exit/fault/refusal results, then stops; if the file is absent, the existing viewer starts. See [external application usage](docs/external-app.md), [loading and memory limits](docs/external-elf.md) and [validation](docs/boot-api-validation.md). The [C1](docs/ring3-prototype.md), [C2](docs/ring3-elf.md) and [C3](docs/ring3-lifecycle.md) probes remain opt-in; C3 OS return is not a normal-build feature. The [ABI](docs/application-abi.md) is experimental candidate r1. Hardware acceptance, SDK distribution, Rust guest execution and practical user I/O remain pending. Published v0.2.0 assets are unchanged.
 
 ### Policy documents
 
@@ -223,7 +223,7 @@ USB BOTの容量取得と先頭・末尾セクタ読出しをQEMUで確認済み
 
 ### 開発版：起動とAPIの統合
 
-方針3.0で起動・記録・描画・OSサービスの寿命を分離しました。通常開発版は診断用RAM反復と8秒ページ送りを行いません。SDKはコンパイル用基礎です。[Ring 3遷移試験](docs/ring3-prototype.md)を任意の試験構成として追加し、工程Cに着手しました。[C2 ELF試験](docs/ring3-elf.md)でSDK C HelloのRing 3実行を追加しました。[C3試験](docs/ring3-lifecycle.md)で反復起動・回収・OS復帰を追加しました。Rust実行・実用外部I/Oは後続です。[方針](docs/boot-readiness-policy.md)・[ABI](docs/application-abi.md)・[SDK](docs/sdk.md)・[検証](docs/boot-api-validation.md)を参照してください。公開済みv0.2.0配布物は変更していません。
+v0.3.0開発版は、feature指定なしのrelease構成を含め、選択されたFAT32／exFAT媒体の`MUSHA.ELF`を1個実行します。読込み案内、Cアプリの有界な`log`出力、終了・障害・拒否結果を表示して停止し、不在なら従来ビューアーへ進みます。[外部アプリの利用方法](docs/external-app.md)・[読込みとメモリ制限](docs/external-elf.md)・[検証](docs/boot-api-validation.md)を参照してください。[C1](docs/ring3-prototype.md)・[C2](docs/ring3-elf.md)・[C3](docs/ring3-lifecycle.md)は任意試験構成のままで、C3のOS復帰は通常版に入りません。[ABI](docs/application-abi.md)は実験候補r1です。実機合格・SDK配布・Rust guest・実用アプリI/Oは残件です。公開済みv0.2.0配布物は変更していません。
 
 ### 方針書
 

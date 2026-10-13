@@ -34,7 +34,7 @@ static mut LOADED: Loaded = Loaded {
 pub unsafe fn load(arena: &mut [u8]) -> usize {
     #[cfg(feature = "ring3-elf-probe")]
     let file = FILE;
-    #[cfg(feature = "external-elf-probe")]
+    #[cfg(external_app)]
     let file = crate::external::image();
     let plan = Plan::parse(file).unwrap_or_else(|_| failed(b"ELF_FORMAT"));
     let needed = plan.backing_bytes().unwrap_or_else(|_| failed(b"ELF_SIZE"));
@@ -192,7 +192,7 @@ pub fn log(pointer: u64, length: u64) -> (i32, u64) {
     if core::str::from_utf8(&bytes[..length as usize]).is_err() {
         return (abi::ERR_INVALID, 0);
     }
-    #[cfg(feature = "external-elf-probe")]
+    #[cfg(external_app)]
     {
         crate::appconsole::append(&bytes[..length as usize]);
         crate::bootstate::frame();

@@ -8,8 +8,9 @@ p = argparse.ArgumentParser()
 p.add_argument('--firmware-dir', required=True, type=pathlib.Path)
 p.add_argument('--qemu', default='qemu-system-x86_64')
 p.add_argument('--case', choices=['all', *CASES], default='all')
+p.add_argument('--output',type=pathlib.Path)
 a = p.parse_args()
-out = ROOT / 'out/ring3'; out.mkdir(parents=True, exist_ok=True)
+out = a.output.resolve() if a.output else ROOT / 'out/ring3'; out.mkdir(parents=True, exist_ok=True)
 report = {'scope': 'C1 fixed assembly fixture; not SDK ELF execution', 'cases': [], 'commands': []}
 try:
     for case in CASES if a.case == 'all' else [a.case]:

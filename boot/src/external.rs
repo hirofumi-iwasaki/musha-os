@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Local external-ELF integration probe. Staging is CPU-owned, never a DMA target.
+//! One-shot external-ELF boot path. Staging is CPU-owned, never a DMA target.
 use core::cell::UnsafeCell;
 use musha_api::bootfile::{MAX_BYTES, Reader, Rejection, State};
 const _: () = assert!(MAX_BYTES as u64 == musha_memory::elf::abi::IMAGE_LIMIT);
@@ -9,6 +9,11 @@ struct Shared(UnsafeCell<(Reader, [u8; MAX_BYTES])>);
 unsafe impl Sync for Shared {}
 static mut READ_STARTED: u64 = 0;
 static STAGING: Shared = Shared(UnsafeCell::new((Reader::new(), [0; MAX_BYTES])));
+/// Linker-owned zero-fill staging must be wholly inside the reserved loaded image.
+pub fn staging_range() -> Result<musha_memory::Range, musha_memory::Error> {
+    let start = unsafe { core::ptr::addr_of!((*STAGING.0.get()).1) as usize };
+    musha_memory::Range::new(start, MAX_BYTES)
+}
 pub fn claimed() -> bool {
     unsafe { (&*STAGING.0.get()).0.claimed() }
 }
@@ -115,14 +120,15 @@ pub fn running() {
     crate::debug(b"MUSHA: APP_RUNNING EXTERNAL_APP\n");
 }
 
-pub fn duplicate_catalog(name: &[u16; 12], fb: musha_framebuffer::Framebuffer) {
-    let expected = b"MUSHA.ELF";
-    if name[..9]
+pub fn boot_name(name: &[u16; 12]) -> bool {
+    name[..9]
         .iter()
-        .zip(expected)
+        .zip(b"MUSHA.ELF")
         .all(|(&a, &b)| a <= 127 && (a as u8).to_ascii_uppercase() == b)
         && name[9..].iter().all(|&c| c == 0)
-    {
+}
+pub fn duplicate_catalog(name: &[u16; 12], fb: musha_framebuffer::Framebuffer) {
+    if boot_name(name) {
         unsafe {
             (&mut *STAGING.0.get()).0.duplicate();
         }

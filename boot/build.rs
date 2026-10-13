@@ -2,6 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::{env, path::PathBuf, process::Command};
 fn main() {
+    let probe = env::var_os("CARGO_FEATURE_RING3_PROBE").is_some();
+    let embedded = env::var_os("CARGO_FEATURE_RING3_ELF_PROBE").is_some();
+    let external = !probe || env::var_os("CARGO_FEATURE_EXTERNAL_ELF_PROBE").is_some();
+    for (name, enabled) in [
+        ("external_app", external),
+        ("elf_app", external || embedded),
+        ("c1_probe", probe && !embedded && !external),
+    ] {
+        println!("cargo:rustc-check-cfg=cfg({name})");
+        if enabled {
+            println!("cargo:rustc-cfg={name}");
+        }
+    }
     assert!(
         !(env::var_os("CARGO_FEATURE_EXTERNAL_ELF_PROBE").is_some()
             && env::var_os("CARGO_FEATURE_RING3_ELF_PROBE").is_some()),

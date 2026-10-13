@@ -67,7 +67,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         let mut cycle = |event: crate::xhci::AppEvent<'_>| -> Result<bool, &'static str> {
             let events = match event {
                 crate::xhci::AppEvent::Files(files) => {
-                    #[cfg(feature = "external-elf-probe")]
+                    #[cfg(external_app)]
                     {
                         let now = time.now().map_err(|_| "APP INPUT ERROR")?;
                         match crate::external::step(files, now, info.framebuffer) {
@@ -99,7 +99,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     return Ok(false);
                 }
                 crate::xhci::AppEvent::Ready(input) => {
-                    #[cfg(feature = "external-elf-probe")]
+                    #[cfg(external_app)]
                     if crate::external::claimed() {
                         return Ok(true);
                     }
@@ -132,7 +132,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         }
                         Err(error) => crate::net::failed(error),
                     }
-                    if !cfg!(feature = "external-elf-probe")
+                    if !cfg!(external_app)
                         || crate::bootstate::report().files
                             != musha_platform::readiness::Service::Live
                     {
@@ -158,7 +158,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
             };
             // The viewer cannot end a no-keyboard session while boot-file I/O
             // is pending. No file service still follows the existing viewer path.
-            #[cfg(feature = "external-elf-probe")]
+            #[cfg(external_app)]
             if crate::external::waiting() {
                 return Ok(false);
             }
@@ -222,7 +222,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 r.files = r.usb;
             }
         });
-        #[cfg(feature = "external-elf-probe")]
+        #[cfg(external_app)]
         {
             crate::external::session_ended(usb_result.is_ok());
             if crate::external::claimed() {
@@ -337,14 +337,14 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         if r.network == musha_platform::readiness::Service::Live {
             r.network = musha_platform::readiness::Service::Stopped;
         }
-        #[cfg(feature = "external-elf-probe")]
+        #[cfg(external_app)]
         if crate::external::claimed() {
             return;
         }
         r.finish(result.is_ok());
     });
     crate::bootstate::dump();
-    #[cfg(feature = "external-elf-probe")]
+    #[cfg(external_app)]
     if crate::external::claimed() {
         return result;
     }

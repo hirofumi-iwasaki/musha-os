@@ -5,7 +5,8 @@ use musha_api::{Application, Context, Error, Step};
 mod stream_probe;
 pub(crate) const VIEWER: bool = (!cfg!(feature = "qemu-debug")
     && !cfg!(feature = "t2-diagnostics"))
-    || cfg!(feature = "file-viewer-probe");
+    || cfg!(feature = "file-viewer-probe")
+    || cfg!(feature = "external-elf-probe");
 pub(crate) struct Diagnostic {
     pub(crate) viewer: musha_viewer::Viewer,
     #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]

@@ -107,7 +107,9 @@ def main():
     p.add_argument('--firmware-dir',required=True,type=Path)
     p.add_argument('--qemu',default='qemu-system-x86_64')
     p.add_argument('--output',type=Path,default=ROOT/'out/external-elf')
-    p.add_argument('--case',default='all')
+    p.add_argument('--case',default='all',help='Functional cases by default; timing-16384/1048576/16777216 are explicit measurements')
+    p.add_argument('--efi',type=Path,help='Use an already built candidate; --normal supplies screen-only checks')
+    p.add_argument('--normal',action='store_true',help='Feature-free EFI, screen-only observation; select a hello/exit/fault/log/reject case')
     a=p.parse_args(); out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
     report={'scope':'local external ELF; no real USB or hardware claim','commands':[],'cases':[]}
     def run(cmd,env=None):
@@ -116,7 +118,7 @@ def main():
     try:
         (out/'sdk.log').write_text(run(['python3','tools/check-sdk.py','--output',out/'sdk']))
         built=out/'sdk';good=(built/'hello-c.elf').read_bytes()
-        cases={n:(good,fmt,'exit',0) for n,fmt in [('hello-fat32','fat32'),('hello-exfat','exfat'),('hello-split','fat32')]}
+        cases={n:(good,fmt,'exit',0) for n,fmt in [('hello-fat32','fat32'),('hello-exfat','exfat'),('hello-split','fat32'),('hello-no-keyboard','fat32')]}
         sysroot=Path(run(['rustc','--print','sysroot']).strip());host=run(['rustc','-vV']).split('host: ')[1].splitlines()[0]
         linkenv=dict(os.environ,DYLD_LIBRARY_PATH=str(sysroot/'lib'))
         flags=['--target=x86_64-unknown-none-elf','-isystem',ROOT/'sdk/sysroot/include','-ffreestanding','-fno-builtin','-fno-stack-protector','-fno-pic','-mno-red-zone','-march=x86-64','-mno-avx','-O2','-Wall','-Wextra','-Werror']
@@ -129,25 +131,39 @@ def main():
         loads=[h for h in headers if struct.unpack_from('<I',good,h)[0]==1];note=next(h for h in headers if struct.unpack_from('<I',good,h)[0]==4);off=struct.unpack_from('<Q',good,note+8)[0]
         for name,pos,fmt,value in [('bad-magic',0,'I',0),('wx',loads[0]+4,'I',7),('dynamic',loads[0],'I',2),('entry',24,'Q',0),('file-overflow',loads[0]+8,'Q',2**64-1),('note-version',off+24,'I',99),('note-permission',off+44,'Q',2),('overlap',loads[1]+16,'Q',struct.unpack_from('<Q',good,loads[0]+16)[0]),('missing-note',note,'I',0)]:
             bad=bytearray(good);struct.pack_into('<'+fmt,bad,pos,value);cases['malformed-'+name]=(bad,'fat32','reject','Invalid ELF or ABI NOTE')
+        large_arena=bytearray(good);struct.pack_into('<Q',large_arena,off+52,64*1024*1024)
+        cases['elf-memory']=(large_arena,'fat32','reject','ELF_MEMORY')
+        cases['cpu-reject']=(good,'fat32','reject','CPU')
         cases.update({'too-large':(good,'fat32','reject','File size outside'), 'too-small':(b'X'*63,'fat32','reject','File size outside'),'duplicate':(good,'fat32','reject','Ambiguous MUSHA.ELF name')})
         for size in (16384,1048576,16777216):
             cases['timing-'+str(size)]=(good.ljust(size,b'\0'),'fat32','timing',0)
-        cases['timeout']=(good.ljust(16777216,b'\0'),'fat32','reject','File read deadline exceeded')
+        cases['timeout']=(good.ljust(1048576,b'\0'),'fat32','reject','File read deadline exceeded')
         cases['disconnect-while-reading']=(good.ljust(16777216,b'\0'),'fat32','disconnect',0)
         cases['absent']=(None,'fat32','absent',0)
         if a.case!='all' and a.case not in cases: raise ValueError('Unknown case '+a.case)
+        if a.normal and a.case != 'all' and cases[a.case][2] in ('timing','disconnect'):
+            raise ValueError('This observation requires the debug candidate')
         env=dict(os.environ,CARGO_TARGET_DIR=str(out/'target'),MUSHA_RING3_CASE='normal')
-        (out/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot','--features','external-elf-probe'],env))
-        efi=out/'target/x86_64-unknown-uefi/release/musha-boot.efi'
+        if a.efi:
+            efi=a.efi.resolve()
+        else:
+            (out/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot']+([] if a.normal else ['--features','external-elf-probe']),env))
+            efi=out/'target/x86_64-unknown-uefi/release/musha-boot.efi'
+        report['features']=[] if a.normal else ['external-elf-probe']
         report['efi_sha256']=hashlib.sha256(efi.read_bytes()).hexdigest()
         esp=out/'esp/EFI/BOOT';esp.mkdir(parents=True);shutil.copyfile(efi,esp/'BOOTX64.EFI')
         for name,(payload,fmt,kind,detail) in cases.items():
             if a.case not in ('all',name): continue
+            if a.case == 'all' and kind == 'timing': continue
+            if a.normal and kind in ('timing','disconnect'): continue
             d=out/name;d.mkdir();data=d/'data.img'
             if kind=='absent':
-                normalenv=dict(os.environ,CARGO_TARGET_DIR=str(out/'normal-target'))
-                (d/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot'],normalenv))
-                normal=out/'normal-target/x86_64-unknown-uefi/release/musha-boot.efi'
+                if a.normal:
+                    normal=efi
+                else:
+                    normalenv=dict(os.environ,CARGO_TARGET_DIR=str(out/'normal-target'))
+                    (d/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot'],normalenv))
+                    normal=out/'normal-target/x86_64-unknown-uefi/release/musha-boot.efi'
                 fixture(data,normal,None,'fat32')
                 reference=ROOT/'out/v3-normal-final-pixels'
                 (d/'pixels.log').write_text(run(['python3','tools/smoke-normal-viewer.py','--firmware-dir',a.firmware_dir,'--qemu',a.qemu,'--boot-image',data,'--data-image',data,'--reference',reference,'--output',d/'pixels']))
@@ -161,7 +177,7 @@ def main():
             shutil.copyfile(a.firmware_dir/'edk2-i386-vars.fd',d/'vars.fd')
             debug=d/'debug.log';debug.write_text('')
             qmp=ROOT/'out'/('ee-'+hashlib.sha256(str(d).encode()).hexdigest()[:10]+'.sock');assert not qmp.exists()
-            cmd=[a.qemu,'-machine','q35,accel=tcg','-cpu','qemu64,+syscall,+nx','-m','256M',
+            cmd=[a.qemu,'-machine','q35,accel=tcg','-cpu',('qemu64,-syscall,+nx' if name=='cpu-reject' else 'qemu64,+syscall,+nx'),'-m','256M',
                  '-drive',f'if=pflash,format=raw,readonly=on,file={a.firmware_dir/"edk2-x86_64-code.fd"}',
                  '-drive',f'if=pflash,format=raw,file={d/"vars.fd"}',
                  '-drive',f'if=ide,format=raw,file=fat:rw:{out/"esp"}',
@@ -171,7 +187,7 @@ def main():
                  '-vga','std','-display','none','-monitor','none','-serial','none',
                  '-debugcon',f'file:{debug}','-global','isa-debugcon.iobase=0xe9','-no-reboot']
             if name=='hello-split': cmd+=['-device','qemu-xhci,id=k']
-            cmd+=['-device','usb-kbd,bus='+('k.0' if name=='hello-split' else 'x.0')]
+            if name!='hello-no-keyboard': cmd+=['-device','usb-kbd,bus='+('k.0' if name=='hello-split' else 'x.0')]
             report['commands'].append(cmd)
             with (d/'qemu.log').open('w') as log:
                 proc=subprocess.Popen(cmd,stdout=log,stderr=log)
@@ -194,14 +210,21 @@ def main():
                             if 'EXTERNAL_ELF_READING' in text and not loading:
                                 control('screendump',{'filename':str(d/'loading.ppm')});loading=True
                                 if kind=='disconnect': control('device_del',{'id':'storage'});removed=True
+                            if a.normal:
+                                control('screendump',{'filename':str(d/'screen.ppm')})
+                                shown='\n'.join(screen_rows(d/'screen.ppm'))
+                                if any(x in shown for x in ['MUSHA.ELF exited:', 'MUSHA.ELF faulted', 'MUSHA.ELF rejected:']): break
                             if text.endswith('\n') and any(x in text for x in ['EXTERNAL_APP_EXIT','EXCEPTION VECTOR=','EXTERNAL_ELF_REJECT','RING3_REJECT']): break
                             if proc.poll() is not None: raise RuntimeError((d/'qemu.log').read_text())
                             time.sleep(.02)
                         else: raise RuntimeError('Timeout '+text)
                         # Debug rejection marker precedes its draw; poll pixels until final screen settles.
                         time.sleep(.3);control('screendump',{'filename':str(d/'screen.ppm')})
+                    if not a.normal and len(payload)>=1048576 and name!='too-large':
+                        loading_text='\n'.join(screen_rows(d/'loading.ppm'));(d/'loading.txt').write_text(loading_text+'\n')
+                        assert 'Loading MUSHA.ELF ...' in loading_text,loading_text
                     rows=screen_rows(d/'screen.ppm');screen='\n'.join(rows);(d/'screen.txt').write_text(screen+'\n')
-                    if kind in ('exit','fault'):
+                    if not a.normal and kind in ('exit','fault'):
                         handoff=text.index('EXTERNAL_ELF_DEVICES_STOPPED')
                         assert text.index('EXTERNAL_ELF_READ_COMPLETE') < text.rindex('XHCI_QUIESCED') < handoff < text.index('RING3_ELF_ENTERING'),text
                         assert text.index('NET_QUIESCED DMA_DISABLED') < handoff,text
@@ -214,15 +237,25 @@ def main():
                         if name=='log-utf8': assert 'ASCII..... ......' in screen and 'END' in screen,screen
                     elif kind=='fault':
                         vector=14 if name=='fault-pf' else 6
-                        assert 'MUSHA.ELF faulted' in screen and f'VECTOR {vector:016X}' in screen and 'ERROR ' in screen and 'RIP ' in screen and 'RSP ' in screen,screen
-                        assert 'RING3_FAULT_KERNEL_STACK_OK' in text,text
+                        assert 'MUSHA.ELF faulted' in screen and f'VECTOR {vector:016X}' in screen and f'ERROR {(6 if vector==14 else 0):016X}' in screen and 'RIP ' in screen and 'RSP ' in screen,screen
+                        if not a.normal: assert 'RING3_FAULT_KERNEL_STACK_OK' in text,text
                     elif kind in ('reject','disconnect'):
                         assert 'MUSHA.ELF rejected:' in screen and 'RING3_ELF_ENTERING' not in text,screen+text
                         if kind=='reject': assert detail in screen,screen
                         else: assert removed and 'XHCI_QUIESCED' in text and ('File read failed' in screen or 'Device session did not complete' in screen),screen+text
                     elif kind=='timing': assert 'EXTERNAL_ELF_ELAPSED_MS=' in text,text
+                    if a.normal: assert text=='', 'Normal EFI emitted debug output'
                     assert before==hashlib.sha256(data.read_bytes()).hexdigest()
                     result={'case':name,'passed':True,'image_sha256':before,'screen':str(d/'screen.txt')}
+                    if not a.normal and 'EXTERNAL_MEMORY IMAGE' in text:
+                        import re
+                        ranges={k:(int(lo,16),int(hi,16)) for k,lo,hi in re.findall(r'EXTERNAL_MEMORY (\w+) ([0-9A-F]+) ([0-9A-F]+)',text)}
+                        image,staging,arena=(ranges[k] for k in ('IMAGE','STAGING','ARENA'))
+                        assert image[0]<=staging[0]<staging[1]<=image[1]
+                        assert 0x2000000<=arena[0]<arena[1]<=0x10000000
+                        for k in ('ARENA','USB_DMA','NET_DMA'):
+                            lo,hi=ranges[k]; assert hi<=staging[0] or lo>=staging[1]
+                        result['memory_ranges']=ranges
                     if 'EXTERNAL_ELF_ELAPSED_MS=' in text:
                         result['read_elapsed_ms']=int(text.split('EXTERNAL_ELF_ELAPSED_MS=')[1].splitlines()[0],16)
                         result['read_completed']='EXTERNAL_ELF_READ_COMPLETE' in text
