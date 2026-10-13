@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """Compile-only SDK and host conformance; never execute a candidate syscall."""
-import argparse,importlib.util,json,os,pathlib,shutil,struct,subprocess,tempfile
+import hashlib,argparse,importlib.util,json,os,pathlib,shutil,struct,subprocess,tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('--sdk',type=pathlib.Path,default=ROOT/'sdk');p.add_argument('--output',type=pathlib.Path,default=ROOT/'out/sdk-check');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--sdk',type=pathlib.Path,default=ROOT if (ROOT/'abi').is_dir() else ROOT/'sdk');p.add_argument('--output',type=pathlib.Path,default=ROOT/'out/sdk-check');p.add_argument('--c-only',action='store_true');a=p.parse_args()
 sdk=a.sdk.resolve();out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
 commands=[]
 def run(args,**kw):
  args=list(map(str,args));commands.append(args);return subprocess.check_output(args,stderr=subprocess.STDOUT,**kw).decode()
 clang=os.environ.get('CC','clang');rustc=os.environ.get('RUSTC','rustc')
-versions={x:run([cmd,'--version']).splitlines()[0] for x,cmd in [('clang',clang),('rustc',rustc)]}
-sysroot=pathlib.Path(run([rustc,'--print','sysroot']).strip());host=run([rustc,'-vV']).split('host: ')[1].splitlines()[0]
-lld=os.environ.get('LD_LLD',str(sysroot/'lib/rustlib'/host/'bin/rust-lld'))
-os.environ['DYLD_LIBRARY_PATH']=str(sysroot/'lib')
+versions={'clang':run([clang,'--version']).splitlines()[0]}
+lld=os.environ.get('LD_LLD') or shutil.which('ld.lld')
+if not a.c_only or not lld:
+ versions['rustc']=run([rustc,'--version']).splitlines()[0]
+ sysroot=pathlib.Path(run([rustc,'--print','sysroot']).strip());host=run([rustc,'-vV']).split('host: ')[1].splitlines()[0]
+ lld=lld or str(sysroot/'lib/rustlib'/host/'bin/rust-lld')
+ os.environ['DYLD_LIBRARY_PATH']=str(sysroot/'lib')
+# macOS may strip DYLD_LIBRARY_PATH when CMake invokes a system shell.
+# An explicit rust-lld path still identifies its own toolchain library directory.
+if pathlib.Path(lld).name == 'rust-lld':
+ os.environ['DYLD_LIBRARY_PATH']=str(pathlib.Path(lld).resolve().parents[3])
 versions['lld']=run([lld,'-flavor','gnu','--version']).strip()
-run(['python3',sdk/'tools/generate.py','--check'])
+run(['python3',sdk/'tools/generate.py','--check']+(['--c-only'] if a.c_only else []))
 flags=['--target=x86_64-unknown-none-elf','--sysroot='+str(sdk/'sysroot'),'-isystem',str(sdk/'sysroot/include'),'-std=c11','-ffreestanding','-fno-builtin','-fno-stack-protector','-fno-pic','-mno-red-zone','-march=x86-64','-mno-avx','-Wall','-Wextra','-Werror','-O2']
 objects=[]
 for name,source in [('layout','tests/layout.c'),('wrapper','tests/wrapper.c'),('fp','tests/fp.c'),('crt0','src/crt0.S'),('libmusha','src/libmusha.c'),('memory','src/memory.c'),('main','examples/hello-c/main.c')]:
@@ -60,23 +67,24 @@ for x in mutations:
  try:checker.check(x)
  except ValueError:pass
  else:raise AssertionError('Malformed ELF accepted')
-# Rust x64 types/wrapper compile on current installed UEFI target, explicitly not
-# an application ELF target. Explicit SysV FP functions expose the separate ABI.
-run(['cargo','test','--manifest-path',sdk/'rust/Cargo.toml','--target-dir',out/'rust-host'])
-run(['cargo','check','--manifest-path',sdk/'rust/Cargo.toml','--target','x86_64-unknown-uefi','--target-dir',out/'rust-x64'])
-run([rustc,'--edition=2024','--crate-type=lib','--target=x86_64-unknown-uefi','-C','no-redzone=yes','--emit=llvm-ir',sdk/'tests/fp.rs','-o',out/'fp-rust.ll'])
-assert 'x86_64_sysvcc' in (out/'fp-rust.ll').read_text()
-# The Rust Hello is compiled as an object library with explicit SysV ABI on the
-# installed x64 target. This deliberately does not claim a Rust application ELF.
-run([rustc,'--edition=2024','--crate-type=rlib','--crate-name=musha_sys','--target=x86_64-unknown-uefi',sdk/'rust/musha-sys/src/lib.rs','-o',out/'libmusha_sys.rlib'])
-run([rustc,'--edition=2024','--crate-type=lib','--crate-name=hello_musha','--target=x86_64-unknown-uefi','--extern','musha_sys='+str(out/'libmusha_sys.rlib'),'--emit=llvm-ir',sdk/'examples/hello-rust/main.rs','-o',out/'hello-rust.ll'])
-# Inspect actual pinned compiler target settings; bootstrap only enables this
-# introspection. No unstable production Rust application is built here.
-inspect_env=dict(os.environ,RUSTC_BOOTSTRAP='1')
-for name,target in [('builtin-none','x86_64-unknown-none'),('custom-user',str(sdk/'targets/x86_64-musha-user.json'))]:
- spec=run([rustc,'-Z','unstable-options','--print','target-spec-json','--target',target],env=inspect_env)
- (out/(name+'.json')).write_text(spec)
- if name=='builtin-none': assert json.loads(spec).get('rustc-abi')=='softfloat'
- else: assert json.loads(spec).get('rustc-abi')!='softfloat'
-report={'versions':versions,'commands':commands,'elf':elf,'negative_elf_cases':len(mutations),'c_x64_layout':'start and NOTE: all offsets, size 64, alignment 8','rust_x64_layout':'UEFI target compile only; not ELF SDK','guest_execution':False,'public_compatibility_fixed':False,'rust_custom_core_built':False}
+if not a.c_only:
+ # Rust x64 types/wrapper compile on current installed UEFI target, explicitly not
+ # an application ELF target. Explicit SysV FP functions expose the separate ABI.
+ run(['cargo','test','--manifest-path',sdk/'rust/Cargo.toml','--target-dir',out/'rust-host'])
+ run(['cargo','check','--manifest-path',sdk/'rust/Cargo.toml','--target','x86_64-unknown-uefi','--target-dir',out/'rust-x64'])
+ run([rustc,'--edition=2024','--crate-type=lib','--target=x86_64-unknown-uefi','-C','no-redzone=yes','--emit=llvm-ir',sdk/'tests/fp.rs','-o',out/'fp-rust.ll'])
+ assert 'x86_64_sysvcc' in (out/'fp-rust.ll').read_text()
+ # The Rust Hello is compiled as an object library with explicit SysV ABI on the
+ # installed x64 target. This deliberately does not claim a Rust application ELF.
+ run([rustc,'--edition=2024','--crate-type=rlib','--crate-name=musha_sys','--target=x86_64-unknown-uefi',sdk/'rust/musha-sys/src/lib.rs','-o',out/'libmusha_sys.rlib'])
+ run([rustc,'--edition=2024','--crate-type=lib','--crate-name=hello_musha','--target=x86_64-unknown-uefi','--extern','musha_sys='+str(out/'libmusha_sys.rlib'),'--emit=llvm-ir',sdk/'examples/hello-rust/main.rs','-o',out/'hello-rust.ll'])
+ # Inspect actual pinned compiler target settings; bootstrap only enables this
+ # introspection. No unstable production Rust application is built here.
+ inspect_env=dict(os.environ,RUSTC_BOOTSTRAP='1')
+ for name,target in [('builtin-none','x86_64-unknown-none'),('custom-user',str(sdk/'targets/x86_64-musha-user.json'))]:
+  spec=run([rustc,'-Z','unstable-options','--print','target-spec-json','--target',target],env=inspect_env)
+  (out/(name+'.json')).write_text(spec)
+  if name=='builtin-none': assert json.loads(spec).get('rustc-abi')=='softfloat'
+  else: assert json.loads(spec).get('rustc-abi')!='softfloat'
+report={'versions':versions,'commands':commands,'elf':elf,'negative_elf_cases':len(mutations),'c_x64_layout':'start and NOTE: all offsets, size 64, alignment 8','hello_sha256':hashlib.sha256(b).hexdigest(),'c_only':a.c_only,'rust_x64_layout':'not included' if a.c_only else 'UEFI target compile only; not ELF SDK','guest_execution':False,'public_compatibility_fixed':False,'rust_custom_core_built':False}
 (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps({k:v for k,v in report.items() if k!='commands'},indent=2))

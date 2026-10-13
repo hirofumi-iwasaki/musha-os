@@ -10,6 +10,7 @@ import struct
 import tarfile
 import tempfile
 import unittest
+import zipfile
 
 spec = importlib.util.spec_from_file_location('release', Path(__file__).with_name('prepare-release.py'))
 release = importlib.util.module_from_spec(spec); spec.loader.exec_module(release)
@@ -43,6 +44,23 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(entry, self.efi.read_bytes())
             self.assertEqual(tar.extractfile('musha-os-0.2.0-candidate/MUSHA.TXT').read(), b'Hello Musha-OS!\n')
             self.assertTrue(all(m.mtime == 0 and m.uid == 0 for m in tar.getmembers()))
+
+    def test_c_sdk_is_standalone_deterministic_and_manifested(self):
+        a = release.stage(self.root/'sdk-one', self.efi, {'commit':'fixture', 'features': []})
+        b = release.stage(self.root/'sdk-two', self.efi, {'commit':'fixture', 'features': []})
+        version = (release.ROOT/'VERSION').read_text().strip()
+        name = f'musha-os-v{version}-x64-c-sdk.zip'
+        self.assertEqual((a/name).read_bytes(), (b/name).read_bytes())
+        manifest = json.loads((a/'build-manifest.json').read_text())
+        self.assertEqual(manifest['assets'][name]['sha256'], release.digest(a/name))
+        self.assertIn(f'{release.digest(a/name)}  {name}', (a/'SHA256SUMS').read_text())
+        with zipfile.ZipFile(a/name) as z:
+            names=z.namelist()
+            for needed in ['src/crt0.S','src/libmusha.c','linker/app.ld','sysroot/include/musha/api.h','tools/check-sdk.py','tools/app-check.py','examples/hello-c/main.c','CMakeLists.txt','LICENSE','NOTICE']:
+                self.assertIn(needed,names)
+            self.assertFalse(any(n.startswith(('rust/','targets/','examples/hello-rust/')) or n.endswith('.rs') for n in names))
+            sm=json.loads(z.read('sdk-manifest.json'))
+            for n,v in sm['files'].items(): self.assertEqual(hashlib.sha256(z.read(n)).hexdigest(),v['sha256'])
 
     def test_release_metadata_and_readme(self):
         output = release.stage(self.root / 'release', self.efi,

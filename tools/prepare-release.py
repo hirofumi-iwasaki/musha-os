@@ -114,6 +114,9 @@ def stage(destination, efi, provenance, release=False, version=None):
             for name in ['LICENSE','NOTICE']: z.write(ROOT/name,name)
             for path in sorted((bundle/'third_party').rglob('*')):
                 if path.is_file(): z.write(path,path.relative_to(bundle).as_posix())
+        sdk_spec = importlib.util.spec_from_file_location('package_sdk', ROOT/'tools/package-sdk.py')
+        sdk_package = importlib.util.module_from_spec(sdk_spec); sdk_spec.loader.exec_module(sdk_package)
+        sdk_package.create(work / (prefix+'-c-sdk.zip'), version)
         manifest = dict(provenance, schema=1, tag=provenance.get('tag'),
             status='preview' if provenance.get('working_tree') else 'candidate',
             layout_version=1, minimum_media_bytes=64*1024**2, logical_sector_bytes=512,

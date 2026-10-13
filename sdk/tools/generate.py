@@ -19,10 +19,12 @@ for cn,rn,key in [('musha_start_info_v1','MushaStartInfoV1','start_fields'),('mu
  r.append('};')
 c.append('#endif')
 for path,lines in [('sysroot/include/musha/abi.h',c),('rust/musha-sys/src/generated.rs',r)]:
+ if '--c-only' in sys.argv and path.startswith('rust/'): continue
  p=root/path;data='\n'.join(lines)+'\n'
  if '--check' in sys.argv: assert p.read_text()==data, str(p)+' differs from schema'
  else:p.parent.mkdir(parents=True,exist_ok=True);p.write_text(data)
-ledger=root.parent/'docs/application-abi.md'
+ledger=root/'docs/application-abi.md'
+if not ledger.exists(): ledger=root.parent/'docs/application-abi.md'
 if '--check' in sys.argv and ledger.exists():
  text=ledger.read_text()
  for n,v in s['constants'].items():assert f'| `{n}` | `{v}` |' in text,n+' ledger mismatch'

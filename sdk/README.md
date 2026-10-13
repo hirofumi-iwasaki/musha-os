@@ -1,15 +1,13 @@
-# Musha experimental SDK skeleton
+# Musha-OS experimental C SDK
 
 ## English
 
-Stage B compilation/conformance with an opt-in [C2 SDK C guest probe](../docs/ring3-elf.md). The normal EFI is not an external application runtime.
-Do not execute the sample on the development host. No public ABI is fixed.
-See [SDK instructions](../docs/sdk.md), [ABI ledger](../docs/application-abi.md) and
-[validation/gates](../docs/boot-api-validation.md). C ELF is inspected; Rust user ELF,
-custom-target core/alloc, general application resource management and practical external I/O remain pending. The [C3 probe](../docs/ring3-lifecycle.md) tests bounded recovery and reuse.
+Build the C Hello with Python 3, Clang and LLD: `python3 tools/check-sdk.py --c-only --sdk . --output build` from the extracted archive. In the source repository use `python3 ../tools/check-sdk.py --c-only --sdk . --output build` from sdk/. Optional CMake: `cmake -S . -B build-cmake` then `cmake --build build-cmake`.
+
+The archive includes local `docs/sdk.md`, `docs/external-app.md` and `docs/application-abi.md`; in the repository these documents are in ../docs/. They describe required tools, MUSHA.ELF placement, 64-byte–16MiB/5-second bounds and reboot after exit/fault. Do not execute the guest ELF on the host. ABI candidate r1 is experimental and may change. Rust remains compile-only in the repository and is excluded from this C archive. Mac external applications are currently unsupported due to unrecognized storage. Candidate hardware acceptance is pending.
 
 ## 日本語
 
-B段階の基礎にC2 SDK C実行試験を追加しました。通常EFIは外部アプリ実行環境ではありません。
-サンプルをホストで実行しないでください。公開ABIは未固定です。
-詳細・検査手順・残件は上記リンクを参照してください。
+展開ZIPでは`python3 tools/check-sdk.py --c-only --sdk . --output build`でC Helloを生成します。リポジトリのsdk/内では`../tools/check-sdk.py`を指定します。Python 3、Clang、LLDが必要です。任意のCMake手順は上記を参照してください。
+
+ZIP内のdocs/（リポジトリでは../docs/）にSDK、外部アプリ、ABIの手順を同梱します。MUSHA.ELF配置、64バイト～16MiB／5秒期限、終了・障害後の再起動を説明しています。ホストでゲストELFを実行しないでください。ABIは変更可能な実験候補r1です。Rustはcompile-onlyでZIPへ含めません。Macはストレージ未認識のため外部アプリ未対応、公開候補の実機受入は未完了です。

@@ -28,6 +28,8 @@ def validate(directory,tag,commit):
         raise ValueError('Candidate provenance mismatch')
     prefix='musha-os-'+tag+'-x64'
     required={prefix+'-usb.img.gz',prefix+'-files.zip',prefix+'-deployment.zip','musha-os-'+tag[1:]+'-candidate.tar.gz'}
+    sdk_name=prefix+'-c-sdk.zip'
+    if tuple(map(int,tag[1:].split('.'))) >= (0,3,0) or sdk_name in m['assets']: required.add(sdk_name)
     if set(m['assets'])!=required: raise ValueError('Unexpected asset set')
     expected={}
     for line in (directory/'SHA256SUMS').read_text().splitlines():
