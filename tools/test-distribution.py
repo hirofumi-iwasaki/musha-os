@@ -21,20 +21,22 @@ def load(name):
     m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 usb=load('make-usb-image'); deploy=load('deploy-image'); update=load('update-usb'); release=load('prepare-release'); draft=load('draft-release'); ident=load('candidate-identity')
 
+VERSION=(release.ROOT/'VERSION').read_text().strip()
+
 class DistributionTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup); self.root=Path(self.tmp.name).resolve()
         self.efi=self.root/'test.efi'; b=bytearray(1800); b[:2]=b'MZ'; struct.pack_into('<I',b,60,128); b[128:132]=b'PE\0\0'
         struct.pack_into('<H',b,132,0x8664); struct.pack_into('<H',b,152,0x20b); struct.pack_into('<H',b,220,10); self.efi.write_bytes(b)
-        self.prov={'commit':'a'*40,'features':[],'working_tree':'','tag':'v0.2.0'}
+        self.prov={'commit':'a'*40,'features':[],'working_tree':'','tag':f'v{VERSION}'}
     def package(self):
         return release.stage(self.root/'release',self.efi,self.prov)
     def zip(self,payload=None):
-        p=self.root/'update.zip'; make_zip(p,payload or {'EFI/BOOT/BOOTX64.EFI':self.efi.read_bytes(),'MUSHA.TXT':b'text'},'0.2.0',self.prov); return p
+        p=self.root/'update.zip'; make_zip(p,payload or {'EFI/BOOT/BOOTX64.EFI':self.efi.read_bytes(),'MUSHA.TXT':b'text'},f'{VERSION}',self.prov); return p
     def volume(self):
         p=self.root/'volume'; (p/'EFI/BOOT').mkdir(parents=True); (p/'EFI/BOOT/BOOTX64.EFI').write_bytes(b'old'); (p/'user.txt').write_bytes(b'keep'); return p
     def test_image_zip_payload_and_manifest(self):
-        out=self.package(); m=json.loads((out/'build-manifest.json').read_text()); version='musha-os-v0.2.0-x64'
+        out=self.package(); m=json.loads((out/'build-manifest.json').read_text()); version=f'musha-os-v{VERSION}-x64'
         image=gzip.decompress((out/(version+'-usb.img.gz')).read_bytes())
         inspected=deploy.inspect(io.BytesIO(image),len(image))
         um,payload=read_zip(out/(version+'-files.zip'))
@@ -42,7 +44,7 @@ class DistributionTests(unittest.TestCase):
         self.assertEqual(m['image_uncompressed'],{'bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()})
         for name in ['LICENSE','NOTICE','third_party/lwip/COPYING','third_party/freebsd-e1000/COPYING','third_party/freebsd-apple-bce/COPYING','third_party/r-efi/AUTHORS']: self.assertIn(name,payload)
         with zipfile.ZipFile(out/(version+'-deployment.zip')) as z: self.assertIn('tools/update-usb.py',z.namelist())
-        draft.validate(out,'v0.2.0','a'*40)
+        draft.validate(out,f'v{VERSION}','a'*40)
     def test_partition_types_reproducible_and_preserved(self):
         for kind in ('basic-data', 'esp'):
             with self.subTest(kind=kind):
@@ -142,10 +144,10 @@ class DistributionTests(unittest.TestCase):
             with self.assertRaises(ValueError): release.stage(self.root/'bad',self.efi,self.prov,version=version)
         for field,value in [('features',['qemu-debug']),('RUSTFLAGS','--cfg foo')]:
             with self.assertRaises(ValueError): release.stage(self.root/'bad',self.efi,dict(self.prov,**{field:value}))
-        with self.assertRaises(ValueError): ident.identity('0.2.0','v0.1.0','a'*40,lambda _: 'a'*40)
-        with self.assertRaises(ValueError): ident.identity('0.2.0','v0.2.0','a'*40,lambda _: 'b'*40)
+        with self.assertRaises(ValueError): ident.identity(f'{VERSION}','v0.1.0','a'*40,lambda _: 'a'*40)
+        with self.assertRaises(ValueError): ident.identity(f'{VERSION}',f'v{VERSION}','a'*40,lambda _: 'b'*40)
         out=self.package(); p=out/'build-manifest.json'; m=json.loads(p.read_text()); m['working_tree']='dirty'; p.write_bytes(json_bytes(m))
-        with self.assertRaises(ValueError): draft.validate(out,'v0.2.0','a'*40)
+        with self.assertRaises(ValueError): draft.validate(out,f'v{VERSION}','a'*40)
     def test_draft_api_mock_no_publish_no_tag_creation(self):
         out=self.package(); calls=[]
         def api(*a):
@@ -153,24 +155,24 @@ class DistributionTests(unittest.TestCase):
             if 'git/ref/tags' in a[-1]: return json_bytes({'object':{'type':'commit','sha':'a'*40}})
             if '/releases/tags/' in a[-1]: raise subprocess.CalledProcessError(1,a,stderr=b'Not Found (HTTP 404)')
             return b''
-        self.assertIn('Dry-run',draft.attach(out,'v0.2.0','a'*40,api=api)); self.assertFalse(any(a[0]=='release' for a in calls))
-        draft.attach(out,'v0.2.0','a'*40,True,api)
+        self.assertIn('Dry-run',draft.attach(out,f'v{VERSION}','a'*40,api=api)); self.assertFalse(any(a[0]=='release' for a in calls))
+        draft.attach(out,f'v{VERSION}','a'*40,True,api)
         create=[a for a in calls if a[0]=='release'][0]; self.assertIn('--draft',create); self.assertIn('--verify-tag',create); self.assertNotIn('--clobber',create)
         def published(*a):
             if 'git/ref/tags' in a[-1]: return json_bytes({'object':{'type':'commit','sha':'a'*40}})
             return json_bytes({'draft':False})
-        with self.assertRaises(ValueError): draft.attach(out,'v0.2.0','a'*40,True,published)
+        with self.assertRaises(ValueError): draft.attach(out,f'v{VERSION}','a'*40,True,published)
     def test_identical_draft_and_mismatch(self):
-        out=self.package(); _,names=draft.validate(out,'v0.2.0','a'*40)
+        out=self.package(); _,names=draft.validate(out,f'v{VERSION}','a'*40)
         def api(*a):
             if 'git/ref/tags' in a[-1]: return json_bytes({'object':{'type':'commit','sha':'a'*40}})
             if '/releases/tags/' in a[-1]: return json_bytes({'draft':True,'body':'Musha source: '+'a'*40,'assets':[{'name':n,'id':i} for i,n in enumerate(names)]})
             return (out/names[int(a[-1].rsplit('/',1)[-1])]).read_bytes()
-        self.assertIn('retained',draft.attach(out,'v0.2.0','a'*40,True,api))
+        self.assertIn('retained',draft.attach(out,f'v{VERSION}','a'*40,True,api))
         def corrupt(*a):
             if '/assets/' in a[-1]: return b'corrupt'
             return api(*a)
-        with self.assertRaises(ValueError): draft.attach(out,'v0.2.0','a'*40,True,corrupt)
+        with self.assertRaises(ValueError): draft.attach(out,f'v{VERSION}','a'*40,True,corrupt)
 
     def test_no_image_work_in_files_only_build(self):
         builder=load('build-usb')
@@ -232,11 +234,11 @@ class DistributionTests(unittest.TestCase):
             if 'uses:' in line: self.assertRegex(line,r'@[a-f0-9]{40} ')
 
     def test_verified_efi_reuse_requires_exact_normal_provenance(self):
-        original=dict(self.prov,version='0.2.0',status='candidate',target='x86_64-unknown-uefi',profile='release',payload={'EFI/BOOT/BOOTX64.EFI':{'sha256':digest(self.efi)}})
-        release.validate_efi(self.efi,original,'0.2.0','v0.2.0','a'*40,'')
-        for field,value in [('version','0.3.0'),('tag','v0.3.0'),('commit','b'*40),('working_tree','dirty'),('features',['qemu-debug']),('status','preview'),('profile','debug')]:
-            with self.assertRaises(ValueError): release.validate_efi(self.efi,dict(original,**{field:value}),'0.2.0','v0.2.0','a'*40,'')
+        original=dict(self.prov,version=f'{VERSION}',status='candidate',target='x86_64-unknown-uefi',profile='release',payload={'EFI/BOOT/BOOTX64.EFI':{'sha256':digest(self.efi)}})
+        release.validate_efi(self.efi,original,f'{VERSION}',f'v{VERSION}','a'*40,'')
+        for field,value in [('version','999.0.0'),('tag','v999.0.0'),('commit','b'*40),('working_tree','dirty'),('features',['qemu-debug']),('status','preview'),('profile','debug')]:
+            with self.assertRaises(ValueError): release.validate_efi(self.efi,dict(original,**{field:value}),f'{VERSION}',f'v{VERSION}','a'*40,'')
         self.efi.write_bytes(b'changed')
-        with self.assertRaises(ValueError): release.validate_efi(self.efi,original,'0.2.0','v0.2.0','a'*40,'')
+        with self.assertRaises(ValueError): release.validate_efi(self.efi,original,f'{VERSION}',f'v{VERSION}','a'*40,'')
 
 if __name__=='__main__': unittest.main()
