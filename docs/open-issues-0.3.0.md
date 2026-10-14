@@ -14,7 +14,7 @@ Owner decision, 2026-10-13: these are limitations, not work to investigate in th
 
 | Issue | Current evidence / next work |
 |---|---|
-| Mac storage | 0.3.0 development EFI: no supported FAT32/exFAT medium. Historical 10/12 rc1 FAT32 success differs; regression vs topology unknown. v0.4.0+: compare v0.2.0 EFI under identical connections and capture diagnostic builds. No investigation performed here. |
+| Mac storage | 0.3.0 development EFI: no supported FAT32/exFAT medium. Refreshed 9f8d999 candidate succeeds with USB read / Hello / exit 0 (IMG_7650, owner cold 3/3). Earlier failures remain unexplained. Historical 10/12 rc1 FAT32 success differs; regression vs topology unknown. v0.4.0+: compare v0.2.0 EFI under identical connections and capture diagnostic builds. No investigation performed here. |
 | NUC5 No medium | Cold NO MEDIUM observed in IMG_7633. Intel routing plus missing attachment grace identified by review; fixes implemented in 958c4ab, hardware recovery and the provisional 500 ms grace require candidate retesting. |
 | H15 multiple keyboards | Selected Razer receiver prevents Lenovo input; multi-device polling remains future work. |
 | Unoptimized debug vector 8 | Unresolved debug-profile fault; release-profile QEMU success does not close it. |
@@ -24,7 +24,7 @@ Owner decision, 2026-10-13: these are limitations, not work to investigate in th
 
 Measured historical latency: IMG_7630 showed 17,996 ms of accumulated attachment/SS waits across six passes; ownership/reset/quiesce did not reach their deadlines. The current grace/rescan implementation requires new normal-candidate timing, not inference from diagnostic-page duration. See [timing evidence](usb-startup-timing.md).
 
-Release gates still pending: same candidate EFI, NUC5/Ryzen three cold boots each and Ryzen one hot reboot with READ OK-to-Hello timing, Mac Basic Data boot, owner-authorized final-source remote CI and final artifacts. Documentation drafts have been received; older results do not satisfy the new candidate gates. [Hardware records](hardware-acceptance-0.3.0.md).
+Current 9f8d999 candidate: NUC5/Ryzen cold 3/3 owner-reported, Ryzen hot 1/1 confirmed with Hello/exit 0 (IMG_7652; approx. 3–5 s READ OK-to-Hello), Mac Basic Data boot passed. Owner accepts existing IMG_7645 diagnostic D8=0 once plus normal cold 3/3; hardware acceptance passes. Remaining gates: post-acceptance equivalence, owner-authorized final-source remote CI and final artifacts. Documentation drafts have been received; older results do not satisfy the new candidate gates. [Hardware records](hardware-acceptance-0.3.0.md).
 
 ### Deferred to 0.4.0 or later
 
@@ -47,7 +47,7 @@ These are planning items only: this release does not implement them or relocate 
 
 2026-10-13所有者判断。以下は本作業で調査を始めず、制約・残件として保持します。
 
-- Macストレージ：0.3.0開発版でFAT32/exFAT未認識。10/12 rc1成功との違いは退行か接続構成差か未特定。0.4.0以降に同一接続でv0.2.0 EFIとのA/Bと診断ビルド採取を行う。
+- Macストレージ：0.3.0開発版でFAT32/exFAT未認識。更新候補9f8d999はIMG_7650でUSB読込み・Hello・終了0に成功し、冷間3/3所有者報告。過去の失敗原因は未特定。10/12 rc1成功との違いは退行か接続構成差か未特定。0.4.0以降に同一接続でv0.2.0 EFIとのA/Bと診断ビルド採取を行う。
 - NUC5 No medium：IMG_7633で冷間NO MEDIUMを観測。レビューでIntelルーティング未切替＋接続猶予なしを原因として特定し958c4abで修正済み。実機での解消と暫定500ms猶予の妥当性は候補で再確認する。
 - H15複数キーボード：Razer選択時のLenovo入力不可は未修正。
 - 未最適化debugのvector 8：未解決。release構成の成功と区別する。
@@ -57,7 +57,7 @@ These are planning items only: this release does not implement them or relocate 
 
 過去の実測：IMG_7630で6走査の接続・SS待ち合計17,996ms。所有権移行・リセット・停止は期限へ達していません。現行の猶予・再探索実装では新通常候補で再計測し、診断ページ表示時間から推測しません。[計測証拠](usb-startup-timing.md)を参照。
 
-公開候補EFIによるNUC5・Ryzen各3回冷間起動とRyzenホット1回・READ OK→Hello秒数、MacのBasic Data起動、所有者承認後の最終ソースのリモートCI、最終配布物の確認は残件です。README／リリースノート草案は受領済み。旧版の結果を次候補の合格には転用しません。
+現行候補9f8d999でNUC5・Ryzen冷間各3/3所有者報告、Ryzenホット1/1（IMG_7652、Hello・終了0、READ OK→Hello概算3〜5秒）、Mac Basic Data起動を確認済み。所有者決定により既存IMG_7645診断D8=0証拠1回＋通常版冷間3回で実機受入合格。受入後の一致確認、所有者承認後の最終ソースCIと最終配布物確認が残件です。README／リリースノート草案は受領済み。旧版の結果を次候補の合格には転用しません。
 
 ### 0.4.0以降への先送り
 

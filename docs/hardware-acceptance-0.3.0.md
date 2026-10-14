@@ -1,6 +1,207 @@
 # v0.3.0 hardware observations
 
-## Next clean candidate: acceptance worksheet (2026-10-14)
+## Owner-approved NUC5 acceptance revision (2026-10-14)
+
+The owner replaces the per-run diagnostic pairing requirement with **one existing
+diagnostic D8=0 observation plus three successful normal-candidate cold boots**.
+Accepted diagnostic evidence: IMG_7645.MOV, PRE OWN D8=0 at frame-016,
+AC unplugged 10 s (owner), source a1762f423516d702bc2d9e00a9425d2b173e00c9,
+EFI 0614fbe998836f2eb5f837ca2429b922bedd8668b21db9e2c13bbfe6e65085b0.
+Accepted normal evidence: source 9f8d9997e06d6edefdcb60593de07d4243b3649e,
+EFI ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad,
+IMG_7647.MOV shows Hello/exit 0; the owner confirms three consecutive successes,
+all with AC unplugged ≥10 s. This deliberately reuses one historical diagnostic
+observation, not three new D8 measurements, and does not measure D8 in normal boots.
+NUC5 hardware acceptance: **PASS under the revised criterion**. Together with
+Ryzen cold 3 + hot 1 and Mac Basic Data boot, the hardware acceptance gate passes.
+This decision does not authorize commit, push, rebuild, CI, tagging or publication.
+
+## 所有者承認によるNUC5受入条件変更（2026-10-14）
+
+各runの診断D8対応付けを、**既存の診断証拠1回＋通常版冷間3回成功**へ変更しました。
+診断証拠はIMG_7645のPRE OWN D8=0（frame-016、AC断10秒）、ソースa1762f4・
+診断EFI 0614fbe9…です。通常版は9f8d999・EFI ba23cabb…で、IMG_7647のHello・終了0と
+全回AC断10秒以上で3回連続成功の所有者報告を採用します。ハッシュ全文は上記に記載。
+過去の診断1回を明示的に再利用する判断であり、D8を3回確認した、または通常版で測定したとはしません。
+変更後の条件でNUC5受入は**合格**。Ryzen冷間3回＋ホット1回、Mac Basic Data起動と合わせ、
+実機受入ゲートは合格です。commit・push・再ビルド・CI・タグ・公開の承認は含みません。
+
+## Refreshed SDK-guide candidate: run worksheet (2026-10-14)
+
+Deployment update (2026-10-14): owner-approved normal candidate written to the dedicated SanDisk, volume UUID `56ABD4E9-E242-34FC-ABEF-B0016EA1B6BB`, and safely ejected. Only EFI, README.TXT and update-manifest changed. All 14 managed files plus original SDK Hello AUTORUN were read back and matched; eight third_party files were already present and verified. MUSHA.TXT and musha-installation.json were already absent, so no deletion was needed. Provenance: `out/release-sdk-guide-stage3/usb-normal-deploy/provenance.json`; per-file hashes: `verified-files.json` in the same directory. This USB now contains the **normal** EFI, not the D8 diagnostic build. NUC5 normal cold boots are now owner-reported PASS 3/3; Ryzen normal cold boots are also owner-reported PASS 3/3. NUC5 diagnostic evidence accepted under the owner decision below; Ryzen hot reboot has passed; Mac Basic Data boot has passed.
+
+配備更新（2026-10-14）：所有者承認により専用SanDiskへ通常版候補を書込み、安全に取り外しました。変更はEFI・README.TXT・update-manifestのみ。管理14ファイルと元のSDK HelloのAUTORUNを読み戻し照合し、既存third_party 8本も一致確認しました。MUSHA.TXTとmusha-installation.jsonは既に不在のため削除操作は不要でした。証拠は上記provenanceとverified-filesです。現在のUSBは**通常版**で、D8採取用診断版ではありません。NUC5通常版の冷間起動は所有者報告で3/3成功です。Ryzen通常版も冷間3/3成功の所有者報告です。下記所有者決定により既存診断証拠を受理し、NUC5受入は合格です。Ryzenホット再起動は合格です。MacのBasic Data起動は合格です。
+
+Source: `9f8d9997e06d6edefdcb60593de07d4243b3649e`. Normal EFI: `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`.
+Diagnostic EFI: `0614fbe998836f2eb5f837ca2429b922bedd8668b21db9e2c13bbfe6e65085b0`.
+The normal EFI is byte-identical to the a1762f4 candidate, but README.TXT and
+SDK documentation changed. Deployment is complete and owner testing is in progress. IMG_7645 diagnostic D1 remains in the historical worksheet and is explicitly reused under the owner decision above; it is not counted as a new run.
+The approved USB update is recorded above. Before testing, verify AUTORUN.ELF is
+the SDK Hello, all managed files match the candidate manifest, all eight
+third_party files exist, and MUSHA.TXT / musha-installation.json are absent.
+Record backup/removal, verified-files and safe ejection in deployment provenance.
+
+Cold boot: power off for at least 10 seconds (record whether AC was unplugged).
+NUC5 uses the existing IMG_7645 PRE OWN D8=0 evidence plus three normal cold boots. A diagnostic photograph is not a D8 measurement of a normal boot. Require Hello and exit 0 in the same boot;
+diagnostic hold or missing medium is a failure. Ryzen needs three cold boots
+and one hot reboot, with USB READ OK-to-Hello seconds. Mac only needs to boot
+from Basic Data with AUTORUN present; record storage status without treating it
+as a gate. On failure, retain evidence and stop acceptance for diagnosis.
+
+### 更新候補の記入手順
+
+上記ソースの通常版EFIはa1762f4とバイト一致しますが、README.TXTとSDK文書が
+変わるため、以下を新しい記録表とします。配備済みで所有者試験を進めています。IMG_7645の診断D1を
+含む従来の証拠は下の旧表へ保持します。IMG_7645の診断1回は上記所有者決定で明示的に再利用します。
+承認済みUSB更新は上記に記録済みです。試験前にSDK HelloのAUTORUN.ELF、管理ファイルの
+manifest一致、third_partyの8本、MUSHA.TXT／musha-installation.jsonの不在を
+照合し、退避・削除・verified-files・安全な取り外しをprovenanceへ残します。
+
+冷間は電源断10秒以上とし、ACを抜いたかも記録します。NUC5は既存IMG_7645の診断D8=0証拠1回と通常版冷間3回を採用します。別起動の通常版でD8を
+測定したことにはしません。同一起動内でHello・終了0が必要で、ホールドや媒体なしは
+不合格です。Ryzenは冷間3回とホット1回、READ OK→Hello秒数を記録します。
+MacはAUTORUNを置いたBasic Data媒体からの起動のみを条件とし、媒体検出状態は
+記録のみです。失敗時は証拠を残し、原因採取まで受入を停止します。
+
+| Machine / run | Build | EFI SHA-256 | Source commit | Date/time (JST) | Power off seconds / AC | PRE OWN D8 / paired diagnostic | READ OK → Hello seconds | Result | Evidence file |
+|---|---|---|---|---|---|---|---|---|---|
+| NUC5 diagnostic reference (reused) | diagnostic | `0614fbe998836f2eb5f837ca2429b922bedd8668b21db9e2c13bbfe6e65085b0` | `a1762f423516d702bc2d9e00a9425d2b173e00c9` | 2026-10-14; time UNKNOWN | 10 s / AC unplugged (owner) | PRE OWN D8=0; frame-016 | — | PASS: existing evidence accepted by owner | IMG_7645.MOV |
+| NUC5 C1 | normal | `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` | `9f8d9997e06d6edefdcb60593de07d4243b3649e` | 2026-10-14 report; run time UNKNOWN | ≥10 s / AC unplugged (owner) | Not measured in normal; IMG_7645 is shared supporting evidence | — | PASS (owner report) | IMG_7647.MOV shows one of three runs; ordinal UNKNOWN; owner confirms all three |
+| NUC5 C2 | normal | `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` | `9f8d9997e06d6edefdcb60593de07d4243b3649e` | 2026-10-14 report; run time UNKNOWN | ≥10 s / AC unplugged (owner) | Not measured in normal; IMG_7645 is shared supporting evidence | — | PASS (owner report) | IMG_7647.MOV shows one of three runs; ordinal UNKNOWN; owner confirms all three |
+| NUC5 C3 | normal | `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` | `9f8d9997e06d6edefdcb60593de07d4243b3649e` | 2026-10-14 report; run time UNKNOWN | ≥10 s / AC unplugged (owner) | Not measured in normal; IMG_7645 is shared supporting evidence | — | PASS (owner report) | IMG_7647.MOV shows one of three runs; ordinal UNKNOWN; owner confirms all three |
+| Ryzen C1 | normal | `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` | `9f8d9997e06d6edefdcb60593de07d4243b3649e` | 2026-10-14 report; run time UNKNOWN | ≥10 s / AC connected (owner) | — | Filmed run approx. 3–5 s; ordinal UNKNOWN | PASS (owner report) | IMG_7648.MOV shows one run; owner reports three |
+| Ryzen C2 | normal | `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` | `9f8d9997e06d6edefdcb60593de07d4243b3649e` | 2026-10-14 report; run time UNKNOWN | ≥10 s / AC connected (owner) | — | Filmed run approx. 3–5 s; ordinal UNKNOWN | PASS (owner report) | IMG_7648.MOV shows one run; owner reports three |
+| Ryzen C3 | normal | `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` | `9f8d9997e06d6edefdcb60593de07d4243b3649e` | 2026-10-14 report; run time UNKNOWN | ≥10 s / AC connected (owner) | — | Filmed run approx. 3–5 s; ordinal UNKNOWN | PASS (owner report) | IMG_7648.MOV shows one run; owner reports three |
+| Ryzen H1 | normal | `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` | `9f8d9997e06d6edefdcb60593de07d4243b3649e` | 2026-10-14 report; time UNKNOWN | hot reboot (owner) | — | approx. 3–5 s (video) | PASS: Hello / exit 0 | IMG_7652.MOV |
+| Mac B1 | normal | `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` | `9f8d9997e06d6edefdcb60593de07d4243b3649e` | 2026-10-14 report; run time UNKNOWN | ≥10 s / AC connected (owner) | — | — | PASS: Basic Data boot; Hello / exit 0 | IMG_7650.MOV: one of three, ordinal UNKNOWN; owner reports 3/3 |
+| Mac B2 | normal | `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` | `9f8d9997e06d6edefdcb60593de07d4243b3649e` | 2026-10-14 report; run time UNKNOWN | ≥10 s / AC connected (owner) | — | — | PASS: Basic Data boot; Hello / exit 0 | IMG_7650.MOV: one of three, ordinal UNKNOWN; owner reports 3/3 |
+| Mac B3 | normal | `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` | `9f8d9997e06d6edefdcb60593de07d4243b3649e` | 2026-10-14 report; run time UNKNOWN | ≥10 s / AC connected (owner) | — | — | PASS: Basic Data boot; Hello / exit 0 | IMG_7650.MOV: one of three, ordinal UNKNOWN; owner reports 3/3 |
+
+### Ryzen hot reboot result (2026-10-14)
+
+Owner reports a successful hot reboot. IMG_7652.MOV (24.108 s) directly shows
+AUTORUN.ELF (Ring 3), Hello Musha-OS! and exited: status 0 at 23 s.
+At one-second sampling, USB READ OK is absent at 18 s and present at 19 s;
+Hello is absent at 22 s and present at 23 s: approximately 3–5 s between
+visible events, not PM-epoch instrumentation. GOP is 3840/2160/3840.
+Normal candidate identity is linked to the preceding USB deployment:
+9f8d999 / ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad.
+Hot-reboot classification is owner-reported. Ryzen cold 3/3 plus hot 1/1 is
+now recorded; individual unfilmed cold-run timings remain unknown.
+Evidence: `out/release-sdk-guide-stage3/ryzen-7652/observations.json` and
+`frame-018.png`, `frame-019.png`, `frame-022.png`, `frame-023.png`.
+
+### Ryzenホットリブート結果（2026-10-14）
+
+所有者報告でホットリブート1回成功。IMG_7652.MOV（24.108秒）の23秒時点で
+AUTORUN.ELFのRing 3見出し・Hello・終了0を直接確認しました。1秒間隔の採取で
+USB READ OKは18秒時点で未表示・19秒時点で表示、Helloは22秒時点で未表示・23秒時点で表示。
+画面間の所要時間は概算3〜5秒で、PM epoch計測ではありません。GOPは3840/2160/3840。
+直前配備の通常版候補9f8d999／上記EFIハッシュへ紐付けます。ホット再起動の分類は所有者報告です。
+これでRyzen冷間3/3＋ホット1/1成功を記録済み。未撮影の冷間run別秒数はUNKNOWNのままです。
+
+### MacBook Pro 2018 without external keyboard (2026-10-14)
+
+Supplemental run: the owner disconnected the external keyboard and reports
+successful boot. IMG_7651.MOV (12.055 s), frame-011 at 11 s, directly shows
+`AUTORUN.ELF (Ring 3)`, `Hello Musha-OS!`, and `exited: status 0`.
+Frame-008 shows runtime/CORE READY and GOP 3360/2100/3584.
+Associate the run with the preceding normal USB deployment (source 9f8d999,
+EFI ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad).
+Keyboard disconnection is owner-reported; the EFI identity comes from deployment
+provenance, not a hash measured from the video. This is one supplemental success,
+not an additional cold-boot series: power-off duration/method were not reported
+for this run. The input-free Hello succeeds without an external keyboard; this
+does not test internal keyboard input or keyboardless file-viewer operation.
+Evidence: `out/release-sdk-guide-stage3/mac-7651/observations.json`, `frame-011.png`.
+
+### MacBook Pro 2018：外付けキーボードなし（2026-10-14）
+
+追加試験として外付けキーボードを外して起動成功との所有者報告。
+IMG_7651.MOV（12.055秒）の11秒時点でAUTORUN.ELFのRing 3見出し・Hello・終了0を
+直接確認しました。8秒時点でruntime／CORE READY、GOP 3360/2100/3584も確認。
+直前配備の通常版9f8d999／上記EFIハッシュへ紐付けます。キーボードを外した条件は
+所有者報告、EFI識別は配備記録によるものです。追加1回の成功として扱い、この回の
+電源断時間・方法は未報告のため冷間3回の記録へ追加しません。入力不要のHelloが
+外付けキーボードなしで実行できた結果であり、内蔵キーボード入力やビューアー操作の試験ではありません。
+
+### MacBook Pro 2018 normal candidate result (2026-10-14)
+
+Owner reports three successful cold boots, each after ≥10 s powered off with
+AC connected. IMG_7650.MOV (9.62 s) directly shows one boot: at 5 s,
+USB READ OK and GOP 3360/2100/3584; at 8 s, AUTORUN.ELF (Ring 3),
+Hello Musha-OS! and exited: status 0. PCI DEVICES 23, XHCI 3, INTEL LAN 0.
+Basic Data boot acceptance passes. Storage read and external Hello also succeed
+in this tested configuration; earlier no-medium observations remain historical
+facts with their cause unresolved. This does not establish internal keyboard
+support or universal storage compatibility. The filmed run ordinal and per-run
+times are unknown; repetition/power conditions are owner reports. EFI/source
+identity comes from the preceding USB deployment provenance: 9f8d999 / ba23cabb.
+Evidence: `out/release-sdk-guide-stage3/mac-7650/observations.json`,
+`frame-005.png`, `frame-008.png`.
+
+### MacBook Pro 2018通常版候補の結果（2026-10-14）
+
+所有者報告で冷間3回成功。全回AC接続のまま電源OFFで10秒以上待機。
+IMG_7650.MOV（9.62秒）の5秒時点でUSB READ OKとGOP 3360/2100/3584、
+8秒時点でAUTORUN.ELFのRing 3見出し・Hello・終了0を直接確認しました。
+Basic Data起動条件は合格。今回の構成ではストレージ読込みと外部Helloも成功しています。
+過去の媒体未認識の観測と原因未特定の課題は残し、全面解決や内蔵キーボード対応とはしません。
+撮影したrun番号・各回の日時はUNKNOWN。3回の成功数・電源条件は所有者報告です。
+EFI・ソースは直前の配備記録（9f8d999／ba23cabb）へ紐付けています。
+
+### Ryzen normal candidate result (2026-10-14)
+
+The owner reports three successful cold boots. IMG_7648.MOV (11.287 s)
+directly shows one boot with GOP 3840/2160/3840, PCI DEVICES 34, XHCI 5,
+INTEL LAN 0, USB READ OK, and AUTORUN Hello / exit status 0.
+At one-second sampling, READ OK is absent at 5 s and present at 6 s;
+Hello is absent at 9 s and present at 10 s. The visible interval is therefore
+approximately 3–5 s (video sampling estimate, not PM-epoch instrumentation),
+compared with the earlier owner-reported 18 s. Individual run timings and the
+filmed run ordinal are unknown. The owner confirms ≥10 s power off before all three boots, with AC connected.
+The required hot reboot remains unreported. Associate this normal EFI with the
+preceding deployment provenance (9f8d999 / ba23cabb), not an on-video hash.
+Evidence: `out/release-sdk-guide-stage3/ryzen-7648/observations.json` and
+`frame-005.png`, `frame-006.png`, `frame-009.png`, `frame-010.png`.
+
+### Ryzen通常版候補の結果（2026-10-14）
+
+冷間3回成功を所有者報告として記録。IMG_7648.MOV（11.287秒）では1回の起動で
+GOP 3840/2160/3840、PCI DEVICES 34、XHCI 5、INTEL LAN 0、USB READ OK、
+AUTORUNのHello・終了0を確認しました。1秒間隔の採取でREAD OKは5秒時点で未表示、
+6秒時点で表示、Helloは9秒時点で未表示、10秒時点で表示です。画面間の時間は概算3〜5秒
+（動画サンプリングによる推定。PM epoch計測ではない）。以前の18秒は所有者報告です。
+撮影したrunの番号・他runの秒数はUNKNOWN。全3回ともACは接続したまま電源OFFで10秒以上待ったと所有者確認済み。ホット1回は未報告です。
+EFIは直前配備の9f8d999／ba23cabbへ紐付け、動画からのハッシュ測定とは区別します。
+
+### NUC5 normal candidate result (2026-10-14)
+
+The owner reports three consecutive successful cold boots, with AC unplugged
+for at least 10 seconds before each. IMG_7647.MOV (10.82 s) directly shows one
+successful boot: at the 10-second sample, `AUTORUN.ELF  (Ring 3)`,
+`Hello Musha-OS!`, and `AUTORUN.ELF exited: status 0` are visible together.
+The filmed run's ordinal and individual run times are unknown; the video does
+not independently demonstrate all three boots. The EFI/source association is
+from the immediately preceding USB deployment provenance, not a hash read from
+the video. Normal-build D8 is not measured. The owner accepts IMG_7645 as the single diagnostic observation; no additional per-run D8 photographs are required.
+Evidence: `out/release-sdk-guide-stage3/nuc5-7647/observations.json` and
+`frame-010.png`; deployment: `out/release-sdk-guide-stage3/usb-normal-deploy/provenance.json`.
+
+### NUC5通常版候補の結果（2026-10-14）
+
+所有者報告で冷間3回連続成功。各回ともACを抜いて10秒以上経過後に起動したと確認済みです。
+IMG_7647.MOV（10.82秒）の10秒時点でAUTORUN.ELFのRing 3見出し・Hello・終了0を
+同じ画面で直接確認しました。動画は3回のうち1回で、何回目かと各runの日時はUNKNOWNです。
+3回の成功数と電源断条件は所有者報告として記録します。EFI・ソースは直前のUSB配備記録へ
+紐付けており、動画からハッシュを測定したものではありません。通常版ではD8を測定しておらず、
+上記所有者決定によりIMG_7645の診断1回を採用します。各runの追加D8写真は要求しません。
+
+Diagnostic detail / 診断詳細: record ATTACH WAIT ms, SS WAIT end reason, WPR,
+RESCAN and session number alongside each video; use UNKNOWN rather than infer
+missing values. / 未収録の値は推測せずUNKNOWNとします。
+
+## Previous a1762f4 candidate: acceptance worksheet (2026-10-14)
 
 Owner decision: include the display grid in 0.3.0 and repeat acceptance. The
 local ba23cabb display checks below do not fill these gates. After approval,

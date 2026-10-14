@@ -99,8 +99,9 @@ macOSのFinderやWindowsのエクスプローラーには自動表示されま�
 「すべてのデバイスを表示」にしてマウントするか、`diskutil list`で識別子を確認して`diskutil mount diskNsM`を実行します。
 v0.3.0以降の媒体は種別をMicrosoft Basic Dataに変更し、通常の外付けUSBとして表示される構成にします
 （[配布方針 4.4](release-distribution-policy.md)）。既存のESP媒体も引き続き起動できます。
-この変更は開発版で実装・ローカル検証中です。NUC5・MacBook Pro 2018・RyzenでのBasic Data起動は確認前で、
-3機の確認が完了するまで自動表示・実機起動を検証済みとして案内しません。
+2026-10-14：候補9f8d999の専用Basic Data媒体からNUC5・Ryzen・MacBook Pro 2018の起動を確認しました
+（IMG_7647／7648／7650、[実機記録](hardware-acceptance-0.3.0.md)）。これは当該構成の起動確認であり、
+全ファームウェア互換性やWindowsの自動表示の実機検証を意味しません。公開受入全体は残件があります。
 既存ESP媒体の通常更新では種別を変更しないため、引き続き手動マウントが必要です。
 新規生成は `--partition-type basic-data`（既定）、互換試験は `--partition-type esp`。
 配備は両種別を保持し、更新はファイルだけを差し替えます。

@@ -13,24 +13,23 @@ Historical captures retain their original filename, MUSHA.ELF. From the renamed 
 
 ## Current pre-release status / 公開前の現状 (2026-10-14)
 
-The owner includes the shared grid in 0.3.0 and requires repeat acceptance from
-the next clean documentation commit. Local test EFI:
-`ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`;
-deployment: `out/display-grid/usb-deploy/provenance.json`.
+Current normal candidate: `9f8d9997e06d6edefdcb60593de07d4243b3649e`.
+EFI: `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`.
+Deployment: `out/release-sdk-guide-stage3/usb-normal-deploy/provenance.json`.
 
-| Machine | Development evidence | Next clean candidate |
+| Machine | Current evidence | Remaining acceptance |
 |---|---|---|
-| NUC5i5RYH | IMG_7641.MOV: Hello/exit 0; owner approves readability. Routing/grace cause identified and fixed. | Three consecutive cold boots pending; diagnostic PRE OWN D8=0 evidence required. |
-| Ryzen 7 | IMG_7643.MOV: GOP 3840/2160/3840, Hello/exit 0; three cold boots owner-reported. | Cold 3 + hot 1 and READ OK-to-Hello seconds pending. |
-| MacBook Pro 2018 | Development boot/external keyboard only; storage unrecognized, cause unknown; T2 internal keyboard unsupported. | Basic Data boot with AUTORUN present pending; storage outcome recorded only. |
+| NUC5i5RYH | IMG_7647.MOV shows Hello/exit 0. Owner reports cold 3/3, each with AC unplugged ≥10 s. | PASS under owner decision: existing IMG_7645 D8=0 diagnostic + normal cold 3/3; no D8 measurement in normal. |
+| Ryzen 7 | Refreshed candidate IMG_7648.MOV shows 4K Hello/exit 0; owner reports cold 3/3. Filmed READ OK-to-Hello approximately 3–5 s. | All three: power off ≥10 s, AC connected (owner). Hot 1 PASS: IMG_7652 Hello/exit 0, approx. 3–5 s; unfilmed individual timings unknown. |
+| MacBook Pro 2018 | IMG_7650: Basic Data boot, USB READ OK, Hello/exit 0. Owner reports cold 3/3, power off ≥10 s, AC connected. IMG_7651 additionally shows Hello/exit 0 with external keyboard disconnected (owner-reported configuration). | Boot gate PASS. Prior storage failures remain unexplained; T2 internal keyboard unsupported. |
 
-所有者は共通グリッドを0.3.0へ含め、次のクリーンな文書コミットから再受入する方針です。
-上記ローカル試験EFIでNUC5のHello・終了0と読みやすさ承認、Ryzenの4K出力・終了0と
-冷間3回の所有者報告を記録しました。NUC5のルーティング・接続猶予は原因特定・修正済み。
-次候補ではNUC5冷間3回連続（診断版PRE OWN D8=0の証拠）、Ryzen冷間3回＋ホット1回と
-READ OK→Hello秒数、MacのAUTORUNを置いたBasic Data起動が未完了です。
-Macのストレージは原因未特定で0.4.0以降、内蔵キーボードはT2未実装で未対応です。
-3機の最終候補確認済みとは記載しません。[run別記録](hardware-acceptance-0.3.0.md)。
+現行通常版候補9f8d999のNUC5冷間3回連続成功を所有者報告として記録しました。
+各回ともACを抜いて10秒以上。IMG_7647.MOVでは1回のHello・終了0を直接確認し、
+何回目かは未特定です。通常版のD8は未測定で、所有者決定で既存IMG_7645の診断D8=0証拠1回＋通常版冷間3回を受入条件とし、合格です。
+Ryzen更新候補の冷間3/3は所有者報告済みで、IMG_7648でHello・終了0、READ OK→Hello概算3〜5秒を確認。全3回とも電源OFFで10秒以上、AC接続のままと確認済み。ホット1回もIMG_7652でHello・終了0を確認し合格（概算3〜5秒）です。MacはIMG_7650でBasic Data起動・USB読込み・Hello・終了0を確認し、冷間3/3成功（電源OFF10秒以上、AC接続）の所有者報告で起動条件合格です。
+IMG_7651では外付けキーボードを外した追加試験でもHello・終了0を確認しました（接続条件は所有者報告）。内蔵キーボード入力は未対応のままです。
+Macストレージの過去の失敗原因の調査は0.4.0以降。所有者変更後の条件で3機の実機受入ゲートは合格です。公開前の再ビルド一致確認・CI等は別途残ります。
+[run別記録](hardware-acceptance-0.3.0.md)。
 
 ### 訂正前の経過（当時の報告・判断）
 
@@ -44,19 +43,19 @@ NUC5 IMG_7633.MOV（2026-10-14）：所有者報告は冷間3回成功、1・2�
 
 | 項目 | 確認状況 | 範囲・留意点 |
 | --- | --- | --- |
-| Ryzen 7機のRing 3 Hello | 共通グリッド試験版ba23cabbで冷間3/3（所有者報告）、次候補は未確認 | IMG_7643.MOVで4K・Hello・終了0。ホット再起動と秒数は次候補で採取。[記録](hardware-acceptance-0.3.0.md) |
+| Ryzen 7機のRing 3 Hello | 更新候補9f8d999／ba23cabbで冷間3/3（所有者報告、電源OFF10秒以上・AC接続） | IMG_7648.MOVで4K・Hello・終了0。READ OK→Hello概算3〜5秒。ホット1回もIMG_7652で成功、概算3〜5秒。[記録](hardware-acceptance-0.3.0.md) |
 | Ryzen 7機のUSB起動・画面表示 | 実機で確認 | 利用者所有機の特定構成。Ryzen全般の対応保証ではない。マザーボード・CPUの詳細型番は未記録 |
 | Ryzen機のUSBメモリー読出し | 実機で確認 | SanDiskの容量取得、FAT32、MUSHA.TXT 16byte、アプリ側読出しを確認 |
 | Ryzen機の有線キーボード入力 | 実機で確認 | H4でLenovo 17EF:6009のShift・A入力、Escによる終了を確認。任意のHID機器対応ではない |
 | Ryzen機のUSB2ハブ配下列挙 | 実機で一部確認 | H4でハブ配下routeの機器列挙を確認。ハブ全種・高速TT・SuperSpeed配下転送の確認とは区別する |
 | 複数入力機器の同時接続 | 既知の制約あり | H15でLenovo有線とRazer無線ドングルを同時接続すると、選択されたRazer側だけを監視しLenovo入力を受け付けない状況を確認。未修正 |
 | MacBook Pro 2018のUSB起動・画面表示 | 実機で確認 | H19全10ページとruntime/arena/timer到達を確認。利用者が2018年モデルと明示 |
-| MacBook Pro 2018のOS独自USBストレージ読出し | 0.3.0開発版でストレージ未認識、原因未特定 | 現行IMG_7604 2.mov／IMG_7605.MOVはNo medium、調査は0.4.0以降。以下は過去H19の成功：7D00の条件付き復旧、SanDisk容量取得、FAT32、MUSHA.TXT 16 byteのアプリ読出しまで確認 |
+| MacBook Pro 2018のOS独自USBストレージ読出し | 現行候補IMG_7650でUSB読込み・外部Hello成功 | 過去IMG_7604 2.mov／IMG_7605.MOVのNo mediumの原因は未特定、切り分けは0.4.0以降。以下は過去H19の成功：7D00の条件付き復旧、SanDisk容量取得、FAT32、MUSHA.TXT 16 byteのアプリ読出しまで確認 |
 | MacBook Pro 2018の外付けキーボード入力 | 0.3.0開発版で検出、入力成功は過去H19 | IMG_7604 2.mov／IMG_7605.MOVではKEYBOARD READYまで。以下は過去H19： Lenovo 17EF:6009、A・Shift+A・Escの動作を利用者が確認。C0/00A0でINPUT DONE K1、KEY CODE 29、終了を確認 |
 | MacBook Pro 2018の内蔵キーボード入力 | T2未実装のため未対応 | 外付けLenovoの成功とは区別する |
 | 専用SanDisk USBの更新 | Mac実機で実施・照合済み | 既存GPT/FAT32を保った起動EFIの更新、バックアップ、読み戻し、ディスク検査、安全な取り外しを実施。ホスト側の更新作業であり、Musha-OSの書込み機能ではない |
 | H17の実機動作 | Macの診断完了・USB未成功 | 全11診断ページを受領。BAR読取りは安定し、資源番号の混同を特定。RyzenのH17結果は未取得 |
-| NUC5i5RYH | 共通グリッド試験版ba23cabbでHello成功・読みやすさ承認。次候補の冷間3回は未実施 | IMG_7641.MOVでHello・終了0。過去982fa2acの冷間3回所有者報告と区別。[記録](hardware-acceptance-0.3.0.md) |
+| NUC5i5RYH | 通常版候補9f8d999／ba23cabbで冷間3/3成功（所有者報告、全回AC断10秒以上） | IMG_7647.MOVで1回のHello・終了0を確認。既存IMG_7645診断1回＋通常版冷間3回を所有者が受理、受入合格。過去の試験と区別。[記録](hardware-acceptance-0.3.0.md) |
 | NUC8 | 実機結果未取得 | NUCの実機LAN通信は未実装・未確認 |
 | ネットワーク通信 | QEMUで確認 | Intel 82574経路のARP/ICMP/UDP echo。実機通信成功の記録なし |
 | AHCI/NVMe、Wi-Fi、Bluetooth、音声、GPU直接制御等 | 実機確認なし | 実装範囲は各設計書を参照。対応済みと表示しない |
@@ -122,7 +121,7 @@ H17のplatform単体検査22件、通常UEFIビルド、H17 qemu-debug版の単�
 - Mac H19の読出し・外付け入力成功構成で、同じ接続の反復起動と長時間安定性を確認する。内蔵キーボード対応は別件。
 - RyzenのLenovo有線単独でのH19起動・読出し・入力・終了、同一構成での繰返し起動。
 - 複数キーボードの共通入力選択・監視の改善と再検証。
-- 次の同一候補でNUC5冷間3回、Ryzen冷間3回・ホット1回と起動時間、MacのBasic Data起動を確認する。NUC5は電源断10秒以上と各runのPRE OWN D8=0写真を残す。NUC8と実機LAN通信は未確認。
+- 9f8d999候補の実機受入は完了。NUC5は所有者決定で既存IMG_7645診断1回＋通常版冷間3回を採用。次は文書コミット後の一致確認・CI。NUC8と実機LAN通信は未確認。
 
 ## 前回媒体 H18（2026-10-10）
 

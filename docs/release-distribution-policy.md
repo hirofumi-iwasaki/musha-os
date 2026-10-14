@@ -82,13 +82,15 @@ GPTと起動用FAT32を維持し、配布イメージは媒体の公称容量で
 
 - OS側のFAT32探索はGPTのBasic DataとESPの両方を受け入れ、FAT32候補がちょうど一つであることを要求する。既存のESP構成の媒体（Mac・Ryzen・NUC5で使用中の専用SanDisk）は引き続き起動できる。候補が複数ある場合は従来どおり拒否し、「安易に緩めない」原則を保つ。exFATデータ媒体の探索（Basic Data）と同じ媒体にFAT32とexFATが同居する構成は対象外のままとする。
 - イメージ生成（`make-usb-image.py`）はBasic Dataを既定にし、互換試験のためESPも選べるようにする。配備（`deploy-image.py`）と通常更新（`update-usb.py`）は両種別を受け入れ、種別の書換えは行わない。
-- 本決定は実機3機（NUC5・MacBook Pro 2018・Ryzen機）でBasic Data媒体からの起動を確認してから公開資料に反映する。確認前は「ESPの手動マウントが必要」と案内する。
+- 本決定は実機3機（NUC5・MacBook Pro 2018・Ryzen機）でBasic Data媒体からの起動を確認してから公開資料に反映する。既存ESP媒体については引き続き手動マウントが必要と案内する。
 
 実装上の候補はESPとBasic Dataの合計で数え、BPB検証前に一つを要求する。既存のGPT検証は緩めない。
 各媒体ではexFAT探索を先に行い、Unsupported時のみFAT32へ進む。最初に利用可能な媒体を保持し、
 AUTORUN.ELFの有無で媒体を乗り換えない。有効なexFATとFAT32が同居する対象外構成では、
 GPTのエントリー順にかかわらずexFATが選ばれ、FAT32単独探索は複数候補を拒否する。
-現在の状態は「ローカル検証・実機3機確認前」。証拠は[Basic Data検証記録](basic-data-validation.md)に分離する。
+2026-10-14：候補9f8d999のBasic Data媒体からNUC5・Ryzen・MacBook Pro 2018の起動を確認
+（IMG_7647／7648／7650、[実機受入記録](hardware-acceptance-0.3.0.md)）。当該3構成の起動確認であり、
+公開受入全体の完了や全機種互換性を意味しない。ローカル証拠は[Basic Data検証記録](basic-data-validation.md)。
 
 ## 5. 通常更新：ファイルだけを変更する
 
