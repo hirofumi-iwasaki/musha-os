@@ -8,6 +8,7 @@ struct Shared(UnsafeCell<(Reader, [u8; MAX_BYTES])>);
 // while staging is mutable; image() is called only after runtime has returned.
 unsafe impl Sync for Shared {}
 static mut READ_STARTED: u64 = 0;
+static mut READ_TIMING: Option<crate::timing::Span> = None;
 static STAGING: Shared = Shared(UnsafeCell::new((Reader::new(), [0; MAX_BYTES])));
 /// Linker-owned zero-fill staging must be wholly inside the reserved loaded image.
 pub fn staging_range() -> Result<musha_memory::Range, musha_memory::Error> {
@@ -33,6 +34,9 @@ pub fn step(
     if before == State::Searching {
         unsafe {
             READ_STARTED = now;
+            if (&*core::ptr::addr_of!(READ_TIMING)).is_none() {
+                READ_TIMING = Some(crate::timing::Span::new(0xffff, "ELF READ"));
+            }
         }
     }
     let state = reader.step(files, bytes, now);
@@ -49,6 +53,17 @@ pub fn step(
             now.saturating_sub(unsafe { READ_STARTED }),
         ));
         crate::debug(b"\n");
+    }
+    if before != state && matches!(state, State::Ready(_) | State::Rejected(_) | State::Absent) {
+        unsafe {
+            if let Some(span) = core::ptr::addr_of_mut!(READ_TIMING).replace(None) {
+                span.finish(match state {
+                    State::Ready(_) => "READY",
+                    State::Absent => "ABSENT",
+                    _ => "REJECTED",
+                });
+            }
+        }
     }
     if before != state {
         crate::debug(match state {

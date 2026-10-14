@@ -112,6 +112,9 @@ def main():
     p.add_argument('--boot-from-data', action='store_true', help='Boot FAT32 cases directly from the read-only GPT USB image')
     p.add_argument('--partition-type', choices=['basic-data','esp'], default='basic-data')
     p.add_argument('--case',default='all',help='Functional cases by default; timing-16384/1048576/16777216 are explicit measurements')
+    p.add_argument('--extra-empty-xhci',action='store_true',help='Add an empty controller for attach-wait regression')
+    p.add_argument('--diagnostic-timing',action='store_true',help='Require timing records; diagnostics-detail exits before network startup')
+    p.add_argument('--hub-depth',type=int,choices=range(1,6),help='USB2 hub chain for the keyboard (Hello timing regression)')
     p.add_argument('--efi',type=Path,help='Use an already built candidate; --normal supplies screen-only checks')
     p.add_argument('--normal',action='store_true',help='Feature-free EFI, screen-only observation; select a hello/exit/fault/log/reject case')
     a=p.parse_args(); out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
@@ -145,6 +148,8 @@ def main():
         cases['disconnect-while-reading']=(good.ljust(16777216,b'\0'),'fat32','disconnect',0)
         cases['hello-high-resolution']=(good,'fat32','exit',0)
         cases['absent']=(None,'fat32','absent',0)
+        for delay in [200,800,5000]:
+            cases['hotplug-'+str(delay)]=(good,'fat32','no-medium' if delay==5000 else 'exit',0)
         if a.case!='all' and a.case not in cases: raise ValueError('Unknown case '+a.case)
         if a.normal and a.case != 'all' and cases[a.case][2] in ('timing','disconnect'):
             raise ValueError('This observation requires the debug candidate')
@@ -159,7 +164,9 @@ def main():
         esp=out/'esp/EFI/BOOT';esp.mkdir(parents=True);shutil.copyfile(efi,esp/'BOOTX64.EFI')
         for name,(payload,fmt,kind,detail) in cases.items():
             if a.case not in ('all',name): continue
-            if a.case == 'all' and kind == 'timing': continue
+            if a.case == 'all' and (kind == 'timing' or name.startswith('hotplug-')): continue
+            hotplug=int(name.split('-')[1]) if name.startswith('hotplug-') else None
+            if hotplug is not None and (a.normal or a.boot_from_data): raise ValueError('Hotplug requires debug EFI and IDE boot')
             if a.normal and kind in ('timing','disconnect'): continue
             d=out/name;d.mkdir();data=d/'data.img'
             if kind=='absent':
@@ -194,14 +201,22 @@ def main():
             if a.boot_from_data and fmt == 'fat32':
                 at=cmd.index(f'if=ide,format=raw,file=fat:rw:{out/"esp"}')
                 del cmd[at-1:at+1]
+            if hotplug is not None:
+                at=cmd.index('usb-storage,id=storage,drive=data,bus=x.0,port=1');del cmd[at-1:at+1]
             if name=='hello-high-resolution': cmd+=['-global','VGA.xres=3840','-global','VGA.yres=2160','-global','VGA.vgamem_mb=64']
             if name=='hello-split': cmd+=['-device','qemu-xhci,id=k']
-            if name!='hello-no-keyboard': cmd+=['-device','usb-kbd,bus='+('k.0' if name=='hello-split' else 'x.0')]
+            if a.extra_empty_xhci: cmd+=['-device','qemu-xhci,id=empty']
+            if a.hub_depth:
+                if name != 'hello-fat32': raise RuntimeError('--hub-depth requires --case hello-fat32')
+                for level in range(a.hub_depth):
+                    cmd+=['-device','usb-hub,ports=4,port-power=on,bus=x.0,port=3'+'.1'*level]
+                cmd+=['-device','usb-kbd,bus=x.0,usb_version=1,port=3'+'.1'*a.hub_depth]
+            elif name!='hello-no-keyboard' and hotplug is None: cmd+=['-device','usb-kbd,bus='+('k.0' if name=='hello-split' else 'x.0')]
             report['commands'].append(cmd)
             with (d/'qemu.log').open('w') as log:
                 proc=subprocess.Popen(cmd,stdout=log,stderr=log)
                 try:
-                    end=time.monotonic()+60
+                    end=time.monotonic()+120
                     while not qmp.exists():
                         if proc.poll() is not None or time.monotonic()>end: raise RuntimeError('QMP startup')
                         time.sleep(.05)
@@ -213,9 +228,17 @@ def main():
                                 response=json.loads(stream.readline())
                                 if 'error' in response: raise RuntimeError(response)
                                 if 'return' in response: return
-                        control('qmp_capabilities');removed=False;loading=False
+                        control('qmp_capabilities');removed=False;loading=False;attach_seen=None;added=False;hold_seen=None
                         while time.monotonic()<end:
                             text=debug.read_text()
+                            if hotplug is not None:
+                                now=time.monotonic()
+                                if attach_seen is None and 'MUSHA: ATTACH WAIT START' in text: attach_seen=now
+                                if hold_seen is None and 'DIAGNOSTIC_CAPTURE_LOOP' in text: hold_seen=now
+                                if attach_seen is not None and not added and now-attach_seen>=hotplug/1000:
+                                    control('device_add',{'driver':'usb-storage','id':'storage','drive':'data','bus':'x.0','port':'1'});added=True
+                                    (d/'hotplug.json').write_text(json.dumps({'delay_ms':hotplug,'actual_host_delay_ms':(now-attach_seen)*1000,'hold_before_add':hold_seen is not None},indent=2)+'\n')
+                                if kind=='no-medium' and added and hold_seen is not None: break
                             if 'EXTERNAL_ELF_READING' in text and not loading:
                                 control('screendump',{'filename':str(d/'loading.ppm')});loading=True
                                 if kind=='disconnect': control('device_del',{'id':'storage'});removed=True
@@ -240,9 +263,23 @@ def main():
                     if not a.normal and kind in ('exit','fault'):
                         handoff=text.index('EXTERNAL_ELF_DEVICES_STOPPED')
                         assert text.index('EXTERNAL_ELF_READ_COMPLETE') < text.rindex('XHCI_QUIESCED') < handoff < text.index('RING3_ELF_ENTERING'),text
-                        assert text.index('NET_QUIESCED DMA_DISABLED') < handoff,text
+                        if a.diagnostic_timing:
+                            assert 'MUSHA: TIMING TIME' in text and 'MUSHA: NET_READY' not in text,text
+                        else:
+                            assert text.index('NET_QUIESCED DMA_DISABLED') < handoff,text
                         assert text.index('OS_READY EXTERNAL_APP') < text.index('APP_ENTERING EXTERNAL_APP') < text.index('APP_RUNNING EXTERNAL_APP'),text
                         assert 'OS_READY FILE_VIEWER' not in text,text
+                    if hotplug is not None:
+                        assert added and attach_seen is not None
+                        assert text.count('MUSHA: RESCAN 1/1 START')==1,text
+                        assert text.count('XHCI_RESET_OK')==(1 if kind=='no-medium' else 2),text
+                        rescan_text=text.split('MUSHA: RESCAN 1/1 START',1)[1].split('MUSHA: RESCAN 1/1 DONE',1)[0]
+                        assert 'XHCI_RESET_OK' not in rescan_text,rescan_text
+                        if kind=='exit': assert 'Hello Musha-OS!' in screen,screen
+                    if kind=='no-medium':
+                        assert hold_seen is not None and hold_seen-attach_seen<5,text
+                        assert 'DIAGNOSTIC_HOLD NO_MEDIUM' in text and 'RING3_ELF_ENTERING' not in text,text
+                        assert 'MUSHA: RESCAN 1/1 DONE' in text,text
                     if kind=='exit':
                         assert f'MUSHA.ELF exited: status {detail}' in screen,screen
                         if name.startswith('hello'): assert 'MUSHA.ELF  (Ring 3)' in screen,screen

@@ -24,3 +24,11 @@ mod pci {
 }
 #[path = "../../boot/src/diagnostics.rs"]
 mod diagnostics;
+#[path = "../../boot/src/timing.rs"]
+mod timing;
+
+mod bootstate {
+    pub fn epoch_now() -> Option<u64> {
+        Some(0)
+    }
+}

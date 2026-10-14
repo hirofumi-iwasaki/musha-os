@@ -79,7 +79,11 @@ fn update(f: impl FnOnce(&mut Panel)) {
         f(p);
     }
 }
-const DIAGNOSTIC_SCALE: usize = musha_framebuffer::LOG_TEXT_SCALE;
+const DIAGNOSTIC_SCALE: usize = if cfg!(feature = "diagnostics-detail") {
+    musha_framebuffer::LOG_TEXT_SCALE / 2
+} else {
+    musha_framebuffer::LOG_TEXT_SCALE
+};
 const VERSION: &str = include_str!("../../VERSION");
 fn test_name() -> &'static str {
     if cfg!(feature = "t2-diagnostics") {
@@ -94,7 +98,11 @@ fn test_name() -> &'static str {
         "EXTERNAL ELF"
     }
 }
-const DIAGNOSTIC_LINE_HEIGHT: usize = 50;
+const DIAGNOSTIC_LINE_HEIGHT: usize = if cfg!(feature = "diagnostics-detail") {
+    25
+} else {
+    50
+};
 
 pub fn hide(hidden: bool) {
     update(|p| {
@@ -551,10 +559,14 @@ pub fn page(index: usize) -> usize {
         let Some(fb) = p.fb else { return };
         let x = if fb.width >= 1200 { 800 } else { 0 };
         let columns = (fb.width.saturating_sub(x + 12) / (6 * DIAGNOSTIC_SCALE)).clamp(1, 64);
-        let capacity = (fb.height.saturating_sub(48) / DIAGNOSTIC_LINE_HEIGHT).clamp(2, 42) - 1;
+        let (session, rescan, cycle) = crate::timing::display_state();
+        let header_rows = if cycle > 0 { 2 } else { 1 };
+        let capacity =
+            (fb.height.saturating_sub(48) / DIAGNOSTIC_LINE_HEIGHT).clamp(3, 42) - header_rows;
         let controllers = p.controller_bdfs.iter().filter(|b| **b != u16::MAX).count();
         let logs = p.journal_count.div_ceil(40);
-        let source_count = 2 + controllers + logs;
+        let timing_pages = crate::timing::count().div_ceil(40);
+        let source_count = 2 + controllers + logs + timing_pages;
         let source = |n: usize| {
             let mut rows = [Line::EMPTY; 42];
             if n == 0 {
@@ -577,6 +589,14 @@ pub fn page(index: usize) -> usize {
                 rows = p.archived[n - 2];
                 rows[1] = line(format_args!("SAVED DETAILS C{} / SUMMARY FINAL", n - 2));
                 rows[27..35].copy_from_slice(&p.lines[27..35]);
+            } else if n >= 2 + controllers + logs {
+                rows[1] = line(format_args!("PM EPOCH TIMINGS / MS / BDF FFFF = APP"));
+                let first = (n - 2 - controllers - logs) * 40;
+                for i in 0..40 {
+                    if first + i < crate::timing::count() {
+                        rows[i + 2] = crate::timing::row(first + i);
+                    }
+                }
             } else {
                 let first = (n - 2 - controllers) * 40;
                 for i in 0..40 {
@@ -612,7 +632,7 @@ pub fn page(index: usize) -> usize {
             for l in &rows[1..] {
                 for chunk in l.as_str().as_bytes().chunks(columns) {
                     if count >= first && count < first + capacity {
-                        display[1 + count - first] = line(format_args!(
+                        display[header_rows + count - first] = line(format_args!(
                             "{}",
                             core::str::from_utf8(chunk).unwrap_or("?")
                         ));
@@ -623,11 +643,16 @@ pub fn page(index: usize) -> usize {
             break;
         }
         display[0] = line(format_args!(
-            "{} {}/{}",
-            test_name(),
+            "T+{} SESSION {} RESCAN {} {}/{}",
+            crate::bootstate::epoch_now().unwrap_or(0) / 1000,
+            session,
+            rescan,
             index % total + 1,
             total
         ));
+        if cycle > 0 {
+            display[1] = line(format_args!("DIAGNOSTIC HOLD (no retry) cycle {}", cycle));
+        }
         p.page = Some(display);
     });
     total
@@ -681,5 +706,17 @@ mod tests {
             unsafe { (*PANEL.0.get()).first_failure.unwrap() }.as_str(),
             "USB STEP RESET"
         );
+        crate::timing::begin_session();
+        crate::timing::set_rescan(1);
+        crate::timing::hold_cycle(0);
+        page(0);
+        let first_evidence = unsafe { (*PANEL.0.get()).page.unwrap()[1] };
+        crate::timing::hold_cycle(2);
+        page(0);
+        let held = unsafe { (*PANEL.0.get()).page.unwrap() };
+        assert!(held[0].as_str().starts_with("T+0 SESSION 1 RESCAN 1"));
+        assert_eq!(held[1].as_str(), "DIAGNOSTIC HOLD (no retry) cycle 2");
+        assert_eq!(held[2].as_str(), first_evidence.as_str());
+        crate::timing::hold_cycle(0);
     }
 }

@@ -4,6 +4,11 @@
 
 /// Diagnostic panel text magnification; the app console chooses its own scale.
 pub const LOG_TEXT_SCALE: usize = 6;
+pub const STATUS_TEXT_SCALE: usize = if cfg!(feature = "compact-status") {
+    3
+} else {
+    LOG_TEXT_SCALE
+};
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -69,7 +74,7 @@ impl Framebuffer {
             } else {
                 text
             };
-            self.text_scaled(shown, px, py, color, 6);
+            self.text_scaled(shown, px, py, color, STATUS_TEXT_SCALE);
         }
     }
     /// # Safety

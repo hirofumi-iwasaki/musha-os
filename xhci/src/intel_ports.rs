@@ -29,17 +29,22 @@ pub fn route(config: &mut impl Config) -> Evidence {
     let mut matched = true;
     // SuperSpeed terminations first, so a USB3 device need not attach at USB2.
     for (reg, mask, bit) in [(2, 3, 2), (0, 1, 1)] {
-        if before[reg] == u32::MAX || before[mask] == u32::MAX || before[mask] == 0 {
+        if before[reg] == u32::MAX
+            || before[mask] == u32::MAX
+            || before[mask] == 0
+            || before[reg] & before[mask] == before[mask]
+        {
             continue;
         }
-        config.write(OFFSETS[reg], before[mask]);
-        matched &= config.read(OFFSETS[reg]) == before[mask];
+        // Change only mask-selected bits; preserve firmware-owned bits outside it.
+        config.write(OFFSETS[reg], before[reg] | before[mask]);
+        matched &= config.read(OFFSETS[reg]) & before[mask] == before[mask];
         writes |= bit;
     }
     let after = OFFSETS.map(|o| config.read(o));
     for (reg, mask, bit) in [(0, 1, 1), (2, 3, 2)] {
         if writes & bit != 0 {
-            matched &= after[reg] == before[mask];
+            matched &= after[reg] & before[mask] == before[mask];
         }
     }
     Evidence {
@@ -51,8 +56,11 @@ pub fn route(config: &mut impl Config) -> Evidence {
 }
 /// A connected USB3 port still in RxDetect/Polling/Recovery is not settled.
 /// Enumeration performs the existing reset and speed checks after this wait.
-pub fn attach_pending(status: u32, major: u8) -> bool {
-    major != 0 && (status & 1 == 0 || (major >= 3 && matches!((status >> 5) & 15, 5 | 7 | 8)))
+pub fn attach_pending(status: u32, major: u8, elapsed: u64, grace: u64) -> bool {
+    major != 0
+        && (elapsed < grace
+            || (!crate::superspeed::empty(status)
+                && (status & 1 == 0 || (major >= 3 && matches!((status >> 5) & 15, 5 | 7 | 8)))))
 }
 #[cfg(test)]
 mod tests {
@@ -84,6 +92,16 @@ mod tests {
         }
     }
     #[test]
+    fn grace_and_already_routed() {
+        for major in [2, 3] {
+            assert!(attach_pending(5 << 5, major, 149, 150));
+            assert!(!attach_pending(5 << 5, major, 150, 150));
+            assert!(attach_pending(7 << 5, major, 500, 150));
+        }
+        let mut m = mock([0x7ff, 0x4ff, 0xf, 0xf]);
+        assert_eq!(route(&mut m).writes, 0);
+    }
+    #[test]
     fn gates() {
         assert!(eligible(0x9cb18086, 0x0c0330, 0, true));
         for args in [
@@ -105,6 +123,15 @@ mod tests {
         assert_eq!(e.after, [15, 15, 3, 3]);
         assert!(e.matched);
         assert_eq!(e.writes, 3);
+    }
+    #[test]
+    fn preserve_non_mask_bits() {
+        let mut m = mock([0x300, 0x4ff, 0x100, 0xf]);
+        let e = route(&mut m);
+        assert_eq!(m.writes, [(0xd8, 0x10f), (0xd0, 0x7ff)]);
+        assert!(e.matched);
+        assert_eq!(e.after[0] & !e.before[1], e.before[0] & !e.before[1]);
+        assert_eq!(e.after[2] & !e.before[3], e.before[2] & !e.before[3]);
     }
     #[test]
     fn zero_and_absent_never_written() {
@@ -135,12 +162,15 @@ mod tests {
     #[test]
     fn bounded_attach_policy() {
         assert_eq!(ATTACH_POLL_MS * ATTACH_POLLS as u64, 1000);
-        assert!(!attach_pending(0, 0));
-        assert!(attach_pending(0, 2));
-        assert!(!attach_pending(1 | (7 << 5), 2));
-        for pls in [5, 7, 8] {
-            assert!(attach_pending(1 | (pls << 5), 3));
+        assert!(!attach_pending(0, 0, 500, 150));
+        assert!(attach_pending(0, 2, 500, 150));
+        for major in [2, 3] {
+            assert!(!attach_pending(5 << 5, major, 500, 150));
         }
-        assert!(!attach_pending(1, 3));
+        assert!(!attach_pending(1 | (7 << 5), 2, 500, 150));
+        for pls in [5, 7, 8] {
+            assert!(attach_pending(1 | (pls << 5), 3, 500, 150));
+        }
+        assert!(!attach_pending(1, 3, 500, 150));
     }
 }

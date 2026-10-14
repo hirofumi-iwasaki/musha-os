@@ -82,7 +82,7 @@ file-viewer-probe = ["input-persistent"]
 
 # Local boot rendering comparisons; no service/reset side effects.
 diagnostics-off = []
-diagnostics-detail = []
+diagnostics-detail = ["musha-framebuffer/compact-status"]
 
 # BSP-only privilege-transition harness; excluded from normal/release images.
 ring3-probe = ["qemu-debug"]
@@ -96,3 +96,6 @@ ring3-lifecycle-kernel-fault = ["ring3-lifecycle-probe"]
 
 # Instrument the normal external-file path; no C1 payload or viewer probe dependency.
 external-elf-probe = ["qemu-debug"]
+
+# QEMU-only malformed first Address Device context; exercise cleanup/continuation.
+usb-address-reject = ["qemu-debug"]

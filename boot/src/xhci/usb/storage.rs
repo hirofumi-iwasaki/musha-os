@@ -54,6 +54,7 @@ impl Pipe {
         slot: u8,
         address: usize,
     ) -> Result<bool, &'static str> {
+        super::super::rescan_budget(host.clock)?;
         if host.bulk_pending != Some((address, slot, self.dci)) {
             return Err("BULK OWNER");
         }

@@ -4,7 +4,9 @@
 
 ### Corrected NUC5 acceptance basis (2026-10-14, independent review)
 
-One cold-start NO MEDIUM outcome is observed in IMG_7633 (run 1, PRE OWN D0=0x300 / D8=0). One Hello / exit 0 success is observed in IMG_7634 (run 3, PRE OWN D0=0x7FF / D8=0xF already routed). Three consecutive cold-start successes are NOT proven. The owner's report of three successes is retained as an owner report, separately from video evidence. Run 2, operations after run 1, and power-off durations for runs 2/3 await owner confirmation. A restart between diagnostic hold and Hello is an interpretation, not an observed fact. The review's most likely cause is immediate empty classification after routing/PP, before attachment settles.
+Owner follow-up: exact operations after run 1 and power-off durations for runs 2/3 are not remembered and remain UNKNOWN. The owner approves the corrected record below. This resolves approval of the correction, not the missing run evidence.
+
+One cold-start NO MEDIUM outcome is observed in IMG_7633 (run 1, PRE OWN D0=0x300 / D8=0). One Hello / exit 0 success is observed in IMG_7634 (run 3, PRE OWN D0=0x7FF / D8=0xF already routed). Three consecutive cold-start successes are NOT proven. The owner's report of three successes is retained as an owner report, separately from video evidence. Run 2 remains uncaptured; operations after run 1 and power-off durations for runs 2/3 are UNKNOWN because the owner does not remember them precisely. The owner approved this correction. A restart between diagnostic hold and Hello is an interpretation, not an observed fact. The review's most likely cause is immediate empty classification after routing/PP, before attachment settles.
 
 | Run | Evidence | PRE OWN D8 | Observed outcome | Cold acceptance |
 |---|---|---|---|---|
@@ -18,7 +20,7 @@ For the next acceptance series: power off at least 10 seconds; photograph PRE OW
 NUC5 clarification and third-run evidence (2026-10-14): owner identifies IMG_7633.MOV as run 1's diagnostic loop and IMG_7634.MOV as run 3's success. The latter clip (36.967 s) directly shows MUSHA.ELF / Hello Musha-OS! / exited: status 0. At 18.483 s, PRE OWN P12 PORTSC=00001203 (CCS1 PED1 SPEED4 PLS0), D0=000007FF and D8=0000000F; ownership elapsed 0 ms. In run 1, captured ROOT12 is disconnected and DIAGNOSTIC HOLD NO MEDIUM repeats. Clip-to-run mapping is now resolved. Owner reports eventual Hello success for all three; run 1's transition from terminal hold to Hello remains unexplained by current code and is not captured. Do not classify these as three clean, uniform cold starts or dismiss the loop as cosmetic. Delayed connection after routing is a hypothesis, not a proven cause. Both clips are associated with the preceding f10672d4 diagnostic deployment. No binary/USB changes made for this observation.
 
 
-Owner clarification: Ready means Hello Musha-OS! / exited: status 0. Three cold-boot Hello successes are now owner-confirmed. The association between the clip's NO MEDIUM run and those three successes remains unresolved; the clip is not direct evidence of Hello. Diagnostic hold does not retry USB, so progression from that hold to Hello within one boot is unexplained.
+Owner clarification: Ready means Hello Musha-OS! / exited: status 0. Historical owner report: three Hello successes; cold-start qualification is not established (superseded by the corrected basis above). The association between the clip's NO MEDIUM run and those three successes remains unresolved; the clip is not direct evidence of Hello. Diagnostic hold does not retry USB, so progression from that hold to Hello within one boot is unexplained.
 
 
 NUC5 IMG_7633.MOV (2026-10-14): owner reports cold 3/3 successful, with two page cycles on runs 1/2 and one on run 3; meaning of Ready/success awaits clarification. Video (44.253 s) shows DIAGNOSTIC HOLD NO MEDIUM, SCANNED K0 S0, USB STEP STOPPED DMA DISABLED and repeated 9-page diagnostics, not Hello/exit. ROOT 12-15 are CCS0/PED0/PLS5 at enumeration; ownership BIOS1/OS0 to BIOS0/OS1 completes in 0 ms. This is a captured no-medium outcome, so three Hello successes are NOT accepted. Associated EFI f10672d4a89bf9d9c56206ff24cc4f885f6b0c2df13e4c43832aa0c4c1e5ab20 follows preceding deployment, not a video hash measurement. Code diagnostic_capture calls diagnostic_pages(false) after no external app, repeating saved pages without USB retries. Suspect immediate empty classification after Intel routing may miss delayed attachment; causality remains unproven. Preserve this failure, do not promote the optimized normal candidate. Evidence: out/nuc5-7633/observation.json and sample-3/6/7.png.
@@ -183,6 +185,8 @@ The owner requested smaller log text. The local follow-up changes only external-
 Local validation: `out/nuc5-font-review/host-tests.log` (10 framebuffer tests), `report.json` (seven normal-EFI QEMU cases: Hello, long log, UTF-8 replacement, exit 42, PF, UD, absent viewer). The absent case retains the existing pixel reference and zero debug bytes. These are local checks, not additional physical boots.
 
 ## 日本語
+
+所有者の追加回答（2026-10-14）：run 1後の操作とrun 2・3の電源断時間は正確には覚えていないため不明。記録を「冷間NO MEDIUMを1回、D0/D8切替済み状態でHelloを1回確認。冷間3回連続成功は未証明」と訂正することは承認済み。記録訂正への承認と、欠けている実機証拠を区別する。
 
 ### NUC5受入記録の訂正（2026-10-14、独立レビュー反映）
 

@@ -2,9 +2,27 @@
 
 ## English
 
+### Grace and one-shot rescan implementation (2026-10-14)
+
+B/C: attachment polling uses time since port power was established, sampled every 20 ms. Empty CCS0/PLS5 is provisional for 150 ms normally, or 500 ms when Intel routing actually writes D0/D8. Already-routed mask bits are not rewritten. The same power epoch/grace is passed to the SuperSpeed policy; the grace is not paid twice. Pending links can extend the initial attach phase to 1000 ms. Existing USB2 100 ms debounce, CCS1-only WPR (maximum three), and ownership/reset/stop deadlines are unchanged. 150 ms rounds to about 160 ms with 20 ms polling; scheduler/rendering overhead can increase this.
+
+These are engineering margins, not mandated USB delays. Fixed reference: [Linux v6.12 hub.c](https://github.com/torvalds/linux/blob/v6.12/drivers/usb/core/hub.c), `HUB_DEBOUNCE_STABLE` (100 ms), and [hub.h](https://github.com/torvalds/linux/blob/v6.12/drivers/usb/core/hub.h), `hub_power_on_good_delay`: the 100 ms minimum applies to non-root hubs; root hubs return their descriptor delay. This corrects the review's broader root-hub claim. [Linux v6.12 pci-quirks.c](https://github.com/torvalds/linux/blob/v6.12/drivers/usb/host/pci-quirks.c) documents the routing sequence. The review's USB3 tPollingLFPSTimeout=360 ms motivates 500 ms, but that specification value was not independently verified here. The 500 ms setting remains provisional until NUC5 routing-to-CCS/U0 measurements validate it; no new release candidate or USB deployment is authorized by these local tests.
+
+D: after discovery, rescan is eligible only with no keyboard, no readable storage, no attempted device enumeration and no prior rescan. Controllers returning an error conservatively suppress rescan. One shared 1000 ms PM-epoch deadline covers resampling and enumeration; individual command/control/reset-recovery waits also obey it. Final halt/BME disable keeps its existing independent safety deadline, so cleanup can extend wall time beyond 1000 ms. Port power remains on; no HCRST occurs inside rescan. Only controllers whose discovery completed without attempting any slot are reused, after checking HCHalted and PCI BME=0 before DMA memory initialization. Normal LIVE activation of a selected device remains a separate subsequent reset/initialization phase. Single-controller sessions now use the same discovery/selection path to support this invariant.
+
+Diagnostics: `RESCAN 1/1 START` and result K/S are retained. Page headers show `T+<seconds> SESSION <n> RESCAN <k>`; terminal holds reserve a separate row for `DIAGNOSTIC HOLD (no retry) cycle <m>` without replacing an evidence row. `SS P... ROUTE+ MS` samples measure from the routing function return (immediately after writes/readback); changes during attach and SS settlement are captured, at most eight per port per phase. They are sampling bounds, not exact electrical transition times. Existing WPR and final U0/EMPTY/TIMEOUT records remain. Normal viewer strings and pixel references are unchanged.
+
+QEMU hotplug cases `hotplug-200`, `hotplug-800`, `hotplug-5000` boot with no USB devices and inject storage via QMP relative to the first `ATTACH WAIT START`. Since qemu-xhci does not write Intel routing and its grace is 150 ms, +200 ms is AFTER ordinary grace: both early cases exercise one-shot rescan, not the Intel 500 ms grace. The elapsed-state host table covers the 500 ms decision. +5 seconds must reach bounded diagnostic no-medium hold before insertion, and must not retry from hold. QEMU does not reproduce physical SuperSpeed link-training delay. Host wall-clock injection offsets and PM-epoch driver times are distinct; hotplug.json records the actual injection delay.
+
+Ryzen estimate: five discovery passes plus one LIVE pass add nominal 6 x 150 = 900 ms, approximately 960 ms after 20 ms quantization, relative to the immediate-empty implementation. This excludes enumeration, graphics, and host/firmware variability and is not a hardware measurement. A successful normal session does not run rescan. An entirely empty session can add a further shared 1000 ms (plus bounded cleanup). NUC5's first actual routing write uses 500 ms; subsequent already-routed passes use ordinary grace.
+
+Local test results and commands are recorded in `out/usb-grace/` and the implementation handoff. Physical acceptance still requires power-off >=10 seconds, a PRE OWN D8=0 photograph for each NUC5 run, per-port routing-to-CCS/U0 times, and three uninterrupted Hello/exit successes. A hold counts as a failed run. Then repeat Ryzen cold three/hot one before promoting a normal candidate.
+
 ### Corrected NUC5 acceptance basis (2026-10-14, independent review)
 
-One cold-start NO MEDIUM outcome is observed in IMG_7633 (run 1, PRE OWN D0=0x300 / D8=0). One Hello / exit 0 success is observed in IMG_7634 (run 3, PRE OWN D0=0x7FF / D8=0xF already routed). Three consecutive cold-start successes are NOT proven. The owner's report of three successes is retained as an owner report, separately from video evidence. Run 2, operations after run 1, and power-off durations for runs 2/3 await owner confirmation. A restart between diagnostic hold and Hello is an interpretation, not an observed fact. The review's most likely cause is immediate empty classification after routing/PP, before attachment settles.
+Owner follow-up: exact operations after run 1 and power-off durations for runs 2/3 are not remembered and remain UNKNOWN. The owner approves the corrected record below. This resolves approval of the correction, not the missing run evidence.
+
+One cold-start NO MEDIUM outcome is observed in IMG_7633 (run 1, PRE OWN D0=0x300 / D8=0). One Hello / exit 0 success is observed in IMG_7634 (run 3, PRE OWN D0=0x7FF / D8=0xF already routed). Three consecutive cold-start successes are NOT proven. The owner's report of three successes is retained as an owner report, separately from video evidence. Run 2 remains uncaptured; operations after run 1 and power-off durations for runs 2/3 are UNKNOWN because the owner does not remember them precisely. The owner approved this correction. A restart between diagnostic hold and Hello is an interpretation, not an observed fact. The review's most likely cause is immediate empty classification after routing/PP, before attachment settles.
 
 | Run | Evidence | PRE OWN D8 | Observed outcome | Cold acceptance |
 |---|---|---|---|---|
@@ -18,7 +36,7 @@ For the next acceptance series: power off at least 10 seconds; photograph PRE OW
 NUC5 clarification and third-run evidence (2026-10-14): owner identifies IMG_7633.MOV as run 1's diagnostic loop and IMG_7634.MOV as run 3's success. The latter clip (36.967 s) directly shows MUSHA.ELF / Hello Musha-OS! / exited: status 0. At 18.483 s, PRE OWN P12 PORTSC=00001203 (CCS1 PED1 SPEED4 PLS0), D0=000007FF and D8=0000000F; ownership elapsed 0 ms. In run 1, captured ROOT12 is disconnected and DIAGNOSTIC HOLD NO MEDIUM repeats. Clip-to-run mapping is now resolved. Owner reports eventual Hello success for all three; run 1's transition from terminal hold to Hello remains unexplained by current code and is not captured. Do not classify these as three clean, uniform cold starts or dismiss the loop as cosmetic. Delayed connection after routing is a hypothesis, not a proven cause. Both clips are associated with the preceding f10672d4 diagnostic deployment. No binary/USB changes made for this observation.
 
 
-Owner clarification: Ready means Hello Musha-OS! / exited: status 0. Three cold-boot Hello successes are now owner-confirmed. The association between the clip's NO MEDIUM run and those three successes remains unresolved; the clip is not direct evidence of Hello. Diagnostic hold does not retry USB, so progression from that hold to Hello within one boot is unexplained.
+Owner clarification: Ready means Hello Musha-OS! / exited: status 0. Historical owner report: three Hello successes; cold-start qualification is not established (superseded by the corrected basis above). The association between the clip's NO MEDIUM run and those three successes remains unresolved; the clip is not direct evidence of Hello. Diagnostic hold does not retry USB, so progression from that hold to Hello within one boot is unexplained.
 
 
 NUC5 IMG_7633.MOV (2026-10-14): owner reports cold 3/3 successful, with two page cycles on runs 1/2 and one on run 3; meaning of Ready/success awaits clarification. Video (44.253 s) shows DIAGNOSTIC HOLD NO MEDIUM, SCANNED K0 S0, USB STEP STOPPED DMA DISABLED and repeated 9-page diagnostics, not Hello/exit. ROOT 12-15 are CCS0/PED0/PLS5 at enumeration; ownership BIOS1/OS0 to BIOS0/OS1 completes in 0 ms. This is a captured no-medium outcome, so three Hello successes are NOT accepted. Associated EFI f10672d4a89bf9d9c56206ff24cc4f885f6b0c2df13e4c43832aa0c4c1e5ab20 follows preceding deployment, not a video hash measurement. Code diagnostic_capture calls diagnostic_pages(false) after no external app, repeating saved pages without USB retries. Suspect immediate empty classification after Intel routing may miss delayed attachment; causality remains unproven. Preserve this failure, do not promote the optimized normal candidate. Evidence: out/nuc5-7633/observation.json and sample-3/6/7.png.
@@ -84,6 +102,24 @@ The Basic Data timeout case initially showed Device session did not complete ins
 Evidence: out/usb-empty/validation.json and manifest.json. Diagnostic EFI SHA-256: f10672d4a89bf9d9c56206ff24cc4f885f6b0c2df13e4c43832aa0c4c1e5ab20. Normal EFI SHA-256: 64cc3110266ea887718ef6c1e30d41cf3a66e458707f06703a3f97073c3da6d3. The diagnostic EFI f10672d4 was deployed on 2026-10-14 JST: EFI-only update, verified readback, Hello unchanged, Basic Data unchanged and safe eject. Evidence: out/usb-empty/physical-usb/provenance.json. Hardware acceptance remains pending; the normal EFI has not been deployed.
 
 ## 日本語
+
+### 猶予と1回限りの再探索（2026-10-14）
+
+B/C：PPを立てた時点から20 ms間隔で接続を再観測する。CCS0/PLS5でも通常150 ms、IntelのD0/D8へ実際に書いた場合500 msは空きと確定しない。既にマスク対象ビットが立っている場合は書かない。同じPP起点と猶予をSS判定に渡し、猶予を二重に課さない。その後は接続待ちの必要なポートがある場合だけ1000 msまで延長する。USB2の100 msデバウンス、CCS1限定・最大3回のWPR、所有権移行・リセット・停止の期限は維持。20 ms刻みのため150 msは通常約160 msとなり、実行や描画の負荷は別途加わる。
+
+150/500 msは実装上の余裕であり、USB仕様が要求する値ではない。参照版は上のリンクのLinux v6.12 hub.c（デバウンス安定値100 ms）とhub.h（非ルートハブのみ電源安定待ちの下限100 ms。ルートハブは記述子の値を返す例外）、pci-quirks.c（ルーティング順序）に固定した。レビューのtPollingLFPSTimeout=360 msは500 msの根拠の一つだが、この作業では仕様書原文の値を独立確認していない。500 msはNUC5冷間時のルーティングからCCS/U0までの実測待ちの暫定値であり、ローカル試験だけで公開候補へ昇格させない。
+
+D：キーボード・読出し可能ストレージ・機器列挙の試行が全て無く、まだ再探索していない場合だけ1回実行。初回走査でエラーがあった場合も保守的に抑止する。全制御器で共有するPM epochの1000 ms期限を、再サンプルと列挙中の待機に適用する。期限後のhalt/BME無効化は既存の独立した安全上限を守るため、後始末の分だけ総時間は1000 msを超え得る。再探索内ではHCRSTを行わずPPを維持。スロット列挙に一度も入らず初回走査を完了した制御器のみ、HCHaltedとPCI BME=0を確認してDMA領域を再初期化する。検出後の通常LIVE初期化は別段階であり、従来どおりリセットする。この境界を揃えるため単一制御器も走査・選択の共通経路を通る。
+
+診断はRESCAN 1/1の開始・K/S結果、先頭行のT+秒／SESSION／RESCAN、ホールドの「DIAGNOSTIC HOLD (no retry) cycle」を記録。ホールド用に1行を確保し、証拠行を上書きしない。SSのROUTE+ MSはルーティング関数から戻った直後を起点に、接続待ち・SS安定待ちそれぞれ各ポート最大8回の状態変化を記録する。電気的遷移の厳密時刻ではなくサンプル時点の上限。WPRと最終U0/EMPTY/TIMEOUTも残す。通常版ビューアーの文言・ピクセル参照は不変。
+
+QEMUのhotplug-200／800／5000は最初のATTACH WAIT STARTからホスト時計で指定時間後にQMPでストレージを追加する。qemu-xhciはIntelルーティング非該当で猶予150 msのため、+200 msも通常猶予の後となり、早い2ケースはいずれも再探索で拾う試験。500 ms猶予そのものはホスト表試験で確認する。+5秒は追加前に有界で媒体なしホールドへ入り、ホールド中に再探索しないことを確認。QEMUでは実機のSuperSpeedリンク訓練遅延そのものは再現できない。実際の追加遅延はhotplug.jsonに保存し、ドライバーのPM時計と区別する。
+
+Ryzenの見積もりは、走査5回＋LIVE1回なら150 ms×6＝900 ms、20 ms刻みで約960 msの追加。列挙・描画・ファームウェア変動を含まず実測ではない。成功時は再探索なし。全て未検出なら共有1000 msと有界な後始末が追加される。NUC5は初回ルーティング書込み時500 ms、その後の切替済み経路は通常猶予。
+
+ローカル結果はout/usb-grace/と実装引継ぎに記録する。次の実機採取は各runで電源断10秒以上とPRE OWN D8=0の写真、各SSポートのルーティングからCCS/U0までのms、同一起動内でHello/exitまで進んだことを残す。ホールドは失敗。NUC5冷間3回、Ryzen冷間3回＋ホット1回の再受入後に通常候補へ進む。
+
+所有者の追加回答（2026-10-14）：run 1後の操作とrun 2・3の電源断時間は正確には覚えていないため不明。記録を「冷間NO MEDIUMを1回、D0/D8切替済み状態でHelloを1回確認。冷間3回連続成功は未証明」と訂正することは承認済み。記録訂正への承認と、欠けている実機証拠を区別する。
 
 ### NUC5受入記録の訂正（2026-10-14、独立レビュー反映）
 

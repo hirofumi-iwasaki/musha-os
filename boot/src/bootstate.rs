@@ -59,3 +59,12 @@ pub fn frame() {
     }
     update(|r, t| r.frame(t));
 }
+
+/// Refresh and read the shared PM epoch; never substitute a local-clock epoch.
+pub fn epoch_now() -> Option<u64> {
+    let timer = unsafe { (*STATE.0.get()).timer }?;
+    crate::acpi::Time::new(timer)
+        .and_then(|mut t| t.now())
+        .ok()?;
+    unsafe { (*STATE.0.get()).now }
+}

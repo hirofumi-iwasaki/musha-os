@@ -15,7 +15,11 @@ unsafe fn boot_heading(fb: musha_framebuffer::Framebuffer, stage: &str) {
     );
     // Fit the left column without drawing over the diagnostic panel at x=800.
     let width = fb.width.min(800).saturating_sub(48);
-    let scale = (width / (label.as_str().len().max(1) * 6)).clamp(1, 4);
+    let scale = if cfg!(feature = "diagnostics-detail") {
+        musha_framebuffer::STATUS_TEXT_SCALE
+    } else {
+        (width / (label.as_str().len().max(1) * 6)).clamp(1, 4)
+    };
     let y = 24 * fb.height.saturating_sub(48).min(1100) / 550;
     unsafe { fb.text_scaled(label.as_str(), 24, y, fb.color(240, 240, 240), scale) };
 }
@@ -37,6 +41,7 @@ mod ring3;
 mod runtime;
 #[cfg(feature = "t2-diagnostics")]
 mod t2;
+mod timing;
 mod xhci;
 
 const _: () = assert!(
@@ -112,6 +117,52 @@ fn stop() -> ! {
             asm!("cli", "hlt", options(nomem, nostack));
         }
     }
+}
+
+#[cfg(feature = "diagnostics-detail")]
+fn diagnostic_pages(info: &BootInfo, one_cycle: bool) {
+    unsafe {
+        for y in 0..info.framebuffer.height {
+            for x in 0..info.framebuffer.width {
+                info.framebuffer
+                    .pixel(x, y, info.framebuffer.color(12, 20, 32));
+            }
+        }
+    }
+    diagnostics::hide(false);
+    let mut index = 0;
+    let mut cycle = 1;
+    if let Ok(mut clock) = acpi::Time::new(info.timer) {
+        loop {
+            timing::hold_cycle(if one_cycle { 0 } else { cycle });
+            let total = diagnostics::page(index);
+            diagnostics::flush();
+            index = (index + 1) % total.max(1);
+            let Ok(start) = clock.now() else { break };
+            let mut elapsed = false;
+            for _ in 0..100_000_000 {
+                match clock.now() {
+                    Ok(now) if now.saturating_sub(start) >= 2000 => {
+                        elapsed = true;
+                        break;
+                    }
+                    Ok(_) => core::hint::spin_loop(),
+                    Err(_) => break,
+                }
+            }
+            if index == 0 {
+                cycle += 1;
+            }
+            if !elapsed || (one_cycle && index == 0) {
+                break;
+            }
+        }
+    }
+}
+#[cfg(feature = "diagnostics-detail")]
+fn diagnostic_capture(info: &BootInfo) -> ! {
+    diagnostic_pages(info, false);
+    stop()
 }
 
 // Explicit Win64 ABI matches the UEFI target. RCX = info, RDX = stack top.
@@ -255,17 +306,38 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
             // Never enter/reuse the arena after an unconfirmed device shutdown.
             appconsole::rejected(b"Device session did not complete");
             debug(b"MUSHA: EXTERNAL_ELF_REJECT Device session did not complete\n");
+            #[cfg(feature = "diagnostics-detail")]
+            diagnostic_capture(info);
+            #[cfg(not(feature = "diagnostics-detail"))]
             stop();
         }
         diagnostics::failure("APPLICATION", "APP FAILED");
         diagnostics::set(1, format_args!("STATE APP FAILED"));
         diagnostics::snapshot();
         debug(b"MUSHA: APP_FAILED\n");
+        #[cfg(feature = "diagnostics-detail")]
+        diagnostic_capture(info);
+        #[cfg(not(feature = "diagnostics-detail"))]
         unsafe {
             info.framebuffer
                 .text("APP FAILED", 24, 324, info.framebuffer.color(255, 0, 0));
         }
+        #[cfg(not(feature = "diagnostics-detail"))]
         stop();
+    }
+    #[cfg(all(external_app, feature = "diagnostics-detail"))]
+    if external::claimed() {
+        // Capture recovered per-port failures even when the file is now ready.
+        // All device sessions are already stopped; only display and clock run.
+        diagnostic_pages(info, true);
+        diagnostics::hide(true);
+    }
+    #[cfg(all(external_app, feature = "diagnostics-detail"))]
+    if !external::claimed() {
+        diagnostics::set(1, format_args!("STATE DIAGNOSTIC HOLD / NO EXTERNAL APP"));
+        diagnostics::snapshot();
+        debug(b"MUSHA: DIAGNOSTIC_CAPTURE_LOOP\n");
+        diagnostic_capture(info);
     }
     #[cfg(external_app)]
     external::finish(arena, info);
@@ -307,7 +379,9 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         diagnostics::page(0);
     }
     diagnostics::flush();
-    #[cfg(not(feature = "fault-ud"))]
+    #[cfg(feature = "diagnostics-detail")]
+    diagnostic_capture(info);
+    #[cfg(all(not(feature = "fault-ud"), not(feature = "diagnostics-detail")))]
     stop()
 }
 

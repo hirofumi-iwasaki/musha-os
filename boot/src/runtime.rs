@@ -72,6 +72,13 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         let now = time.now().map_err(|_| "APP INPUT ERROR")?;
                         match crate::external::step(files, now, info.framebuffer) {
                             musha_api::bootfile::State::Absent => {
+                                if cfg!(feature = "diagnostics-detail") {
+                                    crate::diagnostics::observation(format_args!(
+                                        "DIAGNOSTIC HOLD ELF ABSENT"
+                                    ));
+                                    crate::debug(b"MUSHA: DIAGNOSTIC_HOLD ELF_ABSENT\n");
+                                    return Ok(true);
+                                }
                                 app.viewer.bootfile_absent();
                                 launch(&mut app, &mut ctx, &mut time, &mut initialized)
                                     .map_err(|_| "APP INPUT ERROR")?;
@@ -103,6 +110,17 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     #[cfg(external_app)]
                     if crate::external::claimed() {
                         return Ok(true);
+                    }
+                    if cfg!(all(external_app, feature = "diagnostics-detail")) {
+                        let no_medium = crate::bootstate::report().files
+                            != musha_platform::readiness::Service::Live;
+                        if no_medium {
+                            crate::diagnostics::observation(format_args!(
+                                "DIAGNOSTIC HOLD NO MEDIUM"
+                            ));
+                            crate::debug(b"MUSHA: DIAGNOSTIC_HOLD NO_MEDIUM\n");
+                        }
+                        return Ok(no_medium);
                     }
                     if initialized {
                         return Ok(false);
@@ -234,6 +252,17 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 return Ok(());
             }
         }
+        if cfg!(all(external_app, feature = "diagnostics-detail")) {
+            crate::diagnostics::observation(format_args!(
+                "DIAGNOSTIC HOLD SESSION {:?}",
+                usb_result
+            ));
+            return if usb_result == Err("QUIESCE FAILED") {
+                Err(Error::Io)
+            } else {
+                Ok(())
+            };
+        }
         // Only a successful discovery with no input is a missing keyboard.
         // Hardware/application errors must retain the generic session status.
         keyboard_missing = ready && !had_keyboard && usb_result.is_ok() && input_error.is_none();
@@ -347,6 +376,9 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
     crate::bootstate::dump();
     #[cfg(external_app)]
     if crate::external::claimed() {
+        return result;
+    }
+    if cfg!(all(external_app, feature = "diagnostics-detail")) {
         return result;
     }
     if VIEWER {
