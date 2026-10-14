@@ -14,9 +14,10 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import zipfile
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from distribution import version_check, make_zip, json_bytes
+from distribution import version_check, make_zip, json_bytes, usb_readme
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -29,6 +30,16 @@ def digest(path):
 
 def command(*args):
     return subprocess.check_output(args, cwd=ROOT, text=True).strip()
+
+def deployment_zip(output, files):
+    """Ignore checkout/copy mtimes and modes; match the deterministic ZIP contract."""
+    with zipfile.ZipFile(output, 'x', zipfile.ZIP_DEFLATED) as archive:
+        for name, path in sorted(files.items()):
+            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, path.read_bytes())
 
 def stage(destination, efi, provenance, release=False, version=None):
     """Package an already-built candidate into a new directory only."""
@@ -50,14 +61,16 @@ def stage(destination, efi, provenance, release=False, version=None):
         bundle = work / name
         (bundle / 'EFI/BOOT').mkdir(parents=True)
         shutil.copyfile(efi, bundle / 'EFI/BOOT/BOOTX64.EFI')
-        (bundle / 'MUSHA.TXT').write_bytes(b'Hello Musha-OS!\n')
-        for name in ['LICENSE', 'NOTICE', 'README.md']:
+        (bundle / 'README.TXT').write_bytes(usb_readme(version))
+        (bundle / 'DIAGNOSE.TXT').write_bytes(b'Hello Musha-OS!\n')
+        for name in ['LICENSE', 'NOTICE', 'README.md', 'VERSION']:
             shutil.copyfile(ROOT / name, bundle / name)
         for name in sorted(p.name for p in (ROOT / 'docs').glob('*.md')):
             (bundle / 'docs').mkdir(exist_ok=True)
             shutil.copyfile(ROOT / 'docs' / name, bundle / 'docs' / name)
         (bundle / 'tools').mkdir()
         shutil.copyfile(ROOT / 'tools/make-usb-image.py', bundle / 'tools/make-usb-image.py')
+        shutil.copyfile(ROOT / 'tools/distribution.py', bundle / 'tools/distribution.py')
         for dependency in ['lwip', 'freebsd-e1000', 'freebsd-apple-bce']:
             target = bundle / 'third_party' / dependency
             target.mkdir(parents=True)
@@ -74,7 +87,7 @@ def stage(destination, efi, provenance, release=False, version=None):
         fixture = subprocess.check_output(['python3', str(ROOT / 'tools/make-exfat-fixture.py'), str(bundle / 'exfat-test-data.img')], text=True)
         (bundle / 'exfat-test-data.json').write_text(fixture)
         provenance = dict(provenance, status='initial-development-release' if release else 'unreleased-candidate', version=version,
-                          image_scope='64MiB fixed ESP; deploy-image.py adjusts GPT in regular files; physical initial deployment pending',
+                          image_scope='64MiB fixed FAT32 Basic Data; deploy-image.py preserves partition type; physical Basic Data boot pending',
                           hardware_validation=f'See docs/release-validation-{version}.md' if release else 'NOT RUN',
                           release_acceptance=f'Limited scope: docs/release-scope-{version}.md' if release else 'NOT DETERMINED')
         provenance['files'] = {p.relative_to(bundle).as_posix():
@@ -97,7 +110,7 @@ def stage(destination, efi, provenance, release=False, version=None):
                     else: tar.addfile(info)
         # Distribution assets use the exact same EFI as the retained QEMU bundle.
         prefix = f'musha-os-v{version}-x64'
-        payload = {name:(bundle / name).read_bytes() for name in ['EFI/BOOT/BOOTX64.EFI','MUSHA.TXT','LICENSE','NOTICE']}
+        payload = {name:(bundle / name).read_bytes() for name in ['EFI/BOOT/BOOTX64.EFI','DIAGNOSE.TXT','README.TXT','LICENSE','NOTICE']}
         for path in sorted((bundle / 'third_party').rglob('*')):
             if path.is_file(): payload[path.relative_to(bundle).as_posix()] = path.read_bytes()
         update = make_zip(work / (prefix+'-files.zip'), payload, version, provenance)
@@ -105,20 +118,26 @@ def stage(destination, efi, provenance, release=False, version=None):
         with (work / (prefix+'-usb.img.gz')).open('xb') as raw, gzip.GzipFile(filename='',mode='wb',fileobj=raw,mtime=0) as gz, image.open('rb') as source:
             shutil.copyfileobj(source,gz)
         toolzip = work / (prefix+'-deployment.zip')
-        import zipfile
-        with zipfile.ZipFile(toolzip,'x',zipfile.ZIP_DEFLATED) as z:
-            for name in ['distribution.py','deploy-image.py','update-usb.py']:
-                z.write(ROOT/'tools'/name, 'tools/'+name)
-            for name in ['release-distribution-policy.md','distribution-usage.md']:
-                if (ROOT/'docs'/name).exists(): z.write(ROOT/'docs'/name, 'docs/'+name)
-            for name in ['LICENSE','NOTICE']: z.write(ROOT/name,name)
-            for path in sorted((bundle/'third_party').rglob('*')):
-                if path.is_file(): z.write(path,path.relative_to(bundle).as_posix())
+        deployment = {}
+        for name in ['distribution.py', 'deploy-image.py', 'update-usb.py']:
+            deployment['tools/'+name] = ROOT/'tools'/name
+        for name in ['release-distribution-policy.md', 'distribution-usage.md']:
+            if (ROOT/'docs'/name).exists():
+                deployment['docs/'+name] = ROOT/'docs'/name
+        for name in ['LICENSE', 'NOTICE']:
+            deployment[name] = ROOT/name
+        for path in sorted((bundle/'third_party').rglob('*')):
+            if path.is_file():
+                deployment[path.relative_to(bundle).as_posix()] = path
+        deployment_zip(toolzip, deployment)
+        sdk_spec = importlib.util.spec_from_file_location('package_sdk', ROOT/'tools/package-sdk.py')
+        sdk_package = importlib.util.module_from_spec(sdk_spec); sdk_spec.loader.exec_module(sdk_package)
+        sdk_package.create(work / (prefix+'-c-sdk.zip'), version)
         manifest = dict(provenance, schema=1, tag=provenance.get('tag'),
             status='preview' if provenance.get('working_tree') else 'candidate',
             layout_version=1, minimum_media_bytes=64*1024**2, logical_sector_bytes=512,
             image_uncompressed={'bytes':image.stat().st_size,'sha256':digest(image)},
-            payload=update['files'], assets={path.name:{'bytes':path.stat().st_size,'sha256':digest(path)}
+            payload=update['files'], update_schema=update['schema'], retired_files=update.get('retired_files',[]), assets={path.name:{'bytes':path.stat().st_size,'sha256':digest(path)}
                 for path in sorted(work.iterdir()) if path.is_file()})
         (work/'build-manifest.json').write_bytes(json_bytes(manifest))
         (work / 'SHA256SUMS').write_text(''.join(f'{digest(path)}  {path.name}\n' for path in sorted(work.iterdir()) if path.is_file() and path.name!='SHA256SUMS'))

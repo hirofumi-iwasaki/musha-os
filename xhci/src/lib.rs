@@ -1,6 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
+pub mod intel_ports;
 /// Address-only bump allocator. Hardware access is outside this safe layer.
 pub struct Pool {
     next: usize,
@@ -72,6 +73,40 @@ pub fn command_completion(words: [u32; 4], expected: usize, slot: Option<u8>, ma
             Some(value) => returned == value,
             None => returned != 0 && returned <= maximum,
         }
+}
+/// A bounded set of device-command errors permits Disable Slot and continuation.
+/// Identity checks are identical to success; ring stop/abort and malformed events
+/// never cross this recovery boundary (xHCI 6.4.5.1 / completion-code table).
+pub fn recoverable_command_error(words: [u32; 4], expected: usize, slot: u8) -> bool {
+    let mut success = words;
+    success[2] = (success[2] & 0x00ff_ffff) | (1 << 24);
+    matches!(words[2] >> 24, 4 | 5 | 7 | 17 | 19 | 22)
+        && slot != 0
+        && slot != 255
+        && command_completion(success, expected, Some(slot), 8)
+}
+#[cfg(test)]
+mod command_recovery_tests {
+    use super::*;
+    #[test]
+    fn only_correlated_device_errors_recover() {
+        for cc in 0..=255 {
+            let w = [0x1000, 0, cc << 24, (33 << 10) | (1 << 24) | 1];
+            assert_eq!(
+                recoverable_command_error(w, 0x1000, 1),
+                matches!(cc, 4 | 5 | 7 | 17 | 19 | 22)
+            );
+            assert!(!recoverable_command_error(w, 0x1010, 1));
+            assert!(!recoverable_command_error(w, 0x1000, 2));
+            assert!(!recoverable_command_error(w, 0x1000, 255));
+            let mut bad = w;
+            bad[3] |= 1 << 16;
+            assert!(!recoverable_command_error(bad, 0x1000, 1));
+            bad = w;
+            bad[1] = 1;
+            assert!(!recoverable_command_error(bad, 0x1000, 1));
+        }
+    }
 }
 pub fn transfer_completion(words: [u32; 4], expected: usize, slot: u8) -> bool {
     endpoint_completion(words, expected, slot, 1)
@@ -334,3 +369,5 @@ mod deferred_tests {
         assert!(defer_completion(valid, pending, &mut saved));
     }
 }
+
+pub mod superspeed;

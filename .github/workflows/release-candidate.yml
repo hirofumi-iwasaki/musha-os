@@ -25,6 +25,7 @@ on:
       - net/port/**
       - third_party/**
       - tools/**
+      - sdk/**
       - docs/**
       - LICENSE
       - NOTICE
@@ -81,11 +82,14 @@ jobs:
           for directory in third_party/lwip third_party/freebsd-e1000 third_party/freebsd-apple-bce third_party/r-efi; do
             (cd "$directory" && shasum -a 256 -c SHA256SUMS)
           done
+          python3 tools/test-smoke-qemu-checks.py
           python3 tools/test-exfat-fixture.py
           python3 tools/test-usb-image.py
           python3 tools/test-usb-build.py
           python3 tools/test-release-package.py
           python3 tools/test-distribution.py
+      - name: Experimental SDK compile and conformance (no guest execution)
+        run: python3 tools/check-sdk.py
       - name: HID mutation and state properties
         timeout-minutes: 2
         run: |
@@ -209,13 +213,13 @@ jobs:
       - name: Normal candidate display and input acceptance
         run: |
           bundle="dist/candidate/musha-os-$(cat VERSION)-candidate"
-          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/exfat-test-data.img" --reference out/qemu-viewer-exfat-normal --output out/qemu-normal-exfat
-          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/musha-qemu-64MiB.img" --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-fat32
+          python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/exfat-test-data.img" --reference out/qemu-viewer-exfat-normal --output out/qemu-normal-exfat
+          python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/musha-qemu-64MiB.img" --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-fat32
       - name: Fixed ESP on a larger virtual medium
         run: |
           bundle="dist/candidate/musha-os-$(cat VERSION)-candidate"
           python3 tools/deploy-image.py "$bundle/musha-qemu-64MiB.img" out/ci/normal-128MiB.img --capacity-bytes 134217728 --apply
-          python3 tools/smoke-normal-viewer.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/normal-128MiB.img --data-image out/ci/normal-128MiB.img --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-larger
+          python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/normal-128MiB.img --data-image out/ci/normal-128MiB.img --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-larger
       - name: Preserve passed distribution only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

@@ -8,5 +8,4 @@ publish = false
 [dependencies]
 musha-api = { path = "../api" }
 
-[dev-dependencies]
 musha-framebuffer = { path = "../framebuffer" }

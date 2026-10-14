@@ -13,6 +13,8 @@ import sys
 import zipfile
 import tempfile
 
+from distribution import usb_readme
+
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = 'x86_64-unknown-uefi'
 
@@ -32,10 +34,15 @@ def package(output, efi, size_mib=64, size_bytes=None, files_only=False):
     boot = esp / 'EFI' / 'BOOT'
     boot.mkdir(parents=True)
     shutil.copyfile(efi, boot / 'BOOTX64.EFI')
-    (esp / 'MUSHA.TXT').write_bytes(b'Hello Musha-OS!\n')
+    (esp / 'README.TXT').write_bytes(usb_readme((ROOT/'VERSION').read_text().strip()))
+    (esp / 'DIAGNOSE.TXT').write_bytes(b'Hello Musha-OS!\n')
     for name in ('LICENSE', 'NOTICE'):
         shutil.copyfile(ROOT / name, esp / name)
-    shutil.copyfile(ROOT / 'third_party/r-efi/AUTHORS', esp / 'r-efi-AUTHORS')
+    for dependency, names in [('lwip', ('COPYING','UPSTREAM')), ('freebsd-e1000', ('COPYING','UPSTREAM')), ('freebsd-apple-bce', ('COPYING','UPSTREAM')), ('r-efi', ('AUTHORS','UPSTREAM'))]:
+        for name in names:
+            target=esp/'third_party'/dependency/name
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(ROOT/'third_party'/dependency/name,target)
     image = None
     if not files_only:
         spec = importlib.util.spec_from_file_location('usb_image', ROOT / 'tools/make-usb-image.py')
@@ -52,7 +59,7 @@ def package(output, efi, size_mib=64, size_bytes=None, files_only=False):
     for name in ('LICENSE', 'NOTICE'):
         shutil.copyfile(ROOT / name, output / name)
     shutil.copyfile(ROOT / 'third_party/r-efi/AUTHORS', output / 'r-efi-AUTHORS')
-    paths = ([image] if image else []) + [output / 'musha-os-fat32-files.zip', boot / 'BOOTX64.EFI']
+    paths = ([image] if image else []) + [output / 'musha-os-fat32-files.zip', boot / 'BOOTX64.EFI', esp / 'README.TXT']
     checksums = {str(path.relative_to(output)): digest(path) for path in paths}
     (output / 'SHA256SUMS').write_text(''.join(f'{value}  {name}\n' for name, value in checksums.items()), encoding='utf-8')
     return {'image_bytes': image.stat().st_size if image else 0, 'sha256': checksums, 'features': [],

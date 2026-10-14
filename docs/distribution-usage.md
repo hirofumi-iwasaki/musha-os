@@ -1,5 +1,36 @@
 # 配布・配備手順 / Distribution and deployment
 
+## v0.3.0 candidate root files / 候補のルートファイル
+
+English: `README.TXT` is generated from VERSION (ASCII, CRLF, at most 72
+columns, under 4 KiB). The diagnostic marker is `DIAGNOSE.TXT`, unchanged
+16-byte contents `Hello Musha-OS!\n` and FNV `9A42A948C590F507`. Initial images
+contain EFI, DIAGNOSE.TXT and README.TXT; license texts are supplied in the
+files/deployment archives as before. Use the matching files ZIP to populate
+all managed USB files, including the eight third-party notices.
+
+Before the next physical acceptance, preview and apply the matching files ZIP
+with `update-usb.py`. Record `verified-files` for EFI, DIAGNOSE.TXT, README.TXT,
+LICENSE, NOTICE, all eight third_party files and update-manifest.json. Confirm
+`verified-absent` contains the old marker. Backups must be outside the USB.
+Place the user's optional AUTORUN.ELF separately and record its hash; eject
+safely. Physical update remains owner-approved. See the
+[manifest migration rules](release-distribution-policy.md#managed-marker-migration-2026-10-14--管理マーカーの移行).
+
+日本語：`README.TXT` はVERSIONから生成し、ASCII・CRLF・72桁以内・4 KiB未満とします。
+診断用ファイルは `DIAGNOSE.TXT`、内容16 byteとFNV `9A42A948C590F507` は不変です。
+初回イメージにはEFI・DIAGNOSE.TXT・README.TXTを配置し、ライセンス類は従来どおり
+files/deploymentアーカイブに同梱します。全管理ファイルをUSBへ揃える際は対応する
+files ZIPを使用し、third_partyの8ファイルも配置してください。
+
+次回の実機受入前に対応するZIPでdry-runとapplyを行い、`verified-files` のEFI・
+DIAGNOSE.TXT・README.TXT・LICENSE・NOTICE・third_partyの8ファイル・
+update-manifest.jsonを確認します。`verified-absent` で旧マーカー不在を確認し、
+退避はUSB外へ保存します。任意のAUTORUN.ELFは別途配置・ハッシュ記録して安全に
+取り外します。実USB更新は所有者承認後に行います。
+
+以下のv0.2.0配布物の記述は公開当時のもので、公開済み配布物は変更しません。
+
 v0.2.0は[GitHub Releases](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0)で公開済みです。
 README・Release本文の作成と公開後の訂正は[リリース文書規約](release-editorial-policy.md)に従ってください。
 v0.1.0の確認実績とv0.2.0候補の確認は別です。
@@ -58,10 +89,22 @@ python3 tools/deploy-image.py dist/candidate/musha-os-v0.2.0-x64-usb.img out/vir
 最初のハッシュ照合は`(cd dist/candidate && shasum -a 256 -c SHA256SUMS)`で実行します。
 capacityは仮想容量の例。実媒体について公称容量から推測してはいけません。
 applyなしはdry-run。既存出力・device path・4Kn・64 MiB未満・128 GiB超・破損GPT/FATを拒否。
-固定ESPは拡張せず、残りを未割当てにします。主副GPT、配列CRC、usable range、protective MBRを整合。
+固定FAT32起動パーティションは拡張せず、残りを未割当てにします。主副GPT、配列CRC、usable range、protective MBRを整合。
 書込み範囲は先頭64 MiBから旧副GPTを除いた範囲と媒体末尾33セクターのみ。
-読戻しも固定ESPと管理情報のみで、全空き容量を走査しません。exFATの作成・拡張は含みません。
+読戻しも固定FAT32起動パーティションと管理情報のみで、全空き容量を走査しません。exFATの作成・拡張は含みません。
 一般的なUSB書込みソフトとの組合せは未検証です。
+
+パーティション種別について：v0.2.0までの媒体は起動用FAT32がEFI System Partition（ESP）のため、
+macOSのFinderやWindowsのエクスプローラーには自動表示されません。macOSではディスクユーティリティで
+「すべてのデバイスを表示」にしてマウントするか、`diskutil list`で識別子を確認して`diskutil mount diskNsM`を実行します。
+v0.3.0以降の媒体は種別をMicrosoft Basic Dataに変更し、通常の外付けUSBとして表示される構成にします
+（[配布方針 4.4](release-distribution-policy.md)）。既存のESP媒体も引き続き起動できます。
+2026-10-14：候補9f8d999の専用Basic Data媒体からNUC5・Ryzen・MacBook Pro 2018の起動を確認しました
+（IMG_7647／7648／7650、[実機記録](hardware-acceptance-0.3.0.md)）。これは当該構成の起動確認であり、
+全ファームウェア互換性やWindowsの自動表示の実機検証を意味しません。公開受入全体は残件があります。
+既存ESP媒体の通常更新では種別を変更しないため、引き続き手動マウントが必要です。
+新規生成は `--partition-type basic-data`（既定）、互換試験は `--partition-type esp`。
+配備は両種別を保持し、更新はファイルだけを差し替えます。
 
 ## 通常更新（macOS）
 

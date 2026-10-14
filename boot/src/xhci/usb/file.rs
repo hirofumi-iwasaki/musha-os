@@ -82,7 +82,7 @@ pub(super) fn supported(
     }
     let _reservation = Reservation(false);
     let work = unsafe { &mut *WORK.0.get() };
-    match musha_fs::exfat::FileSystem::discover(blocks, size, &mut read, work) {
+    let result = match musha_fs::exfat::FileSystem::discover(blocks, size, &mut read, work) {
         Ok(_) => Ok(true),
         Err(musha_fs::Error::Unsupported) => {
             match musha_fs::fat32::FileSystem::discover(blocks, size, &mut read) {
@@ -92,7 +92,16 @@ pub(super) fn supported(
             }
         }
         Err(e) => Err(e),
+    };
+    // Preserve normal medium selection: only the subsequently selected medium
+    // may publish the external-app rejection; discovery itself has no UI effect.
+    #[cfg(external_app)]
+    if let Err(musha_fs::Error::DuplicateName(name)) = &result {
+        if crate::external::boot_name(name) {
+            return Ok(true);
+        }
     }
+    result
 }
 /// Select the first successfully mounted medium for this boot. Discovery scans
 /// do not call this function. No data-sector snapshot is needed for the catalog.
@@ -112,13 +121,15 @@ pub(super) fn prepare(
     let selected = musha_fs::exfat::FileSystem::discover(blocks, size, &mut read, work);
     let (format, count, bytes) = match selected {
         Ok(mut fs) => {
-            let first = fs
-                .entries()
-                .iter()
-                .position(|e| e.name() == [77, 85, 83, 72, 65, 46, 84, 88, 84]);
+            let first = fs.entries().iter().position(|e| {
+                e.name()
+                    .iter()
+                    .copied()
+                    .eq(b"DIAGNOSE.TXT".iter().map(|&b| b as u16))
+            });
             let mut bytes = None;
             if let Some(i) = first {
-                if fs.entries()[i].len() <= snapshot.len() as u64 {
+                if !crate::app::VIEWER && fs.entries()[i].len() <= snapshot.len() as u64 {
                     bytes = Some(fs.read_at(i, 0, snapshot)?);
                 }
             }
@@ -137,10 +148,10 @@ pub(super) fn prepare(
         }
         Err(musha_fs::Error::Unsupported) => {
             let mut fs = musha_fs::fat32::FileSystem::discover(blocks, size, &mut read)?;
-            let first = fs.entries().iter().position(|e| e.name() == b"MUSHA   TXT");
+            let first = fs.entries().iter().position(|e| e.name() == b"DIAGNOSETXT");
             let mut bytes = None;
             if let Some(i) = first {
-                if fs.entries()[i].len() <= snapshot.len() as u64 {
+                if !crate::app::VIEWER && fs.entries()[i].len() <= snapshot.len() as u64 {
                     bytes = Some(fs.read_at(i, 0, snapshot)?);
                 }
             }
@@ -205,6 +216,10 @@ impl Session {
             .files
             .mount(p.format, &catalog[..p.count])
             .map_err(|_| "FILE MOUNT")?;
+        // Readiness requires the actual mounted service, before application entry.
+        state.files.format().map_err(|_| "FILE FORMAT")?;
+        state.files.list_begin().map_err(|_| "FILE LIST")?;
+        crate::bootstate::update(|r, _| r.files = musha_platform::readiness::Service::Live);
         crate::debug(b"MUSHA: LIVE_FILE_API_READY\n");
         Ok(Self {
             state,
@@ -298,6 +313,7 @@ impl Drop for Session {
             crate::debug(b"MUSHA: LIVE_FILE_CANCEL_PENDING_SECTOR\n");
         }
         self.state.files.disconnect();
+        crate::bootstate::update(|r, _| r.files = musha_platform::readiness::Service::Stopped);
         if let Some(o) = self.state.operation.as_mut() {
             o.cancel();
         }
@@ -309,7 +325,7 @@ fn api_error(e: musha_fs::Error) -> musha_api::stream::Error {
     match e {
         musha_fs::Error::Io => A::Io,
         musha_fs::Error::Unsupported => A::Unsupported,
-        musha_fs::Error::Corrupt => A::Corrupt,
+        musha_fs::Error::Corrupt | musha_fs::Error::DuplicateName(_) => A::Corrupt,
         musha_fs::Error::NotFound => A::Invalid,
         musha_fs::Error::TooLarge => A::TooLarge,
         musha_fs::Error::Limit => A::Limit,

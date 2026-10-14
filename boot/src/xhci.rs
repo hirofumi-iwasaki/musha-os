@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Own/reset, build permanent DMA rings, probe commands, then quiesce.
 use crate::{BootInfo, acpi, pci};
+use musha_framebuffer::metrics as grid;
 mod usb;
 struct Registers {
     base: usize,
@@ -41,6 +42,19 @@ impl Registers {
         Ok(())
     }
 }
+// BSP-only rescan deadline, measured on the shared PM epoch. Cleanup clears
+// it before halt so the existing DMA-stop deadline is never shortened.
+static RESCAN_DEADLINE: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+fn rescan_budget(clock: &mut acpi::Time) -> Result<(), &'static str> {
+    let end = RESCAN_DEADLINE.load(core::sync::atomic::Ordering::Relaxed);
+    if end != 0 {
+        clock.now()?;
+        if crate::bootstate::epoch_now().ok_or("NO TIMER")? >= end {
+            return Err("RESCAN DEADLINE");
+        }
+    }
+    Ok(())
+}
 fn wait(
     regs: &Registers,
     clock: &mut acpi::Time,
@@ -51,17 +65,28 @@ fn wait(
 ) -> Result<(), &'static str> {
     let deadline = clock.now()?.checked_add(limit).ok_or("CLOCK OVERFLOW")?;
     for _ in 0..5_000_000 {
+        rescan_budget(clock)?;
         if regs.read(offset)? & mask == value {
             return Ok(());
         }
         if clock.now()? >= deadline {
+            crate::timing::record(format_args!(
+                "WAIT TIMEOUT OFF {:X} LIMIT {}",
+                offset, limit
+            ));
+            crate::timing::record(format_args!(
+                "MASK {:X} WANT {:X} GOT {:X}",
+                mask,
+                value,
+                regs.read(offset)?
+            ));
             return Err("TIMEOUT");
         }
         core::hint::spin_loop();
     }
     Err("CLOCK STALLED")
 }
-fn reset(info: &BootInfo, c: pci::Controller) -> Result<(), &'static str> {
+fn reset(info: &BootInfo, c: pci::Controller) -> Result<(bool, u64), &'static str> {
     crate::diagnostics::usb_stage("CAPABILITY");
     pci::controller_evidence(c);
     if c.bytes == 0 {
@@ -102,8 +127,35 @@ fn reset(info: &BootInfo, c: pci::Controller) -> Result<(), &'static str> {
             return Err("CLOCK STALLED");
         }
     }
+    #[cfg(feature = "diagnostics-detail")]
+    {
+        for port in 1..=ports {
+            let v = regs.read(op + 0x400 + (port - 1) * 16)?;
+            crate::diagnostics::observation(format_args!("PRE OWN P{} PORTSC {:08X}", port, v));
+            crate::diagnostics::observation(format_args!(
+                "CCS {} PED {} PP {} SPEED {} PLS {}",
+                v & 1,
+                (v >> 1) & 1,
+                (v >> 9) & 1,
+                (v >> 10) & 15,
+                (v >> 5) & 15
+            ));
+        }
+        if unsafe { pci::read(c.bus, c.device, c.function, 0) } as u16 == 0x8086 {
+            for o in musha_xhci::intel_ports::OFFSETS {
+                crate::diagnostics::observation(format_args!(
+                    "INTEL PRE OWN {:02X} {:08X}",
+                    o,
+                    unsafe { pci::read(c.bus, c.device, c.function, o) }
+                ));
+            }
+        }
+    }
     crate::diagnostics::usb_stage("OWNERSHIP");
+    let ownership_time = crate::timing::Span::new(c.bdf(), "OWNERSHIP");
     let mut next = ((regs.read(0x10)? >> 16) as usize) * 4;
+    #[cfg(feature = "diagnostics-detail")]
+    let mut legacy_seen = false;
     let mut traversed = 0;
     while next != 0 {
         traversed += 1;
@@ -112,13 +164,52 @@ fn reset(info: &BootInfo, c: pci::Controller) -> Result<(), &'static str> {
         }
         let header = regs.read(next)?;
         if header & 255 == 1 {
+            #[cfg(feature = "diagnostics-detail")]
+            {
+                legacy_seen = true;
+            }
             regs.read(next + 4)?;
+            #[cfg(feature = "diagnostics-detail")]
+            let ownership_start = clock.now()?;
+            #[cfg(feature = "diagnostics-detail")]
+            crate::diagnostics::observation(format_args!(
+                "USBLEGSUP BEFORE {:08X} BIOS {} OS {}",
+                header,
+                (header >> 16) & 1,
+                (header >> 24) & 1
+            ));
             // Independent byte write to the OS semaphore preserves BIOS's byte.
             unsafe {
                 let semaphore = (regs.base + next + 3) as *mut u8;
                 semaphore.write_volatile(semaphore.read_volatile() | 1);
             }
-            wait(&regs, &mut clock, next, 1 << 16, 0, 1000)?;
+            let ownership_result = wait(&regs, &mut clock, next, 1 << 16, 0, 1000);
+            #[cfg(feature = "diagnostics-detail")]
+            {
+                if let Ok(v) = regs.read(next) {
+                    crate::diagnostics::observation(format_args!(
+                        "USBLEGSUP AFTER {:08X} BIOS {} OS {}",
+                        v,
+                        (v >> 16) & 1,
+                        (v >> 24) & 1
+                    ));
+                }
+                match clock.now() {
+                    Ok(t) => crate::diagnostics::observation(format_args!(
+                        "OWNERSHIP ELAPSED {} MS",
+                        t.saturating_sub(ownership_start)
+                    )),
+                    Err(e) => crate::diagnostics::observation(format_args!(
+                        "OWNERSHIP TIME UNKNOWN {}",
+                        e
+                    )),
+                }
+                crate::diagnostics::observation(format_args!(
+                    "OWNERSHIP RESULT {}",
+                    ownership_result.err().unwrap_or("OK")
+                ));
+            }
+            ownership_result?;
             if regs.read(next)? & (1 << 24) == 0 {
                 return Err("OWNERSHIP");
             }
@@ -133,6 +224,44 @@ fn reset(info: &BootInfo, c: pci::Controller) -> Result<(), &'static str> {
         }
         next = next.checked_add(delta).ok_or("EXT CAPABILITY")?;
     }
+    #[cfg(feature = "diagnostics-detail")]
+    if !legacy_seen {
+        crate::diagnostics::observation(format_args!("USBLEGSUP ABSENT / NO HANDOFF"));
+    }
+    ownership_time.finish("OK / ABSENT IF NO LEGACY CAP");
+    // After firmware ownership handoff, before halt/reset/ring setup.
+    let intel = unsafe { pci::read(c.bus, c.device, c.function, 0) } as u16 == 0x8086;
+    if intel {
+        for port in 1..=ports {
+            crate::diagnostics::observation(format_args!(
+                "ROUTE BEFORE P{} PORTSC {:08X}",
+                port,
+                regs.read(op + 0x400 + (port - 1) * 16)?
+            ));
+        }
+    }
+    let routed = pci::route_intel_ports(c);
+    let route_epoch = crate::bootstate::epoch_now().unwrap_or(0);
+    #[cfg(feature = "diagnostics-detail")]
+    if intel {
+        for o in musha_xhci::intel_ports::OFFSETS {
+            crate::diagnostics::observation(format_args!(
+                "INTEL POST ROUTE {:02X} {:08X}",
+                o,
+                unsafe { pci::read(c.bus, c.device, c.function, o) }
+            ));
+        }
+    }
+    if intel {
+        for port in 1..=ports {
+            crate::diagnostics::observation(format_args!(
+                "ROUTE AFTER P{} PORTSC {:08X}",
+                port,
+                regs.read(op + 0x400 + (port - 1) * 16)?
+            ));
+        }
+    }
+    let halt_time = crate::timing::Span::new(c.bdf(), "INITIAL HALT");
     crate::diagnostics::usb_stage("HALT");
     wait(&regs, &mut clock, op + 4, 1 << 11, 0, 1000)?;
     let command = regs.read(op)?;
@@ -146,6 +275,8 @@ fn reset(info: &BootInfo, c: pci::Controller) -> Result<(), &'static str> {
     }
     #[cfg(feature = "xhci-timeout")]
     wait(&regs, &mut clock, op + 4, 1, 0, 20)?; // held halted: deadline must expire
+    halt_time.finish("OK");
+    let reset_time = crate::timing::Span::new(c.bdf(), "RESET");
     crate::diagnostics::usb_stage("RESET");
     regs.write(op, regs.read(op)? | 2)?; // preserve reserved command bits
     wait(&regs, &mut clock, op, 2, 0, 1000)?;
@@ -153,10 +284,11 @@ fn reset(info: &BootInfo, c: pci::Controller) -> Result<(), &'static str> {
     if regs.read(op + 4)? & 1 == 0 || regs.read(op + 8)? & 1 == 0 {
         return Err("RESET STATE");
     }
+    reset_time.finish("OK");
     crate::debug(b"MUSHA: XHCI_RESET_OK PORTS=");
     crate::debug(&crate::cpu::hex(ports as u64));
     crate::debug(b" DMA_DISABLED\n");
-    Ok(())
+    Ok((routed, route_epoch))
 }
 pub(crate) type Tick<'a> = dyn for<'e> FnMut(AppEvent<'e>) -> Result<bool, &'static str> + 'a;
 pub(crate) enum AppEvent<'a> {
@@ -169,6 +301,7 @@ pub(crate) enum AppEvent<'a> {
 }
 #[derive(Clone, Copy, Default)]
 struct Probe {
+    attempted: bool,
     keyboard: bool,
     storage: usize,
     readable_storage: usize,
@@ -182,11 +315,13 @@ fn probe(
     tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<Probe, &'static str> {
     crate::diagnostics::begin_controller(c);
+    let total_time =
+        crate::timing::Span::new(c.bdf(), if discovery { "DISCOVERY" } else { "LIVE" });
     let result = pci::recover(info, c, index)
         .and_then(|()| reset(info, c))
-        .and_then(|()| {
+        .and_then(|(routed, route_epoch)| {
             crate::diagnostics::usb_stage("RINGS / COMMANDS");
-            command_probe(info, c, index, discovery, tick)
+            command_probe(info, c, index, discovery, routed, route_epoch, tick)
         });
     if let Err(error) = result {
         crate::diagnostics::usb_failure(error);
@@ -200,6 +335,7 @@ fn probe(
     if unsafe { pci::read(c.bus, c.device, c.function, 4) } & 4 != 0 {
         return Err("QUIESCE FAILED");
     }
+    total_time.finish(result.as_ref().err().copied().unwrap_or("OK"));
     crate::diagnostics::controller_result(
         c,
         result.as_ref().ok().map(|p| (p.keyboard, p.storage)),
@@ -255,10 +391,11 @@ fn live_probe(
     };
     probe(info, info.xhcis.entries[index], index, false, &mut bridge)
 }
-pub(crate) fn diagnose(
+pub(crate) fn run_session(
     info: &BootInfo,
     tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
+    crate::timing::begin_session();
     let controllers = &info.xhcis.entries[..info.xhcis.count];
     crate::diagnostics::controller_limit(info.xhcis.truncated);
     let mut found_device = false;
@@ -266,15 +403,12 @@ pub(crate) fn diagnose(
         if controllers.is_empty() {
             return Err("NOT FOUND");
         }
-        if controllers.len() == 1 {
-            return live_probe(info, 0, None, tick).map(|report| {
-                found_device = report.keyboard || report.storage > 0;
-            });
-        }
         let mut keyboard = None;
         let mut storage = None;
         let mut readable_storage = None;
         let mut success = false;
+        let mut attempted = false;
+        let mut safe_empty = [false; 16];
         let mut last_error = "NO CONTROLLER";
         let owner = controllers.iter().position(|c| c.bdf() == info.boot_owner);
         for index in (0..controllers.len()).map(|step| match owner {
@@ -289,6 +423,8 @@ pub(crate) fn diagnose(
             match probe(info, c, index, true, tick) {
                 Ok(report) => {
                     success = true;
+                    attempted |= report.attempted;
+                    safe_empty[index] = !report.attempted;
                     if report.storage > 0 && storage.is_none() {
                         storage = Some(index);
                     }
@@ -303,8 +439,101 @@ pub(crate) fn diagnose(
                 Err(error @ ("QUIESCE FAILED" | "APP INPUT ERROR" | "APP FILE CACHE")) => {
                     return Err(error);
                 }
-                Err(error) => last_error = error,
+                Err(error) => {
+                    last_error = error;
+                    attempted = true;
+                }
             }
+        }
+        // All first-pass hosts are halted with BME=0. Only untouched-slot
+        // controllers may reinitialize rings without HCRST; PP is preserved.
+        if musha_xhci::superspeed::rescan_allowed(
+            keyboard.is_some(),
+            readable_storage.is_some(),
+            attempted,
+            0,
+        ) {
+            crate::timing::set_rescan(1);
+            crate::diagnostics::observation(format_args!("RESCAN 1/1 START MAX 1000 MS"));
+            crate::debug(b"MUSHA: RESCAN 1/1 START\n");
+            let mut clock = acpi::Time::new(info.timer)?;
+            let start = clock.now()?;
+            let epoch_end = crate::bootstate::epoch_now()
+                .ok_or("NO TIMER")?
+                .saturating_add(1000);
+            let mut rescanned = [false; 16];
+            for _ in 0..=50 {
+                if clock.now()?.saturating_sub(start) >= 1000 {
+                    break;
+                }
+                for (index, c) in controllers.iter().copied().enumerate() {
+                    if clock.now()?.saturating_sub(start) >= 1000 {
+                        break;
+                    }
+                    if !safe_empty[index] || rescanned[index] {
+                        continue;
+                    }
+                    let regs = Registers {
+                        base: c.base,
+                        bytes: c.bytes,
+                    };
+                    let op = (regs.read(0)? & 255) as usize;
+                    let ports = (regs.read(4)? >> 24) as usize;
+                    let connected = (1..=ports).try_fold(false, |found, port| {
+                        regs.read(op + 0x400 + (port - 1) * 16)
+                            .map(|v| found || v & 1 != 0)
+                    })?;
+                    if !connected {
+                        continue;
+                    }
+                    rescanned[index] = true;
+                    crate::diagnostics::begin_controller(c);
+                    RESCAN_DEADLINE.store(epoch_end, core::sync::atomic::Ordering::Relaxed);
+                    let report = command_probe(info, c, index, true, false, 0, tick);
+                    RESCAN_DEADLINE.store(0, core::sync::atomic::Ordering::Relaxed);
+                    match report {
+                        Ok(report) => {
+                            attempted |= report.attempted;
+                            found_device |= report.keyboard || report.storage > 0;
+                            if report.keyboard {
+                                keyboard = Some(index);
+                            }
+                            if report.storage > 0 {
+                                storage = Some(index);
+                            }
+                            if report.readable_storage > 0 {
+                                readable_storage = Some(index);
+                            }
+                        }
+                        Err(error @ ("QUIESCE FAILED" | "APP INPUT ERROR" | "APP FILE CACHE")) => {
+                            return Err(error);
+                        }
+                        Err(error) => {
+                            last_error = error;
+                            attempted = true;
+                        }
+                    }
+                }
+                if attempted {
+                    break;
+                }
+                let until = clock
+                    .now()?
+                    .saturating_add(20)
+                    .min(start.saturating_add(1000));
+                for _ in 0..5_000_000 {
+                    if clock.now()? >= until {
+                        break;
+                    }
+                    core::hint::spin_loop();
+                }
+            }
+            crate::diagnostics::observation(format_args!(
+                "RESCAN 1/1 RESULT K{} S{}",
+                keyboard.is_some() as u8,
+                readable_storage.is_some() as u8
+            ));
+            crate::debug(b"MUSHA: RESCAN 1/1 DONE\n");
         }
         crate::debug(b"MUSHA: XHCI_SCAN_COMPLETE\n");
         if let Some(k) = keyboard {
@@ -319,9 +548,17 @@ pub(crate) fn diagnose(
             if success { Ok(()) } else { Err(last_error) }
         }
     })();
-    clear_line(info.framebuffer, 292);
+    #[cfg(feature = "diagnostics-detail")]
+    crate::diagnostics::observation(format_args!(
+        "RUN SESSION RESULT {}",
+        result.err().unwrap_or("OK")
+    ));
+    if crate::app::VIEWER {
+        return result;
+    }
+    clear_line(info.framebuffer, grid::KEYBOARD);
     unsafe {
-        info.framebuffer.text(
+        info.framebuffer.text_grid(
             if result.is_ok() {
                 if found_device {
                     "USB DEVICE READY"
@@ -331,8 +568,8 @@ pub(crate) fn diagnose(
             } else {
                 "XHCI FAILED"
             },
-            24,
-            292,
+            grid::LABEL,
+            grid::KEYBOARD,
             info.framebuffer
                 .color(if result.is_ok() { 0 } else { 255 }, 240, 100),
         );
@@ -423,6 +660,7 @@ fn event_dispatch(
     let deadline = clock.now()?.checked_add(limit).ok_or("CLOCK OVERFLOW")?;
     let polls = if transfer > 1 { 500_000_000 } else { 5_000_000 };
     for _ in 0..polls {
+        rescan_budget(clock)?;
         if regs.read((regs.read(0)? & 255) as usize + 4)? & ((1 << 2) | (1 << 12)) != 0 {
             return Err("HOST ERROR");
         }
@@ -451,6 +689,40 @@ fn event_dispatch(
                         Some(expected_slot)
                     };
                     if transfer != 0 || !musha_xhci::command_completion(words, expected, slot, 8) {
+                        crate::debug(b"MUSHA: COMMAND_CC=");
+                        crate::debug(&crate::cpu::hex((words[2] >> 24) as u64));
+                        crate::debug(b"\n");
+                        crate::diagnostics::observation(format_args!(
+                            "COMMAND CC {} SLOT {} EXPECT {}",
+                            words[2] >> 24,
+                            words[3] >> 24,
+                            expected_slot
+                        ));
+                        crate::diagnostics::observation(format_args!(
+                            "COMMAND RAW {:08X} {:08X}",
+                            words[0], words[1]
+                        ));
+                        crate::diagnostics::observation(format_args!(
+                            "COMMAND RAW {:08X} {:08X}",
+                            words[2], words[3]
+                        ));
+                        crate::diagnostics::observation(format_args!(
+                            "COMMAND EXPECT TRB {:016X}",
+                            expected
+                        ));
+                        if transfer == 0
+                            && musha_xhci::recoverable_command_error(words, expected, expected_slot)
+                        {
+                            // Consume the correlated error once before issuing Disable Slot.
+                            cursor.advance();
+                            regs.address(
+                                runtime + 0x38,
+                                (base + cursor.index * 16) as u64 | 8,
+                                ac64,
+                            )?;
+                            regs.write(runtime + 0x20, (regs.read(runtime + 0x20)? & !3) | 1)?;
+                            return Err("COMMAND REJECTED");
+                        }
                         return Err("BAD COMPLETION");
                     }
                     true
@@ -532,6 +804,8 @@ fn command_probe(
     controller: pci::Controller,
     index: usize,
     discovery: bool,
+    routed: bool,
+    route_epoch: u64,
     tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<Probe, &'static str> {
     use musha_xhci::{Cursor, Pool};
@@ -561,6 +835,12 @@ fn command_probe(
     )
     .ok_or("DMA RANGE")?;
     let mut pool = Pool::new(dma_base, DMA_SLICE).ok_or("DMA POOL")?;
+    // Also guard the no-HCRST rescan path before reusing this DMA slice.
+    if regs.read(op + 4)? & 1 == 0
+        || unsafe { pci::read(controller.bus, controller.device, controller.function, 4) } & 4 != 0
+    {
+        return Err("QUIESCE FAILED");
+    }
     // Reset/halt and PCI BME=0 were verified before any allocation/initialization.
     unsafe {
         core::ptr::write_bytes(dma_base as *mut u8, 0, DMA_SLICE);
@@ -650,6 +930,10 @@ fn command_probe(
         crate::debug(&crate::cpu::hex(COMMANDS as u64));
         crate::debug(b" COMMAND_WRAP_OK EVENT_WRAP_OK\n");
         let mut host = Host {
+            bdf: controller.bdf(),
+            routed,
+            route_epoch,
+            attempted: false,
             discovery,
             regs: &regs,
             clock: &mut clock,
@@ -672,6 +956,7 @@ fn command_probe(
         };
         let keyboard = usb::enumerate(&mut host, &mut pool, dcbaa, discovery, tick)?;
         Ok(Probe {
+            attempted: host.attempted,
             keyboard,
             storage: host.storage_matches,
             readable_storage: host.readable_storage,
@@ -680,6 +965,8 @@ fn command_probe(
     if let Err(error) = result {
         crate::diagnostics::usb_failure(error);
     }
+    RESCAN_DEADLINE.store(0, core::sync::atomic::Ordering::Relaxed);
+    let stop_time = crate::timing::Span::new(controller.bdf(), "QUIESCE");
     let halted = (|| {
         let command = regs.read(op)?;
         regs.write(op, command & !0xd)?;
@@ -690,6 +977,11 @@ fn command_probe(
     }
     let disabled =
         unsafe { pci::read(controller.bus, controller.device, controller.function, 4) } & 4 == 0;
+    stop_time.finish(if !disabled {
+        "DMA STILL ENABLED"
+    } else {
+        halted.as_ref().err().copied().unwrap_or("OK")
+    });
     if halted.is_err() || !disabled {
         return Err("QUIESCE FAILED");
     }
@@ -699,6 +991,10 @@ fn command_probe(
 }
 
 struct Host<'a> {
+    bdf: u16,
+    routed: bool,
+    route_epoch: u64,
+    attempted: bool,
     discovery: bool,
     regs: &'a Registers,
     clock: &'a mut acpi::Time,
@@ -726,6 +1022,7 @@ impl Host<'_> {
         control: u32,
         slot: u8,
     ) -> Result<[u32; 4], &'static str> {
+        rescan_budget(self.clock)?;
         let address = self.command + self.producer.index * 16;
         if self.producer.index == TRBS - 2 {
             unsafe {
@@ -746,6 +1043,13 @@ impl Host<'_> {
                 [parameter as u32, 0, 0, control | self.producer.cycle],
             );
         }
+        #[cfg(feature = "diagnostics-detail")]
+        crate::diagnostics::observation(format_args!(
+            "SUBMIT CMD {} SLOT {} TRB {:016X}",
+            (control >> 10) & 63,
+            slot,
+            address
+        ));
         self.regs.write(self.doorbell, 0)?;
         let result = event_dispatch(
             self.regs,
@@ -765,13 +1069,16 @@ impl Host<'_> {
             Some(&mut self.bulk_saved),
             None,
             None,
-        )?;
-        self.producer.advance();
-        Ok(result)
+        );
+        if result.is_ok() || result == Err("COMMAND REJECTED") {
+            self.producer.advance();
+        }
+        result
     }
     fn delay(&mut self, ms: u64) -> Result<(), &'static str> {
         let end = self.clock.now()?.checked_add(ms).ok_or("CLOCK OVERFLOW")?;
         for _ in 0..5_000_000 {
+            rescan_budget(self.clock)?;
             if self.clock.now()? >= end {
                 return Ok(());
             }
@@ -781,10 +1088,11 @@ impl Host<'_> {
     }
 }
 
-fn clear_line(fb: musha_framebuffer::Framebuffer, y: usize) {
-    let y = y.saturating_mul(fb.height.saturating_sub(48).min(1100)) / 550;
-    for row in y..(y + 42).min(fb.height) {
-        for x in 24..fb.width {
+fn clear_line(fb: musha_framebuffer::Framebuffer, row: usize) {
+    let m = grid::Metrics::new(fb.width, fb.height);
+    let y = m.y(row);
+    for row in y..(y + m.line_pitch).min(fb.height) {
+        for x in m.x(grid::LABEL)..m.x(m.status_end_column()).min(fb.width) {
             unsafe {
                 fb.pixel(x, row, fb.color(12, 20, 32));
             }

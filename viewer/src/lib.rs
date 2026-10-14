@@ -90,6 +90,7 @@ pub struct Viewer {
     error: Option<Error>,
     ended: bool,
     keyboard_missing: bool,
+    bootfile_absent: bool,
     handle: Option<Handle>,
     closing: bool,
     position: u64,
@@ -124,6 +125,7 @@ impl Viewer {
             error: None,
             ended: false,
             keyboard_missing: false,
+            bootfile_absent: false,
             handle: None,
             closing: false,
             position: 0,
@@ -135,6 +137,13 @@ impl Viewer {
             clear: 0,
             line: 0,
             dirty: true,
+        }
+    }
+    /// Set only after the boot-file reader reports State::Absent, never on I/O failure.
+    pub fn bootfile_absent(&mut self) {
+        if !self.bootfile_absent {
+            self.bootfile_absent = true;
+            self.repaint();
         }
     }
     fn repaint(&mut self) {
@@ -450,6 +459,9 @@ impl Viewer {
                     } else {
                         "No supported FAT32/exFAT medium. External USB keyboard required."
                     }),
+                    View::Catalog | View::List if self.bootfile_absent => {
+                        out.write_str("AUTORUN.ELF not found in root. Starting file viewer.")
+                    }
                     View::Catalog => out.write_str("Reading file list..."),
                     View::List if self.count == 0 => {
                         out.write_str("This root directory contains no supported files.")
@@ -552,7 +564,8 @@ impl Viewer {
             self.clear += n;
             return Ok(false);
         }
-        let scale = ((w.saturating_sub(32) / 480).min(h.saturating_sub(32) / 224)).clamp(1, 4);
+        let m = musha_framebuffer::metrics::Metrics::viewer(w, h);
+        let scale = m.scale;
         let text = self.line(self.line);
         let color = if self.line == 7 && matches!(self.view, View::Error | View::Unavailable) {
             [255, 180, 110]
@@ -563,9 +576,10 @@ impl Viewer {
         } else {
             FG
         };
-        let y = 16 + self.line * 8 * scale;
-        if w > 16 && y < h {
-            ctx.text_at(text.as_str(), 16, y, color, scale)?;
+        let x = m.x(musha_framebuffer::metrics::MARGIN);
+        let y = m.y(musha_framebuffer::metrics::MARGIN + self.line);
+        if w > x && y + 8 * scale <= h {
+            ctx.text_at(text.as_str(), x, y, color, scale)?;
         }
         self.line += 1;
         if self.line == 28 {
@@ -584,6 +598,23 @@ mod tests {
     use super::*;
     use musha_api::stream::{Entry, MAX_FILE_BYTES};
     use std::vec::Vec;
+    #[test]
+    fn absent_notice_requires_explicit_result_and_preserves_errors() {
+        let mut v = Viewer::new();
+        let unavailable = v.line(7);
+        v.bootfile_absent();
+        assert_eq!(v.line(7).as_str(), unavailable.as_str());
+        v.view = View::List;
+        assert_eq!(
+            v.line(7).as_str(),
+            "AUTORUN.ELF not found in root. Starting file viewer."
+        );
+        v.view = View::Error;
+        assert!(v.line(7).as_str().starts_with("Cannot read:"));
+        let mut ordinary = Viewer::new();
+        ordinary.view = View::List;
+        assert!(!ordinary.line(7).as_str().contains("AUTORUN.ELF"));
+    }
     fn entry(name: &str, bytes: u64) -> Entry {
         let mut e = Entry {
             name: [0; 255],

@@ -1,5 +1,10 @@
 # Ryzen hardware H4 results, 2026-10-10
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 ## English
 
 Evidence: IMG_7434–IMG_7444, all 11 pages from one successful run; IMG_7432/7433 and user observation confirm left Shift E1 and A 04; Esc 29 completes the application. Current USB EFI before H5 update: SHA-256 cfb9f1584929a739475f3ce949ef1456fde4199d6840c8bf4ad00a914e77e474.

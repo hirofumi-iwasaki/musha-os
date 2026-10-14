@@ -1,5 +1,9 @@
 # Cooperative I/O runtime / 協調I/Oランタイム
 
+> Development update: [boot policy 3.0](boot-readiness-policy.md), [ABI candidates](application-abi.md), [SDK](sdk.md). A/B is static/cooperative; Ring 3 remains pending.
+> 開発更新：[起動方針3.0](boot-readiness-policy.md)・[ABI候補](application-abi.md)・[SDK](sdk.md)。Ring 3は後続です。
+
+
 ## English
 
 Implemented on 2026-10-08 as stage 4 of the [pre-hardware work plan](pre-hardware-work-plan.md). Keyboard input, application reads of the verified boot-file snapshot, lwIP timers and actual QEMU NIC traffic now progress in the same session on the boot CPU. This is still an initial diagnostic runtime: arbitrary asynchronous disk requests and an application-facing UDP socket/handle API remain unimplemented. NUC LAN initialization and physical verification are pending.

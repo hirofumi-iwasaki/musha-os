@@ -59,6 +59,9 @@ version = "0.1.0"
 [[package]]
 name = "musha-platform"
 version = "0.1.0"
+dependencies = [
+ "musha-framebuffer",
+]
 
 [[package]]
 name = "musha-viewer"

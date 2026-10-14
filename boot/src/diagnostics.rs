@@ -8,6 +8,12 @@ use musha_framebuffer::Framebuffer;
 use musha_platform::diagnostics::{Failure, Line};
 struct Panel {
     hidden: bool,
+    painted: [Line; 42],
+    paint_valid: bool,
+    paint_rows: u64,
+    omitted: u64,
+    first_failure: Option<Line>,
+    last_failure: Option<Line>,
     fb: Option<Framebuffer>,
     page: Option<[Line; 42]>,
     journal: [Line; 512],
@@ -35,6 +41,12 @@ struct Shared(UnsafeCell<Panel>);
 unsafe impl Sync for Shared {}
 static PANEL: Shared = Shared(UnsafeCell::new(Panel {
     hidden: false,
+    painted: [Line::EMPTY; 42],
+    paint_valid: false,
+    paint_rows: 0,
+    omitted: 0,
+    first_failure: None,
+    last_failure: None,
     fb: None,
     page: None,
     journal: [Line::EMPTY; 512],
@@ -65,64 +77,84 @@ fn update(f: impl FnOnce(&mut Panel)) {
     unsafe {
         let p = &mut *PANEL.0.get();
         f(p);
-        render(p);
     }
 }
-const DIAGNOSTIC_SCALE: usize = 6;
-const DIAGNOSTIC_LINE_HEIGHT: usize = 50;
+const VERSION: &str = include_str!("../../VERSION");
+fn test_name() -> &'static str {
+    if cfg!(feature = "t2-diagnostics") {
+        "T2-D1"
+    } else if cfg!(feature = "ring3-lifecycle-probe") {
+        "RING3 LIFECYCLE"
+    } else if cfg!(feature = "ring3-elf-probe") {
+        "RING3 ELF"
+    } else if cfg!(feature = "ring3-probe") {
+        "RING3"
+    } else {
+        "EXTERNAL ELF"
+    }
+}
 
 pub fn hide(hidden: bool) {
-    update(|p| p.hidden = hidden);
-}
-fn render(p: &Panel) {
-    if p.hidden {
-        return;
-    }
-    let Some(fb) = p.fb else { return };
-    let x = if fb.width >= 1200 { 800 } else { 0 };
-    let y = 24;
-    let scale = DIAGNOSTIC_SCALE;
-    let columns = (fb.width.saturating_sub(x + 12) / (6 * scale)).clamp(1, 64);
-    let capacity = (fb.height.saturating_sub(y + 24) / DIAGNOSTIC_LINE_HEIGHT).clamp(1, 42);
-    unsafe {
-        for py in y..fb.height {
-            for px in x..fb.width {
-                fb.pixel(px, py, fb.color(12, 20, 32));
-            }
+    update(|p| {
+        if p.hidden != hidden {
+            p.hidden = hidden;
+            p.paint_valid = false;
         }
-        let rows = p.page.as_ref().unwrap_or(&p.lines);
+    });
+}
+/// Explicit BSP safe point. Record updates and view selection never touch devices.
+pub fn flush() {
+    unsafe {
+        let p = &mut *PANEL.0.get();
+        if p.hidden || cfg!(feature = "diagnostics-off") {
+            return;
+        }
+        let Some(fb) = p.fb else { return };
+        let m = musha_framebuffer::metrics::Metrics::new(fb.width, fb.height);
+        let scale = m.scale;
+        let line_height = m.line_pitch;
+        let x = m.x(m.panel_column);
+        let columns = m.columns.saturating_sub(m.panel_column + 2).clamp(1, 64);
+        let capacity = m.rows.saturating_sub(m.panel_row + 2).min(42);
+        let mut display = [Line::EMPTY; 42];
         let mut row = 0;
-        for l in rows {
+        for l in p.page.as_ref().unwrap_or(&p.lines) {
             for chunk in l.as_str().as_bytes().chunks(columns) {
                 if row >= capacity {
                     break;
                 }
-                fb.text_scaled(
-                    core::str::from_utf8(chunk).unwrap_or("?"),
-                    x,
-                    y + row * DIAGNOSTIC_LINE_HEIGHT,
-                    fb.color(240, 220, 100),
-                    scale,
-                );
+                display[row] = line(format_args!(
+                    "{}",
+                    core::str::from_utf8(chunk).unwrap_or("?")
+                ));
                 row += 1;
             }
             if row >= capacity {
                 break;
             }
         }
+        for (row, value) in display.iter().enumerate().take(capacity) {
+            if p.paint_valid && p.painted[row] == *value {
+                continue;
+            }
+            let y = m.y(row + m.panel_row);
+            for py in y..(y + line_height).min(fb.height) {
+                for px in x..fb.width {
+                    fb.pixel(px, py, fb.color(12, 20, 32));
+                }
+            }
+            fb.text_scaled(value.as_str(), x, y, fb.color(240, 220, 100), scale);
+            p.paint_rows += 1;
+        }
+        p.painted = display;
+        p.paint_valid = true;
     }
 }
 pub fn start(fb: Framebuffer) {
     update(|p| {
         p.fb = Some(fb);
-        p.lines[0] = line(format_args!(
-            "{}",
-            if cfg!(feature = "t2-diagnostics") {
-                "MUSHA-OS 0.2.0 DEV T2-D1"
-            } else {
-                "MUSHA-OS 0.1.0 HARDWARE H19"
-            }
-        ));
+        p.paint_valid = false;
+        p.lines[0] = line(format_args!("MUSHA-OS {} {}", VERSION.trim(), test_name()));
     });
 }
 pub fn set(row: usize, args: fmt::Arguments<'_>) {
@@ -141,9 +173,19 @@ pub fn usb_stage(s: &str) {
 pub fn net_stage(s: &str) {
     set(7, format_args!("NET STEP {}", s));
 }
+/// Bounded failure summary independent of optional detail retention.
+pub fn failure(stage: &str, error: &str) {
+    update(|p| {
+        p.first_failure
+            .get_or_insert(line(format_args!("{}", stage)));
+        p.last_failure = Some(line(format_args!("{}", error)));
+    });
+}
 pub fn usb_failure(s: &str) {
     update(|p| {
         p.usb_fail.record(p.lines[4], line(format_args!("{}", s)));
+        p.first_failure.get_or_insert(p.lines[4]);
+        p.last_failure = Some(line(format_args!("{}", s)));
         p.lines[5] = line(format_args!("FAIL AT {}", p.usb_fail.stage.as_str()));
         p.lines[6] = line(format_args!("USB ERROR {}", p.usb_fail.error.as_str()));
     });
@@ -151,6 +193,8 @@ pub fn usb_failure(s: &str) {
 pub fn net_failure(s: &str) {
     update(|p| {
         p.net_fail.record(p.lines[7], line(format_args!("{}", s)));
+        p.first_failure.get_or_insert(p.lines[7]);
+        p.last_failure = Some(line(format_args!("{}", s)));
         p.lines[8] = line(format_args!("FAIL AT {}", p.net_fail.stage.as_str()));
         p.lines[9] = line(format_args!("NET ERROR {}", p.net_fail.error.as_str()));
     });
@@ -216,6 +260,21 @@ pub fn usb(
 pub fn snapshot() {
     unsafe {
         let p = &*PANEL.0.get();
+        crate::debug(b"MUSHA: DIAG_PAINT_ROWS=");
+        crate::debug(&crate::cpu::hex(p.paint_rows));
+        crate::debug(b" OMITTED=");
+        crate::debug(&crate::cpu::hex(p.omitted));
+        crate::debug(b"\n");
+        for (label, value) in [
+            (b"MUSHA: FIRST_FAILURE=".as_slice(), p.first_failure),
+            (b"MUSHA: LAST_FAILURE=".as_slice(), p.last_failure),
+        ] {
+            if let Some(value) = value {
+                crate::debug(label);
+                crate::debug(value.as_str().as_bytes());
+                crate::debug(b"\n");
+            }
+        }
         for l in p
             .archived
             .iter()
@@ -473,22 +532,27 @@ pub fn observation(args: fmt::Arguments<'_>) {
             p.journal[p.journal_count] = entry;
             p.journal_count += 1;
         } else {
+            p.omitted = p.omitted.saturating_add(1);
             p.journal[p.journal.len() - 1] = line(format_args!("JOURNAL LIMIT / MORE OMITTED"));
             p.journal_count = p.journal.len();
         }
     });
 }
 /// Rotate retained diagnostics after all controller work has finished. No USB access.
+#[allow(dead_code)] // On-demand detailed view; never a boot-time wait loop.
 pub fn page(index: usize) -> usize {
     let mut total = 1;
     update(|p| {
         let Some(fb) = p.fb else { return };
-        let x = if fb.width >= 1200 { 800 } else { 0 };
-        let columns = (fb.width.saturating_sub(x + 12) / (6 * DIAGNOSTIC_SCALE)).clamp(1, 64);
-        let capacity = (fb.height.saturating_sub(48) / DIAGNOSTIC_LINE_HEIGHT).clamp(2, 42) - 1;
+        let m = musha_framebuffer::metrics::Metrics::new(fb.width, fb.height);
+        let columns = m.columns.saturating_sub(m.panel_column + 2).clamp(1, 64);
+        let (session, rescan, cycle) = crate::timing::display_state();
+        let header_rows = if cycle > 0 { 2 } else { 1 };
+        let capacity = m.rows.saturating_sub(m.panel_row + 2).clamp(3, 42) - header_rows;
         let controllers = p.controller_bdfs.iter().filter(|b| **b != u16::MAX).count();
         let logs = p.journal_count.div_ceil(40);
-        let source_count = 2 + controllers + logs;
+        let timing_pages = crate::timing::count().div_ceil(40);
+        let source_count = 2 + controllers + logs + timing_pages;
         let source = |n: usize| {
             let mut rows = [Line::EMPTY; 42];
             if n == 0 {
@@ -511,6 +575,14 @@ pub fn page(index: usize) -> usize {
                 rows = p.archived[n - 2];
                 rows[1] = line(format_args!("SAVED DETAILS C{} / SUMMARY FINAL", n - 2));
                 rows[27..35].copy_from_slice(&p.lines[27..35]);
+            } else if n >= 2 + controllers + logs {
+                rows[1] = line(format_args!("PM EPOCH TIMINGS / MS / BDF FFFF = APP"));
+                let first = (n - 2 - controllers - logs) * 40;
+                for i in 0..40 {
+                    if first + i < crate::timing::count() {
+                        rows[i + 2] = crate::timing::row(first + i);
+                    }
+                }
             } else {
                 let first = (n - 2 - controllers) * 40;
                 for i in 0..40 {
@@ -546,7 +618,7 @@ pub fn page(index: usize) -> usize {
             for l in &rows[1..] {
                 for chunk in l.as_str().as_bytes().chunks(columns) {
                     if count >= first && count < first + capacity {
-                        display[1 + count - first] = line(format_args!(
+                        display[header_rows + count - first] = line(format_args!(
                             "{}",
                             core::str::from_utf8(chunk).unwrap_or("?")
                         ));
@@ -557,16 +629,80 @@ pub fn page(index: usize) -> usize {
             break;
         }
         display[0] = line(format_args!(
-            "{} {}/{}",
-            if cfg!(feature = "t2-diagnostics") {
-                "T2-D1"
-            } else {
-                "H19"
-            },
+            "T+{} SESSION {} RESCAN {} {}/{}",
+            crate::bootstate::epoch_now().unwrap_or(0) / 1000,
+            session,
+            rescan,
             index % total + 1,
             total
         ));
+        if cycle > 0 {
+            display[1] = line(format_args!("DIAGNOSTIC HOLD (no retry) cycle {}", cycle));
+        }
         p.page = Some(display);
     });
     total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn records_views_overflow_and_small_screen() {
+        let mut pixels = std::vec![0xdeadbeefu32;320*356+16];
+        let fb = Framebuffer {
+            base: pixels.as_mut_ptr() as usize,
+            bytes: 320 * 356 * 4,
+            width: 320,
+            height: 356,
+            stride: 320,
+            format: 0,
+        };
+        start(fb);
+        set(1, format_args!("CORE READY"));
+        usb_stage("RESET");
+        usb_failure("TIMEOUT");
+        for i in 0..600 {
+            observation(format_args!("EVENT {}", i));
+        }
+        assert!(pixels.iter().all(|p| *p == 0xdeadbeef));
+        unsafe {
+            let p = &*PANEL.0.get();
+            assert!(p.omitted > 0);
+            assert_eq!(p.first_failure.unwrap().as_str(), "USB STEP RESET");
+            assert_eq!(p.last_failure.unwrap().as_str(), "TIMEOUT");
+        }
+        flush();
+        let before = pixels.clone();
+        let rows = unsafe { (*PANEL.0.get()).paint_rows };
+        set(1, format_args!("CORE READY"));
+        flush();
+        assert_eq!(pixels, before);
+        assert_eq!(unsafe { (*PANEL.0.get()).paint_rows }, rows);
+        hide(true);
+        page(3);
+        set(1, format_args!("APP RUNNING"));
+        flush();
+        assert_eq!(pixels, before);
+        hide(false);
+        page(0);
+        flush();
+        assert_eq!(&pixels[320 * 356..], &[0xdeadbeef; 16]);
+        assert_eq!(
+            unsafe { (*PANEL.0.get()).first_failure.unwrap() }.as_str(),
+            "USB STEP RESET"
+        );
+        crate::timing::begin_session();
+        crate::timing::set_rescan(1);
+        crate::timing::hold_cycle(0);
+        page(0);
+        let first_evidence = unsafe { (*PANEL.0.get()).page.unwrap()[1] };
+        crate::timing::hold_cycle(2);
+        page(0);
+        let held = unsafe { (*PANEL.0.get()).page.unwrap() };
+        assert!(held[0].as_str().starts_with("T+0 SESSION 1 RESCAN 1"));
+        assert_eq!(held[1].as_str(), "DIAGNOSTIC HOLD (no retry) cycle 2");
+        assert_eq!(held[2].as_str(), first_evidence.as_str());
+        crate::timing::hold_cycle(0);
+    }
 }

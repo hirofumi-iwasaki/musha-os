@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cooperative QEMU 82574 session; optional I218 PHY probe, no I218/I219 networking.
 use crate::{BootInfo, acpi, pci};
+use musha_framebuffer::metrics as grid;
 #[cfg(feature = "i218-phy-probe")]
 mod i218;
 use core::{
@@ -346,7 +347,7 @@ impl Session {
         self.stop();
         if fb.height >= 540 {
             unsafe {
-                fb.text("NET TEST OK", 24, 516, fb.color(0, 220, 240));
+                fb.text_grid("NET TEST OK", grid::LABEL, grid::NET, fb.color(0, 220, 240));
             }
         }
     }

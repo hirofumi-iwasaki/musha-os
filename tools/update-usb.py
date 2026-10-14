@@ -35,10 +35,12 @@ def mac_identity(root):
     p=info(root); d=info(p['ParentWholeDisk'])
     if p.get('MountPoint')!=str(root) or p.get('FilesystemName')!='MS-DOS FAT32' or not p.get('WritableVolume'):
         raise ValueError('Select writable FAT32 volume root')
+    if p.get('Content') not in ('EFI', 'Microsoft Basic Data'):
+        raise ValueError('Expected FAT32 boot partition (ESP or Basic Data)')
     if d.get('Internal') is not False or d.get('BusProtocol')!='USB' or d.get('VirtualOrPhysical')!='Physical' or not d.get('WholeDisk'):
         raise ValueError('Refusing internal, virtual or non-USB disk')
     if d.get('DeviceBlockSize')!=512 or not p.get('VolumeUUID'): raise ValueError('Unknown device identity')
-    return {k:v for k,v in {'disk':d['DeviceIdentifier'],'model':d['MediaName'],'capacity':d['TotalSize'],'volume_uuid':p['VolumeUUID'],'partition_uuid':p.get('DiskUUID'),'mount':str(root)}.items()}
+    return {k:v for k,v in {'disk':d['DeviceIdentifier'],'model':d['MediaName'],'capacity':d['TotalSize'],'volume_uuid':p['VolumeUUID'],'partition_uuid':p.get('DiskUUID'),'partition_type':p['Content'],'mount':str(root)}.items()}
 
 def update(package,root,backup,apply=False,identity=None):
     root=Path(root).absolute(); backup=Path(backup).absolute()
@@ -51,9 +53,14 @@ def update(package,root,backup,apply=False,identity=None):
     if state.exists():
         old=json.loads(state.read_text())
         if old.get('layout_version')!=manifest['layout_version']: raise ValueError('Installed layout incompatible')
+    # Store the verified manifest itself alongside its managed payload.
+    payload=dict(payload, **{'update-manifest.json':json_bytes(manifest)})
+    expected={n:hashlib.sha256(b).hexdigest() for n,b in payload.items()}
+    retired={n:safe_path(root,n) for n in manifest.get('retired_files',[])}
+    removed=[n for n,p in retired.items() if p.exists()]
     targets={name:safe_path(root,name) for name in payload}
-    changed=[n for n,d in targets.items() if not d.exists() or digest(d)!=manifest['files'][n]['sha256']]
-    plan={'version':manifest['version'],'layout_version':1,'changed':changed,'skipped':[n for n in payload if n not in changed], 'completed':[], 'applied':False}
+    changed=[n for n,d in targets.items() if not d.exists() or digest(d)!=expected[n]]
+    plan={'version':manifest['version'],'layout_version':1,'changed':changed,'skipped':[n for n in payload if n not in changed], 'completed':[], 'removed':removed, 'removed_completed':[], 'verified-files':{}, 'applied':False}
     before=identity(root) if identity else None
     plan['target']=before
     if identity:
@@ -61,16 +68,29 @@ def update(package,root,backup,apply=False,identity=None):
         while not ancestor.exists(): ancestor=ancestor.parent
         if ancestor.stat().st_dev==root.stat().st_dev: raise ValueError('Backup must be on the host, not the USB volume')
     if not apply: return plan
-    if not changed: return plan
+    def verify():
+        for n,d in targets.items():
+            if not safe_path(root,n).is_file() or digest(d)!=expected[n]:
+                raise ValueError('Managed file readback mismatch: '+n)
+            plan['verified-files'][n]={'bytes':d.stat().st_size,'sha256':expected[n]}
+        for n in retired:
+            if safe_path(root,n).exists(): raise ValueError('Retired file remains: '+n)
+        plan['verified-absent']=list(retired)
+    if not changed and not removed:
+        verify()
+        return plan
     if backup.exists(): raise FileExistsError(backup)
     if shutil.disk_usage(root).free < sum(len(payload[n]) for n in changed)+1024**2: raise ValueError('Insufficient free space')
     backup.mkdir(parents=True)
     # Save every old file before making the first destination change.
-    for name in changed+(['musha-install.json'] if state.exists() else []):
+    for name in changed+removed+(['musha-install.json'] if state.exists() else []):
         d=safe_path(root,name)
         if d.exists():
             b=backup/name; b.parent.mkdir(parents=True,exist_ok=True); shutil.copyfile(d,b)
             if digest(b)!=digest(d): raise ValueError('Backup mismatch')
+            with b.open('rb') as f: os.fsync(f.fileno())
+    plan['backups']={n:{'bytes':(backup/n).stat().st_size,'sha256':digest(backup/n)}
+                     for n in changed+removed+(['musha-install.json'] if state.exists() else []) if (backup/n).is_file()}
     report=backup/'update-result.json'
     def save(): report.write_bytes(json_bytes(plan))
     save()
@@ -81,13 +101,21 @@ def update(package,root,backup,apply=False,identity=None):
             fd,tmp=tempfile.mkstemp(prefix='.musha-update-',dir=d.parent)
             try:
                 with os.fdopen(fd,'wb') as f: f.write(payload[name]); f.flush(); os.fsync(f.fileno())
-                if digest(Path(tmp))!=manifest['files'][name]['sha256']: raise ValueError('Staging mismatch')
+                if digest(Path(tmp))!=expected[name]: raise ValueError('Staging mismatch')
                 safe_path(root,name)
                 os.replace(tmp,d)
-                if digest(d)!=manifest['files'][name]['sha256']: raise ValueError('Readback mismatch')
+                if digest(d)!=expected[name]: raise ValueError('Readback mismatch')
             finally:
                 if os.path.exists(tmp): os.unlink(tmp)
             plan['completed'].append(name); save()
+        for name in removed:
+            if identity and identity(root)!=before: raise ValueError('Device identity changed')
+            d=safe_path(root,name)
+            if not d.is_file() or digest(d)!=plan['backups'][name]['sha256']:
+                raise ValueError('Retired file changed after backup')
+            d.unlink()
+            plan['removed_completed'].append(name); save()
+        verify()
         state.write_bytes(json_bytes({'layout_version':1,'version':manifest['version'],'commit':manifest['commit']}))
         with state.open('rb') as f: os.fsync(f.fileno())
         if hasattr(os,'sync'): os.sync()

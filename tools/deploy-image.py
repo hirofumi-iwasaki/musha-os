@@ -39,9 +39,9 @@ def inspect(f, size):
     if arrays[0]!=arrays[1] or headers[0][56:72]!=headers[1][56:72]: raise ValueError('GPT copies disagree')
     a=arrays[0]; first,last=struct.unpack_from('<QQ',a,32)
     import uuid
-    if a[:16]!=uuid.UUID('c12a7328-f81f-11d2-ba4b-00a0c93ec93b').bytes_le or not any(a[16:32]) or any(a[128:]):
-        raise ValueError('Expected exactly one ESP')
-    if first!=2048 or last!=MIN//S-34 or last>n-34: raise ValueError('Unsupported fixed ESP layout')
+    if a[:16] not in [uuid.UUID(g).bytes_le for g in ('c12a7328-f81f-11d2-ba4b-00a0c93ec93b', 'ebd0a0a2-b9e5-4433-87c0-68b6b72699c7')] or not any(a[16:32]) or any(a[128:]):
+        raise ValueError('Expected exactly one FAT32 boot partition (ESP or Basic Data)')
+    if first!=2048 or last!=MIN//S-34 or last>n-34: raise ValueError('Unsupported fixed FAT32 boot partition layout')
     boot=read_at(f,first*S,S)
     if boot[510:]!=b'\x55\xaa' or struct.unpack_from('<H',boot,11)[0]!=S or boot[13]!=1 or boot[16]!=2 or struct.unpack_from('<H',boot,14)[0]!=32:
         raise ValueError('Unsupported FAT32 geometry')
@@ -74,8 +74,8 @@ def inspect(f, size):
         return bytes(b[:length])
     root=struct.unpack_from('<I',boot,44)[0]
     ec,_=find(root,b'EFI        '); bc,_=find(ec,b'BOOT       ')
-    efi=file(*find(bc,b'BOOTX64 EFI')); text=file(*find(root,b'MUSHA   TXT'))
-    if text!=b'Hello Musha-OS!\n': raise ValueError('MUSHA.TXT mismatch')
+    efi=file(*find(bc,b'BOOTX64 EFI')); text=file(*find(root,b'DIAGNOSETXT'))
+    if text!=b'Hello Musha-OS!\n': raise ValueError('DIAGNOSE.TXT mismatch')
     return {'first':first,'last':last,'efi_sha256':hashlib.sha256(efi).hexdigest(),'efi':efi,'headers':headers,'array':a,'mbr':m}
 
 def adjust(source, output, capacity, sector_size=512, apply=False):

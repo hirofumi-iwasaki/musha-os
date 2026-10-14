@@ -1,0 +1,7 @@
+[workspace]
+members=["musha-sys","musha"]
+resolver="2"
+[profile.dev]
+panic="abort"
+[profile.release]
+panic="abort"

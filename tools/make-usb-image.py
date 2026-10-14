@@ -8,24 +8,29 @@ import pathlib
 import struct
 import uuid
 import zlib
+from distribution import usb_readme
 
 SECTOR = 512
 ENTRIES = 128
 ENTRY_SIZE = 128
 ARRAY_SECTORS = ENTRIES * ENTRY_SIZE // SECTOR
 ESP_GUID = uuid.UUID('c12a7328-f81f-11d2-ba4b-00a0c93ec93b').bytes_le
+BASIC_DATA_GUID = uuid.UUID('ebd0a0a2-b9e5-4433-87c0-68b6b72699c7').bytes_le
+PARTITION_TYPES = {'basic-data': BASIC_DATA_GUID, 'esp': ESP_GUID}
 PAYLOAD = b'Hello Musha-OS!\n'
 
-def gpt_tables(blocks, first, last, seed):
+def gpt_tables(blocks, first, last, seed, partition_type='basic-data'):
     """Return MBR, primary/backup headers and the identical entry arrays."""
+    if partition_type not in PARTITION_TYPES:
+        raise ValueError('Unsupported partition type')
     namespace = uuid.UUID('5fce2fd0-1e96-4cbe-8eae-b0a986b4fa18')
     disk_guid = uuid.uuid5(namespace, 'disk:' + seed).bytes_le
-    part_guid = uuid.uuid5(namespace, 'esp:' + seed).bytes_le
+    part_guid = uuid.uuid5(namespace, partition_type + ':' + seed).bytes_le
     array = bytearray(ENTRIES * ENTRY_SIZE)
-    array[:16] = ESP_GUID
+    array[:16] = PARTITION_TYPES[partition_type]
     array[16:32] = part_guid
     struct.pack_into('<QQQ', array, 32, first, last, 0)
-    name = 'Musha-OS ESP'.encode('utf-16le')
+    name = 'Musha-OS'.encode('utf-16le')
     array[56:56 + len(name)] = name
     array_crc = zlib.crc32(array)
     def header(current, other, array_lba):
@@ -44,7 +49,7 @@ def gpt_tables(blocks, first, last, seed):
     mbr[510:512] = b'\x55\xaa'
     return mbr, header(1, blocks - 1, 2), header(blocks - 1, 1, blocks - 1 - ARRAY_SECTORS), array
 
-def create(output, efi, size_mib=64, size_bytes=None):
+def create(output, efi, size_mib=64, size_bytes=None, partition_type='basic-data'):
     source = pathlib.Path(efi)
     # Read and validate input before creating any output. Limit allocation size.
     length = source.stat().st_size
@@ -63,6 +68,7 @@ def create(output, efi, size_mib=64, size_bytes=None):
     image_bytes = size_mib * 1024 * 1024 if size_bytes is None else size_bytes
     if not 64 * 1024 * 1024 <= image_bytes <= 128 * 1024**3 or image_bytes % SECTOR:
         raise ValueError('Image size must be 64MiB–128GiB and a multiple of 512 bytes')
+    readme = usb_readme((pathlib.Path(__file__).resolve().parent.parent/'VERSION').read_text().strip())
     blocks = image_bytes // SECTOR
     first, last = 2048, blocks - ARRAY_SECTORS - 2
     total = last - first + 1
@@ -83,7 +89,9 @@ def create(output, efi, size_mib=64, size_bytes=None):
     data_start = first + 32 + 2 * fat_sectors
     efi_count = (len(executable) + cluster_bytes - 1) // cluster_bytes
     file_start, text_cluster = 5, 5 + efi_count
-    if text_cluster >= clusters + 2:
+    readme_start = text_cluster + 1
+    readme_count = (len(readme) + cluster_bytes - 1) // cluster_bytes
+    if readme_start + readme_count > clusters + 2:
         raise ValueError('EFI input does not fit')
     fat = bytearray(fat_sectors * SECTOR)
     def set_fat(cluster, value):
@@ -93,6 +101,8 @@ def create(output, efi, size_mib=64, size_bytes=None):
         set_fat(cluster, value)
     for cluster in range(file_start, text_cluster):
         set_fat(cluster, cluster + 1 if cluster + 1 < text_cluster else 0x0fffffff)
+    for cluster in range(readme_start, readme_start + readme_count):
+        set_fat(cluster, cluster + 1 if cluster + 1 < readme_start + readme_count else 0x0fffffff)
     def entry(name, attr, cluster, length=0):
         result = bytearray(32)
         result[:11] = name
@@ -102,7 +112,8 @@ def create(output, efi, size_mib=64, size_bytes=None):
         return result
     root = bytearray(SECTOR)
     root[:32] = entry(b'EFI        ', 0x10, 3)
-    root[32:64] = entry(b'MUSHA   TXT', 0x20, text_cluster, len(PAYLOAD))
+    root[32:64] = entry(b'DIAGNOSETXT', 0x20, text_cluster, len(PAYLOAD))
+    root[64:96] = entry(b'README  TXT', 0x20, readme_start, len(readme))
     def directory(cluster, parent, child):
         result = bytearray(SECTOR)
         result[:32] = entry(b'.          ', 0x10, cluster)
@@ -125,7 +136,7 @@ def create(output, efi, size_mib=64, size_bytes=None):
     struct.pack_into('<III', info, 484, 0x61417272, 0xffffffff, 0xffffffff)
     struct.pack_into('<I', info, 508, 0xaa550000)
     seed = hashlib.sha256(executable).hexdigest() + ':' + str(image_bytes)
-    mbr, primary, backup, array = gpt_tables(blocks, first, last, seed)
+    mbr, primary, backup, array = gpt_tables(blocks, first, last, seed, partition_type)
     # Exclusive creation refuses existing files, symlinks and device paths.
     with pathlib.Path(output).open('xb') as image:
         image.truncate(blocks * SECTOR)
@@ -141,17 +152,19 @@ def create(output, efi, size_mib=64, size_bytes=None):
         write(data_start + 2 * spc, directory(4, 3, entry(b'BOOTX64 EFI', 0x20, file_start, len(executable))))
         write(data_start + (file_start - 2) * spc, executable.ljust(efi_count * cluster_bytes, b'\0'))
         write(data_start + (text_cluster - 2) * spc, PAYLOAD.ljust(SECTOR, b'\0'))
+        write(data_start + (readme_start - 2) * spc, readme.ljust(readme_count * cluster_bytes, b'\0'))
     return pathlib.Path(output)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output')
     parser.add_argument('--efi', default='out/esp/EFI/BOOT/BOOTX64.EFI')
+    parser.add_argument('--partition-type', choices=PARTITION_TYPES, default='basic-data')
     sizes = parser.add_mutually_exclusive_group()
     sizes.add_argument('--size-mib', type=int, default=64)
     sizes.add_argument('--size-bytes', type=int, help='Exact physical medium capacity; multiple of 512')
     args = parser.parse_args()
-    path = create(args.output, args.efi, args.size_mib, args.size_bytes)
+    path = create(args.output, args.efi, args.size_mib, args.size_bytes, args.partition_type)
     digest = hashlib.sha256()
     with path.open('rb') as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b''):

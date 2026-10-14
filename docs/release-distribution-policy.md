@@ -76,6 +76,22 @@ GPTと起動用FAT32を維持し、配布イメージは媒体の公称容量で
 
 転送前イメージと容量調整後の媒体はGPT部分が意図的に異なる。検証は、その違いを考慮して、payloadの読み戻し、調整後メタデータの独立検査、変更禁止領域の不変性で行う。初回導入のたびに全空き領域を読み書きすることは既定にしない。F3などの全容量検査は別の媒体健全性試験である。
 
+### 4.4 パーティション種別：Basic Dataを採用（v0.3.0、2026-10-13決定）
+
+これまでの起動用FAT32はGPTの種別をEFI System Partition（ESP）としてきた。macOSのFinderとWindowsのエクスプローラーはESPを自動マウントしないため、利用者が`AUTORUN.ELF`や自分のファイルを置けない。v0.3.0以降、**起動用FAT32の種別はMicrosoft Basic Data（`EBD0A0A2-B9E5-4433-87C0-68B6B72699C7`）**とし、単一パーティション構成を維持する。UEFIのリムーバブル媒体からの起動は`\EFI\BOOT\BOOTX64.EFI`がFATで見つかれば足り、ESPの種別GUIDを要求しない。
+
+- OS側のFAT32探索はGPTのBasic DataとESPの両方を受け入れ、FAT32候補がちょうど一つであることを要求する。既存のESP構成の媒体（Mac・Ryzen・NUC5で使用中の専用SanDisk）は引き続き起動できる。候補が複数ある場合は従来どおり拒否し、「安易に緩めない」原則を保つ。exFATデータ媒体の探索（Basic Data）と同じ媒体にFAT32とexFATが同居する構成は対象外のままとする。
+- イメージ生成（`make-usb-image.py`）はBasic Dataを既定にし、互換試験のためESPも選べるようにする。配備（`deploy-image.py`）と通常更新（`update-usb.py`）は両種別を受け入れ、種別の書換えは行わない。
+- 本決定は実機3機（NUC5・MacBook Pro 2018・Ryzen機）でBasic Data媒体からの起動を確認してから公開資料に反映する。既存ESP媒体については引き続き手動マウントが必要と案内する。
+
+実装上の候補はESPとBasic Dataの合計で数え、BPB検証前に一つを要求する。既存のGPT検証は緩めない。
+各媒体ではexFAT探索を先に行い、Unsupported時のみFAT32へ進む。最初に利用可能な媒体を保持し、
+AUTORUN.ELFの有無で媒体を乗り換えない。有効なexFATとFAT32が同居する対象外構成では、
+GPTのエントリー順にかかわらずexFATが選ばれ、FAT32単独探索は複数候補を拒否する。
+2026-10-14：候補9f8d999のBasic Data媒体からNUC5・Ryzen・MacBook Pro 2018の起動を確認
+（IMG_7647／7648／7650、[実機受入記録](hardware-acceptance-0.3.0.md)）。当該3構成の起動確認であり、
+公開受入全体の完了や全機種互換性を意味しない。ローカル証拠は[Basic Data検証記録](basic-data-validation.md)。
+
 ## 5. 通常更新：ファイルだけを変更する
 
 既存のGPT/FAT32、データ領域、ユーザーファイルを保持し、配布manifestで指定した変更ファイルだけを更新する。内容が同じファイルは省略する。通常更新ではディスクイメージを作らず、媒体全容量も走査しない。
@@ -96,7 +112,75 @@ GPTと起動用FAT32を維持し、配布イメージは媒体の公称容量で
 
 Rust・UEFI target・依存はリポジトリの固定設定とlockfileを尊重する。ランナーやClang、QEMU、firmwareの版・識別情報も記録する。既存試験を落としてビルドを通す変更は行わない。
 
-正式候補は固定コミットとcleanなソースから生成する。未コミット変更を含む成果物はプレビューと明記し、正式候補へ昇格させない。検証済みEFIを受け取ってパッケージ化する経路を設け、実機確認後の公開時には再ビルドしない。
+正式候補は固定コミットとcleanなソースから生成する。未コミット変更を含む成果物はプレビューと明記し、正式候補へ昇格させない。検証済みEFIを受け取ってパッケージ化する経路を設け、方式Aでは実機確認後の文書コミットを同条件で再ビルドし、以下の同等性検査を必須とする。
+
+### 6.1 Reproducible build conditions and tag provenance / 再現ビルド条件とタグの来歴
+
+Procedure A is adopted after the two byte-identical local builds described in
+[development instructions](development.md). Use the committed UEFI `/Brepro` +
+`/debug:none` configuration and identical source/build inputs and toolchain.
+A documentation-only successor may become the tag target **only after a clean
+rebuild from that final commit is byte-identical to the hardware-accepted EFI**.
+Record both source commits, both hashes, the environment and comparison evidence.
+Generate the final manifest and packages from the final commit/rebuild; the tag
+must still equal the build-manifest source commit. Do not relabel an old manifest
+or bypass existing source checks. Any mismatch stops publication for investigation
+and owner decision. Current local reproducibility does not establish future final
+commit equivalence or hardware acceptance. Published tags/binaries remain fixed.
+
+[開発手順](development.md)に記録したローカル2回のバイト一致により方式Aを採用します。
+コミット済みUEFI設定 `/Brepro` + `/debug:none` と同一のビルド入力・ツール版を用います。
+**文書のみの後続コミットは、その最終コミットのクリーン再ビルドが実機受入済みEFIと
+バイト一致する場合だけタグ対象にできます。** 両ソースコミット・両ハッシュ・環境・比較証拠を
+残し、最終manifestと配布物は最終コミット／再ビルドから生成します。
+タグ＝build-manifestのソースコミットの規則は維持し、旧manifestの来歴の付替えや
+既存検査の迂回は行いません。不一致なら公開を停止して原因調査・所有者判断へ戻します。
+今回のローカル一致は将来の最終文書コミットの一致や実機受入の証明ではありません。
+公開済みタグ・バイナリーは固定します。
+
+### 6.2 Owner clarification: comparison boundaries (2026-10-14)
+
+For two clean builds of the **same commit**, require identical EFI and all five
+distribution archives, with matching manifests/checksums under the same recorded
+toolchain, environment and packaging inputs. Record differences; do not silently
+normalize existing output or declare byte equality using a payload-only comparison.
+
+For an approved **documentation-only successor**, require identical EFI and
+runtime payload (all managed USB content except generated provenance manifests,
+plus the SDK Hello ELF). Regenerate packages with truthful final-commit provenance.
+Compare extracted members: only approved documentation, source-commit provenance
+and their derived manifests/checksums may differ. Record both commits, archive and
+member hashes, approved paths and reasons; any executable/data difference or
+unexplained metadata difference stops publication. The final tag equals the final
+build-manifest source commit. No package format change is authorized by this rule.
+
+Publication consists of five archives (initial image, file update, C SDK,
+deployment tools, complete tar.gz), build-manifest.json and SHA256SUMS: seven
+uploaded files. EFI is included inside the archives, not a standalone asset.
+Deployment ZIP generation uses sorted member names, the fixed ZIP timestamp
+1980-01-01 00:00:00, Unix regular-file mode 0644 and DEFLATE, independent of
+source/copy mtimes and permissions. File paths and contents are unchanged.
+The whole-package reproduction gate remains unverified until stage 3.
+
+### 6.2 所有者による照合範囲の明確化（2026-10-14）
+
+**同一コミット**のクリーンビルド2回は、同じ記録済みツール・環境・梱包入力のもと、
+EFI・5配布アーカイブ・manifest・チェックサムの一致を要求します。不一致は記録し、
+生成後の無断正規化やpayloadだけの比較で全バイト一致と扱ってはいけません。
+
+承認済みの**文書のみの後続コミット**ではEFIと実行用payload（生成来歴manifestを除く
+USB管理ファイル一式、およびSDK Hello ELF）の一致を要求します。最終コミットの正しい
+来歴で再梱包し、展開メンバー単位で比較します。承認した文書・ソースコミット来歴・
+それらから派生するmanifestとチェックサムだけ変更を認めます。両コミット、アーカイブ・
+各メンバーのハッシュ、許可パスと理由を記録し、実行コード・データの差分や説明できない
+メタデータ差分があれば公開を停止します。タグは最終build-manifestのソースコミットと
+一致させます。この規則は配布形式の変更を許可するものではありません。
+
+公開は5アーカイブ（初回イメージ・更新ZIP・C SDK・配備ツール・一式tar.gz）と
+build-manifest.json・SHA256SUMSの計7ファイル。EFIはアーカイブ内に含めます。
+deployment ZIPはメンバー名順、固定ZIP日時1980-01-01 00:00:00、Unix通常ファイル
+0644、DEFLATEで生成し、入力やコピー先の更新時刻・権限へ依存させません。
+配置パスと内容は変更しません。全配布物の再現性ゲートは段階3の再検証まで未確認です。
 
 ## 7. GitHub ActionsからReleaseへ
 
@@ -178,3 +262,42 @@ GitHubへの添付が承認・完了するまでは、新しいダウンロー�
 [G1] [GitHub Actions：起動イベント](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)  
 [G2] [GitHub CLI：gh release create](https://cli.github.com/manual/gh_release_create)  
 [G3] [GitHub：Immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
+
+## Managed marker migration (2026-10-14) / 管理マーカーの移行
+
+English: the GPT/FAT32 disk layout remains **layout_version 1**. An update
+package containing the new `DIAGNOSE.TXT` uses **manifest schema 2** and
+`retired_files: ["MUSHA.TXT"]`. This is a file contract change, not a partition
+migration. The new updater accepts schema 1 without removals and schema 2
+with this exact retirement list and the replacement marker. Old schema-1-only
+tools reject schema 2; use the matching deployment archive. Unknown layouts,
+arbitrary retirement names, path aliases, symlinks and payload/removal overlap
+are rejected before writes. Existing layout-1 media (including installations
+without state metadata) need no format change.
+
+Dry-run lists `changed` and `removed`. Apply backs up all replaced and retired
+files on the host, checks each backup, atomically replaces changed payloads,
+then removes the retired marker. An edited old marker is preserved in the
+backup too. Unmanaged files, including `AUTORUN.ELF`, are untouched. Interrupted
+updates are not automatically rolled back: retain the backup and update report.
+The verified `update-manifest.json` is installed; `verified-files` records the
+hash and size of every payload and that manifest, and `verified-absent` records
+the retired name. Unchanged files are read for verification but never replaced.
+No whole-medium image generation, write or hash is part of an update.
+
+日本語：GPT/FAT32のディスク構成は **layout_version 1** のままです。
+`DIAGNOSE.TXT` を含む更新ZIPは **manifest schema 2** と
+`retired_files: ["MUSHA.TXT"]` を使用します。パーティション移行ではなく
+管理ファイル契約の変更です。新ツールは削除なしのschema 1と、正確な廃止名一覧・
+置換先を持つschema 2を受け付けます。旧ツールはschema 2を拒否するため、同梱の
+配備ツールを使用してください。未知のレイアウト、任意の削除名、大小文字別名、
+symlink、更新対象と削除対象の重複は書込み前に拒否します。
+管理状態ファイルのない既存媒体も、既存EFIがあるlayout 1として扱います。
+
+dry-runは変更と削除予定を表示します。applyは全置換・廃止ファイルをホストへ
+退避・照合してから、変更ファイルを一時ファイル経由で置換し、旧マーカーを削除します。
+編集済み旧マーカーも退避します。`AUTORUN.ELF` 等の管理対象外ファイルは保持します。
+中断時は自動復旧しないため、退避と更新記録を保持してください。
+`update-manifest.json` 自体も配置し、`verified-files` に全管理ファイルとmanifestの
+長さ・SHA-256、`verified-absent` に旧名不在を記録します。同一内容は照合のみで
+差し替えません。通常更新でUSB全容量の像生成・書込み・ハッシュ計算は行いません。

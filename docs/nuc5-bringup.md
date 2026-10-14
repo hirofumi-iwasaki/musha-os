@@ -2,14 +2,19 @@
 
 ## English
 
+### Current v0.3.0 boot display
+
+Boot screens distinguish OS startup from the SDK example: before ExitBootServices, `Musha-OS <VERSION>  starting...`; after arena initialization, `Musha-OS <VERSION>  runtime` and `CORE READY`; device enumeration adds `DEVICE DISCOVERY` on the left. VERSION is embedded from the repository file. The external console heading is `AUTORUN.ELF  (Ring 3)`. `Hello Musha-OS!` is SDK sample output only. When the boot-file reader explicitly reports absence, the viewer list status says `AUTORUN.ELF not found in root. Starting file viewer.`; unreadable media keep the existing error and rejected files still halt.
+
+The earlier preparation and validation records below remain historical. Current hardware acceptance is tracked separately in [hardware acceptance](hardware-acceptance-0.3.0.md).
+
 Use the [hardware diagnostic panel](hardware-diagnostics.md) and copy the [test record template](hardware-test-record-template.md) for each configuration. Record image and EFI SHA-256, exact USB capacity, firmware, RAM, ports, and photographs. NUC5 LAN currently reports an unsupported driver; networking is not a completed hardware test.
 
 ### Hardware secured
 
 The user has reported securing a NUC5 and a 32GB USB drive.
-The exact model, RAM capacity, firmware version, and USB keyboard model are not yet recorded.
 The oldest reference is NUC5i5RYH / RYK (NUC5i5RYB board).
-No hardware test results are available yet.
+For NUC5 results, see [hardware acceptance](hardware-acceptance-0.3.0.md).
 
 ### Boot preparation
 
@@ -29,7 +34,7 @@ Writing to the internal SSD is not implemented.
 No RAM or storage test rewrites the entire capacity of the 32GB USB drive.
 Integrated UEFI-bootable GPT/FAT32 image generation is implemented; see [image instructions](usb-image.md). A test FAT32 image generator also exists.
 Our own USB Mass Storage capacity and first / last sector reads are implemented.
-Reading MUSHA.TXT from the root of MBR / superfloppy FAT32 is implemented.
+Reading DIAGNOSE.TXT from the root of MBR / superfloppy FAT32 is implemented.
 GPT image reads are implemented; the initial [snapshot file API](file-api.md) is implemented; on-demand disk access remains unsupported.
 The final acceptance requirement of booting the same USB image in QEMU / NUC5 / NUC8 has not been met.
 
@@ -37,7 +42,7 @@ On successful storage diagnostics, screens at least 444 pixels high display USB 
 All initially discovered USB storage devices are probed before keyboard polling begins. Port order no longer requires ending keyboard input to start storage diagnostics.
 Reads from this physical USB drive have not been validated. See [supported scope](usb-storage.md).
 
-To check FAT32, place MUSHA.TXT of at most 4096 bytes in the root of supported USB media.
+To check FAT32, place DIAGNOSE.TXT of at most 4096 bytes in the root of supported USB media.
 Initially use a single line containing Hello Musha-OS!.
 Screens at least 476 pixels high display FAT32 READ OK.
 See [supported formats and limitations](fat32.md).
@@ -56,6 +61,12 @@ QEMU success alone does not establish support for hardware-specific USB routing 
 
 ## 日本語
 
+### 現在のv0.3.0起動表示
+
+起動表示はSDKサンプルと区別します。ExitBootServices前は `Musha-OS <VERSION>  starting...`、arena初期化後は `Musha-OS <VERSION>  runtime` と `CORE READY`、機器探索開始時は左列に `DEVICE DISCOVERY` を表示します。版はリポジトリのVERSIONを埋め込みます。外部アプリの見出しは `AUTORUN.ELF  (Ring 3)` で、`Hello Musha-OS!` はSDKサンプルの出力専用です。起動ファイルの不在が確定した場合だけ、ファイラー一覧の状態行に `AUTORUN.ELF not found in root. Starting file viewer.` を表示します。媒体を読めない場合の文言とrejected時の停止は変更しません。
+
+以下の過去の準備・検証記録は当時の内容を保持しています。今回の受入は[実機受入](hardware-acceptance-0.3.0.md)に分けて記録します。
+
 [実機診断パネル](hardware-diagnostics.md)を確認し、構成ごとに[試験記録様式](hardware-test-record-template.md)をコピーする。imageとEFIのSHA-256、USBの正確な容量、firmware、RAM、ポート、写真を記録する。NUC5 LANは現在driver未対応表示となり、実機通信試験は完了扱いにしない。
 
 **NUC5実機試験の準備**
@@ -63,9 +74,8 @@ QEMU success alone does not establish support for hardware-specific USB routing 
 ### 確保済み
 
 利用者からNUC5機と32GB USBメモリの確保報告あり。
-正確な型番、RAM容量、ファームウェア版、USBキーボード型番は未記録。
 最古リファレンスはNUC5i5RYH / RYK (NUC5i5RYB基板)。
-実機試験結果はまだない。
+NUC5 の結果は[実機受入](hardware-acceptance-0.3.0.md)を参照してください。
 
 ### 起動の用意
 
@@ -84,7 +94,7 @@ QEMU success alone does not establish support for hardware-specific USB routing 
 内部SSDへの書込み処理は未実装。USB32GBの容量全体をRAMやストレージ試験で
 書き換える処理もない。UEFI起動用の統合GPT/FAT32イメージ生成は実装済み。[生成手順](usb-image.md)を参照。試験用FAT32 imageの生成ツールもある。
 独自USB Mass Storageの容量・先頭 / 末尾セクタ読出しは実装済み。
-MBR / superfloppy形式のFAT32で、ルートのMUSHA.TXT読出しを実装済み。
+MBR / superfloppy形式のFAT32で、ルートのDIAGNOSE.TXT読出しを実装済み。
 GPTイメージ読出しは実装済み。初期の[snapshot file API](file-api.md)は実装済み。オンデマンド媒体アクセスは未対応。
 同一USBイメージでQEMU / NUC5 / NUC8を起動する最終合格条件は未達。
 
@@ -92,7 +102,7 @@ GPTイメージ読出しは実装済み。初期の[snapshot file API](file-api.
 初期検出したUSBストレージの診断はkeyboard polling開始前に行う。ポート順によってEsc終了までストレージ診断を待つ構成ではなくなった。
 この実物USBでの読出しはまだ検証していない。[対応範囲](usb-storage.md)を参照。
 
-FAT32の確認には、対応形式のUSBルートへ4096byte以下のMUSHA.TXTを配置する。
+FAT32の確認には、対応形式のUSBルートへ4096byte以下のDIAGNOSE.TXTを配置する。
 内容は最初はHello Musha-OS!の一行にする。高さ476pixel以上ならFAT32 READ OKを表示する。
 [対応形式と制約](fat32.md)を参照。既存USBのpartition方式を未確認のまま変更しない。
 

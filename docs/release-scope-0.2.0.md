@@ -1,5 +1,10 @@
 # v0.2.0 開発方針と公開条件
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 > 2026-10-12: 次版の配布は[配布方針](release-distribution-policy.md)と
 > [配備手順](distribution-usage.md)に従います。初回用64 MiB像と更新ZIPを分離し、
 > 通常更新では全媒体の生成・転送・ハッシュ走査を行いません。

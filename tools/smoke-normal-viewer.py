@@ -8,6 +8,7 @@ GOP mode and source revision. This checks displayed pixels, not internal DMA sta
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import shutil
@@ -22,11 +23,18 @@ p.add_argument('--data-image', required=True, type=Path)
 p.add_argument('--reference', required=True, type=Path)
 p.add_argument('--output', required=True, type=Path)
 p.add_argument('--qemu', default='qemu-system-x86_64')
+p.add_argument('--resolution')
+p.add_argument('--bootfile-absent', action='store_true', help='Derive the normal State::Absent list status from probe reference pixels')
 a = p.parse_args()
 for path in (a.boot_image, a.data_image, a.reference/'list.ppm', a.reference/'text.ppm'):
     if not path.is_file(): p.error(f'Expected regular file: {path}')
 a.output.mkdir(parents=True, exist_ok=False)
 out = a.output.resolve()
+if a.bootfile_absent:
+    spec = importlib.util.spec_from_file_location('viewer_reference', Path(__file__).with_name('viewer-reference.py'))
+    reference = importlib.util.module_from_spec(spec); spec.loader.exec_module(reference)
+    reference.derive(a.reference, out/'expected')
+    a.reference = out/'expected'
 f = a.firmware_dir.resolve()
 shutil.copyfile(f/'edk2-i386-vars.fd', out/'vars.fd')
 qmp = Path(__file__).resolve().parent.parent/'out'/('nv-'+hashlib.sha256(str(out).encode()).hexdigest()[:10]+'.sock')
@@ -43,6 +51,8 @@ cmd = [a.qemu, '-machine', 'q35,accel=tcg', '-m', '256M', '-netdev', 'user,id=n'
        '-device', 'usb-kbd,bus=x.0', '-vga', 'std', '-display', 'none',
        '-debugcon', f'file:{log}', '-global', 'isa-debugcon.iobase=0xe9',
        '-qmp', f'unix:{qmp},server=on,wait=off', '-no-reboot']
+if a.resolution:
+    w,h=map(int,a.resolution.split('x'));cmd+=['-global',f'VGA.xres={w}','-global',f'VGA.yres={h}','-global','VGA.vgamem_mb=64']
 with (out/'qemu.log').open('w') as err:
     proc = subprocess.Popen(cmd, stdout=err, stderr=err)
     try:

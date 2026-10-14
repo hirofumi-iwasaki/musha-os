@@ -2,6 +2,70 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::{env, path::PathBuf, process::Command};
 fn main() {
+    let probe = env::var_os("CARGO_FEATURE_RING3_PROBE").is_some();
+    let embedded = env::var_os("CARGO_FEATURE_RING3_ELF_PROBE").is_some();
+    let external = !probe || env::var_os("CARGO_FEATURE_EXTERNAL_ELF_PROBE").is_some();
+    for (name, enabled) in [
+        ("external_app", external),
+        ("elf_app", external || embedded),
+        ("c1_probe", probe && !embedded && !external),
+    ] {
+        println!("cargo:rustc-check-cfg=cfg({name})");
+        if enabled {
+            println!("cargo:rustc-cfg={name}");
+        }
+    }
+    assert!(
+        !(env::var_os("CARGO_FEATURE_EXTERNAL_ELF_PROBE").is_some()
+            && env::var_os("CARGO_FEATURE_RING3_ELF_PROBE").is_some()),
+        "external and embedded ELF probes are mutually exclusive"
+    );
+    if env::var_os("CARGO_FEATURE_EXTERNAL_ELF_PROBE").is_some() {
+        assert_eq!(
+            env::var("MUSHA_RING3_CASE").unwrap_or_else(|_| "normal".into()),
+            "normal"
+        );
+    }
+    println!("cargo:rerun-if-env-changed=MUSHA_USER_ELF");
+    if env::var_os("CARGO_FEATURE_RING3_ELF_PROBE").is_some() {
+        let source = PathBuf::from(env::var("MUSHA_USER_ELF").expect("MUSHA_USER_ELF required"));
+        let meta = std::fs::metadata(&source).expect("user ELF metadata");
+        assert!(meta.is_file() && meta.len() <= 16 * 1024 * 1024);
+        assert_eq!(
+            env::var("MUSHA_RING3_CASE").unwrap_or_else(|_| "normal".into()),
+            "normal"
+        );
+        let bytes = std::fs::read(&source).expect("read user ELF");
+        assert!(bytes.len() <= 16 * 1024 * 1024);
+        println!("cargo:rerun-if-changed={}", source.display());
+        std::fs::write(
+            PathBuf::from(env::var("OUT_DIR").unwrap()).join("user.elf"),
+            bytes,
+        )
+        .unwrap();
+    }
+    println!("cargo:rerun-if-env-changed=MUSHA_RING3_CASE");
+    println!("cargo:rustc-check-cfg=cfg(ring3_transition_nmi)");
+    if env::var_os("CARGO_FEATURE_RING3_PROBE").is_some() {
+        let case = env::var("MUSHA_RING3_CASE").unwrap_or_else(|_| "normal".into());
+        assert!(
+            [
+                "normal",
+                "ro",
+                "nx",
+                "guard",
+                "supervisor",
+                "rsp",
+                "privileged",
+                "nmi-transition"
+            ]
+            .contains(&case.as_str())
+        );
+        println!("cargo:rustc-env=MUSHA_RING3_CASE={case}");
+        if case == "nmi-transition" {
+            println!("cargo:rustc-cfg=ring3_transition_nmi");
+        }
+    }
     if env::var("TARGET").unwrap() != "x86_64-unknown-uefi" {
         return;
     }

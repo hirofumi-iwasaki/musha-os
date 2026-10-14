@@ -87,7 +87,7 @@ impl Disk {
                 e[0] = 0xe5;
             }
         } else if relative == self.data() + 2 {
-            b[..11].copy_from_slice(b"MUSHA   TXT");
+            b[..11].copy_from_slice(b"DIAGNOSETXT");
             b[11] = 32;
             put16(b, 26, 3);
             put32(b, 28, if self.size == 4096 { 9000 } else { 1200 });
@@ -111,7 +111,7 @@ fn fragmented_file_and_directory_mbr_and_superfloppy() {
             read_root(
                 disk.start + disk.total(),
                 512,
-                b"MUSHA   TXT",
+                b"DIAGNOSETXT",
                 &mut out,
                 &mut |l, b| disk.read(l, b)
             ),
@@ -131,7 +131,7 @@ fn cycles_short_chain_and_small_buffer() {
         disk.short = kind == 2;
         let mut out = [0u8; 1200];
         assert_eq!(
-            read_root(disk.total(), 512, b"MUSHA   TXT", &mut out, &mut |l, b| {
+            read_root(disk.total(), 512, b"DIAGNOSETXT", &mut out, &mut |l, b| {
                 disk.read(l, b)
             }),
             Err(Error::Corrupt)
@@ -142,7 +142,7 @@ fn cycles_short_chain_and_small_buffer() {
         read_root(
             disk.total(),
             512,
-            b"MUSHA   TXT",
+            b"DIAGNOSETXT",
             &mut [0u8; 10],
             &mut |l, b| disk.read(l, b)
         ),
@@ -158,7 +158,7 @@ fn geometry_partition_limits_and_active_fat() {
         read_root(
             blocks,
             512,
-            b"MUSHA   TXT",
+            b"DIAGNOSETXT",
             &mut [0u8; 1200],
             &mut |l, b| disk.read(l, b)
         ),
@@ -170,7 +170,7 @@ fn geometry_partition_limits_and_active_fat() {
         read_root(
             blocks,
             512,
-            b"MUSHA   TXT",
+            b"DIAGNOSETXT",
             &mut [0u8; 1200],
             &mut |l, b| disk.read(l, b)
         ),
@@ -181,7 +181,7 @@ fn geometry_partition_limits_and_active_fat() {
         read_root(
             blocks,
             512,
-            b"MUSHA   TXT",
+            b"DIAGNOSETXT",
             &mut [0u8; 1200],
             &mut |l, b| disk.read(l, b)
         ),
@@ -192,7 +192,7 @@ fn geometry_partition_limits_and_active_fat() {
         read_root(
             blocks - 1,
             512,
-            b"MUSHA   TXT",
+            b"DIAGNOSETXT",
             &mut [0u8; 1200],
             &mut |l, b| disk.read(l, b)
         ),
@@ -216,7 +216,7 @@ fn missing_file_and_io_failure() {
         read_root(
             disk.total(),
             512,
-            b"MUSHA   TXT",
+            b"DIAGNOSETXT",
             &mut [0u8; 1200],
             &mut |_, _| Err(Error::Io)
         ),
@@ -229,7 +229,7 @@ fn sectors_4096_and_large_fragmented_file() {
     let disk = Disk::new(4096, 0);
     let mut out = [0u8; 9000];
     assert_eq!(
-        read_root(disk.total(), 4096, b"MUSHA   TXT", &mut out, &mut |l, b| {
+        read_root(disk.total(), 4096, b"DIAGNOSETXT", &mut out, &mut |l, b| {
             disk.read(l, b)
         }),
         Ok(9000)
@@ -355,7 +355,7 @@ impl GptDisk {
         read_root(
             self.blocks,
             self.disk.size,
-            b"MUSHA   TXT",
+            b"DIAGNOSETXT",
             &mut out,
             &mut |l, b| self.read(l, b),
         )
@@ -368,9 +368,42 @@ fn gpt_primary_backup_512_and_4096() {
         let disk = GptDisk::new(size);
         assert_eq!(disk.file(), Ok(if size == 512 { 1200 } else { 9000 }));
         let fs = fat32::FileSystem::discover(disk.blocks, size, |l, b| disk.read(l, b)).unwrap();
-        assert_eq!(fs.entries()[0].name(), b"MUSHA   TXT");
+        assert_eq!(fs.entries()[0].name(), b"DIAGNOSETXT");
     }
 }
+#[test]
+fn gpt_single_basic_data_512_and_4096() {
+    for size in [512, 4096] {
+        let mut disk = GptDisk::new(size);
+        disk.array[..16].copy_from_slice(&gpt::BASIC_DATA);
+        disk.checksums();
+        assert_eq!(disk.file(), Ok(if size == 512 { 1200 } else { 9000 }));
+        let fs = fat32::FileSystem::discover(disk.blocks, size, |l, b| disk.read(l, b)).unwrap();
+        assert_eq!(fs.entries()[0].name(), b"DIAGNOSETXT");
+    }
+}
+#[test]
+fn gpt_multiple_boot_candidates_rejected_before_bpb() {
+    for size in [512, 4096] {
+        for basic_first in [false, true] {
+            let mut disk = GptDisk::new(size);
+            if basic_first {
+                disk.array[..16].copy_from_slice(&gpt::BASIC_DATA);
+            }
+            disk.array[128..144].copy_from_slice(&gpt::BASIC_DATA);
+            disk.array[144] = 3;
+            put64(&mut disk.array, 160, 100);
+            put64(&mut disk.array, 168, 199);
+            disk.checksums();
+            assert_eq!(disk.file(), Err(Error::Unsupported));
+            assert!(matches!(
+                fat32::FileSystem::discover(disk.blocks, size, |l, b| disk.read(l, b)),
+                Err(Error::Unsupported)
+            ));
+        }
+    }
+}
+
 #[test]
 fn gpt_rejects_crc_corruption_and_hybrid_mbr() {
     for kind in 0..5 {
@@ -435,7 +468,7 @@ fn fat32_catalog_atomic_chunks_and_bounds() {
             )
             .unwrap();
             assert_eq!(fs.entries().len(), 1);
-            assert_eq!(fs.entries()[0].name(), b"MUSHA   TXT");
+            assert_eq!(fs.entries()[0].name(), b"DIAGNOSETXT");
             let length = fs.entries()[0].len() as usize;
             for chunk in [1, 7, 511, 512, 513, 4096] {
                 let mut offset = 0;
@@ -494,12 +527,12 @@ fn fat32_catalog_through_common_request_api() {
     let fs = fat32::FileSystem::mount(disk.total(), 512, 0, disk.total(), |l, b| disk.read(l, b))
         .unwrap();
     let mut name = [0; 255];
-    for (to, from) in name.iter_mut().zip(b"MUSHA.TXT") {
+    for (to, from) in name.iter_mut().zip(b"DIAGNOSE.TXT") {
         *to = *from as u16;
     }
     let entries = [Entry {
         name,
-        name_len: 9,
+        name_len: 12,
         bytes: fs.entries()[0].len(),
     }];
     let sources = [fs.source(0).unwrap()];
@@ -578,7 +611,10 @@ fn fat32_catalog_empty_oversize_duplicate_and_limits() {
             Ok(())
         });
         if kind >= 2 {
-            assert!(matches!(mounted, Err(Error::Corrupt)));
+            assert!(matches!(
+                mounted,
+                Err(Error::Corrupt | Error::DuplicateName(_))
+            ));
         } else {
             let mut fs = mounted.unwrap();
             let mut out = [0xa5; 1];
@@ -607,7 +643,7 @@ fn discovered_catalog_uses_validated_partition_selection() {
             let fs =
                 fat32::FileSystem::discover(start + disk.total(), size, |l, b| disk.read(l, b))
                     .unwrap();
-            assert_eq!(fs.entries()[0].name(), b"MUSHA   TXT");
+            assert_eq!(fs.entries()[0].name(), b"DIAGNOSETXT");
         }
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Owned, bounded ASCII diagnostic lines; no allocation or borrowed error text.
 use core::fmt;
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Line {
     bytes: [u8; 64],
     len: usize,

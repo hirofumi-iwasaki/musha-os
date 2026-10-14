@@ -3,6 +3,7 @@
 //! PCI configuration mechanism 1: segment zero, firmware-configured buses.
 use core::arch::asm;
 use musha_framebuffer::Framebuffer;
+use musha_framebuffer::metrics as grid;
 
 // The boot CPU is the sole caller; interrupts stay disabled. CF8/CFC transactions
 // cannot interleave. Discovery does not size BARs or reconfigure buses.
@@ -84,28 +85,28 @@ pub(crate) fn diagnose(fb: Framebuffer, selected: Controller) {
     // Discovery is diagnostic: zero devices in a class is reported, not treated
     // as proof of a working driver or as a reason to stop unrelated hardware.
     unsafe {
-        fb.text("PCI DEVICES", 24, 164, fb.color(0, 220, 240));
+        fb.text_grid("PCI DEVICES", grid::LABEL, grid::PCI, fb.color(0, 220, 240));
         let digits = super::cpu::hex(count);
-        fb.text(
+        fb.text_grid(
             core::str::from_utf8_unchecked(&digits),
-            240,
-            164,
+            grid::VALUE,
+            grid::PCI,
             fb.color(0, 220, 240),
         );
-        fb.text("XHCI", 24, 196, fb.color(0, 220, 240));
+        fb.text_grid("XHCI", grid::LABEL, grid::XHCI, fb.color(0, 220, 240));
         let digits = super::cpu::hex(xhci);
-        fb.text(
+        fb.text_grid(
             core::str::from_utf8_unchecked(&digits),
-            240,
-            196,
+            grid::VALUE,
+            grid::XHCI,
             fb.color(0, 220, 240),
         );
-        fb.text("INTEL LAN", 24, 228, fb.color(0, 220, 240));
+        fb.text_grid("INTEL LAN", grid::LABEL, grid::LAN, fb.color(0, 220, 240));
         let digits = super::cpu::hex(intel_lan);
-        fb.text(
+        fb.text_grid(
             core::str::from_utf8_unchecked(&digits),
-            240,
-            228,
+            grid::VALUE,
+            grid::LAN,
             fb.color(0, 220, 240),
         );
     }
@@ -1300,4 +1301,66 @@ pub(crate) fn recover(
         bar
     ));
     Ok(())
+}
+
+// Firmware services have exited; Musha-OS has no active EHCI driver to detach.
+// Match Linux's Intel-EHCI presence guard; Thunderbolt-only controllers and
+// unsupported register pairs are never blindly assigned routing values.
+pub(crate) fn route_intel_ports(c: Controller) -> bool {
+    let id = unsafe { read(c.bus, c.device, c.function, 0) };
+    if id as u16 != 0x8086 {
+        return false;
+    }
+    let class = unsafe { read(c.bus, c.device, c.function, 8) } >> 8;
+    let subsystem = unsafe { read(c.bus, c.device, c.function, 0x2c) };
+    let mut companion = false;
+    'scan: for bus in 0..=255u8 {
+        for device in 0..32u8 {
+            if unsafe { read(bus, device, 0, 0) } as u16 == 0xffff {
+                continue;
+            }
+            let count = if unsafe { read(bus, device, 0, 0x0c) } & 0x00800000 != 0 {
+                8
+            } else {
+                1
+            };
+            for function in 0..count {
+                if unsafe { read(bus, device, function, 0) } as u16 == 0x8086
+                    && unsafe { read(bus, device, function, 8) } >> 8 == 0x0c0320
+                {
+                    companion = true;
+                    break 'scan;
+                }
+            }
+        }
+    }
+    if !musha_xhci::intel_ports::eligible(id, class, subsystem, companion) {
+        crate::diagnostics::observation(format_args!("INTEL ROUTE SKIP EHCI {}", companion as u8));
+        return false;
+    }
+    struct Config(Controller);
+    impl musha_xhci::intel_ports::Config for Config {
+        fn read(&mut self, o: u8) -> u32 {
+            unsafe { read(self.0.bus, self.0.device, self.0.function, o) }
+        }
+        fn write(&mut self, o: u8, v: u32) {
+            unsafe {
+                write32(self.0, o, v);
+            }
+        }
+    }
+    let e = musha_xhci::intel_ports::route(&mut Config(c));
+    for (label, values) in [("BEFORE", e.before), ("AFTER", e.after)] {
+        for (offset, value) in musha_xhci::intel_ports::OFFSETS.into_iter().zip(values) {
+            crate::diagnostics::observation(format_args!(
+                "INTEL ROUTE {} {:02X} {:08X}",
+                label, offset, value
+            ));
+        }
+    }
+    crate::diagnostics::observation(format_args!(
+        "INTEL ROUTE WRITES {} MATCH {}",
+        e.writes, e.matched as u8
+    ));
+    e.writes != 0
 }

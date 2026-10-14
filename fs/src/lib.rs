@@ -12,9 +12,18 @@ pub enum Error {
     Io,
     Unsupported,
     Corrupt,
+    /// Duplicate directory name, first 12 UTF-16 units (zero padded).
+    DuplicateName([u16; 12]),
     NotFound,
     TooLarge,
     Limit,
+}
+fn duplicate_name(name: impl Iterator<Item = u16>) -> Error {
+    let mut prefix = [0; 12];
+    for (to, unit) in prefix.iter_mut().zip(name) {
+        *to = unit;
+    }
+    Error::DuplicateName(prefix)
 }
 fn u16le(b: &[u8], i: usize) -> u16 {
     u16::from_le_bytes([b[i], b[i + 1]])
@@ -208,7 +217,7 @@ fn discover_volume<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
 }
 
 /// Reads a root-directory short-name file from FAT32, never writes to the disk.
-/// Supports superfloppy, one primary MBR FAT32 partition, or one GPT ESP.
+/// Supports superfloppy, one primary MBR FAT32 partition, or one GPT ESP/Basic Data candidate.
 /// sector_size must match the block device (512 or 4096). At most 1024 reads.
 pub fn read_root<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     blocks: u64,

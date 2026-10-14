@@ -26,6 +26,8 @@ musha-viewer = { path = "../viewer" }
 
 [features]
 qemu-debug = []
+# Screenshot-only exact GOP selection; never used in a distribution build.
+display-grid-probe = []
 fault-ud = ["qemu-debug"]
 fault-gp = ["qemu-debug"]
 fault-df = ["qemu-debug"]
@@ -79,3 +81,23 @@ file-app-close = ["live-file-probe"]
 
 # Normal interactive viewer with debug output and no diagnostic input deadline.
 file-viewer-probe = ["input-persistent"]
+
+# Local boot rendering comparisons; no service/reset side effects.
+diagnostics-off = []
+diagnostics-detail = ["musha-framebuffer/compact-status"]
+
+# BSP-only privilege-transition harness; excluded from normal/release images.
+ring3-probe = ["qemu-debug"]
+# Embedded SDK ELF through the C2 loader; still local/QEMU-only.
+ring3-elf-probe = ["ring3-probe"]
+
+# C3 local lifecycle/reclamation probe, still excluded from release defaults.
+ring3-lifecycle-probe = ["ring3-elf-probe"]
+ring3-lifecycle-map-failure = ["ring3-lifecycle-probe"]
+ring3-lifecycle-kernel-fault = ["ring3-lifecycle-probe"]
+
+# Instrument the normal external-file path; no C1 payload or viewer probe dependency.
+external-elf-probe = ["qemu-debug"]
+
+# QEMU-only malformed first Address Device context; exercise cleanup/continuation.
+usb-address-reject = ["qemu-debug"]

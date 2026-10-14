@@ -1,5 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
+use musha_framebuffer::metrics as grid;
 mod file;
 mod hub;
 mod storage;
@@ -110,6 +111,7 @@ fn port_reset(
     let until = host.clock.now()?.checked_add(100).ok_or("CLOCK OVERFLOW")?;
     let mut stable = false;
     for _ in 0..5_000_000 {
+        super::rescan_budget(host.clock)?;
         if host.regs.read(offset)? & 1 == 0 {
             return Err("DISCONNECTED");
         }
@@ -149,6 +151,14 @@ fn port_reset(
     host.delay(10)?; // USB reset recovery before default-control traffic
     let id = ((status >> 10) & 15) as u8;
     let speed = speed(host.regs, protocol, id)?;
+    crate::diagnostics::observation(format_args!(
+        "RESET ROOT {} BEFORE {:08X} AFTER {:08X}",
+        port, original, status
+    ));
+    crate::diagnostics::observation(format_args!(
+        "RESET ROOT {} SPEED ID {} NAME {:?}",
+        port, id, speed
+    ));
     crate::debug(b"MUSHA: USB_PORT_RESET_OK PORT=");
     crate::debug(&crate::cpu::hex(port as u64));
     crate::debug(b" SPEED=");
@@ -275,6 +285,118 @@ fn control_read(
     }
     Ok(bytes - residual.unwrap_or(0))
 }
+// Capture transitions, not every unchanged poll; bound journal usage per root.
+fn ss_trace(port: usize, elapsed: u64, status: u32, label: &str, attempt: u8) {
+    crate::diagnostics::observation(format_args!(
+        "SS ROOT {} T {} {} TRY {} PORTSC {:08X}",
+        port, elapsed, label, attempt, status
+    ));
+    crate::diagnostics::observation(format_args!(
+        "CCS {} PED {} PP {} SPEED {} PLS {}",
+        status & 1,
+        (status >> 1) & 1,
+        (status >> 9) & 1,
+        (status >> 10) & 15,
+        (status >> 5) & 15
+    ));
+}
+fn settle_superspeed(
+    host: &mut Host<'_>,
+    protocols: &[Protocol; 256],
+    op: usize,
+    power_start: u64,
+    grace: u64,
+) -> Result<(), &'static str> {
+    use musha_xhci::superspeed::{self as ss, Action, Attach};
+    let ss_time = crate::timing::Span::new(host.bdf, "SS WAIT");
+    let mut states = [Attach::new(); 256];
+    let mut previous = [u32::MAX; 256];
+    let mut changes = [0u8; 256];
+    let start = host.clock.now()?;
+    // Shared two-second wall-clock deadline and finite polling bound.
+    for poll in 0..=ss::BUDGET_MS / ss::POLL_MS {
+        let elapsed = host
+            .clock
+            .now()?
+            .checked_sub(start)
+            .ok_or("CLOCK BACKWARD")?;
+        let expired = elapsed >= ss::BUDGET_MS || poll == ss::BUDGET_MS / ss::POLL_MS;
+        let mut pending = false;
+        for port in 1..=host.ports as usize {
+            if protocols[port].major != 3 {
+                continue;
+            }
+            let offset = op + 0x400 + (port - 1) * 16;
+            let status = host.regs.read(offset)?;
+            if status != previous[port] && changes[port] < 8 {
+                ss_trace(port, elapsed, status, "SAMPLE", states[port].attempts);
+                ss_trace(
+                    port,
+                    crate::bootstate::epoch_now()
+                        .unwrap_or(host.route_epoch)
+                        .saturating_sub(host.route_epoch),
+                    status,
+                    "ROUTE+ MS",
+                    states[port].attempts,
+                );
+                changes[port] += 1;
+            }
+            previous[port] = status;
+            let action = states[port].sample(
+                status,
+                if expired { ss::BUDGET_MS } else { elapsed },
+                host.clock.now()?.saturating_sub(power_start),
+                grace,
+            );
+            match action {
+                Action::Ready | Action::Empty => {}
+                Action::WarmReset => {
+                    ss_trace(port, elapsed, status, "WPR", states[port].attempts);
+                    host.regs.write(offset, ss::warm_reset(status))?;
+                    ss_trace(
+                        port,
+                        elapsed,
+                        host.regs.read(offset)?,
+                        "WPR READBACK",
+                        states[port].attempts,
+                    );
+                    pending = true;
+                }
+                Action::Wait => pending = true,
+                Action::Expired => {}
+            }
+        }
+        if expired || !pending {
+            crate::timing::record(format_args!(
+                "BDF {:04X} WPR COUNT {}",
+                host.bdf,
+                states.iter().map(|s| s.attempts as usize).sum::<usize>()
+            ));
+            ss_time.finish(if expired { "BUDGET" } else { "READY" });
+            for port in 1..=host.ports as usize {
+                if protocols[port].major == 3 {
+                    let status = host.regs.read(op + 0x400 + (port - 1) * 16)?;
+                    ss_trace(
+                        port,
+                        elapsed,
+                        status,
+                        if ss::empty(status) {
+                            "EMPTY"
+                        } else if ss::ready(status) {
+                            "U0"
+                        } else {
+                            "TIMEOUT"
+                        },
+                        states[port].attempts,
+                    );
+                }
+            }
+            return Ok(());
+        }
+        host.delay(ss::POLL_MS)?;
+    }
+    Ok(())
+}
 pub(super) fn enumerate(
     host: &mut Host<'_>,
     pool: &mut musha_xhci::Pool,
@@ -289,6 +411,13 @@ pub(super) fn enumerate(
         32
     };
     let op = (host.regs.read(0)? & 255) as usize;
+    let power_start = host.clock.now()?;
+    // During rescan PP has remained on throughout the first pass and grace.
+    let grace = if super::RESCAN_DEADLINE.load(core::sync::atomic::Ordering::Relaxed) != 0 {
+        0
+    } else {
+        musha_xhci::superspeed::grace_ms(host.routed)
+    };
     // Ensure port power before sampling attach; no change/status bits replayed.
     for port in 1..=host.ports as usize {
         if protocols[port].major == 0 {
@@ -301,7 +430,47 @@ pub(super) fn enumerate(
                 .write(offset, musha_xhci::port_control(status) | (1 << 9))?;
         }
     }
-    host.delay(20)?;
+    // One shared upper bound for all ports. Observe CCS/PLS after power and
+    // routing changes rather than declaring absent after one 20 ms sample.
+    // No PORTSC writes here: change bits and reset policy remain untouched.
+    let attach_time = crate::timing::Span::new(host.bdf, "ATTACH WAIT");
+    crate::debug(b"MUSHA: ATTACH WAIT START\n");
+    let mut waited = 0;
+    let mut last = [u32::MAX; 256];
+    let mut changes = [0u8; 256];
+    for _ in 0..musha_xhci::intel_ports::ATTACH_POLLS {
+        waited = host.clock.now()?.saturating_sub(power_start);
+        if waited >= 1000 {
+            break;
+        }
+        let mut pending = false;
+        for port in 1..=host.ports as usize {
+            let status = host.regs.read(op + 0x400 + (port - 1) * 16)?;
+            if protocols[port].major == 3 && status != last[port] && changes[port] < 8 {
+                let route_ms = crate::bootstate::epoch_now()
+                    .unwrap_or(host.route_epoch)
+                    .saturating_sub(host.route_epoch);
+                ss_trace(port, route_ms, status, "ROUTE+ MS", 0);
+                changes[port] += 1;
+            }
+            last[port] = status;
+            pending |= musha_xhci::intel_ports::attach_pending(
+                status,
+                protocols[port].major,
+                waited,
+                grace,
+            );
+        }
+        if !pending {
+            break;
+        }
+        host.delay(musha_xhci::intel_ports::ATTACH_POLL_MS)?;
+        waited += musha_xhci::intel_ports::ATTACH_POLL_MS;
+    }
+    crate::diagnostics::observation(format_args!("ATTACH WAIT {} MS MAX 1000", waited));
+    attach_time.finish(if waited >= 1000 { "BUDGET" } else { "READY" });
+    settle_superspeed(host, &protocols, op, power_start, grace)?;
+    let enum_time = crate::timing::Span::new(host.bdf, "ENUMERATE");
     let mut count = 0u64;
     let mut active_keyboard = None;
     let mut active_storage = None;
@@ -330,11 +499,16 @@ pub(super) fn enumerate(
                 "SKIP NO PROTOCOL"
             } else if status & 1 == 0 {
                 "SKIP DISCONNECTED"
+            } else if protocols[port].major == 3 && !musha_xhci::superspeed::ready(status) {
+                "SKIP SS NOT U0"
             } else {
                 "QUEUE ENUMERATION"
             }
         ));
-        if protocols[port].major != 0 && status & 1 != 0 {
+        if protocols[port].major != 0
+            && status & 1 != 0
+            && (protocols[port].major != 3 || musha_xhci::superspeed::ready(status))
+        {
             if tail == targets.len() {
                 return Err("DEVICE LIMIT");
             }
@@ -354,6 +528,7 @@ pub(super) fn enumerate(
         head += 1;
         let protocol = target.protocol;
         let port = target.path.root_port as usize;
+        crate::diagnostics::observation(format_args!("ENUM ROOT {} PORT RESET", port));
         crate::diagnostics::usb_stage("PORT RESET");
         let (speed_id, speed, path) = if let Some(parent) = target.parent {
             let speed = hub::reset_port(host, parent, target.port)?;
@@ -371,6 +546,7 @@ pub(super) fn enumerate(
         let input = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
         let ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
         let buffer = pool.allocate(1024, 64).ok_or("DMA FULL")?;
+        host.attempted = true;
         let enabled = host.command(0, (9 << 10) | ((protocol.slot as u32) << 16), 255)?;
         let slot = (enabled[3] >> 24) as u8;
         if slot as u32 > (host.regs.read(4)? & 255).min(8) {
@@ -400,7 +576,57 @@ pub(super) fn enumerate(
             core::arch::asm!("mfence", options(nostack));
         }
         crate::diagnostics::usb_stage("SLOT / ADDRESS");
-        host.command(input, (11 << 10) | ((slot as u32) << 24), slot)?; // BSR=0: xHC sends SET_ADDRESS
+        crate::diagnostics::observation(format_args!(
+            "ADDRESS ROOT {} SLOT {} SPEED ID {} {:?}",
+            port, slot, speed_id, speed
+        ));
+        crate::diagnostics::observation(format_args!(
+            "SLOT SPEED ID {} EP0 PACKET {}",
+            (slot_words[0] >> 20) & 15,
+            speed.packet()
+        ));
+        #[cfg(feature = "diagnostics-detail")]
+        {
+            crate::diagnostics::observation(format_args!("INPUT {:016X} STRIDE {}", input, stride));
+            for (i, word) in slot_words.iter().enumerate() {
+                crate::diagnostics::observation(format_args!("SLOT DW{} {:08X}", i, word));
+            }
+            for (i, word) in ep_words.iter().enumerate() {
+                crate::diagnostics::observation(format_args!("EP0 DW{} {:08X}", i, word));
+            }
+        }
+        #[cfg(feature = "usb-address-reject")]
+        if head == 1 {
+            // The xHC must return an error: required Add Context flags are absent.
+            unsafe {
+                dma_word(input + 4, 0);
+                core::arch::asm!("mfence", options(nostack));
+            }
+            crate::debug(b"MUSHA: ADDRESS_REJECT_INJECTED\n");
+        }
+        // BSR=0: xHC sends SET_ADDRESS. Only a consumed, correlated device
+        // error is recoverable; timeout/malformed events still stop all DMA.
+        if let Err(error) = host.command(input, (11 << 10) | ((slot as u32) << 24), slot) {
+            crate::diagnostics::observation(format_args!(
+                "ADDRESS FAILED ROOT {} SLOT {} {:?} {}",
+                port, slot, speed, error
+            ));
+            crate::debug(b"MUSHA: ADDRESS_FAILED ROOT=");
+            crate::debug(&crate::cpu::hex(port as u64));
+            crate::debug(b"\n");
+            if error != "COMMAND REJECTED" {
+                return Err(error);
+            }
+            host.command(0, (10 << 10) | ((slot as u32) << 24), slot)?;
+            unsafe {
+                dma_u64(dcbaa + slot as usize * 8, 0);
+                core::arch::asm!("mfence", options(nostack));
+            }
+            // Keep failed-device allocations reserved until controller teardown.
+            crate::diagnostics::observation(format_args!("ROOT {} SLOT DISABLED / CONTINUE", port));
+            crate::debug(b"MUSHA: ADDRESS_SLOT_DISABLED_CONTINUE\n");
+            continue;
+        }
         let state = unsafe { read_word(output + 12) };
         if state >> 27 != 2 || state & 255 == 0 || state & 255 > 127 {
             return Err("ADDRESS STATE");
@@ -579,11 +805,12 @@ pub(super) fn enumerate(
         }
         count += 1;
     }
+    enum_time.finish("OK");
     crate::debug(b"MUSHA: USB_ENUMERATION_OK COUNT=");
     crate::debug(&crate::cpu::hex(count));
     crate::debug(b"\nMUSHA: USB_DISCOVERY_DONE\n");
     let found_keyboard = active_keyboard.is_some();
-    if !discovery && (found_keyboard || active_storage.is_none()) {
+    if !discovery && !found_keyboard && active_storage.is_none() {
         tick(super::AppEvent::Ready(found_keyboard))?;
     }
     if !discovery && !found_keyboard {
@@ -801,10 +1028,10 @@ fn run_keyboard(
 ",
     );
     unsafe {
-        host.framebuffer.text(
+        host.framebuffer.text_grid(
             "KEYBOARD READY",
-            24,
-            292,
+            grid::LABEL,
+            grid::KEYBOARD,
             host.framebuffer.color(0, 240, 100),
         );
     }
@@ -813,6 +1040,7 @@ fn run_keyboard(
         Some(prepared) => Some(file::Session::new(prepared)?),
         None => None,
     };
+    tick(super::AppEvent::Ready(true))?;
     let op = (host.regs.read(0)? & 255) as usize;
     let deadline = if cfg!(feature = "qemu-debug") && !cfg!(feature = "input-persistent") {
         host.clock

@@ -1,12 +1,22 @@
 # Hardware diagnostics / 実機診断
 
+> Development update: [boot policy 3.0](boot-readiness-policy.md), [ABI candidates](application-abi.md), [SDK](sdk.md). A/B is static/cooperative; Ring 3 remains pending.
+> 開発更新：[起動方針3.0](boot-readiness-policy.md)・[ABI候補](application-abi.md)・[SDK](sdk.md)。Ring 3は後続です。
+
+
 > 最新の実機確認状況（2026-10-10）は[配布資料用の実機確認状況](hardware-verification-status.md)を参照。以下の過去の準備・検証記録は、その記録日時点の内容です。
 
 ## English
 
+### Current v0.3.0 boot display
+
+Boot screens distinguish OS startup from the SDK example: before ExitBootServices, `Musha-OS <VERSION>  starting...`; after arena initialization, `Musha-OS <VERSION>  runtime` and `CORE READY`; device enumeration adds `DEVICE DISCOVERY` on the left. VERSION is embedded from the repository file. The external console heading is `AUTORUN.ELF  (Ring 3)`. `Hello Musha-OS!` is SDK sample output only. When the boot-file reader explicitly reports absence, the viewer list status says `AUTORUN.ELF not found in root. Starting file viewer.`; unreadable media keep the existing error and rejected files still halt.
+
+The earlier preparation and validation records below remain historical. Current hardware acceptance is tracked separately in [hardware acceptance](hardware-acceptance-0.3.0.md).
+
 The normal build now shows a persistent hardware panel after leaving UEFI Boot Services. It records the current runtime phase, the actually selected xHCI and first detected Intel Ethernet PCI vendor/device IDs and BDFs, USB initialization stages, up to eight USB Device Descriptor records (port, slot, VID/PID, negotiated speed), the last storage capacity and file result, and final network counters. Discovery is read-only and is not a compatibility claim. The H2 panel lists up to eight xHCI controllers. Retained controllers are probed sequentially in BDF order; `SCANNED` records discovery, `*ACTIVE` identifies the selected input controller, and errors are recorded per controller. USB details show the current controller, while earlier controller summaries and stored file metadata remain visible. See [multi-controller and hub design](usb-multi-controller-hub-plan.md). Device class/subclass/protocol and interface classification distinguish unsupported hubs from matched keyboard/storage interfaces. See [USB controller diagnosis](usb-controller-diagnosis.md). Slot numbers can be reused after a device is released; use the port and VID/PID to identify a USB device.
 
-The full panel appears on the right at resolutions at least 1024 pixels wide and 444 pixels high, or below the main output at widths at least 408 and heights at least 980. Smaller screens show a clipped compact phase/error line at the bottom; this can overlap the lowest main diagnostic row. Use a larger GOP mode to photograph complete details. Drawing is clipped to the framebuffer and requires no allocations. Labels are bounded to 64 printable ASCII bytes. Information not reached remains blank; a blank field is unknown, never a pass.
+All boot, diagnostic and console text uses framebuffer/metrics: 6x8 glyph cells, scale clamp(round(height/600),1,4), 10*scale line pitch, and two-cell margins. At widths >=1200 the diagnostic panel starts at half the total grid columns; on narrower screens it uses the full width below the status rows (row 20), preventing overlap. Wrapping and visible rows follow the grid, capped by the 64-byte line and 42-row diagnostic buffers. At 1600x1200 the cells are 12x16 pixels with 20-pixel line pitch. Unknown fields remain blank; a blank is not a pass.
 
 `USB STEP` distinguishes capability checks, firmware ownership, halt/reset, rings/commands, Device Descriptor, configuration, BOT/capacity, sector reads, FAT32 file reads, and keyboard polling. `NET STEP` distinguishes resources, reset, EEPROM/MAC, link, DMA/lwIP, and polling. On error, `FAIL AT` and `USB ERROR` / `NET ERROR` retain the failure stage and reason while the current step can advance to `STOPPED DMA DISABLED`. A different subsequent failure supersedes the previous failure. A reset failure before a runtime-owned DMA session starts can leave the current step at the failed stage. A quiesce failure is shown separately and does not claim successful shutdown.
 
@@ -28,7 +38,7 @@ Host tests cover bounded ASCII records, failure-stage preservation, screen layou
 
 
 - 52 host tests passed with Rust 1.99.0. UEFI normal/debug builds passed. QEMU 11.1.2, q35/TCG, 256MiB, bundled EDK2 were used.
-- The shared GPT/FAT32 image booted with xHCI storage and a keyboard; PCI `1B36:000D` and Intel `8086:10D3`, USB VID/PID/speed, 512-byte sectors, 16-byte MUSHA.TXT and FNV-1a `9A42A948C590F507` matched the stored panel snapshot. The diagnostic session stopped both drivers.
+- The shared GPT/FAT32 image booted with xHCI storage and a keyboard; PCI `1B36:000D` and Intel `8086:10D3`, USB VID/PID/speed, 512-byte sectors, 16-byte DIAGNOSE.TXT and FNV-1a `9A42A948C590F507` matched the stored panel snapshot. The diagnostic session stopped both drivers.
 - `--nic e1000` displayed detected PCI `8086:100E` and `DRIVER UNSUPPORTED / ABSENT`, while keyboard and file checks completed.
 - Five fault cases passed: xHCI halt timeout, command timeout, Device Descriptor timeout, storage read timeout, and corrupt GPT/FAT32 fixture. Each snapshot retained the expected failure stage and error after cleanup where applicable.
 - Cooperative traffic passed ARP, ICMP, 257 UDP echoes, file rechecks, ring wraps, checksum rejection and driver shutdown. Final panel counters were UDP `00000101`, ARP/ICMP `00000001`. Link-down retained `FAIL AT NET STEP POLLING` / `NET ERROR LINK DOWN` and allowed file/input progress before USB shutdown.
@@ -62,9 +72,15 @@ Use a fresh output filename; the image generator refuses to replace existing fil
 
 ## 日本語
 
+### 現在のv0.3.0起動表示
+
+起動表示はSDKサンプルと区別します。ExitBootServices前は `Musha-OS <VERSION>  starting...`、arena初期化後は `Musha-OS <VERSION>  runtime` と `CORE READY`、機器探索開始時は左列に `DEVICE DISCOVERY` を表示します。版はリポジトリのVERSIONを埋め込みます。外部アプリの見出しは `AUTORUN.ELF  (Ring 3)` で、`Hello Musha-OS!` はSDKサンプルの出力専用です。起動ファイルの不在が確定した場合だけ、ファイラー一覧の状態行に `AUTORUN.ELF not found in root. Starting file viewer.` を表示します。媒体を読めない場合の文言とrejected時の停止は変更しません。
+
+以下の過去の準備・検証記録は当時の内容を保持しています。今回の受入は[実機受入](hardware-acceptance-0.3.0.md)に分けて記録します。
+
 通常ビルドでも、UEFI Boot Services終了後に実機診断パネルを表示する。実行段階、実際に選択したxHCIと最初に検出したIntel EthernetのPCI vendor/device ID・BDF、USB初期化段階、最大8件のUSB Device Descriptor情報（ポート、slot、VID/PID、接続速度）、最後に調べたストレージの容量・ファイル結果、終了時の通信カウンターを記録する。列挙は読出し専用で、互換性を保証するものではない。H2では最大8個のxHCIを保持しBDF順に調査する。SCANNEDは探索済み、*ACTIVEは入力選択先を示し、失敗をコントローラー別に記録する。USB詳細は現在の候補を表示し、先の候補の概要とファイル情報を保持する。USB2ハブ配下の起動時列挙を追加した。機器行にroot portとrouteを表示する。高速TTは未検証、USB3.0／5Gbps hub初期化は実装済み・実転送未検証、USB3.1／3.2 hubは未対応。slot番号は機器解放後に再利用されるため、USB機器はポートとVID/PIDでも識別する。
 
-全項目のパネルは、幅1024以上・高さ444以上では右側、幅408以上・高さ980以上では主表示の下側に出る。それより小さい画面では最下部に段階／エラーの短縮表示を出す。主表示の最下段と重なる場合がある。全項目の撮影には大きいGOPモードを使う。描画は画面境界内に制限し、動的メモリ確保を行わない。各行は表示可能なASCII最大64バイト。未到達の項目は空欄で、空欄は不明であり合格ではない。
+起動・診断・コンソールはframebuffer/metricsを共有します。基本セル6×8、倍率clamp(round(高さ/600),1,4)、行ピッチ10×倍率、余白2セル。幅1200以上では総列数の半分から右側、未満では状態行より下の20行目から全幅を使い、重なりを防ぎます。折返し・表示行数はグリッドから計算し、診断バッファの64バイト・42行を上限とします。1600×1200では12×16ピクセル、行ピッチ20ピクセルです。未到達項目は空欄であり、合格を意味しません。
 
 `USB STEP`はcapability、firmware ownership、halt/reset、ring/command、Device Descriptor、configuration、BOT/capacity、sector read、FAT32 file read、keyboard pollingを区別する。`NET STEP`はresource、reset、EEPROM/MAC、link、DMA/lwIP、pollingを区別する。エラー時は`FAIL AT`と`USB ERROR`／`NET ERROR`が失敗段階・理由を保持し、現在の段階だけが`STOPPED DMA DISABLED`へ進む。後から別のエラーが生じた場合は後者を記録する。ランタイムのDMA開始前のreset失敗では、現在の段階が失敗箇所に残る場合がある。停止検証に失敗した場合は別のエラーを表示し、停止成功とは扱わない。
 
@@ -86,7 +102,7 @@ debugビルドでは終了時（またはアプリ失敗時）に`MUSHA: DIAG ..
 
 
 - Rust 1.99.0でホスト試験52件成功。通常／debug UEFIビルド成功。QEMU 11.1.2、q35/TCG、RAM 256MiB、同梱EDK2で検証。
-- 共通GPT/FAT32イメージからxHCI storageとkeyboardを起動。PCI `1B36:000D`・Intel `8086:10D3`、USB VID/PID・速度、sector 512 byte、MUSHA.TXT 16 byte、FNV-1a `9A42A948C590F507`が診断記録と一致。終了時に両ドライバを停止。
+- 共通GPT/FAT32イメージからxHCI storageとkeyboardを起動。PCI `1B36:000D`・Intel `8086:10D3`、USB VID/PID・速度、sector 512 byte、DIAGNOSE.TXT 16 byte、FNV-1a `9A42A948C590F507`が診断記録と一致。終了時に両ドライバを停止。
 - `--nic e1000`でPCI `8086:100E`と`DRIVER UNSUPPORTED / ABSENT`を表示し、keyboard・file確認は完了。
 - xHCI halt timeout、command timeout、Device Descriptor timeout、storage read timeout、GPT/FAT32 fixture破損の5ケース成功。該当する停止処理後も、想定した失敗段階・理由を保持。
 - 協調通信試験でARP、ICMP、UDP echo 257件、file再確認、ring周回、checksum拒否、停止処理を確認。最終表示はUDP `00000101`、ARP／ICMP `00000001`。link切断では`FAIL AT NET STEP POLLING`／`NET ERROR LINK DOWN`を保持し、file・inputはUSB停止まで進行。
@@ -98,4 +114,4 @@ debugビルドでは終了時（またはアプリ失敗時）に`MUSHA: DIAG ..
 
 通常の再検証コマンドは上記を使用する。最初に`qemu-debug`でbuildしEFIを配置する。image生成は既存ファイルを置換しないため、新しい出力名を使う。fault試験は各featureが必要（`fat-corrupt`は破損fixtureを使用）。最後は`sh tools/build-esp.sh`で通常版へ戻す。故障注入版から実物USBを準備しない。firmware・QEMUのパスは環境に合わせる。
 
-H2パネルは420ピクセル高です。幅1024以上・高さ444以上では右側、幅408以上・高さ980以上では主表示の下側に表示します。未調査の候補は`NOT PROBED`、調査中は`PROBING`、探索済みは`SCANNED`、入力選択先は`*ACTIVE`で示します。設計と進捗は[複数コントローラーとハブ対応](usb-multi-controller-hub-plan.md)を参照してください。詳細は[複数USBコントローラーの診断](usb-controller-diagnosis.md)を参照してください。
+現行パネルは上記の共通グリッドで配置します。未調査はNOT PROBED、調査中はPROBING、探索済みはSCANNED、入力先は*ACTIVEです。[複数コントローラーとハブ対応](usb-multi-controller-hub-plan.md)を参照してください。

@@ -85,7 +85,7 @@ impl<'a> Context<'a> {
     pub fn invalidate_files(&mut self, error: Error) {
         self.files.invalidate(error);
     }
-    /// Opens an absolute root 8.3 path. Initial cached file: /MUSHA.TXT.
+    /// Opens an absolute root 8.3 path. Initial cached file: /DIAGNOSE.TXT.
     pub fn file_open(&mut self, path: &str) -> Result<FileHandle, Error> {
         self.files.open(path)
     }
@@ -190,6 +190,13 @@ impl<'a> Context<'a> {
         }
         Ok(())
     }
+    /// Internal diagnostic grid; external ABI is unchanged.
+    pub fn text_grid(&mut self, text: &str, col: usize, row: usize, rgb: [u8; 3]) {
+        unsafe {
+            self.screen
+                .text_grid(text, col, row, self.screen.color(rgb[0], rgb[1], rgb[2]));
+        }
+    }
     pub fn text(&mut self, text: &str, x: usize, y: usize, rgb: [u8; 3]) {
         // SAFETY: constructor contract persists and &mut self serializes drawing.
         unsafe {
@@ -272,3 +279,5 @@ mod tests {
         assert_eq!(ctx.arena_bytes(), 16);
     }
 }
+
+pub mod bootfile;

@@ -1,11 +1,13 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-//! Fatal-only x86-64 exception setup. No handler returns to interrupted code.
+//! x86-64 exception setup. C3 may terminate selected user faults to a saved
+//! kernel continuation; no handler returns to the interrupted instruction.
 use crate::{BootInfo, stop};
 use core::{
     arch::{asm, naked_asm},
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
+use musha_framebuffer::metrics as grid;
 
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
@@ -40,14 +42,18 @@ impl Gate {
         }
     }
 }
+const GDT_COUNT: usize = 7;
+// First selector beyond the GDT; 0x28 became valid with the Ring 3 data entry.
+#[cfg(any(feature = "fault-gp", feature = "fault-df"))]
+pub(crate) const FAULT_INVALID_SELECTOR: u16 = (GDT_COUNT * 8) as u16;
 #[repr(C, align(16))]
 struct Tables {
-    gdt: [u64; 5],
+    gdt: [u64; GDT_COUNT],
     idt: [Gate; 256],
     tss: [u8; 104],
 }
 static mut TABLES: Tables = Tables {
-    gdt: [0; 5],
+    gdt: [0; GDT_COUNT],
     idt: [Gate::EMPTY; 256],
     tss: [0; 104],
 };
@@ -100,6 +106,8 @@ pub unsafe fn initialize(info: *const BootInfo) {
                 0x00cf92000000ffff,
                 descriptor,
                 base >> 32,
+                0x00cff2000000ffff, // ring 3 data, selector 0x2b
+                0x00affa000000ffff, // ring 3 long code, selector 0x33
             ],
         );
         let entries = core::ptr::addr_of_mut!((*table).idt).cast::<Gate>();
@@ -107,7 +115,7 @@ pub unsafe fn initialize(info: *const BootInfo) {
             let handler = if vector < 32 { STUBS[vector] } else { unknown };
             let ist = if vector == 8 {
                 1
-            } else if vector == 2 {
+            } else if vector == 2 || matches!(vector, 1 | 18) {
                 2
             } else {
                 0
@@ -117,7 +125,7 @@ pub unsafe fn initialize(info: *const BootInfo) {
                 .write(Gate::new(handler as *const () as usize, ist));
         }
         let gdtr = Descriptor {
-            limit: 39,
+            limit: (GDT_COUNT * 8 - 1) as u16,
             base: core::ptr::addr_of!((*table).gdt) as u64,
         };
         load_gdt(&gdtr);
@@ -134,7 +142,7 @@ pub unsafe fn initialize(info: *const BootInfo) {
         let tr: u16;
         asm!("mov {0:x}, cs","str {1:x}",out(reg) cs,out(reg) tr,options(nomem,nostack,preserves_flags));
         if actual_gdt.base != gdtr.base
-            || actual_gdt.limit != 39
+            || actual_gdt.limit != gdtr.limit
             || actual_idt.base != idtr.base
             || actual_idt.limit != 4095
             || cs != 8
@@ -216,7 +224,8 @@ const STUBS: [extern "win64" fn() -> !; 32] = [
 #[unsafe(naked)]
 extern "win64" fn common() -> ! {
     naked_asm!("cli","cld","mov rcx, rsp","and rsp, -16","sub rsp, 32",
-        "call {handler}","ud2",handler=sym fatal);
+        ".if {recover}","fninit","mov dword ptr [rsp],0x1f80","ldmxcsr [rsp]",".endif",
+        "call {handler}","ud2",handler=sym fatal,recover=const cfg!(feature="ring3-lifecycle-probe") as usize);
 }
 pub(crate) fn hex(value: u64) -> [u8; 16] {
     let mut bytes = [b'0'; 16];
@@ -226,6 +235,15 @@ pub(crate) fn hex(value: u64) -> [u8; 16] {
     bytes
 }
 extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
+    #[cfg(feature = "ring3-lifecycle-probe")]
+    unsafe {
+        crate::ring3::lifecycle::fault(
+            frame as usize,
+            (*frame).cs,
+            (*frame).vector,
+            (*frame).error,
+        );
+    }
     if FAULTING.swap(true, Ordering::AcqRel) {
         stop();
     }
@@ -238,25 +256,45 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
     // never return, so caller registers need not be restored.
     unsafe {
         let frame = &*frame;
-        if frame.vector == 8 || frame.vector == 2 {
+        let ist2 = frame.vector == 2 || matches!(frame.vector, 1 | 18);
+        if frame.vector == 8 || ist2 {
             let rsp: usize;
             asm!("mov {}, rsp",out(reg) rsp,options(nomem,nostack,preserves_flags));
-            let low = (*info).emergency_base + if frame.vector == 2 { 16384 } else { 0 };
+            let low = (*info).emergency_base + if ist2 { 16384 } else { 0 };
             if rsp < low || rsp >= low + 16384 {
                 stop();
             }
+            crate::debug(b"MUSHA: RING3_FATAL_IST_OK\n");
+        }
+        {
+            crate::ring3::verify_fault_stack(
+                frame as *const FaultFrame as usize,
+                frame.cs,
+                frame.vector,
+            );
+            crate::debug(b"MUSHA: RING3_FAULT CS=");
+            crate::debug(&hex(frame.cs));
+            crate::debug(b"\nMUSHA: RING3_FAULT_RSP=");
+            crate::debug(&hex(frame.rsp));
+            crate::debug(b"\n");
         }
         let fb = (*info).framebuffer;
         let mut cr2 = 0u64;
         if frame.vector == 14 {
             asm!("mov {}, cr2",out(reg) cr2,options(nomem,nostack,preserves_flags));
         }
-        for y in 100..260 {
-            for x in 0..fb.width.min(600) {
+        let m = grid::Metrics::new(fb.width, fb.height);
+        for y in m.y(grid::CORE)..m.y(grid::DISCOVERY + 4).min(fb.height) {
+            for x in m.x(grid::LABEL)..m.x(m.columns.saturating_sub(grid::MARGIN)) {
                 fb.pixel(x, y, fb.color(32, 0, 0));
             }
         }
-        fb.text("CPU EXCEPTION", 24, 104, fb.color(255, 80, 80));
+        fb.text_grid(
+            "CPU EXCEPTION",
+            grid::LABEL,
+            grid::CORE,
+            fb.color(255, 80, 80),
+        );
         for (i, (label, value)) in [
             ("VECTOR", frame.vector),
             ("ERROR", frame.error),
@@ -266,15 +304,24 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
         .iter()
         .enumerate()
         {
-            fb.text(label, 24, 136 + i * 28, fb.color(255, 220, 220));
-            let bytes = hex(*value);
-            // SAFETY: hex constructs only ASCII characters.
-            fb.text(
-                core::str::from_utf8_unchecked(&bytes),
-                160,
-                136 + i * 28,
+            fb.text_grid(
+                label,
+                grid::LABEL,
+                grid::DISCOVERY + i,
                 fb.color(255, 220, 220),
             );
+            let bytes = hex(*value);
+            // SAFETY: hex constructs only ASCII characters.
+            fb.text_grid(
+                core::str::from_utf8_unchecked(&bytes),
+                grid::VALUE,
+                grid::DISCOVERY + i,
+                fb.color(255, 220, 220),
+            );
+        }
+        #[cfg(external_app)]
+        if frame.cs & 3 == 3 {
+            crate::appconsole::fault(fb, frame.vector, frame.error, frame.rip, frame.rsp);
         }
         crate::debug(b"MUSHA: EXCEPTION VECTOR=");
         crate::debug(&hex(frame.vector));
@@ -301,3 +348,15 @@ pub unsafe fn inject_double_fault() {
 const _: () = assert!(core::mem::size_of::<Gate>() == 16);
 const _: () = assert!(core::mem::size_of::<Descriptor>() == 10);
 const _: () = assert!(core::mem::size_of::<FaultFrame>() == 56);
+
+// BSP-only probe: both hardware privilege-change exceptions and explicit
+// SYSCALL entry use this supervisor stack. NMI/#DB/#MC use fatal-only IST2.
+pub unsafe fn user_kernel_stack(top: usize) {
+    unsafe {
+        core::ptr::addr_of_mut!(TABLES.tss)
+            .cast::<u8>()
+            .add(4)
+            .cast::<u64>()
+            .write_unaligned(top as u64);
+    }
+}

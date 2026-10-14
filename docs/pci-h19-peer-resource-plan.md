@@ -1,5 +1,10 @@
 # H19 PCI資源不一致への条件付き復旧
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 記録日: 2026-10-10。H18実機写真IMG_7516〜7526を根拠とする。利用者の明示承認後にH19を実装。MacBook Pro 2018で起動担当7D00の復旧とUSBファイル読出しを確認。外付けLenovoのA・Shift+A・Escも追加実行で成功。
 
 ## 現在判明している停止原因

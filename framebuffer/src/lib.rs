@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
 
+pub mod metrics;
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Framebuffer {
@@ -51,22 +53,43 @@ impl Framebuffer {
             }
         }
     }
+    /// Draw bounded grid text, excluding the two-cell screen margin.
+    /// # Safety
+    /// Same mapping/ownership requirements as pixel.
+    pub unsafe fn text_grid(&self, text: &str, col: usize, row: usize, color: u32) {
+        let m = metrics::Metrics::new(self.width, self.height);
+        if row < metrics::MARGIN
+            || row >= m.rows.saturating_sub(metrics::MARGIN)
+            || col < metrics::MARGIN
+            || col >= m.columns.saturating_sub(metrics::MARGIN)
+        {
+            return;
+        }
+        let shown = if text.len() == 16 && text.bytes().all(|b| b.is_ascii_hexdigit()) {
+            let s = text.trim_start_matches('0');
+            if s.is_empty() { "0" } else { s }
+        } else {
+            text
+        };
+        let end = m
+            .columns
+            .saturating_sub(metrics::MARGIN + col)
+            .min(shown.len());
+        let mut end = end;
+        while !shown.is_char_boundary(end) {
+            end -= 1;
+        }
+        unsafe {
+            self.text_scaled(&shown[..end], m.x(col), m.y(row), color, m.scale);
+        }
+    }
+    /// Legacy internal pixel API, without a diagnostic coordinate transform.
     /// # Safety
     /// Same mapping/ownership requirements as pixel.
     pub unsafe fn text(&self, text: &str, x: usize, y: usize, color: u32) {
+        let scale = metrics::scale_for_height(self.height);
         unsafe {
-            // Presentation coordinates retain the existing application layout contract.
-            // Keep 42-pixel glyphs even on 768/800-high GOP modes.
-            let py = y.saturating_mul(self.height.saturating_sub(48).min(1100)) / 550;
-            let px = if x >= 240 { x.saturating_mul(2) } else { x };
-            // Counts/addresses on the visitor panel need not carry sixteen zeros.
-            let shown = if text.len() == 16 && text.bytes().all(|b| b.is_ascii_hexdigit()) {
-                let short = text.trim_start_matches('0');
-                if short.is_empty() { "0" } else { short }
-            } else {
-                text
-            };
-            self.text_scaled(shown, px, py, color, 6);
+            self.text_scaled(text, x, y, color, scale);
         }
     }
     /// # Safety
@@ -299,3 +322,6 @@ mod tests {
         );
     }
 }
+
+pub mod console;
+pub mod mode;

@@ -1,5 +1,10 @@
 # BOT転送と工程5の接続記録
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 最新の到達点は末尾の「工程5完了: 通常サービスと別controller保持」。以下の各節は段階ごとの記録。
 
 2026-10-12。`musha_xhci::storage::transaction::Transaction`で、読出し専用BOTを

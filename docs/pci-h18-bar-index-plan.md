@@ -1,5 +1,10 @@
 # H18 共通BAR番号対応の修正
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 2026-10-10。H17実機結果に基づく共通処理の修正。Mac固有の例外は設けない。
 
 ## 設計と実装

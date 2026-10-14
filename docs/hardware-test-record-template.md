@@ -24,13 +24,13 @@ Copy this document into a new result file for each configuration. Default values
 
 | Check | Result (NOT RUN / PASS / FAIL / UNSUPPORTED) | Exact observation |
 |---|---|---|
-| UEFI boot / Hello Musha-OS! / RUNTIME READY | NOT RUN | UNKNOWN |
+| UEFI boot / `Musha-OS <VERSION> starting...` / runtime / CORE READY | NOT RUN | UNKNOWN |
 | CPU tables / paging / arena size | NOT RUN | UNKNOWN |
 | Timer / PCI IDs / BDF | NOT RUN | UNKNOWN |
 | xHCI ownership / reset / command rings | NOT RUN | UNKNOWN |
 | USB port / VID:PID / speed / descriptor count | NOT RUN | UNKNOWN |
 | Storage blocks / sector bytes / total capacity | NOT RUN | UNKNOWN |
-| MUSHA.TXT length / FNV-1a / APP FILE READ OK | NOT RUN | UNKNOWN |
+| DIAGNOSE.TXT length / FNV-1a / APP FILE READ OK | NOT RUN | UNKNOWN |
 | Keyboard A / Shift+A press and release / displayed key code | NOT RUN | UNKNOWN |
 | Idle input with ongoing application work | NOT RUN | UNKNOWN |
 | Esc / APP COMPLETE / USB stop status | NOT RUN | UNKNOWN |
@@ -68,13 +68,13 @@ Failure details: UNKNOWN. Reproduction steps and recovery: UNKNOWN. Final result
 
 | 確認 | 結果（未実施／合格／失敗／未対応） | 正確な観測内容 |
 |---|---|---|
-| UEFI起動／Hello Musha-OS!／RUNTIME READY | 未実施 | 不明 |
+| UEFI起動／`Musha-OS <VERSION> starting...`／runtime／CORE READY | 未実施 | 不明 |
 | CPU tables／paging／arena容量 | 未実施 | 不明 |
 | timer／PCI ID／BDF | 未実施 | 不明 |
 | xHCI ownership／reset／command rings | 未実施 | 不明 |
 | USB port／VID:PID／速度／descriptor数 | 未実施 | 不明 |
 | storage block数／sector byte／総容量 | 未実施 | 不明 |
-| MUSHA.TXT長さ／FNV-1a／APP FILE READ OK | 未実施 | 不明 |
+| DIAGNOSE.TXT長さ／FNV-1a／APP FILE READ OK | 未実施 | 不明 |
 | A／Shift+Aの押下・解放／key code | 未実施 | 不明 |
 | 無入力中のアプリ処理継続 | 未実施 | 不明 |
 | Esc／APP COMPLETE／USB停止状態 | 未実施 | 不明 |

@@ -1,9 +1,40 @@
 # Development instructions and initial implementation
 
+> Development update: [boot policy 3.0](boot-readiness-policy.md), [ABI candidates](application-abi.md), [SDK](sdk.md). A/B is static/cooperative; [C1](ring3-prototype.md) tests a fixed Ring 3 fixture, with SDK execution still pending.
+> 開発更新：[起動方針3.0](boot-readiness-policy.md)・[ABI候補](application-abi.md)・[SDK](sdk.md)。[C1](ring3-prototype.md)で固定Ring 3試験に着手し、SDK実行は後続です。
+
+
 Current v0.2.0 priorities and release gates: [開発方針と公開条件](release-scope-0.2.0.md).
 Implementation order: [作業順と完了条件](work-plan-0.2.0.md).
 
 ## English
+
+### Reproducible UEFI release builds (2026-10-14)
+
+The UEFI target in `.cargo/config.toml` uses `-C link-arg=/Brepro` and
+`-C link-arg=/debug:none`, retaining `no-redzone=yes`. `/Brepro` alone left
+20 differing PE/CodeView metadata bytes across separate clean build paths.
+Disabling linker debug output made both complete EFI files byte-identical;
+no binary normalization or post-build patching is used. Rust release optimization,
+ABI and application symbols used by runtime diagnostics are unchanged; a linker
+PDB/CodeView record is not provided by this configuration.
+
+Use the same source, VERSION, Cargo.lock, Rust 1.99.0 (LLVM 23.1.1), Apple clang
+21.0.0, release profile, feature set (none for distribution), and committed target
+configuration. Clear custom Rust flags/target overrides and use empty target
+directories. Run `cargo build --offline --locked --release --target
+x86_64-unknown-uefi -p musha-boot --target-dir <empty-directory>` twice.
+Record tool versions, source identity, flags, commands and the full-file SHA-256.
+The local experiment used macOS 27.0.1 arm64 and two independent Git-archive source
+paths: base 54ac242 plus only the target configuration patch. Both 472,576-byte
+EFIs were `f7d21cb4c96f5ed286562c0564b2de0662f9a3cb9473893b7d7586c7fcdba139`.
+Evidence: `out/repro-brepro-nodebug/report.json`, `build-command.py`, and both
+build logs/EFIs. The initial Python archive-extraction API mismatch was fixed
+before compilation; `/Brepro`-only failures remain in `out/repro-brepro/`.
+This establishes same-environment EFI reproducibility, not cross-toolchain,
+cross-host or complete ZIP/tar reproducibility. Final-candidate regressions and
+hardware acceptance remain separate gates.
+
 
 For USB2 hub tests, use `tools/smoke-qemu.py --hub-depth 1 --keyboard-usb-version 1 --keyboard-exit --fat-fixture gpt` plus the firmware option; depths 1–5 are supported. `--hub-disconnect` tests idle child removal. Cooperative traffic accepts `--hub-depth 3`. The dedicated build feature `usb-control-probe` requires `--control-ring-probe` in the smoke test; it must never be included in hardware images. See [hub results](usb-multi-controller-hub-plan.md).
 
@@ -12,10 +43,10 @@ For an end-to-end normal build and USB artifacts, see [test USB build](test-usb-
 ### Current implementation scope
 
 The Rust no_std UEFI application obtains GOP information and draws
-`Hello Musha-OS!` directly into the framebuffer.
+`Musha-OS <VERSION>  starting...` directly into the framebuffer.
 It obtains the memory map, executes ExitBootServices, switches to a dedicated 64KiB stack,
-and directly draws `RUNTIME READY`.
-It then stops with interrupts disabled. The earlier approach of returning to firmware on key input has ended.
+and, after arena initialization, draws `Musha-OS <VERSION>  runtime` and `CORE READY`.
+Device discovery and application execution follow. Returning to firmware on key input is not supported.
 
 This implements the initial handoff, rather than a runtime with complete CPU initialization.
 GDT / IDT / TSS and four-level page tables are switched to our own configuration.
@@ -55,7 +86,7 @@ This is an ESP directory. Use the [shared USB image generator](usb-image.md) to 
 
 Copy the EFI directory to a FAT32 test USB drive and boot it via UEFI on a test machine with Secure Boot disabled.
 No automatic USB-formatting procedure is provided yet.
-The expected result is the greeting and `RUNTIME READY`, followed by a halt without returning to UEFI.
+The startup displays are `Musha-OS <VERSION>  starting...`, then `Musha-OS <VERSION>  runtime` and `CORE READY`. VERSION comes from the repository file; device discovery and the selected application follow.
 NUC5 / NUC8 hardware boot tests have not been performed.
 
 ### QEMU boot tests
@@ -195,6 +226,29 @@ The fixture is not for UEFI boot on physical hardware. See [supported scope](fat
 
 ## 日本語
 
+### UEFI release構成の再現ビルド（2026-10-14）
+
+`.cargo/config.toml` のUEFIターゲットで `no-redzone=yes` を維持し、
+`-C link-arg=/Brepro` と `-C link-arg=/debug:none` を使用します。
+`/Brepro` 単独では別々のクリーンビルド先でPE/CodeViewの20バイトが不一致でした。
+リンク時のデバッグ出力を無効化するとEFI全体がバイト一致しました。
+バイナリーの正規化や生成後の書換えは行いません。Rust release最適化・ABI・
+実行時診断用のシンボルは変更せず、この設定ではリンカーのPDB/CodeView記録を提供しません。
+
+ソース・VERSION・Cargo.lock・Rust 1.99.0（LLVM 23.1.1）・Apple clang 21.0.0・
+release構成・feature（配布版はなし）・コミット済みターゲット設定を揃え、
+独自Rustフラグやターゲット上書きを解除し、空の出力先で上記コマンドを2回実行します。
+ツール版、ソース識別、フラグ、コマンド、EFI全体のSHA-256を記録します。
+今回の環境はmacOS 27.0.1 arm64。54ac242にターゲット設定だけを加え、Git archiveを
+別々の場所へ展開してビルドしました。472,576バイトの2本はともに
+`f7d21cb4c96f5ed286562c0564b2de0662f9a3cb9473893b7d7586c7fcdba139` です。
+証拠は `out/repro-brepro-nodebug/report.json` と `build-command.py`、各ビルドログ・EFI。
+初回のPythonアーカイブ展開API差異はコンパイル前に修正しました。
+`/Brepro` 単独の不一致結果も `out/repro-brepro/` に保持しています。
+確認範囲は同一環境でのEFI再現性です。異なるホスト・ツール版やZIP/tar全体の再現性、
+最終候補の全回帰・実機受入を証明するものではありません。
+
+
 USB2ハブ試験は`tools/smoke-qemu.py --hub-depth 1 --keyboard-usb-version 1 --keyboard-exit --fat-fixture gpt`にfirmware指定を追加する。深さ1〜5対応。`--hub-disconnect`は無入力中の子切断試験。協調通信試験も`--hub-depth 3`に対応。専用ビルド機能`usb-control-probe`にはsmoke側`--control-ring-probe`を指定し、実機イメージには含めない。[検証記録](usb-multi-controller-hub-plan.md)を参照。
 
 通常ビルドからUSB用ファイルまでの一括生成は[テストUSBビルド](test-usb-build.md)を参照してください。
@@ -204,9 +258,9 @@ USB2ハブ試験は`tools/smoke-qemu.py --hub-depth 1 --keyboard-usb-version 1 -
 ### 現在の実装範囲
 
 Rust no_stdのUEFIアプリがGOP情報を取得し、フレームバッファへ直接
-`Hello Musha-OS!` を描画する。メモリマップを取得してExitBootServicesを実行し、
-専用64KiBスタックへ切替後に `RUNTIME READY` を直接描画する。
-その後は割込みを無効にして停止する。キー入力でファームウェアへ戻る方式は終了した。
+`Musha-OS <VERSION>  starting...` を描画する。メモリマップを取得してExitBootServicesを実行し、
+専用64KiBスタックへ切替え、arena初期化後に `Musha-OS <VERSION>  runtime` と `CORE READY` を直接描画する。
+その後は機器探索とアプリ実行へ進む。キー入力でファームウェアへ戻る方式は終了した。
 
 これは初期ハンドオフの実装で、完全なCPU初期化済みランタイムではない。
 GDT / IDT / TSSと4段ページテーブルは自前設定へ切り替える。
@@ -242,7 +296,7 @@ sh tools/build-esp.sh
 
 FAT32の試験用USBへEFIディレクトリをコピーし、Secure Bootを無効にした
 試験機でUEFI起動する。USBをフォーマットする自動処理はまだ提供しない。
-期待結果は挨拶と `RUNTIME READY` の表示。その後は停止し、UEFIへ戻らない。
+起動表示は `Musha-OS <VERSION>  starting...`、続いて `Musha-OS <VERSION>  runtime` と `CORE READY`。VERSIONはリポジトリのファイルから埋め込み、その後に機器探索と対象アプリの実行が続く。
 NUC5 / NUC8の実機起動試験はまだない。
 
 ### QEMUによる起動試験

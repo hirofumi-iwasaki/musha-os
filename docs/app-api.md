@@ -2,10 +2,12 @@
 
 ## English
 
+Internal Rust API 5. For the external ABI, see [application-abi.md](application-abi.md).
+
 `musha-api` provides a safe API for Rust applications statically linked into a single EFI.
 The runtime calls `init`, `step`, and `shutdown` on the `Application` trait, plus bounded `files` callbacks while the mounted file service is available. `files_closed` invalidates saved stream IDs after transport shutdown (except failed apps or unconfirmed DMA shutdown).
 The API version is 5. Rust types carry no external binary-compatibility guarantee.
-The [snapshot API](file-api.md) remains available. The [stream API](stream-file-api.md) now supports root-file selection and read-only FAT32/exFAT requests backed by USB. C ABI, C headers, application UDP handles and file writes remain unimplemented.
+The [snapshot API](file-api.md) remains available. The [stream API](stream-file-api.md) now supports root-file selection and read-only FAT32/exFAT requests backed by USB. Experimental [C/Rust SDK declarations](sdk.md) now exist; the external syscall runtime, application UDP handles and file writes remain unimplemented.
 
 ### Ownership and execution
 
@@ -22,7 +24,7 @@ If a step or time retrieval fails, call shutdown once and display diagnostics.
 Do not call shutdown after init failure; init is responsible for partial-initialization cleanup.
 Cleanup is not guaranteed on panic / CPU exceptions.
 While a Boot Keyboard is connected, call step between nonblocking USB polls.
-RAM diagnostics continue without input. After the input session ends, call shutdown and halt.
+Explicit diagnostic builds continue RAM diagnostics without input; normal viewer builds skip that application-specific scan. After the input session ends, call shutdown and halt.
 The initial [cooperative runtime](cooperative-io.md) now services the first keyboard, [QEMU networking](network.md), and application snapshot-file reads together. USB/BOT boot discovery is still synchronous and completes before this session. The mounted file service also advances bounded metadata/data requests in this loop, including when storage and input use separate xHCI controllers. Multiple active keyboards and application UDP handles remain pending.
 
 now_ms is a monotonic PM-timer millisecond sample in the runtime-owned clock epoch, updated immediately before every step. Applications measure durations by differences within this session.
@@ -72,6 +74,8 @@ Host tests verified FIFO order, wraparound, overflow, and timestamps.
 ---
 
 ## 日本語
+
+内部 Rust API 5。外部 ABI は [application-abi.md](application-abi.md) を参照。
 
 **RustアプリAPIの初期契約**
 

@@ -22,8 +22,9 @@ class Fixtures(unittest.TestCase):
         self.assertEqual(ma, mb)
         self.assertEqual(len(a), ma['blocks'] * ma['sector_size'])
         self.assertEqual(hashlib.sha256(a).hexdigest(), ma['image_sha256'])
+        # DIAGNOSE.TXT replaced MUSHA.TXT; the marker payload is unchanged.
         self.assertEqual(ma['image_sha256'],
-                         'a00ebb2b662767417172ab188f58c09f0fdd8d82a22e878e6349b92803b16501')
+                         '9b57b27780ad01ca202aa0b87f6fe807df1b618b4601834e23fce6d46e9a54d9')
         self.assertEqual(a[:6144], a[6144:12288])
         self.assertEqual(a[3:11], b'EXFAT   ')
 

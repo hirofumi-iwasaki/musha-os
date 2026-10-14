@@ -1,5 +1,10 @@
 # USB controller diagnosis D2 / USBコントローラー診断 D2
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 ## English
 
 This document preserves the D2 diagnostic milestone. Current H2 behavior and validation supersede it: see [multi-controller and hub implementation](usb-multi-controller-hub-plan.md).

@@ -81,7 +81,7 @@ Sourceの寿命は元の媒体に限る。通常版への公開とUSBでの複�
 
 
 2026-10-12追記: QEMU専用 `live-exfat-probe` でexFATのSourceを保持し、共通APIの
-7byte分割要求をUSBへ接続した。MUSHA.TXTの内容/EOFとmetadata待機中の取消しを検証。
+7byte分割要求をUSBへ接続した。DIAGNOSE.TXTの内容/EOFとmetadata待機中の取消しを検証。
 通常版での形式選択、catalog公開と複数ファイル選択は未接続。
 
 
@@ -102,8 +102,8 @@ close/disconnectしたRunning要求は`request_canceled`でruntimeへ伝え、�
 計画を止める。投入済みsectorの完了確認までは要求を隔離し、completeで解除する。
 USB切断・timeoutの場合はcontrollerを停止し、未完了結果を公開しない。
 
-通常版では選択したcontroller上のroot catalogを自動判別し、MUSHA.TXTがなくても公開する。
-MUSHA.TXTが4096byte以内なら旧snapshotも用意する。公開catalogは1起動1媒体で不変。
+通常版では選択したcontroller上のroot catalogを自動判別し、DIAGNOSE.TXTがなくても公開する。
+DIAGNOSE.TXTが4096byte以内なら旧snapshotも用意する。公開catalogは1起動1媒体で不変。
 USB hotplug、媒体交換、複数媒体の切替は未対応。ホストAPIの世代試験はそれらの実機対応を
 意味しない。上限は128件、同時1handle/1要求、1read4096byte、1file64MiB。
 FAT32短名のOEM byteはUTF-16の同値へ保存し、非ASCIIの表示方針は工程6で扱う。

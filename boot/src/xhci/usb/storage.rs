@@ -1,6 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 use super::{Host, TRBS, control, dma_word, publish, read_word};
+use musha_framebuffer::metrics as grid;
 use musha_xhci::storage::transaction::{Phase, Progress, Transaction};
 use musha_xhci::storage::{self, Command, Endpoint, Storage};
 struct Pipe {
@@ -54,6 +55,7 @@ impl Pipe {
         slot: u8,
         address: usize,
     ) -> Result<bool, &'static str> {
+        super::super::rescan_budget(host.clock)?;
         if host.bulk_pending != Some((address, slot, self.dci)) {
             return Err("BULK OWNER");
         }
@@ -434,7 +436,13 @@ pub(super) fn probe(
             Err(e) => Err(e),
         }
     };
-    let skip_snapshot = matches!(mounted, Ok(None));
+    #[cfg(external_app)]
+    if let Err(musha_fs::Error::DuplicateName(name)) = &mounted {
+        if !host.discovery {
+            crate::external::duplicate_catalog(name, host.framebuffer);
+        }
+    }
+    let skip_snapshot = crate::app::VIEWER || matches!(mounted, Ok(None));
     let (prepared, file_result) = match mounted {
         Ok(Some((p, bytes))) => (Some(p), bytes.ok_or(musha_fs::Error::NotFound)),
         Ok(None) => (None, Err(musha_fs::Error::Unsupported)),
@@ -449,7 +457,7 @@ pub(super) fn probe(
     if !skip_snapshot {
         match file_result {
             Ok(bytes) => {
-                crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT BYTES {:08X}", bytes));
+                crate::diagnostics::set(38, format_args!("FILE DIAGNOSE.TXT BYTES {:08X}", bytes));
                 crate::diagnostics::set(
                     39,
                     format_args!("FILE HASH {:016X}", storage::hash(&file[..bytes])),
@@ -464,13 +472,15 @@ pub(super) fn probe(
                 crate::debug(b" HASH=");
                 crate::debug(&crate::cpu::hex(storage::hash(&file[..bytes])));
                 crate::debug(b"\n");
-                if host.framebuffer.height >= 476 {
-                    super::super::clear_line(host.framebuffer, 452);
+                if grid::Metrics::new(host.framebuffer.width, host.framebuffer.height).rows
+                    > grid::FILESYSTEM + grid::MARGIN
+                {
+                    super::super::clear_line(host.framebuffer, grid::FILESYSTEM);
                     unsafe {
-                        host.framebuffer.text(
+                        host.framebuffer.text_grid(
                             format_name,
-                            24,
-                            452,
+                            grid::LABEL,
+                            grid::FILESYSTEM,
                             host.framebuffer.color(0, 240, 100),
                         );
                     }
@@ -485,7 +495,7 @@ pub(super) fn probe(
                 crate::debug(b"MUSHA: FAT32_UNSUPPORTED\n");
             }
             Err(musha_fs::Error::NotFound) => {
-                crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT MISSING"));
+                crate::diagnostics::set(38, format_args!("FILE DIAGNOSE.TXT MISSING"));
                 crate::diagnostics::set(39, format_args!("FILE HASH UNKNOWN"));
                 tick(super::super::AppEvent::FileError(
                     musha_api::Error::NotFound,
@@ -495,18 +505,28 @@ pub(super) fn probe(
             Err(_) => return Err("FAT32 READ"),
         }
     }
-    if host.framebuffer.height >= 444 {
-        super::super::clear_line(host.framebuffer, 388);
-        super::super::clear_line(host.framebuffer, 420);
+    if grid::Metrics::new(host.framebuffer.width, host.framebuffer.height).rows
+        > grid::USB_BYTES + grid::MARGIN
+    {
+        super::super::clear_line(host.framebuffer, grid::USB_READ);
+        super::super::clear_line(host.framebuffer, grid::USB_BYTES);
         unsafe {
-            host.framebuffer
-                .text("USB READ OK", 24, 388, host.framebuffer.color(0, 240, 100));
-            host.framebuffer
-                .text("USB BYTES", 24, 420, host.framebuffer.color(0, 220, 240));
-            host.framebuffer.text(
+            host.framebuffer.text_grid(
+                "USB READ OK",
+                grid::LABEL,
+                grid::USB_READ,
+                host.framebuffer.color(0, 240, 100),
+            );
+            host.framebuffer.text_grid(
+                "USB BYTES",
+                grid::LABEL,
+                grid::USB_BYTES,
+                host.framebuffer.color(0, 220, 240),
+            );
+            host.framebuffer.text_grid(
                 core::str::from_utf8(&crate::cpu::hex(blocks * size as u64)).unwrap(),
-                240,
-                420,
+                grid::VALUE,
+                grid::USB_BYTES,
                 host.framebuffer.color(0, 220, 240),
             );
         }

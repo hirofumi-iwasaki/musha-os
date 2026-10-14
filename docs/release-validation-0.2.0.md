@@ -1,5 +1,10 @@
 # v0.2.0 工程7・公開候補の検証記録
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 2026-10-12。対象ブランチ release/0.2.0。
 工程7のローカル統合回帰と候補準備を進め、実機受入・公開承認は別の完了条件として扱う。
 
@@ -33,7 +38,7 @@ fsck_exfat -nも終了値0でmain/backup boot、up-case、hierarchy、bitmapを�
 
 [実機受入試験](hardware-acceptance-0.2.0.md) は全て未実施。
 MacBook ProのPCI復旧を含む通常候補の動作を、v0.1.0の結果だけで合格にしない。
-[公開候補ノート](release-notes-0.2.0-draft.md) と候補manifestには未公開・実機未確認を明記する。
+[公開候補ノート](release-notes-0.2.0.md) と候補manifestには未公開・実機未確認を明記する。
 物理USB更新、mainへのマージ、タグ、GitHub Release公開は今回実施していない。
 
 ## 統合回帰（ローカル合格）
