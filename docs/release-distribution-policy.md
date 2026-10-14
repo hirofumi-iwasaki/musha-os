@@ -112,6 +112,30 @@ Rust・UEFI target・依存はリポジトリの固定設定とlockfileを尊重
 
 正式候補は固定コミットとcleanなソースから生成する。未コミット変更を含む成果物はプレビューと明記し、正式候補へ昇格させない。検証済みEFIを受け取ってパッケージ化する経路を設け、実機確認後の公開時には再ビルドしない。
 
+### 6.1 Reproducible build conditions and tag provenance / 再現ビルド条件とタグの来歴
+
+Procedure A is adopted after the two byte-identical local builds described in
+[development instructions](development.md). Use the committed UEFI `/Brepro` +
+`/debug:none` configuration and identical source/build inputs and toolchain.
+A documentation-only successor may become the tag target **only after a clean
+rebuild from that final commit is byte-identical to the hardware-accepted EFI**.
+Record both source commits, both hashes, the environment and comparison evidence.
+Generate the final manifest and packages from the final commit/rebuild; the tag
+must still equal the build-manifest source commit. Do not relabel an old manifest
+or bypass existing source checks. Any mismatch stops publication for investigation
+and owner decision. Current local reproducibility does not establish future final
+commit equivalence or hardware acceptance. Published tags/binaries remain fixed.
+
+[開発手順](development.md)に記録したローカル2回のバイト一致により方式Aを採用します。
+コミット済みUEFI設定 `/Brepro` + `/debug:none` と同一のビルド入力・ツール版を用います。
+**文書のみの後続コミットは、その最終コミットのクリーン再ビルドが実機受入済みEFIと
+バイト一致する場合だけタグ対象にできます。** 両ソースコミット・両ハッシュ・環境・比較証拠を
+残し、最終manifestと配布物は最終コミット／再ビルドから生成します。
+タグ＝build-manifestのソースコミットの規則は維持し、旧manifestの来歴の付替えや
+既存検査の迂回は行いません。不一致なら公開を停止して原因調査・所有者判断へ戻します。
+今回のローカル一致は将来の最終文書コミットの一致や実機受入の証明ではありません。
+公開済みタグ・バイナリーは固定します。
+
 ## 7. GitHub ActionsからReleaseへ
 
 ### 7.1 公開までの順序
