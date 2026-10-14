@@ -30,8 +30,9 @@ class BundleTests(unittest.TestCase):
             result = builder.package(out, efi, size_bytes=64 * 1024 * 1024 + 512)
             self.assertEqual(result['image_bytes'], 64 * 1024 * 1024 + 512)
             with zipfile.ZipFile(out / 'musha-os-fat32-files.zip') as archive:
-                self.assertEqual(set(archive.namelist()), {'EFI/BOOT/BOOTX64.EFI', 'MUSHA.TXT', 'LICENSE', 'NOTICE', 'r-efi-AUTHORS'})
+                self.assertEqual(set(archive.namelist()), {'EFI/BOOT/BOOTX64.EFI', 'MUSHA.TXT', 'README.TXT', 'LICENSE', 'NOTICE', 'r-efi-AUTHORS'})
                 self.assertEqual(archive.read('EFI/BOOT/BOOTX64.EFI'), data)
+                self.assertEqual(archive.read('README.TXT'), builder.usb_readme((builder.ROOT/'VERSION').read_text().strip()))
                 self.assertEqual(archive.read('MUSHA.TXT'), b'Hello Musha-OS!\n')
                 self.assertEqual(archive.read('r-efi-AUTHORS'), (builder.ROOT / 'third_party/r-efi/AUTHORS').read_bytes())
                 for name in ('LICENSE', 'NOTICE'):

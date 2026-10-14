@@ -16,7 +16,7 @@ import tarfile
 import tempfile
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from distribution import version_check, make_zip, json_bytes
+from distribution import version_check, make_zip, json_bytes, usb_readme
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -50,14 +50,16 @@ def stage(destination, efi, provenance, release=False, version=None):
         bundle = work / name
         (bundle / 'EFI/BOOT').mkdir(parents=True)
         shutil.copyfile(efi, bundle / 'EFI/BOOT/BOOTX64.EFI')
+        (bundle / 'README.TXT').write_bytes(usb_readme(version))
         (bundle / 'MUSHA.TXT').write_bytes(b'Hello Musha-OS!\n')
-        for name in ['LICENSE', 'NOTICE', 'README.md']:
+        for name in ['LICENSE', 'NOTICE', 'README.md', 'VERSION']:
             shutil.copyfile(ROOT / name, bundle / name)
         for name in sorted(p.name for p in (ROOT / 'docs').glob('*.md')):
             (bundle / 'docs').mkdir(exist_ok=True)
             shutil.copyfile(ROOT / 'docs' / name, bundle / 'docs' / name)
         (bundle / 'tools').mkdir()
         shutil.copyfile(ROOT / 'tools/make-usb-image.py', bundle / 'tools/make-usb-image.py')
+        shutil.copyfile(ROOT / 'tools/distribution.py', bundle / 'tools/distribution.py')
         for dependency in ['lwip', 'freebsd-e1000', 'freebsd-apple-bce']:
             target = bundle / 'third_party' / dependency
             target.mkdir(parents=True)
@@ -97,7 +99,7 @@ def stage(destination, efi, provenance, release=False, version=None):
                     else: tar.addfile(info)
         # Distribution assets use the exact same EFI as the retained QEMU bundle.
         prefix = f'musha-os-v{version}-x64'
-        payload = {name:(bundle / name).read_bytes() for name in ['EFI/BOOT/BOOTX64.EFI','MUSHA.TXT','LICENSE','NOTICE']}
+        payload = {name:(bundle / name).read_bytes() for name in ['EFI/BOOT/BOOTX64.EFI','MUSHA.TXT','README.TXT','LICENSE','NOTICE']}
         for path in sorted((bundle / 'third_party').rglob('*')):
             if path.is_file(): payload[path.relative_to(bundle).as_posix()] = path.read_bytes()
         update = make_zip(work / (prefix+'-files.zip'), payload, version, provenance)

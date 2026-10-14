@@ -8,6 +8,7 @@ import pathlib
 import struct
 import uuid
 import zlib
+from distribution import usb_readme
 
 SECTOR = 512
 ENTRIES = 128
@@ -67,6 +68,7 @@ def create(output, efi, size_mib=64, size_bytes=None, partition_type='basic-data
     image_bytes = size_mib * 1024 * 1024 if size_bytes is None else size_bytes
     if not 64 * 1024 * 1024 <= image_bytes <= 128 * 1024**3 or image_bytes % SECTOR:
         raise ValueError('Image size must be 64MiB–128GiB and a multiple of 512 bytes')
+    readme = usb_readme((pathlib.Path(__file__).resolve().parent.parent/'VERSION').read_text().strip())
     blocks = image_bytes // SECTOR
     first, last = 2048, blocks - ARRAY_SECTORS - 2
     total = last - first + 1
@@ -87,7 +89,9 @@ def create(output, efi, size_mib=64, size_bytes=None, partition_type='basic-data
     data_start = first + 32 + 2 * fat_sectors
     efi_count = (len(executable) + cluster_bytes - 1) // cluster_bytes
     file_start, text_cluster = 5, 5 + efi_count
-    if text_cluster >= clusters + 2:
+    readme_start = text_cluster + 1
+    readme_count = (len(readme) + cluster_bytes - 1) // cluster_bytes
+    if readme_start + readme_count > clusters + 2:
         raise ValueError('EFI input does not fit')
     fat = bytearray(fat_sectors * SECTOR)
     def set_fat(cluster, value):
@@ -97,6 +101,8 @@ def create(output, efi, size_mib=64, size_bytes=None, partition_type='basic-data
         set_fat(cluster, value)
     for cluster in range(file_start, text_cluster):
         set_fat(cluster, cluster + 1 if cluster + 1 < text_cluster else 0x0fffffff)
+    for cluster in range(readme_start, readme_start + readme_count):
+        set_fat(cluster, cluster + 1 if cluster + 1 < readme_start + readme_count else 0x0fffffff)
     def entry(name, attr, cluster, length=0):
         result = bytearray(32)
         result[:11] = name
@@ -107,6 +113,7 @@ def create(output, efi, size_mib=64, size_bytes=None, partition_type='basic-data
     root = bytearray(SECTOR)
     root[:32] = entry(b'EFI        ', 0x10, 3)
     root[32:64] = entry(b'MUSHA   TXT', 0x20, text_cluster, len(PAYLOAD))
+    root[64:96] = entry(b'README  TXT', 0x20, readme_start, len(readme))
     def directory(cluster, parent, child):
         result = bytearray(SECTOR)
         result[:32] = entry(b'.          ', 0x10, cluster)
@@ -145,6 +152,7 @@ def create(output, efi, size_mib=64, size_bytes=None, partition_type='basic-data
         write(data_start + 2 * spc, directory(4, 3, entry(b'BOOTX64 EFI', 0x20, file_start, len(executable))))
         write(data_start + (file_start - 2) * spc, executable.ljust(efi_count * cluster_bytes, b'\0'))
         write(data_start + (text_cluster - 2) * spc, PAYLOAD.ljust(SECTOR, b'\0'))
+        write(data_start + (readme_start - 2) * spc, readme.ljust(readme_count * cluster_bytes, b'\0'))
     return pathlib.Path(output)
 
 if __name__ == '__main__':

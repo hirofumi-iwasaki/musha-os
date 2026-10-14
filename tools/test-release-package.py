@@ -44,6 +44,8 @@ class PackageTests(unittest.TestCase):
         with tarfile.open(archive) as tar:
             entry = tar.extractfile(f'musha-os-{VERSION}-candidate/EFI/BOOT/BOOTX64.EFI').read()
             self.assertEqual(entry, self.efi.read_bytes())
+            self.assertEqual(tar.extractfile(f'musha-os-{VERSION}-candidate/README.TXT').read(), release.usb_readme(VERSION))
+            self.assertIn('README.TXT', manifest['files'])
             self.assertEqual(tar.extractfile(f'musha-os-{VERSION}-candidate/MUSHA.TXT').read(), b'Hello Musha-OS!\n')
             self.assertTrue(all(m.mtime == 0 and m.uid == 0 for m in tar.getmembers()))
 

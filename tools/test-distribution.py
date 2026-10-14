@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 import zlib
-from distribution import make_zip, read_zip, digest, json_bytes
+from distribution import make_zip, read_zip, digest, json_bytes, usb_readme
 
 def load(name):
     spec=importlib.util.spec_from_file_location(name,Path(__file__).with_name(name+'.py'))
@@ -41,10 +41,40 @@ class DistributionTests(unittest.TestCase):
         inspected=deploy.inspect(io.BytesIO(image),len(image))
         um,payload=read_zip(out/(version+'-files.zip'))
         self.assertEqual(inspected['efi'],self.efi.read_bytes()); self.assertEqual(payload['EFI/BOOT/BOOTX64.EFI'],inspected['efi'])
+        self.assertEqual(payload['README.TXT'], usb_readme(VERSION))
+        self.assertIn('README.TXT', m['payload'])
         self.assertEqual(m['image_uncompressed'],{'bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()})
         for name in ['LICENSE','NOTICE','third_party/lwip/COPYING','third_party/freebsd-e1000/COPYING','third_party/freebsd-apple-bce/COPYING','third_party/r-efi/AUTHORS']: self.assertIn(name,payload)
         with zipfile.ZipFile(out/(version+'-deployment.zip')) as z: self.assertIn('tools/update-usb.py',z.namelist())
         draft.validate(out,f'v{VERSION}','a'*40)
+    def test_readme_contract_and_fat_chain(self):
+        expected = usb_readme(VERSION)
+        self.assertLess(len(expected), 4096)
+        self.assertTrue(expected.isascii())
+        self.assertNotIn(b'\n', expected.replace(b'\r\n', b''))
+        self.assertTrue(all(len(line) <= 72 for line in expected.splitlines()))
+        self.assertIn(f'musha-os-v{VERSION}-x64-c-sdk.zip'.encode(), expected)
+        self.assertIn(b'AUTORUN.ELF', expected)
+        for kind in ('esp', 'basic-data'):
+            image = usb.create(self.root/(kind+'-readme.img'), self.efi, partition_type=kind).read_bytes()
+            first = struct.unpack_from('<Q', image, 1024+32)[0]
+            boot = image[first*512:(first+1)*512]
+            spc = boot[13]; reserved = struct.unpack_from('<H', boot, 14)[0]
+            fat_size = struct.unpack_from('<I', boot, 36)[0]
+            fat = (first+reserved)*512
+            data = (first+reserved+2*fat_size)*512
+            root = image[data:data+spc*512]
+            entries = [root[i:i+32] for i in range(0,len(root),32)]
+            entry = next(e for e in entries if e[:11] == b'README  TXT')
+            cluster = struct.unpack_from('<H',entry,26)[0]
+            length = struct.unpack_from('<I',entry,28)[0]
+            contents = b''
+            while cluster < 0x0ffffff8:
+                offset = data+(cluster-2)*spc*512
+                contents += image[offset:offset+spc*512]
+                cluster = struct.unpack_from('<I',image,fat+cluster*4)[0] & 0x0fffffff
+            self.assertEqual(contents[:length], expected)
+
     def test_partition_types_reproducible_and_preserved(self):
         for kind in ('basic-data', 'esp'):
             with self.subTest(kind=kind):
