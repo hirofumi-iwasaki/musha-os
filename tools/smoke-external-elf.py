@@ -46,7 +46,9 @@ def fixture(path, efi, payload, fmt, declared=None, partition_type='basic-data')
             entry = bytearray(32); entry[:11] = b'AUTORUN ELF'; entry[11] = 0x20
             struct.pack_into('<H', entry, 20, start>>16)
             struct.pack_into('<HI', entry, 26, start&65535, len(payload) if declared is None else declared)
-            f.seek(data*512+64); f.write(entry)
+            f.seek(data*512); root = f.read(512)
+            slot = next(i for i in range(0,512,32) if root[i] == 0)
+            f.seek(data*512+slot); f.write(entry)
             f.seek((data+start-2)*512); f.write(payload.ljust(count*512,b'\0'))
     else:
         ex = module('make-exfat-fixture')
@@ -184,7 +186,10 @@ def main():
             if name=='duplicate':
                 with data.open('r+b') as f:
                     f.seek(2048*512);boot=f.read(512);root=(2048+32+2*struct.unpack_from('<I',boot,36)[0])*512
-                    f.seek(root+64);entry=f.read(32);f.seek(root+96);f.write(entry)
+                    f.seek(root); directory=f.read(512)
+                    entry=next(directory[i:i+32] for i in range(0,512,32) if directory[i:i+11]==b'AUTORUN ELF')
+                    slot=next(i for i in range(0,512,32) if directory[i]==0)
+                    f.seek(root+slot);f.write(entry)
             before=hashlib.sha256(data.read_bytes()).hexdigest()
             shutil.copyfile(a.firmware_dir/'edk2-i386-vars.fd',d/'vars.fd')
             debug=d/'debug.log';debug.write_text('')

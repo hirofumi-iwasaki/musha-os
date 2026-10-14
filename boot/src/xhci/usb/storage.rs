@@ -456,7 +456,7 @@ pub(super) fn probe(
     if !skip_snapshot {
         match file_result {
             Ok(bytes) => {
-                crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT BYTES {:08X}", bytes));
+                crate::diagnostics::set(38, format_args!("FILE DIAGNOSE.TXT BYTES {:08X}", bytes));
                 crate::diagnostics::set(
                     39,
                     format_args!("FILE HASH {:016X}", storage::hash(&file[..bytes])),
@@ -492,7 +492,7 @@ pub(super) fn probe(
                 crate::debug(b"MUSHA: FAT32_UNSUPPORTED\n");
             }
             Err(musha_fs::Error::NotFound) => {
-                crate::diagnostics::set(38, format_args!("FILE MUSHA.TXT MISSING"));
+                crate::diagnostics::set(38, format_args!("FILE DIAGNOSE.TXT MISSING"));
                 crate::diagnostics::set(39, format_args!("FILE HASH UNKNOWN"));
                 tick(super::super::AppEvent::FileError(
                     musha_api::Error::NotFound,

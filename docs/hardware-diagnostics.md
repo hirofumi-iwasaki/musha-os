@@ -38,7 +38,7 @@ Host tests cover bounded ASCII records, failure-stage preservation, screen layou
 
 
 - 52 host tests passed with Rust 1.99.0. UEFI normal/debug builds passed. QEMU 11.1.2, q35/TCG, 256MiB, bundled EDK2 were used.
-- The shared GPT/FAT32 image booted with xHCI storage and a keyboard; PCI `1B36:000D` and Intel `8086:10D3`, USB VID/PID/speed, 512-byte sectors, 16-byte MUSHA.TXT and FNV-1a `9A42A948C590F507` matched the stored panel snapshot. The diagnostic session stopped both drivers.
+- The shared GPT/FAT32 image booted with xHCI storage and a keyboard; PCI `1B36:000D` and Intel `8086:10D3`, USB VID/PID/speed, 512-byte sectors, 16-byte DIAGNOSE.TXT and FNV-1a `9A42A948C590F507` matched the stored panel snapshot. The diagnostic session stopped both drivers.
 - `--nic e1000` displayed detected PCI `8086:100E` and `DRIVER UNSUPPORTED / ABSENT`, while keyboard and file checks completed.
 - Five fault cases passed: xHCI halt timeout, command timeout, Device Descriptor timeout, storage read timeout, and corrupt GPT/FAT32 fixture. Each snapshot retained the expected failure stage and error after cleanup where applicable.
 - Cooperative traffic passed ARP, ICMP, 257 UDP echoes, file rechecks, ring wraps, checksum rejection and driver shutdown. Final panel counters were UDP `00000101`, ARP/ICMP `00000001`. Link-down retained `FAIL AT NET STEP POLLING` / `NET ERROR LINK DOWN` and allowed file/input progress before USB shutdown.
@@ -102,7 +102,7 @@ debugビルドでは終了時（またはアプリ失敗時）に`MUSHA: DIAG ..
 
 
 - Rust 1.99.0でホスト試験52件成功。通常／debug UEFIビルド成功。QEMU 11.1.2、q35/TCG、RAM 256MiB、同梱EDK2で検証。
-- 共通GPT/FAT32イメージからxHCI storageとkeyboardを起動。PCI `1B36:000D`・Intel `8086:10D3`、USB VID/PID・速度、sector 512 byte、MUSHA.TXT 16 byte、FNV-1a `9A42A948C590F507`が診断記録と一致。終了時に両ドライバを停止。
+- 共通GPT/FAT32イメージからxHCI storageとkeyboardを起動。PCI `1B36:000D`・Intel `8086:10D3`、USB VID/PID・速度、sector 512 byte、DIAGNOSE.TXT 16 byte、FNV-1a `9A42A948C590F507`が診断記録と一致。終了時に両ドライバを停止。
 - `--nic e1000`でPCI `8086:100E`と`DRIVER UNSUPPORTED / ABSENT`を表示し、keyboard・file確認は完了。
 - xHCI halt timeout、command timeout、Device Descriptor timeout、storage read timeout、GPT/FAT32 fixture破損の5ケース成功。該当する停止処理後も、想定した失敗段階・理由を保持。
 - 協調通信試験でARP、ICMP、UDP echo 257件、file再確認、ring周回、checksum拒否、停止処理を確認。最終表示はUDP `00000101`、ARP／ICMP `00000001`。link切断では`FAIL AT NET STEP POLLING`／`NET ERROR LINK DOWN`を保持し、file・inputはUSB停止まで進行。

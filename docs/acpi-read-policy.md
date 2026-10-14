@@ -1,5 +1,10 @@
 # ACPI firmware-table read policy / ACPIファームウェア表の読取方針
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 ## English
 
 H9 decision, 2026-10-10: IMG_7449 stopped before reading the 20-byte RSDP. The overlapping descriptor is ACPI Reclaim Memory (type 9), attributes 0x2600F. Audit confirms bytes() rejected its RP capability; checksum validation had not run. FADT zero fields are unvalidated evidence, not absent hardware.

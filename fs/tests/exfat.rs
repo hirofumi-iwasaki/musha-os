@@ -88,7 +88,7 @@ fn listing_and_chunked_contents_match_independent_payloads() {
     assert_eq!(
         names,
         [
-            "MUSHA.TXT",
+            "DIAGNOSE.TXT",
             "FRAGMENT.BIN",
             "Long name for exFAT test.txt",
             "EMPTY.TXT",
@@ -723,7 +723,7 @@ fn mixed_esp_and_exfat_prefers_exfat_and_rejects_fat32_discovery() {
     let mut output = [0xcc; 4096];
     let mut read = reader(&disk);
     assert_eq!(
-        musha_fs::read_root(blocks as u64, 512, b"MUSHA   TXT", &mut output, &mut read),
+        musha_fs::read_root(blocks as u64, 512, b"DIAGNOSETXT", &mut output, &mut read),
         Err(Error::Unsupported)
     );
     // Explicit mounting still verifies that the FAT32 fixture itself is valid.

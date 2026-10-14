@@ -7,6 +7,7 @@ import importlib.util
 import json
 from pathlib import Path
 import struct
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -39,6 +40,9 @@ class PackageTests(unittest.TestCase):
             self.assertTrue((bundle / name).is_file())
         for line in (bundle / 'SHA256SUMS').read_text().splitlines():
             sha, name = line.split('  ', 1); self.assertEqual(release.digest(bundle / name), sha)
+        rebuilt = self.root/'standalone image.img'
+        subprocess.run(['python3',str(bundle/'tools/make-usb-image.py'),str(rebuilt),'--efi',str(bundle/'EFI/BOOT/BOOTX64.EFI')],check=True,stdout=subprocess.PIPE)
+        self.assertEqual(release.digest(rebuilt),release.digest(bundle/'musha-qemu-64MiB.img'))
         archive = output / f'musha-os-{VERSION}-candidate.tar.gz'
         self.assertIn(f'{release.digest(archive)}  {archive.name}', (output / 'SHA256SUMS').read_text())
         with tarfile.open(archive) as tar:
@@ -46,7 +50,7 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(entry, self.efi.read_bytes())
             self.assertEqual(tar.extractfile(f'musha-os-{VERSION}-candidate/README.TXT').read(), release.usb_readme(VERSION))
             self.assertIn('README.TXT', manifest['files'])
-            self.assertEqual(tar.extractfile(f'musha-os-{VERSION}-candidate/MUSHA.TXT').read(), b'Hello Musha-OS!\n')
+            self.assertEqual(tar.extractfile(f'musha-os-{VERSION}-candidate/DIAGNOSE.TXT').read(), b'Hello Musha-OS!\n')
             self.assertTrue(all(m.mtime == 0 and m.uid == 0 for m in tar.getmembers()))
 
     def test_c_sdk_is_standalone_deterministic_and_manifested(self):

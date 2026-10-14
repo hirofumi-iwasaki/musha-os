@@ -312,7 +312,7 @@ with (out/'qemu.log').open('w') as err:
    for byte in expected:h=((h^byte)*0x100000001b3)&0xffffffffffffffff
    assert f'LIVE_FILE_API_OK BYTES={len(expected):016X} HASH={h:016X}' in text
    begin=text.index('LIVE_FILE_REQUEST');done=text.index('LIVE_FILE_API_OK')
-   payloads=[('MUSHA.TXT',expected)]
+   payloads=[('DIAGNOSE.TXT',expected)]
    if a.exfat_boot_image:
     payloads += [('FRAGMENT.BIN',bytes(range(256))*5+b'end'),('Long name for exFAT test.txt',b'Long file name\n'),('EMPTY.TXT',b''),('ZEROTAIL.BIN',b'valid'+b'\0'*695)]
    requests=0

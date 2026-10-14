@@ -1,5 +1,10 @@
 # H3 hardware USB diagnostics plan
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 ## English
 
 Preserve existing dirty work and transfer validation. Ryzen H2 evidence: storage/FAT32/MUSHA.TXT read succeeded on BDF 0801 after removing the wireless dongle; keyboard remains unmatched; BDF 0F03 fails during Device Descriptor transfer. A second Boot Keyboard candidate is currently rejected by the parser, but the actual dongle descriptor has not been captured. Do not infer hub enumeration success from file-read success alone.

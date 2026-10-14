@@ -1,5 +1,10 @@
 # H17: BARとUEFI資源記述の整合性検査設計
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 状態: 実装・検証・USB更新済み。2026-10-10。H16の実機結果を受けた次の診断であり、USB復旧成功を目的として安全条件を緩める変更ではない。
 
 ## 判明したことと未確定事項

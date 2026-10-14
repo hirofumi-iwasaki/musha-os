@@ -1,5 +1,10 @@
 # v0.2.0 工程7・公開候補の検証記録
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 2026-10-12。対象ブランチ release/0.2.0。
 工程7のローカル統合回帰と候補準備を進め、実機受入・公開承認は別の完了条件として扱う。
 

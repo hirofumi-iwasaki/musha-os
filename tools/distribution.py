@@ -36,7 +36,8 @@ def json_bytes(value):
 
 def make_zip(output, payload, version, provenance):
     version_check(version, provenance.get('tag'))
-    manifest = {'schema':1, 'layout_version':1, 'version':version,
+    retiring = 'DIAGNOSE.TXT' in payload
+    manifest = {'schema':2 if retiring else 1, **({'retired_files':['MUSHA.TXT']} if retiring else {}), 'layout_version':1, 'version':version,
                 'commit':provenance['commit'], 'tag':provenance.get('tag'),
                 'files':{k:{'bytes':len(v),'sha256':hashlib.sha256(v).hexdigest()} for k,v in payload.items()}}
     with zipfile.ZipFile(output, 'x', zipfile.ZIP_DEFLATED) as z:
@@ -60,7 +61,14 @@ def read_zip(path):
             payload[i.filename]=z.read(i)
     m=json.loads(payload.pop('update-manifest.json'))
     version_check(m['version'], m.get('tag'))
-    if m['schema']!=1 or m['layout_version']!=1: raise ValueError('Incompatible layout')
+    if m['schema'] not in (1,2) or m['layout_version']!=1: raise ValueError('Incompatible layout')
+    retired = m.get('retired_files', [])
+    if (m['schema']==1 and retired) or (m['schema']==2 and retired != ['MUSHA.TXT']):
+        raise ValueError('Invalid retired managed files')
+    if any(n.casefold() in {p.casefold() for p in payload} for n in retired):
+        raise ValueError('Retired file is also payload')
+    if retired and 'DIAGNOSE.TXT' not in payload:
+        raise ValueError('Replacement marker required')
     if set(payload)!=set(m['files']) or 'EFI/BOOT/BOOTX64.EFI' not in payload or any(n.casefold() in {'musha-install.json','update-result.json'} for n in payload): raise ValueError('Manifest contents mismatch')
     for name,b in payload.items():
         entry=m['files'][name]

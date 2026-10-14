@@ -1,5 +1,10 @@
 # v0.1.0 validation record / 検証記録
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 2026-10-10, macOS / Apple Silicon, Rust 1.99.0, Apple Clang 21, QEMU 11.1.2.
 Scope is defined in [release-scope-0.1.0.md](release-scope-0.1.0.md).
 

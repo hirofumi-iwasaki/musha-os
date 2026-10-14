@@ -40,7 +40,7 @@ def create(path,layout='mbr',corrupt=False):
   root=bytearray(size)
   for i in range(0,size,32):root[i]=0xe5
   sector(file,start+data,root)
-  root=bytearray(size);root[:11]=b'MUSHA   TXT';root[11]=32
+  root=bytearray(size);root[:11]=b'DIAGNOSETXT';root[11]=32
   struct.pack_into('<H',root,26,3);struct.pack_into('<I',root,28,len(PAYLOAD))
   sector(file,start+data+2,root)
   for index,cluster in enumerate([3,5,7]):

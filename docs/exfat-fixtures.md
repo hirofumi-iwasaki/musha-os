@@ -24,7 +24,7 @@ rootはcluster 2→600、up-caseは非圧縮128KiB。独自のup-caseはASCII小
 
 | ファイル | 期待内容 | 配置 |
 |---|---|---|
-| MUSHA.TXT | 16byteの既存挨拶 | 連続 |
+| DIAGNOSE.TXT | 16byteの既存挨拶 | 連続 |
 | FRAGMENT.BIN | 1283byteの既知byte列 | 270→272→271 |
 | Long name for exFAT test.txt | 15byte | 複数name entry |
 | EMPTY.TXT | 0byte | clusterなし |

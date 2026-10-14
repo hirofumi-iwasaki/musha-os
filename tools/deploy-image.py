@@ -74,8 +74,8 @@ def inspect(f, size):
         return bytes(b[:length])
     root=struct.unpack_from('<I',boot,44)[0]
     ec,_=find(root,b'EFI        '); bc,_=find(ec,b'BOOT       ')
-    efi=file(*find(bc,b'BOOTX64 EFI')); text=file(*find(root,b'MUSHA   TXT'))
-    if text!=b'Hello Musha-OS!\n': raise ValueError('MUSHA.TXT mismatch')
+    efi=file(*find(bc,b'BOOTX64 EFI')); text=file(*find(root,b'DIAGNOSETXT'))
+    if text!=b'Hello Musha-OS!\n': raise ValueError('DIAGNOSE.TXT mismatch')
     return {'first':first,'last':last,'efi_sha256':hashlib.sha256(efi).hexdigest(),'efi':efi,'headers':headers,'array':a,'mbr':m}
 
 def adjust(source, output, capacity, sector_size=512, apply=False):

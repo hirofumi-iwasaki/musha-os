@@ -43,7 +43,7 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     usb, deploy, update = (module(n) for n in ('make-usb-image', 'deploy-image', 'update-usb'))
     package = out / 'update.zip'
-    make_zip(package, {'EFI/BOOT/BOOTX64.EFI': a.efi.read_bytes(), 'MUSHA.TXT': b'Updated file only\n'},
+    make_zip(package, {'EFI/BOOT/BOOTX64.EFI': a.efi.read_bytes(), 'DIAGNOSE.TXT': b'Updated file only\n'},
              '0.3.0', {'commit': '0' * 40, 'features': [], 'working_tree': 'local virtual test'})
     report = {'scope': 'Virtual images only; no physical acceptance', 'cases': []}
     try:
@@ -71,10 +71,14 @@ def main():
                 stamp = efi.stat().st_mtime_ns
                 # Only this test invokes the file updater on a verified virtual mount.
                 # The physical CLI's identity checks are not weakened.
+                (volume/'MUSHA.TXT').write_bytes(b'Hello Musha-OS!\n')
                 result = update.update(package, volume, out / (kind + '-backup'), apply=True)
-                assert result['changed'] == ['MUSHA.TXT'] and result['applied']
+                assert result['changed'] == ['DIAGNOSE.TXT','update-manifest.json'] and result['applied']
+                assert result['removed_completed']==['MUSHA.TXT']
+                assert not (volume/'MUSHA.TXT').exists()
+                assert (out/(kind+'-backup')/'MUSHA.TXT').read_bytes()==b'Hello Musha-OS!\n'
                 assert efi.stat().st_mtime_ns == stamp
-                assert (volume / 'MUSHA.TXT').read_bytes() == b'Updated file only\n'
+                assert (volume / 'DIAGNOSE.TXT').read_bytes() == b'Updated file only\n'
                 assert update.update(package, volume, out / (kind + '-unused'), apply=True)['changed'] == []
                 assert not (out / (kind + '-unused')).exists()
             finally:

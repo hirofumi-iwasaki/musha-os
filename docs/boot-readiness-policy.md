@@ -23,7 +23,7 @@ Adopted direction: one application owns its Ring 3 loop and private arena; OS ow
 | APP_EXITED / APP_FAILED / APP_LAUNCH_FAILED | Application outcomes independent of services |
 | Service Stopped / StopUnconfirmed | Resources no longer advertised live |
 
-Required clock progress failure never emits OS_READY. Context version/display/arena are exercised before entry. File Session is mounted and its actual metadata API exercised before file-viewer readiness. Missing input/LAN are bounded optional discovery outcomes with existing reason logs. Controller `AppEvent::Ready` is not global readiness; repeated notifications cannot relaunch an initialized app. Normal viewer readiness excludes diagnostic RAM repetition and MUSHA.TXT content checks, retaining memory/resource/ownership/reset and mount validation.
+Required clock progress failure never emits OS_READY. Context version/display/arena are exercised before entry. File Session is mounted and its actual metadata API exercised before file-viewer readiness. Missing input/LAN are bounded optional discovery outcomes with existing reason logs. Controller `AppEvent::Ready` is not global readiness; repeated notifications cannot relaunch an initialized app. Normal viewer readiness excludes diagnostic RAM repetition and DIAGNOSE.TXT content checks, retaining memory/resource/ownership/reset and mount validation.
 
 The bounded journal records omitted count, first failed stage and latest major error. Future boot-report API returns versioned bounded value copies and opaque handles, never Panel/BootInfo or physical addresses; reading cannot draw/reinitialize devices. Its wire record is not implemented.
 

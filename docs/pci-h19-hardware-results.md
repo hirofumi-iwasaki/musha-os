@@ -1,5 +1,10 @@
 # H19 MacBook Pro 2018 実機結果
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 記録日: 2026-10-10（日本時間）。利用者が機種をMacBook Pro 2018と明示。IMG_7527〜IMG_7536、診断1/10〜10/10を確認。
 
 ## 初回実行の結論（外付け未接続）

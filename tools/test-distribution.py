@@ -32,7 +32,7 @@ class DistributionTests(unittest.TestCase):
     def package(self):
         return release.stage(self.root/'release',self.efi,self.prov)
     def zip(self,payload=None):
-        p=self.root/'update.zip'; make_zip(p,payload or {'EFI/BOOT/BOOTX64.EFI':self.efi.read_bytes(),'MUSHA.TXT':b'text'},f'{VERSION}',self.prov); return p
+        p=self.root/'update.zip'; make_zip(p,payload or {'EFI/BOOT/BOOTX64.EFI':self.efi.read_bytes(),'DIAGNOSE.TXT':b'text'},f'{VERSION}',self.prov); return p
     def volume(self):
         p=self.root/'volume'; (p/'EFI/BOOT').mkdir(parents=True); (p/'EFI/BOOT/BOOTX64.EFI').write_bytes(b'old'); (p/'user.txt').write_bytes(b'keep'); return p
     def test_image_zip_payload_and_manifest(self):
@@ -43,6 +43,8 @@ class DistributionTests(unittest.TestCase):
         self.assertEqual(inspected['efi'],self.efi.read_bytes()); self.assertEqual(payload['EFI/BOOT/BOOTX64.EFI'],inspected['efi'])
         self.assertEqual(payload['README.TXT'], usb_readme(VERSION))
         self.assertIn('README.TXT', m['payload'])
+        self.assertEqual(m['update_schema'],2)
+        self.assertEqual(m['retired_files'],['MUSHA.TXT'])
         self.assertEqual(m['image_uncompressed'],{'bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()})
         for name in ['LICENSE','NOTICE','third_party/lwip/COPYING','third_party/freebsd-e1000/COPYING','third_party/freebsd-apple-bce/COPYING','third_party/r-efi/AUTHORS']: self.assertIn(name,payload)
         with zipfile.ZipFile(out/(version+'-deployment.zip')) as z: self.assertIn('tools/update-usb.py',z.namelist())
@@ -130,14 +132,71 @@ class DistributionTests(unittest.TestCase):
         with self.assertRaises(ValueError): deploy.adjust(image,out,128*1024**2,apply=True)
         self.assertFalse(out.exists())
     def test_changed_only_backup_no_subprocess(self):
-        z=self.zip(); v=self.volume(); (v/'MUSHA.TXT').write_bytes(b'text'); before=(v/'MUSHA.TXT').stat().st_mtime_ns
+        z=self.zip(); v=self.volume(); (v/'DIAGNOSE.TXT').write_bytes(b'text'); before=(v/'DIAGNOSE.TXT').stat().st_mtime_ns
         with patch('subprocess.run',side_effect=AssertionError('No image/raw command')),patch('subprocess.check_output',side_effect=AssertionError('No raw read')):
-            dry=update.update(z,v,self.root/'backup'); self.assertEqual(dry['changed'],['EFI/BOOT/BOOTX64.EFI']); self.assertFalse((self.root/'backup').exists())
+            dry=update.update(z,v,self.root/'backup'); self.assertEqual(dry['changed'],['EFI/BOOT/BOOTX64.EFI','update-manifest.json']); self.assertFalse((self.root/'backup').exists())
             result=update.update(z,v,self.root/'backup',True)
             self.assertTrue(result['applied']); self.assertEqual((v/'user.txt').read_bytes(),b'keep')
-            self.assertEqual((v/'MUSHA.TXT').stat().st_mtime_ns,before)
+            self.assertEqual((v/'DIAGNOSE.TXT').stat().st_mtime_ns,before)
             self.assertEqual((self.root/'backup/EFI/BOOT/BOOTX64.EFI').read_bytes(),b'old')
             self.assertEqual(update.update(z,v,self.root/'unused',True)['changed'],[]); self.assertFalse((self.root/'unused').exists())
+    def test_retired_marker_dry_run_backup_remove_and_verified_files(self):
+        out=self.package(); z=out/f'musha-os-v{VERSION}-x64-files.zip'
+        m,payload=read_zip(z); v=self.volume()
+        (v/'MUSHA.TXT').write_bytes(b'locally edited marker')
+        (v/'AUTORUN.ELF').write_bytes(b'user program')
+        (v/'musha-install.json').write_text('{"layout_version":1}')
+        dry=update.update(z,v,self.root/'backup')
+        self.assertEqual(dry['removed'],['MUSHA.TXT'])
+        self.assertTrue((v/'MUSHA.TXT').exists())
+        self.assertFalse((self.root/'backup').exists())
+        result=update.update(z,v,self.root/'backup',True)
+        self.assertEqual((self.root/'backup/MUSHA.TXT').read_bytes(),b'locally edited marker')
+        self.assertFalse((v/'MUSHA.TXT').exists())
+        self.assertEqual(result['verified-absent'],['MUSHA.TXT'])
+        self.assertEqual(set(result['verified-files']),set(payload)|{'update-manifest.json'})
+        self.assertEqual(sum(n.startswith('third_party/') for n in result['verified-files']),8)
+        self.assertEqual(json.loads((v/'update-manifest.json').read_text()),m)
+        self.assertEqual((v/'AUTORUN.ELF').read_bytes(),b'user program')
+        again=update.update(z,v,self.root/'unused',True)
+        self.assertFalse(again['changed'] or again['removed'])
+        self.assertEqual(again['verified-files'],result['verified-files'])
+        self.assertFalse((self.root/'unused').exists())
+
+    def test_retirement_only_and_failure_before_retirement(self):
+        z=self.zip(); v=self.volume()
+        update.update(z,v,self.root/'first',True)
+        (v/'MUSHA.TXT').write_bytes(b'old marker')
+        result=update.update(z,v,self.root/'retirement',True)
+        self.assertEqual(result['changed'],[])
+        self.assertEqual(result['removed_completed'],['MUSHA.TXT'])
+        (v/'MUSHA.TXT').write_bytes(b'retry marker')
+        (v/'EFI/BOOT/BOOTX64.EFI').write_bytes(b'old EFI')
+        with patch('os.replace',side_effect=OSError('interrupted')):
+            with self.assertRaises(OSError):update.update(z,v,self.root/'interrupted',True)
+        self.assertEqual((v/'MUSHA.TXT').read_bytes(),b'retry marker')
+        self.assertEqual((self.root/'interrupted/MUSHA.TXT').read_bytes(),b'retry marker')
+
+    def test_legacy_schema_and_retirement_rejections(self):
+        z=self.zip(); m,payload=read_zip(z)
+        for i,retired in enumerate([['user.txt'],['../outside'],['MUSHA.TXT','MUSHA.TXT'],['musha.txt'],[]]):
+            bad=self.root/f'retired-{i}.zip'
+            with zipfile.ZipFile(bad,'w') as f:
+                for n,b in payload.items():f.writestr(n,b)
+                f.writestr('update-manifest.json',json_bytes(dict(m,retired_files=retired)))
+            with self.assertRaises(ValueError):read_zip(bad)
+        legacy=self.root/'legacy.zip'
+        with zipfile.ZipFile(legacy,'w') as f:
+            for n,b in payload.items():f.writestr(n,b)
+            old=dict(m,schema=1); old.pop('retired_files')
+            f.writestr('update-manifest.json',json_bytes(old))
+        v=self.volume(); (v/'MUSHA.TXT').write_bytes(b'keep on legacy update')
+        update.update(legacy,v,self.root/'legacy-backup',True)
+        self.assertTrue((v/'MUSHA.TXT').exists())
+        (v/'MUSHA.TXT').unlink(); (v/'MUSHA.TXT').symlink_to(self.root/'outside')
+        with self.assertRaises(ValueError):update.update(z,v,self.root/'symlink-backup',True)
+        self.assertFalse((self.root/'symlink-backup').exists())
+
     def test_failure_preserves_old_and_records_backup(self):
         z=self.zip(); v=self.volume()
         with patch('os.replace',side_effect=OSError('simulated failure')):
@@ -157,7 +216,7 @@ class DistributionTests(unittest.TestCase):
         z=self.root/'alias.zip'
         with zipfile.ZipFile(z,'w') as f: f.writestr('ABC',b'a'); f.writestr('abc',b'b')
         with self.assertRaises(ValueError): read_zip(z)
-        z=self.zip(); v=self.volume(); (v/'MUSHA.TXT').symlink_to(self.root/'outside')
+        z=self.zip(); v=self.volume(); (v/'DIAGNOSE.TXT').symlink_to(self.root/'outside')
         with self.assertRaises(ValueError): update.update(z,v,self.root/'backup',True)
         self.assertFalse((self.root/'backup').exists())
     def test_unknown_layout_space_and_changed_device(self):
@@ -215,7 +274,7 @@ class DistributionTests(unittest.TestCase):
     def test_update_rejects_corrupt_payload_before_writing(self):
         z=self.zip(); v=self.volume()
         with zipfile.ZipFile(z) as src: entries={i.filename:src.read(i) for i in src.infolist()}
-        entries['MUSHA.TXT']=b'corrupt'
+        entries['DIAGNOSE.TXT']=b'corrupt'
         bad=self.root/'bad.zip'
         with zipfile.ZipFile(bad,'w') as dst:
             for n,b in entries.items(): dst.writestr(n,b)

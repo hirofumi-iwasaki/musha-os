@@ -6,7 +6,7 @@
 
 musha-fs is an original no_std implementation.
 It accepts a block-reader callback and has no write operations.
-It connects to USB BOT READ(10) and reads the short-name root file MUSHA.TXT for diagnostics.
+It connects to USB BOT READ(10) and reads the short-name root file DIAGNOSE.TXT for diagnostics.
 
 - FAT32 superfloppy (the disk starts with a volume boot sector).
 - MBR primary partition type 0Bh / 0Ch; exactly one target FAT32 partition.
@@ -52,7 +52,7 @@ Corrupt target FAT32 media, I/O errors, and exceeded limits lead to controller s
 
 ### Diagnostics and hardware deployment
 
-Place MUSHA.TXT of at most 4096 bytes in the root of a supported FAT32 USB drive.
+Place DIAGNOSE.TXT of at most 4096 bytes in the root of a supported FAT32 USB drive.
 Initially use a single line containing `Hello Musha-OS!`.
 On sufficiently tall screens, display FAT32 READ OK;
 record byte count and FNV-1a 64-bit hash in debug output.
@@ -66,7 +66,7 @@ Host tests covered MBR / superfloppy, fragmented root and file chains,
 512 / 4096-byte sectors, active FAT, malformed BPBs / partitions, cycles,
 short chains, insufficient buffers, missing files, and I/O errors.
 In QEMU, attach an approximately 34MiB FAT32 fixture as USB media and read fragmented,
-1186-byte MUSHA.TXT, verifying its hash against the host payload.
+1186-byte DIAGNOSE.TXT, verifying its hash against the host payload.
 Both MBR and superfloppy succeeded. Attach fixtures read-only;
 also check that the image SHA-256 remains unchanged after exit.
 A cyclic file-chain fixture verified diagnostic failure, controller shutdown,
@@ -91,7 +91,7 @@ Do not copy the specification text or existing driver code into the repository.
 ### 対応形式
 
 musha-fsはno_stdの独自実装。block readerのcallbackを受け取り、書込み処理を持たない。
-USB BOTのREAD(10)へ接続し、ルートディレクトリの短名MUSHA.TXTを診断で読む。
+USB BOTのREAD(10)へ接続し、ルートディレクトリの短名DIAGNOSE.TXTを診断で読む。
 
 - FAT32 superfloppy(ディスク先頭がvolume boot sector)。
 - MBRの一次partition type 0Bh / 0Ch。対象FAT32 partitionは一つだけ。
@@ -134,7 +134,7 @@ deleted entry、volume label、directory、LFNを除外して短名を一致比�
 
 ### 診断と実機への配置
 
-対応するFAT32 USBのルートに4096byte以下のMUSHA.TXTを置く。
+対応するFAT32 USBのルートに4096byte以下のDIAGNOSE.TXTを置く。
 最初は内容を `Hello Musha-OS!` の一行にする。
 高画面ではFAT32 READ OKを表示し、debug出力にbyte数とFNV-1a 64bit hashを記録する。
 ファイルがなければFAT32_FILE_MISSINGとし、起動・入力・RAM診断は継続する。
@@ -146,7 +146,7 @@ deleted entry、volume label、directory、LFNを除外して短名を一致比�
 ホストでは、MBR / superfloppy、rootとfileの断片化、512 / 4096byte sector、
 active FAT、不正BPB / partition、循環、短いchain、buffer不足、file欠落、I/O errorを確認した。
 QEMUでは約34MiBのFAT32 fixtureをUSBとして接続し、断片化した1186byteの
-MUSHA.TXTを読み、ホスト側payloadのhashと一致することを確認した。
+DIAGNOSE.TXTを読み、ホスト側payloadのhashと一致することを確認した。
 MBRとsuperfloppyの両形式で成功。fixtureはreadonly接続し、
 終了後のimage SHA-256も不変であることを検査する。
 循環file chainのfixtureでは診断失敗、controller停止、DMA無効化とRAM完了を確認した。

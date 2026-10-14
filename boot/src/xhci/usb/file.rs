@@ -121,10 +121,12 @@ pub(super) fn prepare(
     let selected = musha_fs::exfat::FileSystem::discover(blocks, size, &mut read, work);
     let (format, count, bytes) = match selected {
         Ok(mut fs) => {
-            let first = fs
-                .entries()
-                .iter()
-                .position(|e| e.name() == [77, 85, 83, 72, 65, 46, 84, 88, 84]);
+            let first = fs.entries().iter().position(|e| {
+                e.name()
+                    .iter()
+                    .copied()
+                    .eq(b"DIAGNOSE.TXT".iter().map(|&b| b as u16))
+            });
             let mut bytes = None;
             if let Some(i) = first {
                 if !crate::app::VIEWER && fs.entries()[i].len() <= snapshot.len() as u64 {
@@ -146,7 +148,7 @@ pub(super) fn prepare(
         }
         Err(musha_fs::Error::Unsupported) => {
             let mut fs = musha_fs::fat32::FileSystem::discover(blocks, size, &mut read)?;
-            let first = fs.entries().iter().position(|e| e.name() == b"MUSHA   TXT");
+            let first = fs.entries().iter().position(|e| e.name() == b"DIAGNOSETXT");
             let mut bytes = None;
             if let Some(i) = first {
                 if !crate::app::VIEWER && fs.entries()[i].len() <= snapshot.len() as u64 {

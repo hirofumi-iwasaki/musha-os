@@ -4,7 +4,7 @@
 
 ### Scope and ownership
 
-API version 3 adds read-only `file_open / file_read / file_close` to the safe Rust context. The initial supported file is `/MUSHA.TXT`, up to 4096 bytes, copied from the first successfully verified FAT32 root file discovered in USB port order. This is a runtime-owned snapshot, independent of device DMA memory, USB shutdown, and caller buffers. Subsequent successful media do not replace it. No file writes, arbitrary-file loading, subdirectories, seek, C ABI, or external binary compatibility are provided.
+API version 3 adds read-only `file_open / file_read / file_close` to the safe Rust context. The initial supported file is `/DIAGNOSE.TXT`, up to 4096 bytes, copied from the first successfully verified FAT32 root file discovered in USB port order. This is a runtime-owned snapshot, independent of device DMA memory, USB shutdown, and caller buffers. Subsequent successful media do not replace it. No file writes, arbitrary-file loading, subdirectories, seek, C ABI, or external binary compatibility are provided.
 
 `file_open(path)` accepts absolute ASCII root 8.3 names, with alphanumeric characters, `_` and `-`; matching is case-insensitive. Other valid filenames return NotFound once discovery has completed. Invalid paths return Invalid. Before a snapshot is ready, open returns Again while USB discovery is still running, even if an earlier medium was unsupported. After discovery, missing files return NotFound, unsupported media return Unsupported, and failed discovery returns Io. A successful snapshot remains readable if another device later fails.
 
@@ -31,7 +31,7 @@ See [Rust application API](app-api.md), [FAT32 reader](fat32.md), and [shared US
 
 ### 範囲と所有権
 
-API版3で、安全なRust contextへ読出し専用の`file_open / file_read / file_close`を追加した。初期対象は最大4096byteの`/MUSHA.TXT`。USBポート順で最初に読出し・検証に成功したFAT32ルートファイルをコピーする。ランタイム所有のsnapshotで、device DMA領域、USB停止、呼出し側bufferから独立する。後続媒体の成功で置き換えない。ファイル書込み、任意ファイルのロード、subdirectory、seek、C ABI、外部バイナリ互換は提供しない。
+API版3で、安全なRust contextへ読出し専用の`file_open / file_read / file_close`を追加した。初期対象は最大4096byteの`/DIAGNOSE.TXT`。USBポート順で最初に読出し・検証に成功したFAT32ルートファイルをコピーする。ランタイム所有のsnapshotで、device DMA領域、USB停止、呼出し側bufferから独立する。後続媒体の成功で置き換えない。ファイル書込み、任意ファイルのロード、subdirectory、seek、C ABI、外部バイナリ互換は提供しない。
 
 `file_open(path)`は絶対パスのASCIIルート8.3名に対応し、英数字、`_`、`-`を許可する。大文字・小文字を区別しない。他の有効なファイル名は探索完了後にNotFound。不正パスはInvalid。snapshot準備前は、前の媒体が未対応でもUSB探索中ならAgainを返す。探索後はファイルなしがNotFound、未対応媒体がUnsupported、探索失敗がIoとなる。取得済みsnapshotは別の機器が後で失敗しても読める。
 

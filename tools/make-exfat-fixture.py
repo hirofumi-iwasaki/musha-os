@@ -121,7 +121,7 @@ def build(case='normal', sector_size=512):
 
     # Expected data is defined before image serialization, not recovered from it.
     files = [
-        ('MUSHA.TXT', b'Hello Musha-OS!\n', [260], True, 16),
+        ('DIAGNOSE.TXT', b'Hello Musha-OS!\n', [260], True, 16),
         ('FRAGMENT.BIN', bytes(range(256)) * (2 * SECTOR // 256 + 1) + b'end', [270, 272, 271], False, 2 * SECTOR + 259),
         ('Long name for exFAT test.txt', b'Long file name\n', [280], True, 15),
         ('EMPTY.TXT', b'', [], False, 0),

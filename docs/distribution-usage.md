@@ -1,5 +1,36 @@
 # 配布・配備手順 / Distribution and deployment
 
+## v0.3.0 candidate root files / 候補のルートファイル
+
+English: `README.TXT` is generated from VERSION (ASCII, CRLF, at most 72
+columns, under 4 KiB). The diagnostic marker is `DIAGNOSE.TXT`, unchanged
+16-byte contents `Hello Musha-OS!\n` and FNV `9A42A948C590F507`. Initial images
+contain EFI, DIAGNOSE.TXT and README.TXT; license texts are supplied in the
+files/deployment archives as before. Use the matching files ZIP to populate
+all managed USB files, including the eight third-party notices.
+
+Before the next physical acceptance, preview and apply the matching files ZIP
+with `update-usb.py`. Record `verified-files` for EFI, DIAGNOSE.TXT, README.TXT,
+LICENSE, NOTICE, all eight third_party files and update-manifest.json. Confirm
+`verified-absent` contains the old marker. Backups must be outside the USB.
+Place the user's optional AUTORUN.ELF separately and record its hash; eject
+safely. Physical update remains owner-approved. See the
+[manifest migration rules](release-distribution-policy.md#managed-marker-migration-2026-10-14--管理マーカーの移行).
+
+日本語：`README.TXT` はVERSIONから生成し、ASCII・CRLF・72桁以内・4 KiB未満とします。
+診断用ファイルは `DIAGNOSE.TXT`、内容16 byteとFNV `9A42A948C590F507` は不変です。
+初回イメージにはEFI・DIAGNOSE.TXT・README.TXTを配置し、ライセンス類は従来どおり
+files/deploymentアーカイブに同梱します。全管理ファイルをUSBへ揃える際は対応する
+files ZIPを使用し、third_partyの8ファイルも配置してください。
+
+次回の実機受入前に対応するZIPでdry-runとapplyを行い、`verified-files` のEFI・
+DIAGNOSE.TXT・README.TXT・LICENSE・NOTICE・third_partyの8ファイル・
+update-manifest.jsonを確認します。`verified-absent` で旧マーカー不在を確認し、
+退避はUSB外へ保存します。任意のAUTORUN.ELFは別途配置・ハッシュ記録して安全に
+取り外します。実USB更新は所有者承認後に行います。
+
+以下のv0.2.0配布物の記述は公開当時のもので、公開済み配布物は変更しません。
+
 v0.2.0は[GitHub Releases](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0)で公開済みです。
 README・Release本文の作成と公開後の訂正は[リリース文書規約](release-editorial-policy.md)に従ってください。
 v0.1.0の確認実績とv0.2.0候補の確認は別です。

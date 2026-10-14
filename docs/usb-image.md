@@ -18,7 +18,7 @@ The [one-command build](test-usb-build.md) creates both a raw image and a FAT32 
 Stage 1 of the [pre-hardware work plan](pre-hardware-work-plan.md) is implemented and verified in QEMU. Physical NUC5 / NUC8 boot tests remain pending.
 `tools/make-usb-image.py` uses only Python's standard library and creates a new regular file with exclusive creation. Existing files, symlinks, and device paths are refused. It does not format or write a physical USB drive.
 
-The default image is 64MiB, with 512-byte sectors, a protective MBR, primary and backup GPT headers / 128-entry arrays, and one FAT32 Microsoft Basic Data partition starting at LBA 2048. It contains `EFI/BOOT/BOOTX64.EFI` and root file `MUSHA.TXT` with `Hello Musha-OS!` followed by a newline. Two FATs, backup boot sectors, and FSInfo are included. UUIDs derive from the EFI hash and image size; directory timestamps are fixed at zero. Identical EFI input, size and partition type produce identical bytes. The GPT partition name is `Musha-OS` for both types. This does not yet promise identical EFI binaries across toolchain installations.
+The default image is 64MiB, with 512-byte sectors, a protective MBR, primary and backup GPT headers / 128-entry arrays, and one FAT32 Microsoft Basic Data partition starting at LBA 2048. It contains `EFI/BOOT/BOOTX64.EFI` and root file `DIAGNOSE.TXT` with `Hello Musha-OS!` followed by a newline. Two FATs, backup boot sectors, and FSInfo are included. UUIDs derive from the EFI hash and image size; directory timestamps are fixed at zero. Identical EFI input, size and partition type produce identical bytes. The GPT partition name is `Musha-OS` for both types. This does not yet promise identical EFI binaries across toolchain installations.
 
 ### Build and boot
 
@@ -40,7 +40,7 @@ python3 tools/make-usb-image.py out/musha-usb-debug.img
 python3 tools/smoke-qemu.py --usb-image out/musha-usb-debug.img --qemu /opt/homebrew/bin/qemu-system-x86_64 --firmware-dir /opt/homebrew/share/qemu
 ```
 
-The actual image is attached read-only. The script checks UEFI handoff, RAM, keyboard transitions, runtime storage reads, the exact MUSHA.TXT length / hash, DMA shutdown, and unchanged image SHA-256. Do not include `qemu-debug` in physical builds.
+The actual image is attached read-only. The script checks UEFI handoff, RAM, keyboard transitions, runtime storage reads, the exact DIAGNOSE.TXT length / hash, DMA shutdown, and unchanged image SHA-256. Do not include `qemu-debug` in physical builds.
 
 ### GPT reader contract
 
@@ -84,7 +84,7 @@ Basic Data実機起動は確認前**。既存ESP媒体の種別は変えず、�
 [実機到着前の作業方針](pre-hardware-work-plan.md)の第1段階を実装し、QEMUで確認した。NUC5 / NUC8の実機起動試験は未実施。
 `tools/make-usb-image.py`はPython標準ライブラリだけで新しい通常ファイルを排他的に作成する。既存ファイル、symlink、device pathは拒否する。実物USBのformatや書込みは行わない。
 
-既定は64MiB、512byte sector。protective MBR、主・副GPT header / 128-entry array、LBA 2048から始まる単一FAT32 Basic Dataを持つ。`EFI/BOOT/BOOTX64.EFI`と、Hello Musha-OS!に改行を加えたルートの`MUSHA.TXT`を含む。2つのFAT、backup boot sector、FSInfoを配置する。UUIDはEFI hashとイメージ容量から生成し、directory timestampは0に固定する。同じEFI入力・容量・種別なら同じbyte列になる。GPTパーティション名は両種別とも `Musha-OS`。ツール環境間でEFIバイナリ自体が一致する保証はまだない。
+既定は64MiB、512byte sector。protective MBR、主・副GPT header / 128-entry array、LBA 2048から始まる単一FAT32 Basic Dataを持つ。`EFI/BOOT/BOOTX64.EFI`と、Hello Musha-OS!に改行を加えたルートの`DIAGNOSE.TXT`を含む。2つのFAT、backup boot sector、FSInfoを配置する。UUIDはEFI hashとイメージ容量から生成し、directory timestampは0に固定する。同じEFI入力・容量・種別なら同じbyte列になる。GPTパーティション名は両種別とも `Musha-OS`。ツール環境間でEFIバイナリ自体が一致する保証はまだない。
 
 ### 生成と起動
 
@@ -106,7 +106,7 @@ python3 tools/make-usb-image.py out/musha-usb-debug.img
 python3 tools/smoke-qemu.py --usb-image out/musha-usb-debug.img --qemu /opt/homebrew/bin/qemu-system-x86_64 --firmware-dir /opt/homebrew/share/qemu
 ```
 
-実際のイメージをreadonly接続し、UEFI引継ぎ、RAM、キー押下・解放、ランタイムのストレージ読出し、MUSHA.TXTの長さ・hash、DMA停止、イメージSHA-256不変を検査する。実機版に`qemu-debug`を含めない。
+実際のイメージをreadonly接続し、UEFI引継ぎ、RAM、キー押下・解放、ランタイムのストレージ読出し、DIAGNOSE.TXTの長さ・hash、DMA停止、イメージSHA-256不変を検査する。実機版に`qemu-debug`を含めない。
 
 ### GPT読出し契約
 

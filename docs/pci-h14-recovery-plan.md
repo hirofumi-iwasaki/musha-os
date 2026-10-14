@@ -1,5 +1,10 @@
 # H14: UEFI終了時のPCI設定消失への限定復旧
 
+Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
+
+当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
+
+
 ## 根拠と範囲
 H13の実機写真 IMG_7470/7471/7472: 0700/7D00 は PRE EBS で CMD=7、BAR=81700000/8F900000、POST EBS で両方ゼロ。起動元は7D00。00A0は不変。
 機種名やIntel IDで分岐しない。起動元に一意に対応し、初期/終了直前のID・BAR・CMDが一致し、D0が維持された32-bit non-prefetchable memory BARのみ復旧。通常の有効機器は設定を書かず従来経路へ。

@@ -351,3 +351,21 @@ EFI SHA-256 `41a61efcd96edf6142bf81a37ae2ca90ca4396ea71386da698f8cac8bccd2ae8`�
 1回目はOS側に利用可能な媒体がなく、キーボードも未検出という表示です。ELF不正や「ファイルがないことを正常読出しで確認した」とは解釈しません。USB列挙・所有権移行・媒体初期化や接続構成のどこで止まったかは、この写真だけでは不明です。同じ接続・同じUSBのままで電源断からの起動と再起動を区別して記録し、失敗時の全画面を保存することが次の確認です。実機キーボード操作、exFAT、ネットワーク、例外試験は今回未確認です。
 
 文字サイズの指摘を受け、外部コンソールだけ2倍から等倍（6×8）へ変更しました。80桁×24行、折返し・代替文字・ABI、従来ビューアーは維持しています。変更版は**今回の実機成功版とは別**で、未commit・未push・USB未更新です。ホスト10件と通常版QEMU7件の結果を上記のパスに保存しました。QEMU結果を実機の追加成功回数には数えません。
+
+
+## Managed USB file check (2026-10-14) / 管理ファイル確認
+
+Before acceptance, use the matching schema-2 updater and save its verified-files
+report: EFI/BOOT/BOOTX64.EFI, DIAGNOSE.TXT, README.TXT, LICENSE, NOTICE,
+third_party/{lwip,freebsd-e1000,freebsd-apple-bce}/{COPYING,UPSTREAM},
+third_party/r-efi/{AUTHORS,UPSTREAM}, update-manifest.json. Verify all eight
+third-party files, the marker's 16 bytes/FNV 9A42A948C590F507, and absence of
+retired MUSHA.TXT. AUTORUN.ELF remains a separate owner-provided program.
+Historical screens used MUSHA.TXT; new candidates use DIAGNOSE.TXT.
+This preparation does not count as hardware acceptance or a USB update.
+
+受入前に対応するschema 2更新ツールを使用し、上記の全管理ファイルについて
+verified-filesを保存します。third_partyの8ファイル、診断マーカー16 byte・
+FNV 9A42A948C590F507、旧MUSHA.TXTの不在を確認してください。
+AUTORUN.ELFは利用者が配置する別ファイルです。当時のファイル名はMUSHA.TXT、
+新候補ではDIAGNOSE.TXTです。この準備は実機合格・実USB更新を意味しません。

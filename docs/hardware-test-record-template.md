@@ -30,7 +30,7 @@ Copy this document into a new result file for each configuration. Default values
 | xHCI ownership / reset / command rings | NOT RUN | UNKNOWN |
 | USB port / VID:PID / speed / descriptor count | NOT RUN | UNKNOWN |
 | Storage blocks / sector bytes / total capacity | NOT RUN | UNKNOWN |
-| MUSHA.TXT length / FNV-1a / APP FILE READ OK | NOT RUN | UNKNOWN |
+| DIAGNOSE.TXT length / FNV-1a / APP FILE READ OK | NOT RUN | UNKNOWN |
 | Keyboard A / Shift+A press and release / displayed key code | NOT RUN | UNKNOWN |
 | Idle input with ongoing application work | NOT RUN | UNKNOWN |
 | Esc / APP COMPLETE / USB stop status | NOT RUN | UNKNOWN |
@@ -74,7 +74,7 @@ Failure details: UNKNOWN. Reproduction steps and recovery: UNKNOWN. Final result
 | xHCI ownership／reset／command rings | 未実施 | 不明 |
 | USB port／VID:PID／速度／descriptor数 | 未実施 | 不明 |
 | storage block数／sector byte／総容量 | 未実施 | 不明 |
-| MUSHA.TXT長さ／FNV-1a／APP FILE READ OK | 未実施 | 不明 |
+| DIAGNOSE.TXT長さ／FNV-1a／APP FILE READ OK | 未実施 | 不明 |
 | A／Shift+Aの押下・解放／key code | 未実施 | 不明 |
 | 無入力中のアプリ処理継続 | 未実施 | 不明 |
 | Esc／APP COMPLETE／USB停止状態 | 未実施 | 不明 |

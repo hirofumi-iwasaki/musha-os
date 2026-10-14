@@ -34,7 +34,7 @@ Writing to the internal SSD is not implemented.
 No RAM or storage test rewrites the entire capacity of the 32GB USB drive.
 Integrated UEFI-bootable GPT/FAT32 image generation is implemented; see [image instructions](usb-image.md). A test FAT32 image generator also exists.
 Our own USB Mass Storage capacity and first / last sector reads are implemented.
-Reading MUSHA.TXT from the root of MBR / superfloppy FAT32 is implemented.
+Reading DIAGNOSE.TXT from the root of MBR / superfloppy FAT32 is implemented.
 GPT image reads are implemented; the initial [snapshot file API](file-api.md) is implemented; on-demand disk access remains unsupported.
 The final acceptance requirement of booting the same USB image in QEMU / NUC5 / NUC8 has not been met.
 
@@ -42,7 +42,7 @@ On successful storage diagnostics, screens at least 444 pixels high display USB 
 All initially discovered USB storage devices are probed before keyboard polling begins. Port order no longer requires ending keyboard input to start storage diagnostics.
 Reads from this physical USB drive have not been validated. See [supported scope](usb-storage.md).
 
-To check FAT32, place MUSHA.TXT of at most 4096 bytes in the root of supported USB media.
+To check FAT32, place DIAGNOSE.TXT of at most 4096 bytes in the root of supported USB media.
 Initially use a single line containing Hello Musha-OS!.
 Screens at least 476 pixels high display FAT32 READ OK.
 See [supported formats and limitations](fat32.md).
@@ -94,7 +94,7 @@ NUC5 の結果は[実機受入](hardware-acceptance-0.3.0.md)を参照してく�
 内部SSDへの書込み処理は未実装。USB32GBの容量全体をRAMやストレージ試験で
 書き換える処理もない。UEFI起動用の統合GPT/FAT32イメージ生成は実装済み。[生成手順](usb-image.md)を参照。試験用FAT32 imageの生成ツールもある。
 独自USB Mass Storageの容量・先頭 / 末尾セクタ読出しは実装済み。
-MBR / superfloppy形式のFAT32で、ルートのMUSHA.TXT読出しを実装済み。
+MBR / superfloppy形式のFAT32で、ルートのDIAGNOSE.TXT読出しを実装済み。
 GPTイメージ読出しは実装済み。初期の[snapshot file API](file-api.md)は実装済み。オンデマンド媒体アクセスは未対応。
 同一USBイメージでQEMU / NUC5 / NUC8を起動する最終合格条件は未達。
 
@@ -102,7 +102,7 @@ GPTイメージ読出しは実装済み。初期の[snapshot file API](file-api.
 初期検出したUSBストレージの診断はkeyboard polling開始前に行う。ポート順によってEsc終了までストレージ診断を待つ構成ではなくなった。
 この実物USBでの読出しはまだ検証していない。[対応範囲](usb-storage.md)を参照。
 
-FAT32の確認には、対応形式のUSBルートへ4096byte以下のMUSHA.TXTを配置する。
+FAT32の確認には、対応形式のUSBルートへ4096byte以下のDIAGNOSE.TXTを配置する。
 内容は最初はHello Musha-OS!の一行にする。高さ476pixel以上ならFAT32 READ OKを表示する。
 [対応形式と制約](fat32.md)を参照。既存USBのpartition方式を未確認のまま変更しない。
 

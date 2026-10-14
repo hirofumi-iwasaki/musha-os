@@ -8,6 +8,8 @@ Status: **release candidate, not published.** Pre-build documentation is prepare
 
 ### Main changes
 
+- Root `README.TXT` provides ASCII/CRLF quick-start instructions. The startup marker is now `DIAGNOSE.TXT` (same 16 bytes and FNV hash). File updates back up and remove the retired `MUSHA.TXT`; user programs are preserved.
+
 - Owner decision (2026-10-14): the automatic boot filename is `AUTORUN.ELF`; the previous `MUSHA.ELF` is not accepted. This implementation choice does not change the ABI, syscalls, NOTE or SDK-generated ELF. When AUTORUN.ELF is present, the viewer does not start.
 
 - Run one external C application per boot: place an SDK-built ELF named `AUTORUN.ELF` in the root of the FAT32/exFAT data medium; the kernel validates it, shuts down devices, and executes it at Ring 3 (CPL 3) with its own stack, arena and read-only start record. If the file is absent, the v0.2.0 read-only viewer starts as before.
@@ -94,6 +96,8 @@ Publication provenance: procedure A (reproducible EFI) adopted. `/Brepro` alone 
 状態：**公開候補、未公開。** 方式Aに従いビルド前に確定できる文書を整理しました。次候補のソース・EFIハッシュ・候補の全回帰・実機受入・最終ソースのCIは未完了です。[公開範囲](release-scope-0.3.0.md)の条件を満たした後に所有者が公開を判断します。公開済みv0.2.0配布物は変更しません。過去の開発版観測は[実機受入記録](hardware-acceptance-0.3.0.md)・[USB起動時間](usb-startup-timing.md)に保持し、次候補の受入へ転用しません。
 
 ### 主な変更
+
+- ルートの `README.TXT` にASCII・CRLFの起動案内を追加。診断マーカーを `DIAGNOSE.TXT` に変更（16 byteとFNVハッシュは不変）。通常更新は旧 `MUSHA.TXT` を退避後に削除し、利用者のプログラムを保持します。
 
 - 所有者決定（2026-10-14）：自動実行名は `AUTORUN.ELF` とし、旧 `MUSHA.ELF` は受理しません。実装上の選択でありABI・syscall・NOTE・SDK生成ELFは変更しません。AUTORUN.ELFがあるとビューアーは起動しません。
 

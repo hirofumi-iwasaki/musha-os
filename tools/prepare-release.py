@@ -51,7 +51,7 @@ def stage(destination, efi, provenance, release=False, version=None):
         (bundle / 'EFI/BOOT').mkdir(parents=True)
         shutil.copyfile(efi, bundle / 'EFI/BOOT/BOOTX64.EFI')
         (bundle / 'README.TXT').write_bytes(usb_readme(version))
-        (bundle / 'MUSHA.TXT').write_bytes(b'Hello Musha-OS!\n')
+        (bundle / 'DIAGNOSE.TXT').write_bytes(b'Hello Musha-OS!\n')
         for name in ['LICENSE', 'NOTICE', 'README.md', 'VERSION']:
             shutil.copyfile(ROOT / name, bundle / name)
         for name in sorted(p.name for p in (ROOT / 'docs').glob('*.md')):
@@ -99,7 +99,7 @@ def stage(destination, efi, provenance, release=False, version=None):
                     else: tar.addfile(info)
         # Distribution assets use the exact same EFI as the retained QEMU bundle.
         prefix = f'musha-os-v{version}-x64'
-        payload = {name:(bundle / name).read_bytes() for name in ['EFI/BOOT/BOOTX64.EFI','MUSHA.TXT','README.TXT','LICENSE','NOTICE']}
+        payload = {name:(bundle / name).read_bytes() for name in ['EFI/BOOT/BOOTX64.EFI','DIAGNOSE.TXT','README.TXT','LICENSE','NOTICE']}
         for path in sorted((bundle / 'third_party').rglob('*')):
             if path.is_file(): payload[path.relative_to(bundle).as_posix()] = path.read_bytes()
         update = make_zip(work / (prefix+'-files.zip'), payload, version, provenance)
@@ -123,7 +123,7 @@ def stage(destination, efi, provenance, release=False, version=None):
             status='preview' if provenance.get('working_tree') else 'candidate',
             layout_version=1, minimum_media_bytes=64*1024**2, logical_sector_bytes=512,
             image_uncompressed={'bytes':image.stat().st_size,'sha256':digest(image)},
-            payload=update['files'], assets={path.name:{'bytes':path.stat().st_size,'sha256':digest(path)}
+            payload=update['files'], update_schema=update['schema'], retired_files=update.get('retired_files',[]), assets={path.name:{'bytes':path.stat().st_size,'sha256':digest(path)}
                 for path in sorted(work.iterdir()) if path.is_file()})
         (work/'build-manifest.json').write_bytes(json_bytes(manifest))
         (work / 'SHA256SUMS').write_text(''.join(f'{digest(path)}  {path.name}\n' for path in sorted(work.iterdir()) if path.is_file() and path.name!='SHA256SUMS'))

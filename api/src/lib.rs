@@ -85,7 +85,7 @@ impl<'a> Context<'a> {
     pub fn invalidate_files(&mut self, error: Error) {
         self.files.invalidate(error);
     }
-    /// Opens an absolute root 8.3 path. Initial cached file: /MUSHA.TXT.
+    /// Opens an absolute root 8.3 path. Initial cached file: /DIAGNOSE.TXT.
     pub fn file_open(&mut self, path: &str) -> Result<FileHandle, Error> {
         self.files.open(path)
     }

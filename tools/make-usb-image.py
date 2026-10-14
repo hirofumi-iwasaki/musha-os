@@ -112,7 +112,7 @@ def create(output, efi, size_mib=64, size_bytes=None, partition_type='basic-data
         return result
     root = bytearray(SECTOR)
     root[:32] = entry(b'EFI        ', 0x10, 3)
-    root[32:64] = entry(b'MUSHA   TXT', 0x20, text_cluster, len(PAYLOAD))
+    root[32:64] = entry(b'DIAGNOSETXT', 0x20, text_cluster, len(PAYLOAD))
     root[64:96] = entry(b'README  TXT', 0x20, readme_start, len(readme))
     def directory(cluster, parent, child):
         result = bytearray(SECTOR)

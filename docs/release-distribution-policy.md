@@ -216,3 +216,42 @@ GitHubへの添付が承認・完了するまでは、新しいダウンロー�
 [G1] [GitHub Actions：起動イベント](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)  
 [G2] [GitHub CLI：gh release create](https://cli.github.com/manual/gh_release_create)  
 [G3] [GitHub：Immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
+
+## Managed marker migration (2026-10-14) / 管理マーカーの移行
+
+English: the GPT/FAT32 disk layout remains **layout_version 1**. An update
+package containing the new `DIAGNOSE.TXT` uses **manifest schema 2** and
+`retired_files: ["MUSHA.TXT"]`. This is a file contract change, not a partition
+migration. The new updater accepts schema 1 without removals and schema 2
+with this exact retirement list and the replacement marker. Old schema-1-only
+tools reject schema 2; use the matching deployment archive. Unknown layouts,
+arbitrary retirement names, path aliases, symlinks and payload/removal overlap
+are rejected before writes. Existing layout-1 media (including installations
+without state metadata) need no format change.
+
+Dry-run lists `changed` and `removed`. Apply backs up all replaced and retired
+files on the host, checks each backup, atomically replaces changed payloads,
+then removes the retired marker. An edited old marker is preserved in the
+backup too. Unmanaged files, including `AUTORUN.ELF`, are untouched. Interrupted
+updates are not automatically rolled back: retain the backup and update report.
+The verified `update-manifest.json` is installed; `verified-files` records the
+hash and size of every payload and that manifest, and `verified-absent` records
+the retired name. Unchanged files are read for verification but never replaced.
+No whole-medium image generation, write or hash is part of an update.
+
+日本語：GPT/FAT32のディスク構成は **layout_version 1** のままです。
+`DIAGNOSE.TXT` を含む更新ZIPは **manifest schema 2** と
+`retired_files: ["MUSHA.TXT"]` を使用します。パーティション移行ではなく
+管理ファイル契約の変更です。新ツールは削除なしのschema 1と、正確な廃止名一覧・
+置換先を持つschema 2を受け付けます。旧ツールはschema 2を拒否するため、同梱の
+配備ツールを使用してください。未知のレイアウト、任意の削除名、大小文字別名、
+symlink、更新対象と削除対象の重複は書込み前に拒否します。
+管理状態ファイルのない既存媒体も、既存EFIがあるlayout 1として扱います。
+
+dry-runは変更と削除予定を表示します。applyは全置換・廃止ファイルをホストへ
+退避・照合してから、変更ファイルを一時ファイル経由で置換し、旧マーカーを削除します。
+編集済み旧マーカーも退避します。`AUTORUN.ELF` 等の管理対象外ファイルは保持します。
+中断時は自動復旧しないため、退避と更新記録を保持してください。
+`update-manifest.json` 自体も配置し、`verified-files` に全管理ファイルとmanifestの
+長さ・SHA-256、`verified-absent` に旧名不在を記録します。同一内容は照合のみで
+差し替えません。通常更新でUSB全容量の像生成・書込み・ハッシュ計算は行いません。

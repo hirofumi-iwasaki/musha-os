@@ -41,7 +41,7 @@ ValidDataLength以降DataLengthまでをゼロとして返し、未初期化デ�
 
 ## APIと協調処理
 
-既存 `/MUSHA.TXT` snapshotと新しい媒体上のファイルを別の所有権で扱う。
+既存 `/DIAGNOSE.TXT` snapshotと新しい媒体上のファイルを別の所有権で扱う。
 新APIは概念上 `list_begin/list_next/open_id/read/close`。実際の型とAPI版更新は工程4で確定する。
 一覧とreadはPending（Again）を返せる。Againで位置・利用者bufferを変更せず、同じ要求を重複発行しない。
 完了後にだけ利用者bufferへコピーし位置を進める。空でないreadの0byteがEOF。

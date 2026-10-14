@@ -35,10 +35,14 @@ def package(output, efi, size_mib=64, size_bytes=None, files_only=False):
     boot.mkdir(parents=True)
     shutil.copyfile(efi, boot / 'BOOTX64.EFI')
     (esp / 'README.TXT').write_bytes(usb_readme((ROOT/'VERSION').read_text().strip()))
-    (esp / 'MUSHA.TXT').write_bytes(b'Hello Musha-OS!\n')
+    (esp / 'DIAGNOSE.TXT').write_bytes(b'Hello Musha-OS!\n')
     for name in ('LICENSE', 'NOTICE'):
         shutil.copyfile(ROOT / name, esp / name)
-    shutil.copyfile(ROOT / 'third_party/r-efi/AUTHORS', esp / 'r-efi-AUTHORS')
+    for dependency, names in [('lwip', ('COPYING','UPSTREAM')), ('freebsd-e1000', ('COPYING','UPSTREAM')), ('freebsd-apple-bce', ('COPYING','UPSTREAM')), ('r-efi', ('AUTHORS','UPSTREAM'))]:
+        for name in names:
+            target=esp/'third_party'/dependency/name
+            target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(ROOT/'third_party'/dependency/name,target)
     image = None
     if not files_only:
         spec = importlib.util.spec_from_file_location('usb_image', ROOT / 'tools/make-usb-image.py')
