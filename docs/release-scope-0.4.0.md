@@ -1,59 +1,129 @@
-# v0.4.0 release scope — draft
+# v0.4.0 release scope
 
 ## English
 
-Status: **draft, not decided.** Collected from owner decisions and deferred items recorded during v0.3.0 (2026-10-14). The owner approves the final scope after v0.3.0 is published. Nothing here is implemented in v0.3.0.
+Status: **owner decisions complete (2026-10-15); implementation not started.** Revised from the 2026-10-14 draft after the owner answered every open point and the code review in [scope-review-0.4.0.md](scope-review-0.4.0.md). Items marked ✔ are owner decisions. The [work plan](work-plan-0.4.0.md) orders the work. Branch: `release/0.4.0`; `VERSION` is raised to `0.4.0` in the first implementation commit (crate versions unchanged).
 
 ### Direction
 
-v0.3.0 proved that a user-built C program runs at Ring 3 from a USB drive. v0.4.0 makes the drive and the session usable as a **small application environment**: a clean drive layout, returning to the viewer after an application ends, and launching applications from the viewer. The ABI stays experimental; no practical application I/O (stage D) is promised here.
+v0.3.0 proved that a user-built C program runs at Ring 3 from a USB drive. v0.4.0 turns the drive and the session into a **small, configurable application environment**:
 
-### Candidate goals (owner decisions already taken are marked ✔)
+- the drive gets a clean layout and a settings directory that Musha-OS may write to;
+- startup becomes quiet by default and configurable, with a clear "ready" point;
+- applications can be written in Rust as well as C, and get a minimal stage D API (time, wait, input);
+- the viewer becomes the place applications return to and start from;
+- Bluetooth is brought up far enough that a paired keyboard and the Xbox Series X|S controller work, with pairing data kept on the drive;
+- the Mac reference machine gains its internal keyboard and a resolved storage path;
+- wired LAN works at the OS level on NUC5;
+- the release assets and the documentation are reorganized for first-time users.
 
-| Item | Scope | Completion condition |
-|---|---|---|
-| USB root layout ✔ | Root contains only `EFI/`, `DOCS/`, `README.TXT` and the user's `AUTORUN.ELF`. `DOCS/` holds `LICENSE`, `NOTICE` and `third_party/`. | Fresh image, update ZIP and `update-usb.py` all produce this layout; old root files are migrated as obsolete entries |
-| README.TXT as the startup marker ✔ | `DIAGNOSE.TXT` is removed. The startup read check reads `/README.TXT`; its expected length and hash are computed at build time from the generated text (under 4 KiB, ASCII). | FAT32/exFAT read diagnostics pass with the generated README in QEMU and on hardware |
-| Stateless update tool ✔ | The on-drive copy of `update-manifest.json` is removed. The package manifest carries file hashes, the previous-version hashes and an obsolete-file list; the tool hashes the managed files on the drive and compares. | Update, rename migration and user-modified-file detection pass in virtual-image and directory tests; no state file is written to the drive |
-| Return to the viewer after exit | Promote the C3 continuation path (rollback, arena scrub, device restart) into the normal build: after `exit` or a user fault, devices are re-initialized and the viewer starts without reboot. | QEMU: exit 0, nonzero exit and a faulting ELF each return to the viewer; DMA stop-before-reuse rules verified; hardware cold boot and repeated launches |
-| Launch from the viewer | Selecting an `.ELF` in the viewer and pressing Enter runs it (same validation as `AUTORUN.ELF`). `AUTORUN.ELF` keeps the automatic start for keyboard-less use. | Both paths covered by QEMU; one application at a time; no scheduler |
-| Mac storage isolation | A/B with the v0.2.0 EFI under identical connections, diagnostic captures of the 7D00 recovery path, and a fix or a documented limitation. | Either FAT32/exFAT reading on MacBook Pro 2018 with the external keyboard, or a recorded root cause |
-| Startup timing instrumentation | Keep the PM-epoch stage timers in the normal build and show a one-line summary on the diagnostic panel. | Ryzen and NUC5 numbers recorded per release |
-| Documentation structure | Stage 2 of the documentation cleanup: `docs/README.md` index, `Status:` lines, `docs/history/`, merges, bilingual user-facing pages. | Link check passes; README.md links only to the index and user pages |
+The ABI stays experimental. No application network API is promised.
+
+### Required goals
+
+| # | Item | Scope | Completion condition |
+|---|---|---|---|
+| 1 | USB root layout ✔ | Root contains only `EFI/`, `DOCS/`, `SETTINGS/`, `README.TXT` and the user's `AUTORUN.ELF`. `DOCS/` holds `LICENSE`, `NOTICE`, `third_party/` and the user-facing documents (`sdk-guide.md`, `external-app.md`, `file-viewer.md`, `distribution-usage.md`). `SETTINGS/` holds configuration and pairing files and **is shipped empty in the image and the drive ZIP** ✔; the packaging, image and updater contracts gain an explicit empty-directory representation while never managing its contents. | Fresh image, drive ZIP and `update-usb.py` all produce this layout; old root files (`DIAGNOSE.TXT`, `MUSHA.TXT`, `update-manifest.json`, `musha-install.json`, `musha-installation.json`, root `LICENSE`/`NOTICE`/`third_party/`) are migrated as obsolete entries |
+| 2 | README.TXT as the startup marker ✔ | `DIAGNOSE.TXT` is removed. The startup read check reads `/README.TXT`; its expected length and hash are computed at build time from the generated text (under 4 KiB, ASCII). README.TXT states that Musha-OS writes only inside `SETTINGS/`. The README.TXT generator and template are **runtime sources**: a commit that changes them is not a docs-only commit for provenance purposes (see goal 11). | FAT32/exFAT read diagnostics pass with the generated README in QEMU and on hardware |
+| 3 | Stateless update tool ✔ | The on-drive copies of `update-manifest.json` and `musha-install.json` are removed. The package manifest carries file hashes, previous-version hashes and an obsolete-file list; the tool hashes the managed files on the drive and compares. `SETTINGS/` contents are never managed, verified or overwritten. The tool is optional (goal 11); unpacking the drive ZIP is the standard route. | Update, rename migration and user-modified-file detection pass in virtual-image and directory tests; no state file is written to the drive |
+| 4 | Bounded FAT32 write support ✔ | Musha-OS may write to the drive only under these rules: (a) only inside `/SETTINGS/`; (b) 8.3 names only, no long-name entries created or modified; (c) each file has a fixed capacity (default 4 KiB) **fully allocated when the file is first created** ✔; later writes overwrite in place on that chain and never allocate; (d) no delete, rename or directory creation; (e) FAT32 only — exFAT media stay read-only; (f) if `/SETTINGS/` does not exist nothing is ever written; (g) write-protected media are detected and treated as read-only; (h) both FAT copies, directory metadata and FSInfo are updated; a failed write leaves the file content undefined but the file system structurally valid; no power-failure atomicity is claimed. Requires SCSI WRITE(10) and SYNCHRONIZE CACHE(10) in the BOT path. | QEMU on disposable images: create, overwrite, read back, size 0/limit/overflow, no space, full directory, fragmented chain, protected media, missing `SETTINGS/`, outside paths, exFAT refusal, interrupted transfer; host `fsck.fat -n` clean after each case and untouched regions compared. Hardware: write, cold reboot, read back on NUC5 and Ryzen; the drive then mounts on macOS and Windows with `chkdsk` clean |
+| 5 | Settings file ✔ | `/SETTINGS/CONFIG.TXT`: ASCII `key=value` lines, `#` comments, CR/LF or LF, editable in Notepad/TextEdit. Read **before the first boot message** through the firmware Simple File System protocol on the LoadedImage boot device; files are closed before the final memory map; only bounded copies are retained. **The boot device is FAT32 only for v0.4.0** ✔: settings are not read from an exFAT boot volume (exFAT remains supported as a readable data medium). Unknown keys are ignored; malformed files fall back to defaults and are reported at `phases`. Keys in v0.4.0: `log` (goal 6), `display` (goal 7), `pair` (goal 12). | Defaults, each key, missing file, missing directory and malformed file covered in QEMU; hardware boot with and without the file on NUC5 and Ryzen |
+| 6 | Startup log levels ✔ | Key `log=quiet|ready|phases|devices` (default `ready`). `quiet`: no output and no background repaint except failures. `ready`: only the final `Musha-OS ready.` line. `phases`: one line per phase (runtime, timer, USB host, boot media, keyboard, LAN, Bluetooth, application or viewer start, ready). `devices`: `phases` plus recognized device names, capacity, port and speed and the current diagnostic values. **Failures of required phases are always shown.** Holding **F8** ✔ during the firmware stage (SimpleTextIn before ExitBootServices) forces `devices` for that boot; **the digit key 8 is accepted as the fallback** ✔ for firmware that does not deliver F8, and both keys are verified on both machines. Phase boundaries: UEFI → ExitBootServices → runtime → device discovery → application (Ring 3) or viewer → ready. `ready` = all required devices discovered; optional devices append `phases` lines afterwards. Application `log` output is unaffected. Hardware acceptance records are taken at `devices`. | Four levels verified in QEMU by screen comparison; a forced failure is visible at `quiet`; F8 works on NUC5 and Ryzen; `hardware-test-record-template.md` requires `devices` for new records |
+| 7 | Display mode setting ✔ | Key `display=max` (default: current largest-GOP-mode selection) or `display=<width>x<height>`. An unavailable mode falls back to `max` and is reported at `phases`. The text grid scale follows the chosen mode as in v0.3.0. | QEMU: default, an available explicit mode, an unavailable mode; hardware: one explicit mode on NUC5 and Ryzen (recorded with the resulting grid) |
+| 8 | Rust SDK ✔ | A Rust application builds and runs at Ring 3 on the same ABI: custom target JSON, `core` rebuild (`build-std`), `#![no_std]` crate with `musha_main`, bindings for every syscall of goal 9, the same NOTE and linker layout as the C SDK, a Hello sample and a start-record sample. **Shipped as its own archive `musha-os-<ver>-rust-sdk.zip`** ✔ beside `musha-os-<ver>-c-sdk.zip`; `check-sdk.py` and `app-check.py` cover Rust; the SDK guide gains a Rust section. | Rust Hello runs in QEMU and on NUC5 and Ryzen; `app-check.py` accepts the Rust ELF |
+| 9 | Minimal stage D API | Experimental ABI candidate r2: `SYS_TIME` (monotonic ms since boot), `SYS_WAIT` (sleep ms, or until input), `SYS_INPUT` (pop one event: keyboard key down/up with usage code and modifiers; gamepad button/axis change). One event record for keyboard and gamepad so Bluetooth devices use the same path. Permissions bits extended in the NOTE. `application-abi.md`, `external-app.md` and `sdk-guide.md` updated to r2. | Each call covered in QEMU with C and Rust samples; a sample that reads keys and exits on Q runs on hardware |
+| 10 | Return to the viewer and launch from the viewer | Promote the C3 continuation path (rollback, arena scrub, device restart) into the normal build: after `exit` or a user fault, devices are re-initialized and the viewer starts without reboot. In the viewer, selecting an `.ELF` and pressing Enter runs it with the same validation as `AUTORUN.ELF`; automatic `AUTORUN.ELF` start is kept. `file-viewer.md` documents launch, return and pairing operation. | QEMU: exit 0, nonzero exit and a faulting ELF each return to the viewer; three consecutive launches; stop-before-reuse rules for DMA, handles and media generation verified; hardware cold boot plus three consecutive viewer launches |
+| 11 | Distribution asset set ✔ | Assets: `musha-os-<ver>-x64.zip` (drive contents; unpack to the root of a FAT32 USB — the only user procedure), `musha-os-<ver>-x64-qemu.img.gz` (64 MiB GPT/FAT32 image for QEMU only), `musha-os-<ver>-c-sdk.zip`, `musha-os-<ver>-rust-sdk.zip`, `SHA256SUMS`, `build-manifest.json`, and `musha-os-<ver>-docs.zip` only if goal 17 is finished before the release ✔. Dropped: `*-files.zip` and `*-usb.img.gz` (renamed), `*-deployment.zip` (updater stays in `tools/` as an optional differential updater), `*-candidate.tar.gz` (docs → docs.zip or Source code; QEMU image → qemu asset; exFAT fixture → generated locally by the workflow; manifest → `build-manifest.json`). Names use `musha-os-<ver>` without `v`; `x64` only on OS binaries. **Provenance** ✔: condition 1 — two builds of one commit produce byte-identical assets; condition 2 — a docs-only successor commit keeps the runtime payload identical, where runtime payload = `BOOTX64.EFI`, the QEMU image and the SDK sample ELFs, compared member by member, and "docs-only" excludes any change to the README.TXT generator, template or VERSION. | `tools/distribution.py`, `prepare-release.py`, `draft-release.py`, `compare-candidates.py`, `package-sdk.py`, image and fixture builders, `release-candidate.yml`, the release-notes template, `release-distribution-policy.md`, `distribution-usage.md` and README downloads updated; conditions 1 and 2 demonstrated on the candidate |
+| 12 | Bluetooth base ✔ | Reference transport: one USB Bluetooth dongle, **Bluetooth 4.0 or later, no firmware download (CSR8510-class, LE capable)** ✔, verified on hardware and recorded with exact model, revision and VID:PID. **Controller: Xbox Series X\|S Wireless Controller** ✔ (model 1914). Note: this controller connects over **Bluetooth Low Energy (HID over GATT)**, so the base stack is LE: HCI over USB (class E0/01/01), LE scanning, SMP pairing (Just Works / passkey), LTK storage in `/SETTINGS/` (binary record file with version, bounds and corruption detection, separate from `CONFIG.TXT`), automatic reconnection, HOGP report parsing for the controller and for the **current Apple Magic Keyboard** ✔ (BLE). Classic BR/EDR HID (older keyboards, DualShock 4) is **not** in v0.4.0. Pairing mode is entered with **P** in the viewer ✔ or with `pair=on` in `CONFIG.TXT` ✔ (next boot enters pairing mode without a USB keyboard; the key is cleared by the OS after a successful pairing); no other entry in v0.4.0. Events are delivered through goal 9. | Keyboard: pair, reboot, reconnect and type in the viewer on NUC5 with the dongle; controller: pair, reboot, reconnect and drive a sample through `SYS_INPUT`; three cold boots with stored pairings on NUC5 and Ryzen; **one hot reboot on Ryzen with the dongle attached** ✔ |
+| 13 | Wired LAN at OS level ✔ | I218-V driver on NUC5 to link-up, DHCP and a UDP echo answered by the OS (no application API). | Link, address and echo recorded on NUC5; QEMU 82574 regression unchanged |
+| 14 | Mac storage isolation ✔ | A/B with the v0.2.0 EFI under identical connections, diagnostic captures of the 7D00 recovery path, and a fix or a documented limitation. | FAT32/exFAT reading on MacBook Pro 2018, or a recorded root cause and limitation |
+| 15 | Mac internal keyboard (T2) ✔ | Connect the existing `bce/` T2 BCE model to the input path so the MacBook Pro 2018 internal keyboard operates the viewer. | Internal keyboard operates the viewer on MacBook Pro 2018 with no external keyboard; external keyboard path unchanged |
+| 16 | Startup timing ✔ | Keep the PM-epoch stage timers in the normal build; show a one-line summary at the `devices` level. | Ryzen and NUC5 numbers recorded for the candidate |
+| 17 | Documentation structure and README ✔ | Stage 2 of the documentation cleanup (`docs/README.md` index, `Status:` lines, `docs/history/`, merges, bilingual user pages) and a rewritten README.md for first-time readers: what Musha-OS is and is not, intended uses, a ten-minute try-out (QEMU and USB), Hello World in five steps, and how to go further. The README's USB route ("format FAT32, unpack the drive ZIP") is documented only after the formatted-media gate below passes. | Link check passes; README.md links only to the index and user pages; the formatted-media boot is recorded in `hardware-verification-status.md` |
+
+### Hardware gates ✔
+
+- **Formatted-media gate (before documenting the easy route):** the published v0.3.0 `files.zip` unpacked by hand (no updater, no `AUTORUN.ELF`) onto USB media formatted by macOS Disk Utility as FAT32/MBR and FAT32/GPT and by Windows Explorer as FAT32; one cold boot to the viewer per route on NUC5 and Ryzen (six runs). Procedure: [formatted-media-boot-verification.md](formatted-media-boot-verification.md).
+- **Final acceptance:** the exact candidate EFI at `devices`: three cold boots per NUC5 and Ryzen, one Ryzen hot reboot, settings write → reboot → read-back, macOS/Windows mount and `chkdsk`, Rust Hello, three consecutive viewer launches, Bluetooth keyboard and controller pairing persistence, Mac internal keyboard and storage result, NUC5 LAN echo. Host and QEMU results are never presented as hardware evidence.
 
 ### Explicitly outside v0.4.0
 
-Rust guest execution and a Rust SDK; new syscalls beyond `query`/`log`/`exit`; application input, file, display-command or network APIs; preemption or CPU budgets; multiple concurrent applications; ABI compatibility freeze; physical NIC networking; internal Mac keyboard (T2).
+exFAT write; writes anywhere outside `/SETTINGS/`; delete, rename and directory creation; long file names; an application file-write API (application file access, if any, is read-only and a candidate for 0.5.0); settings read from an exFAT boot volume; Classic BR/EDR Bluetooth HID; the built-in Intel wireless/Bluetooth of NUC5 (firmware download and licensing); generic HID report-descriptor parsing beyond the two reference devices; preemption or CPU budgets; multiple concurrent applications; ABI compatibility freeze; TCP or an application network API; any distribution asset kinds beyond goal 11; a physical-USB raw-image writer.
 
 ### Naming rule (owner decision)
 
-No file or directory on the drive may suggest that it is "Musha-OS itself" other than `EFI/BOOT/BOOTX64.EFI`. Names describe the role (`AUTORUN`, `DOCS`, `README`), not the product.
+No file or directory on the drive may suggest that it is "Musha-OS itself" other than `EFI/BOOT/BOOTX64.EFI`. Names describe the role (`AUTORUN`, `DOCS`, `SETTINGS`, `README`, `CONFIG`), not the product.
+
+### Reference devices (owner decisions, 2026-10-15)
+
+| Role | Device |
+|---|---|
+| Bluetooth keyboard | Apple Magic Keyboard, current model (BLE) |
+| Gaming controller | Xbox Series X\|S Wireless Controller, model 1914 (BLE) |
+| Bluetooth dongle | USB, Bluetooth 4.0 or later, no firmware download (CSR8510-class); exact model and VID:PID recorded at first hardware test |
+| Pairing entry | P in the viewer, or `pair=on` in `CONFIG.TXT` |
+| Forced `devices` | F8; digit 8 as fallback |
 
 ## 日本語
 
-状態：**草案、未決定。** v0.3.0 の作業中に記録した所有者決定と先送り項目を集めたもの（2026-10-14）。最終的な範囲は v0.3.0 公開後に所有者が承認する。ここに書かれたものは v0.3.0 には実装されていない。
+状態：**所有者決定完了（2026-10-15）。実装は未着手。** 2026-10-14 の草案に対し、所有者が全ての未決点に回答し、[コード照合](scope-review-0.4.0.md)の指摘を取り込んで改訂。✔ は所有者決定。順序は[作業計画](work-plan-0.4.0.md)。ブランチ：`release/0.4.0`。`VERSION` は最初の実装コミットで `0.4.0` に上げる（クレート版は変えない）。
 
 ### 方向
 
-v0.3.0 で「利用者が作った C プログラムが USB から Ring 3 で動く」ことを示した。v0.4.0 は USB とセッションを**小さなアプリ実行環境**として使えるようにする：整理された USB 構成、アプリ終了後のビューアーへの復帰、ビューアーからのアプリ起動。ABI は実験版のままで、実用アプリ I/O（工程 D）は約束しない。
+v0.3.0 で「利用者が作った C プログラムが USB から Ring 3 で動く」ことを示した。v0.4.0 は USB とセッションを**小さく、設定可能なアプリ実行環境**にする。
 
-### 候補目標（決定済みの所有者判断は ✔）
+- USB は整理された構成になり、Musha-OS が書き込んでよい設定ディレクトリーを持つ。
+- 起動は既定で静かになり、設定で切り替えられ、「ready」の時点が明確になる。
+- アプリは C に加えて Rust で書け、最小の工程 D API（時刻・待機・入力）を使える。
+- ビューアーがアプリの戻り先・起動元になる。
+- Bluetooth は、ペアリング済みキーボードと Xbox Series X|S コントローラーが動くところまで立ち上げ、ペアリング情報を USB に保存する。
+- Mac 基準機は内蔵キーボードが使え、ストレージの問題に決着をつける。
+- NUC5 で有線 LAN が OS 内部で動く。
+- 配布物と文書を初めての利用者向けに整理する。
 
-| 項目 | 範囲 | 完了条件 |
-|---|---|---|
-| USB ルート構成 ✔ | ルートは `EFI/`、`DOCS/`、`README.TXT`、利用者の `AUTORUN.ELF` だけ。`DOCS/` に `LICENSE`・`NOTICE`・`third_party/`。 | 初回イメージ・更新 ZIP・`update-usb.py` がこの構成を生成し、旧ルートファイルは廃止項目として移行される |
-| README.TXT を起動マーカーに ✔ | `DIAGNOSE.TXT` を廃止。起動時の読出し確認は `/README.TXT` を読み、期待する長さとハッシュを生成テキストからビルド時に計算する（4 KiB 未満、ASCII）。 | 生成 README で FAT32/exFAT 読出し診断が QEMU と実機で合格 |
-| 更新ツールのステートレス化 ✔ | USB 上の `update-manifest.json` を廃止。配布 ZIP の manifest にハッシュ・前版ハッシュ・廃止ファイル一覧を持たせ、ツールは USB 上の管理ファイルをハッシュして突き合わせる。 | 更新・改名移行・利用者変更の検出が仮想イメージとディレクトリー試験で合格、USB に状態ファイルを書かない |
-| 終了後のビューアー復帰 | C3 の継続経路（ロールバック・arena 消去・機器再初期化）を通常版へ昇格し、`exit` やユーザー例外の後に再起動なしでビューアーへ戻る。 | QEMU で終了 0・非 0・障害 ELF の各ケースがビューアーに戻る。DMA 停止前再利用禁止を検証。実機で冷間起動と反復起動 |
-| ビューアーからの起動 | 一覧で `.ELF` を選んで Enter で実行（`AUTORUN.ELF` と同じ検査）。`AUTORUN.ELF` の自動起動はキーボード無し用途のため維持。 | 両経路を QEMU で確認。同時 1 アプリ、スケジューラーなし |
-| Mac ストレージの切り分け | 同一接続での v0.2.0 EFI との A/B、7D00 復旧経路の診断採取、修正または制約の文書化。 | MacBook Pro 2018 で外付けキーボード併用時の FAT32/exFAT 読出し、または原因の記録 |
-| 起動時間計測の常設 | PM epoch の段階タイマーを通常版に残し、診断パネルに 1 行の要約を出す。 | 版ごとに Ryzen・NUC5 の数値を記録 |
-| 文書構造 | 文書整理 第 2 段：`docs/README.md` 索引、`Status:` 行、`docs/history/`、統合、利用者向けページの二言語化。 | リンク検査合格。README.md は索引と利用者向けページだけにリンク |
+ABI は実験版のまま。アプリ向け通信 API は約束しない。
+
+### 必須目標
+
+| # | 項目 | 範囲 | 完了条件 |
+|---|---|---|---|
+| 1 | USB ルート構成 ✔ | ルートは `EFI/`、`DOCS/`、`SETTINGS/`、`README.TXT`、利用者の `AUTORUN.ELF` だけ。`DOCS/` に `LICENSE`・`NOTICE`・`third_party/` と利用者向け文書（`sdk-guide.md`、`external-app.md`、`file-viewer.md`、`distribution-usage.md`）。`SETTINGS/` は設定とペアリングのファイル置き場で、**イメージと USB 用 ZIP に空のまま同梱する** ✔。梱包・イメージ・更新ツールの契約に空ディレクトリーの表現を追加し、内容は管理しない。 | 初回イメージ・USB 用 ZIP・`update-usb.py` がこの構成を生成し、旧ルートファイル（`DIAGNOSE.TXT`、`MUSHA.TXT`、`update-manifest.json`、`musha-install.json`、`musha-installation.json`、ルートの `LICENSE`/`NOTICE`/`third_party/`）は廃止項目として移行される |
+| 2 | README.TXT を起動マーカーに ✔ | `DIAGNOSE.TXT` を廃止。起動時の読出し確認は `/README.TXT` を読み、期待する長さとハッシュを生成テキストからビルド時に計算する（4 KiB 未満、ASCII）。README.TXT に「Musha-OS は `SETTINGS/` 内にのみ書き込む」と明記。README.TXT の生成器とテンプレートは**実行用ソース**とみなし、これを変えるコミットは来歴上「文書のみ」ではない（目標 11）。 | 生成 README で FAT32/exFAT 読出し診断が QEMU と実機で合格 |
+| 3 | 更新ツールのステートレス化 ✔ | USB 上の `update-manifest.json` と `musha-install.json` を廃止。配布 ZIP の manifest にハッシュ・前版ハッシュ・廃止ファイル一覧を持たせ、ツールは USB 上の管理ファイルをハッシュして突き合わせる。`SETTINGS/` の内容は管理・照合・上書きしない。ツールは任意（目標 11）で、標準手順は USB 用 ZIP の展開。 | 更新・改名移行・利用者変更の検出が仮想イメージとディレクトリー試験で合格、USB に状態ファイルを書かない |
+| 4 | 範囲を限定した FAT32 書込み ✔ | 書込みは次の規則に限る。(a) `/SETTINGS/` 内のみ。(b) 8.3 形式のみ、LFN エントリーは生成・変更しない。(c) 各ファイルは固定容量（既定 4 KiB）を**初回作成時に全て割り当て** ✔、以後は同じクラスター列に上書きし追加割当てしない。(d) 削除・改名・ディレクトリー作成はしない。(e) FAT32 のみ。exFAT 媒体は読出し専用。(f) `/SETTINGS/` が無ければ何も書かない。(g) 書込み保護媒体を検出し読出し専用として扱う。(h) 両方の FAT、ディレクトリーのメタデータ、FSInfo を更新する。書込み失敗時はファイル内容は不定だがファイルシステム構造は正常に保つ。停電時の原子性は主張しない。BOT 経路に SCSI WRITE(10) と SYNCHRONIZE CACHE(10) が必要。 | 使い捨て像での QEMU：作成・上書き・読戻し、サイズ 0／上限／超過、空き無し、ディレクトリー満杯、断片化、保護媒体、`SETTINGS/` 無し、範囲外パス、exFAT 拒否、転送中断。各ケース後にホストの `fsck.fat -n` が無警告で、変更外領域が一致。実機：NUC5・Ryzen で書込み→冷間再起動→読戻し。その後 macOS・Windows でマウントでき `chkdsk` が無警告 |
+| 5 | 設定ファイル ✔ | `/SETTINGS/CONFIG.TXT`：ASCII の `key=value` 行、`#` コメント、CR/LF または LF、メモ帳・テキストエディットで編集可能。**最初の起動表示の前**に LoadedImage の起動デバイスでファームウェアの Simple File System から読み、最終 memory map の前にファイルを閉じ、上限付きのコピーだけ保持する。**v0.4.0 では起動デバイスは FAT32 限定** ✔：exFAT の起動ボリュームから設定は読まない（exFAT は読出し可能なデータ媒体として引き続き対応）。未知キーは無視。形式不正は既定値に戻し `phases` で報告。v0.4.0 のキー：`log`（目標 6）、`display`（目標 7）、`pair`（目標 12）。 | 既定値、各キー、ファイル無し、ディレクトリー無し、形式不正を QEMU で網羅。NUC5・Ryzen でファイル有り無しの起動 |
+| 6 | 起動ログのレベル ✔ | キー `log=quiet|ready|phases|devices`（既定 `ready`）。`quiet`：失敗以外は何も表示せず背景の塗替えもしない。`ready`：最後の `Musha-OS ready.` 1 行のみ。`phases`：フェーズごとに 1 行（ランタイム、タイマー、USB ホスト、起動媒体、キーボード、LAN、Bluetooth、アプリまたはビューアー開始、ready）。`devices`：`phases` に加え、認識した機器の名称・容量・ポート・速度と現在の診断値。**必須フェーズの失敗は必ず表示する。** ファームウェア段階（ExitBootServices 前の SimpleTextIn）で **F8** ✔ を押していればその起動は `devices` に強制。F8 を届けないファームウェア向けに**数字の 8 キーを代替として受け付ける** ✔。両キーを両機で確認する。フェーズ境界：UEFI → ExitBootServices → ランタイム → 機器探索 → アプリ（Ring 3）またはビューアー → ready。`ready` は必須機器の探索完了。任意機器はその後に `phases` 行を追記。アプリの `log` 出力は対象外。実機受入記録は `devices` で採取する。 | 4 レベルを QEMU の画面比較で確認。`quiet` で強制失敗が見えること。F8 が NUC5・Ryzen で動くこと。`hardware-test-record-template.md` が新規記録に `devices` を要求 |
+| 7 | 画面モード設定 ✔ | キー `display=max`（既定：現行の最大 GOP モード選択）または `display=<幅>x<高さ>`。指定モードが無ければ `max` に戻し `phases` で報告。文字グリッドの倍率は v0.3.0 どおり選択モードに従う。 | QEMU：既定、存在する明示モード、存在しないモード。実機：NUC5・Ryzen で明示モード 1 つ（結果のグリッドとともに記録） |
+| 8 | Rust SDK ✔ | Rust アプリを同じ ABI でビルドし Ring 3 で実行できる：カスタムターゲット JSON、`core` の再ビルド（`build-std`）、`musha_main` を持つ `#![no_std]` クレート、目標 9 の全 syscall のバインディング、C SDK と同じ NOTE とリンカー配置、Hello と start record のサンプル。**`musha-os-<ver>-rust-sdk.zip` として `musha-os-<ver>-c-sdk.zip` と別に配布** ✔。`check-sdk.py` と `app-check.py` が Rust を対象にし、SDK ガイドに Rust の節を追加。 | Rust Hello が QEMU・NUC5・Ryzen で動作。`app-check.py` が Rust ELF を受理 |
+| 9 | 最小の工程 D API | 実験 ABI 候補 r2：`SYS_TIME`（起動からの単調 ms）、`SYS_WAIT`（ms の待機、または入力まで）、`SYS_INPUT`（イベントを 1 件取り出す：キーボードの押下・解放と usage code・修飾キー、ゲームパッドのボタン・軸の変化）。キーボードとゲームパッドは同じイベント形式にし、Bluetooth 機器も同じ経路に乗せる。NOTE の permissions ビットを拡張。`application-abi.md`、`external-app.md`、`sdk-guide.md` を r2 に更新。 | 各呼出しを C・Rust サンプルで QEMU 網羅。キーを読んで Q で終了するサンプルが実機で動作 |
+| 10 | ビューアーへの復帰とビューアーからの起動 | C3 の継続経路（ロールバック・arena 消去・機器再初期化）を通常版へ昇格し、`exit` やユーザー例外の後に再起動なしでビューアーへ戻る。ビューアーで `.ELF` を選んで Enter で実行（`AUTORUN.ELF` と同じ検査）。`AUTORUN.ELF` の自動起動は維持。`file-viewer.md` に起動・復帰・ペアリング操作を記載。 | QEMU で終了 0・非 0・障害 ELF の各ケースがビューアーに戻る。連続 3 回起動。DMA・ハンドル・媒体世代の停止前再利用禁止を検証。実機で冷間起動とビューアーからの連続 3 回起動 |
+| 11 | 配布物の整理 ✔ | 配布物：`musha-os-<ver>-x64.zip`（USB の中身。FAT32 の USB のルートに展開するのが唯一の利用者手順）、`musha-os-<ver>-x64-qemu.img.gz`（QEMU 専用の 64 MiB GPT/FAT32 像）、`musha-os-<ver>-c-sdk.zip`、`musha-os-<ver>-rust-sdk.zip`、`SHA256SUMS`、`build-manifest.json`、および目標 17 が公開前に完了した場合のみ `musha-os-<ver>-docs.zip` ✔。廃止：`*-files.zip`・`*-usb.img.gz`（改名）、`*-deployment.zip`（更新ツールは `tools/` に残し差分更新したい人向けの任意ツールとして案内）、`*-candidate.tar.gz`（docs → docs.zip または Source code、QEMU 像 → qemu 配布物、exFAT 試験データ → workflow 内で生成、manifest → `build-manifest.json`）。名前は `v` 無しの `musha-os-<ver>`、`x64` は OS バイナリーにのみ。**来歴** ✔：条件 1 — 同一コミットの 2 回ビルドで全配布物がバイト一致。条件 2 — 文書のみの後続コミットで実行用 payload が一致。実行用 payload は `BOOTX64.EFI`・QEMU 像・SDK サンプル ELF で、要素ごとに比較する。「文書のみ」は README.TXT の生成器・テンプレート・VERSION の変更を含まない。 | `tools/distribution.py`、`prepare-release.py`、`draft-release.py`、`compare-candidates.py`、`package-sdk.py`、イメージ・fixture 生成器、`release-candidate.yml`、リリースノート雛形、`release-distribution-policy.md`、`distribution-usage.md`、README のダウンロード節を更新。条件 1・2 を候補で実証 |
+| 12 | Bluetooth 基盤 ✔ | 基準の転送手段は USB Bluetooth ドングル 1 個で、**Bluetooth 4.0 以上・ファームウェア転送不要（CSR8510 系、LE 対応）** ✔。実機で確認し型番・リビジョン・VID:PID を記録。**コントローラー：Xbox Series X\|S ワイヤレスコントローラー** ✔（model 1914）。注：このコントローラーは **Bluetooth Low Energy（HID over GATT）**で接続するため、基盤スタックは LE になる：HCI over USB（class E0/01/01）、LE スキャン、SMP ペアリング（Just Works／passkey）、LTK の `/SETTINGS/` への保存（版・上限・破損検出を持つバイナリーレコード。`CONFIG.TXT` とは別）、自動再接続、コントローラーと **Apple Magic Keyboard 現行品** ✔（BLE）の HOGP レポート解釈。Classic BR/EDR の HID（旧来のキーボード、DualShock 4）は v0.4.0 に**含めない**。ペアリングモードはビューアーの **P** ✔ または `CONFIG.TXT` の `pair=on` ✔（USB キーボード無しで次回起動時にペアリングモードへ入る。成功後に OS がキーを消す）。v0.4.0 ではこれ以外の入口は設けない。イベントは目標 9 で届ける。 | キーボード：NUC5＋ドングルでペアリング→再起動→再接続→ビューアーで入力。コントローラー：ペアリング→再起動→再接続→`SYS_INPUT` でサンプルを操作。保存済みペアリングで NUC5・Ryzen 冷間起動 3 回。**ドングルを挿したまま Ryzen でホットリブート 1 回** ✔ |
+| 13 | OS 内部の有線 LAN ✔ | NUC5 の I218-V ドライバーをリンクアップ・DHCP・OS が応答する UDP echo まで（アプリ API なし）。 | NUC5 でリンク・アドレス・echo を記録。QEMU 82574 の回帰は不変 |
+| 14 | Mac ストレージの切り分け ✔ | 同一接続での v0.2.0 EFI との A/B、7D00 復旧経路の診断採取、修正または制約の文書化。 | MacBook Pro 2018 で FAT32/exFAT 読出し、または原因と制約の記録 |
+| 15 | Mac 内蔵キーボード（T2）✔ | 既存の `bce/` T2 BCE モデルを入力経路に接続し、MacBook Pro 2018 の内蔵キーボードでビューアーを操作できるようにする。 | 外付けキーボード無しで内蔵キーボードがビューアーを操作できる。外付け経路は不変 |
+| 16 | 起動時間計測 ✔ | PM epoch の段階タイマーを通常版に残し、`devices` レベルで 1 行の要約を出す。 | 候補で Ryzen・NUC5 の数値を記録 |
+| 17 | 文書構造と README ✔ | 文書整理 第 2 段（`docs/README.md` 索引、`Status:` 行、`docs/history/`、統合、利用者向けページの二言語化）と、初めて読む人向けの README.md 書き直し：Musha-OS が何で何でないか、想定用途、10 分で試す方法（QEMU と USB）、5 手順の Hello World、さらに使う方法。README の USB 経路（「FAT32 でフォーマットして USB 用 ZIP を展開」）は下記のフォーマット媒体の節目が通ってから記載する。 | リンク検査合格。README.md は索引と利用者向けページだけにリンク。フォーマット済み媒体の起動を `hardware-verification-status.md` に記録 |
+
+### 実機の節目 ✔
+
+- **フォーマット媒体の節目（簡易手順を文書化する前）：** 公開済み v0.3.0 の `files.zip` を手で展開（更新ツール・`AUTORUN.ELF` 不使用）した USB を、macOS ディスクユーティリティの FAT32/MBR と FAT32/GPT、Windows エクスプローラーの FAT32 の 3 通りで用意し、NUC5・Ryzen で各経路 1 回の冷間起動でビューアー到達（計 6 回）。手順：[formatted-media-boot-verification.md](formatted-media-boot-verification.md)。
+- **最終受入：** 候補 EFI そのものを `devices` で、NUC5・Ryzen 各冷間 3 回、Ryzen ホット 1 回、設定書込み→再起動→読戻し、macOS/Windows マウントと `chkdsk`、Rust Hello、ビューアー連続 3 起動、Bluetooth キーボード・コントローラーのペアリング保持、Mac 内蔵キーボードとストレージの結果、NUC5 の LAN echo。ホストや QEMU の結果を実機の証跡として扱わない。
 
 ### v0.4.0 に含めないもの
 
-Rust guest 実行と Rust SDK、`query`/`log`/`exit` 以外の syscall、アプリ向けの入力・ファイル・描画命令・通信 API、プリエンプションや CPU 時間制限、複数アプリの同時実行、ABI 互換性の固定、実機 NIC 通信、Mac 内蔵キーボード（T2）。
+exFAT の書込み。`/SETTINGS/` 外への書込み。削除・改名・ディレクトリー作成。長いファイル名。アプリ向けのファイル書込み API（アプリのファイルアクセスは、入れるとしても読出し専用で 0.5.0 の候補）。exFAT 起動ボリュームからの設定読出し。Classic BR/EDR の Bluetooth HID。NUC5 内蔵の Intel 無線/Bluetooth（ファームウェア転送とライセンス）。基準 2 機器を超える汎用 HID レポートディスクリプター解釈。プリエンプションや CPU 時間制限。複数アプリの同時実行。ABI 互換性の固定。TCP やアプリ向け通信 API。目標 11 以外の配布物種別。実 USB 向け raw イメージ書込みツール。
 
 ### 命名規則（所有者決定）
 
-USB 上のファイル・ディレクトリーは `EFI/BOOT/BOOTX64.EFI` 以外に「Musha-OS 本体」を連想させる名前を付けない。名前は役割（`AUTORUN`、`DOCS`、`README`）を表し、製品名を使わない。
+USB 上のファイル・ディレクトリーは `EFI/BOOT/BOOTX64.EFI` 以外に「Musha-OS 本体」を連想させる名前を付けない。名前は役割（`AUTORUN`、`DOCS`、`SETTINGS`、`README`、`CONFIG`）を表し、製品名を使わない。
+
+### 基準機器（所有者決定、2026-10-15）
+
+| 役割 | 機器 |
+|---|---|
+| Bluetooth キーボード | Apple Magic Keyboard 現行品（BLE） |
+| ゲームコントローラー | Xbox Series X\|S ワイヤレスコントローラー model 1914（BLE） |
+| Bluetooth ドングル | USB、Bluetooth 4.0 以上、ファームウェア転送不要（CSR8510 系）。型番と VID:PID は初回実機試験で記録 |
+| ペアリングの入口 | ビューアーの P、または `CONFIG.TXT` の `pair=on` |
+| `devices` 強制 | F8。代替は数字の 8 |
