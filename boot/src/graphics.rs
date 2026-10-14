@@ -72,7 +72,24 @@ pub unsafe fn select(protocol: *mut gop::Protocol, bs: *mut efi::BootServices) {
     }
     let mut modes = Firmware { protocol, bs };
     let before = modes.current();
+    #[cfg(not(feature = "display-grid-probe"))]
     musha_framebuffer::mode::select(&mut modes);
+    #[cfg(feature = "display-grid-probe")]
+    {
+        let wanted = option_env!("MUSHA_TEST_GOP").unwrap_or("1024x768");
+        let (w, h) = wanted.split_once('x').unwrap();
+        let w: u32 = w.parse().unwrap();
+        let h: u32 = h.parse().unwrap();
+        for index in 0..modes.count() {
+            if modes
+                .query(index)
+                .is_some_and(|i| i.width == w && i.height == h && i.format <= 1)
+            {
+                let _ = modes.set(index);
+                break;
+            }
+        }
+    }
     crate::debug(b"MUSHA: GOP MODE BEFORE/AFTER ");
     crate::debug(&crate::cpu::hex(before as u64));
     crate::debug(b" ");

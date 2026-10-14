@@ -1,6 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 use super::{Host, TRBS, control, dma_word, publish, read_word};
+use musha_framebuffer::metrics as grid;
 use musha_xhci::storage::transaction::{Phase, Progress, Transaction};
 use musha_xhci::storage::{self, Command, Endpoint, Storage};
 struct Pipe {
@@ -471,13 +472,15 @@ pub(super) fn probe(
                 crate::debug(b" HASH=");
                 crate::debug(&crate::cpu::hex(storage::hash(&file[..bytes])));
                 crate::debug(b"\n");
-                if host.framebuffer.height >= 476 {
-                    super::super::clear_line(host.framebuffer, 452);
+                if grid::Metrics::new(host.framebuffer.width, host.framebuffer.height).rows
+                    > grid::FILESYSTEM + grid::MARGIN
+                {
+                    super::super::clear_line(host.framebuffer, grid::FILESYSTEM);
                     unsafe {
-                        host.framebuffer.text(
+                        host.framebuffer.text_grid(
                             format_name,
-                            24,
-                            452,
+                            grid::LABEL,
+                            grid::FILESYSTEM,
                             host.framebuffer.color(0, 240, 100),
                         );
                     }
@@ -502,18 +505,28 @@ pub(super) fn probe(
             Err(_) => return Err("FAT32 READ"),
         }
     }
-    if host.framebuffer.height >= 444 {
-        super::super::clear_line(host.framebuffer, 388);
-        super::super::clear_line(host.framebuffer, 420);
+    if grid::Metrics::new(host.framebuffer.width, host.framebuffer.height).rows
+        > grid::USB_BYTES + grid::MARGIN
+    {
+        super::super::clear_line(host.framebuffer, grid::USB_READ);
+        super::super::clear_line(host.framebuffer, grid::USB_BYTES);
         unsafe {
-            host.framebuffer
-                .text("USB READ OK", 24, 388, host.framebuffer.color(0, 240, 100));
-            host.framebuffer
-                .text("USB BYTES", 24, 420, host.framebuffer.color(0, 220, 240));
-            host.framebuffer.text(
+            host.framebuffer.text_grid(
+                "USB READ OK",
+                grid::LABEL,
+                grid::USB_READ,
+                host.framebuffer.color(0, 240, 100),
+            );
+            host.framebuffer.text_grid(
+                "USB BYTES",
+                grid::LABEL,
+                grid::USB_BYTES,
+                host.framebuffer.color(0, 220, 240),
+            );
+            host.framebuffer.text_grid(
                 core::str::from_utf8(&crate::cpu::hex(blocks * size as u64)).unwrap(),
-                240,
-                420,
+                grid::VALUE,
+                grid::USB_BYTES,
                 host.framebuffer.color(0, 220, 240),
             );
         }

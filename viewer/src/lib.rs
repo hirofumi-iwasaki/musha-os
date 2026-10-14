@@ -564,7 +564,8 @@ impl Viewer {
             self.clear += n;
             return Ok(false);
         }
-        let scale = ((w.saturating_sub(32) / 480).min(h.saturating_sub(32) / 224)).clamp(1, 4);
+        let m = musha_framebuffer::metrics::Metrics::viewer(w, h);
+        let scale = m.scale;
         let text = self.line(self.line);
         let color = if self.line == 7 && matches!(self.view, View::Error | View::Unavailable) {
             [255, 180, 110]
@@ -575,9 +576,10 @@ impl Viewer {
         } else {
             FG
         };
-        let y = 16 + self.line * 8 * scale;
-        if w > 16 && y < h {
-            ctx.text_at(text.as_str(), 16, y, color, scale)?;
+        let x = m.x(musha_framebuffer::metrics::MARGIN);
+        let y = m.y(musha_framebuffer::metrics::MARGIN + self.line);
+        if w > x && y + 8 * scale <= h {
+            ctx.text_at(text.as_str(), x, y, color, scale)?;
         }
         self.line += 1;
         if self.line == 28 {

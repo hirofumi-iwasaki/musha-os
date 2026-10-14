@@ -23,6 +23,7 @@ p.add_argument('--data-image', required=True, type=Path)
 p.add_argument('--reference', required=True, type=Path)
 p.add_argument('--output', required=True, type=Path)
 p.add_argument('--qemu', default='qemu-system-x86_64')
+p.add_argument('--resolution')
 p.add_argument('--bootfile-absent', action='store_true', help='Derive the normal State::Absent list status from probe reference pixels')
 a = p.parse_args()
 for path in (a.boot_image, a.data_image, a.reference/'list.ppm', a.reference/'text.ppm'):
@@ -50,6 +51,8 @@ cmd = [a.qemu, '-machine', 'q35,accel=tcg', '-m', '256M', '-netdev', 'user,id=n'
        '-device', 'usb-kbd,bus=x.0', '-vga', 'std', '-display', 'none',
        '-debugcon', f'file:{log}', '-global', 'isa-debugcon.iobase=0xe9',
        '-qmp', f'unix:{qmp},server=on,wait=off', '-no-reboot']
+if a.resolution:
+    w,h=map(int,a.resolution.split('x'));cmd+=['-global',f'VGA.xres={w}','-global',f'VGA.yres={h}','-global','VGA.vgamem_mb=64']
 with (out/'qemu.log').open('w') as err:
     proc = subprocess.Popen(cmd, stdout=err, stderr=err)
     try:

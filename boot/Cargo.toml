@@ -26,6 +26,8 @@ musha-viewer = { path = "../viewer" }
 
 [features]
 qemu-debug = []
+# Screenshot-only exact GOP selection; never used in a distribution build.
+display-grid-probe = []
 fault-ud = ["qemu-debug"]
 fault-gp = ["qemu-debug"]
 fault-df = ["qemu-debug"]

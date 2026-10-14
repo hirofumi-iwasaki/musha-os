@@ -190,6 +190,13 @@ impl<'a> Context<'a> {
         }
         Ok(())
     }
+    /// Internal diagnostic grid; external ABI is unchanged.
+    pub fn text_grid(&mut self, text: &str, col: usize, row: usize, rgb: [u8; 3]) {
+        unsafe {
+            self.screen
+                .text_grid(text, col, row, self.screen.color(rgb[0], rgb[1], rgb[2]));
+        }
+    }
     pub fn text(&mut self, text: &str, x: usize, y: usize, rgb: [u8; 3]) {
         // SAFETY: constructor contract persists and &mut self serializes drawing.
         unsafe {

@@ -79,11 +79,6 @@ fn update(f: impl FnOnce(&mut Panel)) {
         f(p);
     }
 }
-const DIAGNOSTIC_SCALE: usize = if cfg!(feature = "diagnostics-detail") {
-    musha_framebuffer::LOG_TEXT_SCALE / 2
-} else {
-    musha_framebuffer::LOG_TEXT_SCALE
-};
 const VERSION: &str = include_str!("../../VERSION");
 fn test_name() -> &'static str {
     if cfg!(feature = "t2-diagnostics") {
@@ -98,11 +93,6 @@ fn test_name() -> &'static str {
         "EXTERNAL ELF"
     }
 }
-const DIAGNOSTIC_LINE_HEIGHT: usize = if cfg!(feature = "diagnostics-detail") {
-    25
-} else {
-    50
-};
 
 pub fn hide(hidden: bool) {
     update(|p| {
@@ -120,9 +110,12 @@ pub fn flush() {
             return;
         }
         let Some(fb) = p.fb else { return };
-        let x = if fb.width >= 1200 { 800 } else { 0 };
-        let columns = (fb.width.saturating_sub(x + 12) / (6 * DIAGNOSTIC_SCALE)).clamp(1, 64);
-        let capacity = (fb.height.saturating_sub(48) / DIAGNOSTIC_LINE_HEIGHT).min(42);
+        let m = musha_framebuffer::metrics::Metrics::new(fb.width, fb.height);
+        let scale = m.scale;
+        let line_height = m.line_pitch;
+        let x = m.x(m.panel_column);
+        let columns = m.columns.saturating_sub(m.panel_column + 2).clamp(1, 64);
+        let capacity = m.rows.saturating_sub(m.panel_row + 2).min(42);
         let mut display = [Line::EMPTY; 42];
         let mut row = 0;
         for l in p.page.as_ref().unwrap_or(&p.lines) {
@@ -144,19 +137,13 @@ pub fn flush() {
             if p.paint_valid && p.painted[row] == *value {
                 continue;
             }
-            let y = 24 + row * DIAGNOSTIC_LINE_HEIGHT;
-            for py in y..(y + DIAGNOSTIC_LINE_HEIGHT).min(fb.height) {
+            let y = m.y(row + m.panel_row);
+            for py in y..(y + line_height).min(fb.height) {
                 for px in x..fb.width {
                     fb.pixel(px, py, fb.color(12, 20, 32));
                 }
             }
-            fb.text_scaled(
-                value.as_str(),
-                x,
-                y,
-                fb.color(240, 220, 100),
-                DIAGNOSTIC_SCALE,
-            );
+            fb.text_scaled(value.as_str(), x, y, fb.color(240, 220, 100), scale);
             p.paint_rows += 1;
         }
         p.painted = display;
@@ -557,12 +544,11 @@ pub fn page(index: usize) -> usize {
     let mut total = 1;
     update(|p| {
         let Some(fb) = p.fb else { return };
-        let x = if fb.width >= 1200 { 800 } else { 0 };
-        let columns = (fb.width.saturating_sub(x + 12) / (6 * DIAGNOSTIC_SCALE)).clamp(1, 64);
+        let m = musha_framebuffer::metrics::Metrics::new(fb.width, fb.height);
+        let columns = m.columns.saturating_sub(m.panel_column + 2).clamp(1, 64);
         let (session, rescan, cycle) = crate::timing::display_state();
         let header_rows = if cycle > 0 { 2 } else { 1 };
-        let capacity =
-            (fb.height.saturating_sub(48) / DIAGNOSTIC_LINE_HEIGHT).clamp(3, 42) - header_rows;
+        let capacity = m.rows.saturating_sub(m.panel_row + 2).clamp(3, 42) - header_rows;
         let controllers = p.controller_bdfs.iter().filter(|b| **b != u16::MAX).count();
         let logs = p.journal_count.div_ceil(40);
         let timing_pages = crate::timing::count().div_ceil(40);

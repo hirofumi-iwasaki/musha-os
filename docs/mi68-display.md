@@ -1,15 +1,27 @@
-# MI68 readable display / MI68向け表示
-
-> 最新の実機確認状況（2026-10-10）は[配布資料用の実機確認状況](hardware-verification-status.md)を参照。以下の過去の準備・検証記録は、その記録日時点の内容です。
+# Readable display / 読みやすい表示
 
 ## English
 
-H10 doubles normal output glyphs from scale 3 (15x21 pixels) to scale 6 (30x42). Existing application text coordinates are transformed at rendering time; vertical spacing fits the GOP height up to twice the original spacing. Visitor-panel hexadecimal values omit leading zeros so labels and values remain readable. Key-value clearing follows the transformed rectangle. H11 diagnostic glyphs use the same scale 6 (30x42 pixels) as normal output, with 50-pixel lines, wrap to the available width, and paginate without a keyboard every eight seconds. At widths below 1200 the diagnostic pages use the full width. No GOP mode switch is performed. At small resolutions, the doubled visitor output can exceed the available width; MI68 should use at least 1280x768.
+The current display rule (owner decision 2026-10-14) replaces the earlier
+MI68 fixed enlargement. Boot status, diagnostics and the external console share
+`framebuffer/src/metrics.rs`: scale = clamp(round(height / 600), 1, 4),
+6*scale cell width, 8*scale glyph height, 10*scale row pitch, and two-cell
+margins. Labels start in column 2 and values in column 18. The right panel starts
+at total columns / 2 for widths >=1200; smaller modes place it at row 20 across
+the width, below boot status. Diagnostic page timing is unchanged.
+The viewer preserves 80 columns and 28 rows by reducing scale when needed;
+its cell proportions, line pitch and margins use the same metrics.
+GOP maximum-mode selection is unchanged. Historical photographs are not edited.
+See [hardware diagnostics](hardware-diagnostics.md).
 
 ## 日本語
 
-H10で通常出力の字形をscale 3（15x21ピクセル）からscale 6（30x42）へ倍増。既存アプリの文字座標は描画時に変換し、行間をGOPの高さに合わせて最大2倍にする。左側の16桁hex値は先頭ゼロを省略してラベルと値の視認性を確保。キー値の消去矩形も変換後の位置に合わせる。H11では診断文字も通常出力と同じscale 6（30x42ピクセル）、行間50ピクセルとし、表示幅で折り返して8秒毎に自動ページ切替する。幅1200未満では診断ページは全幅で表示。GOPのモード変更は行わない。小さな解像度では倍増した通常出力が幅を超えるため、MI68では1280x768以上を使用する。
-
-H11 uses a short page header to reserve exactly one line. Larger diagnostic text increases the number of pages; all saved diagnostics remain available through the eight-second automatic rotation.
-
-H11のページ見出しは1行に収まる短い表記を使用する。診断文字の拡大によりページ数は増えるが、保存した診断内容は8秒毎の自動切替で表示する。
+現行規則（所有者決定2026-10-14）は従来のMI68固定拡大を置き換えます。
+起動状態・診断・外部コンソールはframebuffer/src/metrics.rsを共有し、
+倍率clamp(round(高さ/600),1,4)、セル幅6×倍率、字形高8×倍率、
+行ピッチ10×倍率、余白2セルとします。ラベルは2列、値は18列です。
+幅1200以上では右パネルは総列数/2から、狭い画面では状態行の下の20行目から
+全幅を使います。診断ページの切替周期は変更しません。
+ビューアーは80列・28行を守るため必要に応じ倍率を抑え、セル比率・行間・余白は
+共通メトリクスを使います。GOP最大モード選択は不変で、過去の写真は変更しません。
+[ハードウェア診断](hardware-diagnostics.md)を参照してください。

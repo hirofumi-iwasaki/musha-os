@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Own/reset, build permanent DMA rings, probe commands, then quiesce.
 use crate::{BootInfo, acpi, pci};
+use musha_framebuffer::metrics as grid;
 mod usb;
 struct Registers {
     base: usize,
@@ -555,9 +556,9 @@ pub(crate) fn run_session(
     if crate::app::VIEWER {
         return result;
     }
-    clear_line(info.framebuffer, 292);
+    clear_line(info.framebuffer, grid::KEYBOARD);
     unsafe {
-        info.framebuffer.text(
+        info.framebuffer.text_grid(
             if result.is_ok() {
                 if found_device {
                     "USB DEVICE READY"
@@ -567,8 +568,8 @@ pub(crate) fn run_session(
             } else {
                 "XHCI FAILED"
             },
-            24,
-            292,
+            grid::LABEL,
+            grid::KEYBOARD,
             info.framebuffer
                 .color(if result.is_ok() { 0 } else { 255 }, 240, 100),
         );
@@ -1087,10 +1088,11 @@ impl Host<'_> {
     }
 }
 
-fn clear_line(fb: musha_framebuffer::Framebuffer, y: usize) {
-    let y = y.saturating_mul(fb.height.saturating_sub(48).min(1100)) / 550;
-    for row in y..(y + 42).min(fb.height) {
-        for x in 24..fb.width {
+fn clear_line(fb: musha_framebuffer::Framebuffer, row: usize) {
+    let m = grid::Metrics::new(fb.width, fb.height);
+    let y = m.y(row);
+    for row in y..(y + m.line_pitch).min(fb.height) {
+        for x in m.x(grid::LABEL)..m.x(m.status_end_column()).min(fb.width) {
             unsafe {
                 fb.pixel(x, row, fb.color(12, 20, 32));
             }

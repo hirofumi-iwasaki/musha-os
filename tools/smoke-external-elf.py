@@ -82,8 +82,8 @@ def screen_rows(path):
     import ast, re
     data=path.read_bytes(); header=re.match(rb'P6\s+(\d+)\s+(\d+)\s+255\s',data)
     assert header, 'Expected P6 screenshot'
-    w,h=map(int,header.groups()); pixels=data[header.end():]; scale=1 if h<2160 else (2 if h<2880 else 3)
-    columns=max(1,min(80,(w-16)//(6*scale))); visible_rows=max(1,min(24,(h-16)//(8*scale)))
+    w,h=map(int,header.groups()); pixels=data[header.end():]; scale=max(1,min(4,(h+300)//600))
+    columns=max(1,min(80,w//(6*scale)-4)); visible_rows=max(1,min(24,h//(10*scale)-4))
     font={}
     for key,values in re.findall(r"(b'(?:\\.|[^'])+'|\d+) => \[([\d, ]+)\]",(ROOT/'framebuffer/src/lib.rs').read_text()):
         c=ast.literal_eval(key);c=c[0] if isinstance(c,bytes) else c
@@ -97,7 +97,7 @@ def screen_rows(path):
             for y in range(7):
                 v=0
                 for x in range(5):
-                    at=((16+(row*8+y)*scale)*w+16+(col*6+x)*scale)*3
+                    at=(((20+row*10+y)*scale)*w+(12+col*6+x)*scale)*3
                     v=(v<<1)|(pixels[at:at+3]==bytes([240]*3))
                 bits.append(v)
             line+=font.get(tuple(bits),'?')
@@ -118,6 +118,7 @@ def main():
     p.add_argument('--diagnostic-timing',action='store_true',help='Require timing records; diagnostics-detail exits before network startup')
     p.add_argument('--hub-depth',type=int,choices=range(1,6),help='USB2 hub chain for the keyboard (Hello timing regression)')
     p.add_argument('--efi',type=Path,help='Use an already built candidate; --normal supplies screen-only checks')
+    p.add_argument('--resolution', help='Explicit GOP mode WIDTHxHEIGHT (EDID disabled)')
     p.add_argument('--normal',action='store_true',help='Feature-free EFI, screen-only observation; select a hello/exit/fault/log/reject case')
     a=p.parse_args(); out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
     report={'scope':'local external ELF; no real USB or hardware claim','commands':[],'cases':[],'partition_type':a.partition_type,'boot_from_data':a.boot_from_data}
@@ -180,7 +181,7 @@ def main():
                     normal=out/'normal-target/x86_64-unknown-uefi/release/musha-boot.efi'
                 fixture(data,normal,None,'fat32', partition_type=a.partition_type)
                 reference=a.reference.resolve()
-                (d/'pixels.log').write_text(run(['python3','tools/smoke-normal-viewer.py','--firmware-dir',a.firmware_dir,'--qemu',a.qemu,'--boot-image',data,'--data-image',data,'--bootfile-absent','--reference',reference,'--output',d/'pixels']))
+                (d/'pixels.log').write_text(run(['python3','tools/smoke-normal-viewer.py','--firmware-dir',a.firmware_dir,'--qemu',a.qemu,'--boot-image',data,'--data-image',data,'--bootfile-absent','--reference',reference,'--output',d/'pixels'] + (['--resolution',a.resolution] if a.resolution else [])))
                 report['cases'].append({'case':name,'passed':True,'normal_efi_sha256':hashlib.sha256(normal.read_bytes()).hexdigest(),'reference':str(reference),'pixels':str(d/'pixels/result.json')});print('PASS external ELF '+name,flush=True);continue
             fixture(data,efi,payload,fmt,16777217 if name=='too-large' else None, partition_type=a.partition_type)
             if name=='duplicate':
@@ -208,7 +209,9 @@ def main():
                 del cmd[at-1:at+1]
             if hotplug is not None:
                 at=cmd.index('usb-storage,id=storage,drive=data,bus=x.0,port=1');del cmd[at-1:at+1]
-            if name=='hello-high-resolution': cmd+=['-global','VGA.xres=3840','-global','VGA.yres=2160','-global','VGA.vgamem_mb=64']
+            if a.resolution:
+                w,h=map(int,a.resolution.lower().split('x'));cmd+=['-global',f'VGA.xres={w}','-global',f'VGA.yres={h}','-global','VGA.edid=off','-global','VGA.vgamem_mb=64']
+            if name=='hello-high-resolution' and not a.resolution: cmd+=['-global','VGA.xres=3840','-global','VGA.yres=2160','-global','VGA.vgamem_mb=64']
             if name=='hello-split': cmd+=['-device','qemu-xhci,id=k']
             if a.extra_empty_xhci: cmd+=['-device','qemu-xhci,id=empty']
             if a.hub_depth:

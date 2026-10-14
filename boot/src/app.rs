@@ -1,6 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 use musha_api::{Application, Context, Error, Step};
+use musha_framebuffer::metrics as grid;
 #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
 mod stream_probe;
 pub(crate) const VIEWER: bool = (!cfg!(feature = "qemu-debug")
@@ -86,7 +87,7 @@ impl Diagnostic {
         crate::debug(&crate::cpu::hex(self.file_hash));
         crate::debug(b" CLOSED_HANDLE_REJECTED\n");
         if !VIEWER && ctx.screen_size().1 >= 508 {
-            ctx.text("APP FILE READ OK", 24, 484, [0, 240, 100]);
+            ctx.text_grid("APP FILE READ OK", grid::LABEL, grid::FILE, [0, 240, 100]);
         }
         Ok(())
     }
@@ -178,17 +179,24 @@ impl Application for Diagnostic {
             }
             if !VIEWER && event.pressed {
                 let (width, height) = ctx.screen_size();
-                if height >= 380 && width > 24 {
-                    let py = 356 * height.saturating_sub(48).min(1100) / 550;
-                    if py + 42 <= height {
-                        ctx.rectangle(24, py, width - 24, 42, [12, 20, 32])?;
+                if grid::Metrics::new(width, height).rows > grid::KEY + grid::MARGIN {
+                    let m = grid::Metrics::new(width, height);
+                    let py = m.y(grid::KEY);
+                    if py + m.line_pitch <= height {
+                        ctx.rectangle(
+                            m.x(grid::LABEL),
+                            py,
+                            m.x(m.status_end_column().saturating_sub(grid::LABEL)),
+                            m.line_pitch,
+                            [12, 20, 32],
+                        )?;
                     }
-                    ctx.text("KEY CODE", 24, 356, [0, 220, 240]);
-                    ctx.text(
+                    ctx.text_grid("KEY CODE", grid::LABEL, grid::KEY, [0, 220, 240]);
+                    ctx.text_grid(
                         core::str::from_utf8(&crate::cpu::hex(event.usage as u64))
                             .map_err(|_| Error::Invalid)?,
-                        240,
-                        356,
+                        grid::VALUE,
+                        grid::KEY,
                         [0, 220, 240],
                     );
                 }
@@ -245,12 +253,12 @@ impl Application for Diagnostic {
         }
         let bytes = ctx.arena_bytes();
         if !VIEWER {
-            ctx.text("ARENA BYTES", 24, 132, [0, 220, 240]);
+            ctx.text_grid("ARENA BYTES", grid::LABEL, grid::ARENA, [0, 220, 240]);
             let digits = crate::cpu::hex(bytes as u64);
-            ctx.text(
+            ctx.text_grid(
                 core::str::from_utf8(&digits).map_err(|_| Error::Invalid)?,
-                240,
-                132,
+                grid::VALUE,
+                grid::ARENA,
                 [0, 220, 240],
             );
         }
@@ -272,7 +280,7 @@ impl Application for Diagnostic {
             let _ = ctx.file_close(handle);
         }
         if self.complete && !VIEWER {
-            ctx.text("APP COMPLETE", 24, 324, [0, 240, 100]);
+            ctx.text_grid("APP COMPLETE", grid::LABEL, grid::APP, [0, 240, 100]);
         }
     }
 }

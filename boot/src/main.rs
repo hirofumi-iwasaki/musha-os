@@ -3,6 +3,16 @@
 #![no_std]
 #![no_main]
 
+use musha_framebuffer::metrics as grid;
+#[cfg(feature = "display-grid-probe")]
+fn grid_hold(stage: &str) {
+    if option_env!("MUSHA_GRID_HOLD") == Some(stage) {
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+}
+
 /// Bounded, allocation-free boot-stage label; VERSION never carries its newline.
 unsafe fn boot_heading(fb: musha_framebuffer::Framebuffer, stage: &str) {
     use core::fmt::Write;
@@ -13,15 +23,18 @@ unsafe fn boot_heading(fb: musha_framebuffer::Framebuffer, stage: &str) {
         include_str!("../../VERSION").trim(),
         stage
     );
-    // Fit the left column without drawing over the diagnostic panel at x=800.
-    let width = fb.width.min(800).saturating_sub(48);
-    let scale = if cfg!(feature = "diagnostics-detail") {
-        musha_framebuffer::STATUS_TEXT_SCALE
-    } else {
-        (width / (label.as_str().len().max(1) * 6)).clamp(1, 4)
+    unsafe {
+        fb.text_grid(
+            label.as_str(),
+            grid::LABEL,
+            grid::HEADING,
+            fb.color(240, 240, 240),
+        )
     };
-    let y = 24 * fb.height.saturating_sub(48).min(1100) / 550;
-    unsafe { fb.text_scaled(label.as_str(), 24, y, fb.color(240, 240, 240), scale) };
+    #[cfg(feature = "display-grid-probe")]
+    if stage == "starting..." {
+        grid_hold("starting");
+    }
 }
 
 mod acpi;
@@ -248,8 +261,12 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
             diagnostics::snapshot();
             debug(message);
             unsafe {
-                info.framebuffer
-                    .text(label, 24, 100, info.framebuffer.color(255, 0, 0));
+                info.framebuffer.text_grid(
+                    label,
+                    grid::LABEL,
+                    grid::DISCOVERY,
+                    info.framebuffer.color(255, 0, 0),
+                );
             }
             stop();
         }
@@ -262,8 +279,12 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
             }
         }
         boot_heading(info.framebuffer, "runtime");
-        info.framebuffer
-            .text("CORE READY", 24, 64, info.framebuffer.color(0, 240, 100));
+        info.framebuffer.text_grid(
+            "CORE READY",
+            grid::LABEL,
+            grid::CORE,
+            info.framebuffer.color(0, 240, 100),
+        );
     }
     let _ = acpi::Time::new(info.timer).and_then(|mut t| t.now());
     bootstate::update(|r, t| {
@@ -290,14 +311,19 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     ))]
     ring3::run(arena, info);
     unsafe {
-        info.framebuffer.text(
+        info.framebuffer.text_grid(
             "DEVICE DISCOVERY",
-            24,
-            100,
+            grid::LABEL,
+            grid::DISCOVERY,
             info.framebuffer.color(0, 220, 240),
         );
     }
     pci::diagnose(info.framebuffer, info.xhci);
+    #[cfg(feature = "display-grid-probe")]
+    {
+        diagnostics::flush();
+        grid_hold("diagnostics");
+    }
     let arena_base = arena.as_mut_ptr() as usize;
     // Diagnostic app owns the sole mutable arena borrow and exercises every page.
     if runtime::run(arena, info).is_err() {
@@ -319,8 +345,12 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         diagnostic_capture(info);
         #[cfg(not(feature = "diagnostics-detail"))]
         unsafe {
-            info.framebuffer
-                .text("APP FAILED", 24, 324, info.framebuffer.color(255, 0, 0));
+            info.framebuffer.text_grid(
+                "APP FAILED",
+                grid::LABEL,
+                grid::APP,
+                info.framebuffer.color(255, 0, 0),
+            );
         }
         #[cfg(not(feature = "diagnostics-detail"))]
         stop();
@@ -579,7 +609,7 @@ pub extern "efiapi" fn efi_main(
                 || size % stride != 0
             {
                 // No returning to firmware after a failed ExitBootServices attempt.
-                fb.text("BOOT FAILED", 24, 64, fb.color(255, 0, 0));
+                fb.text_grid("BOOT FAILED", grid::LABEL, grid::CORE, fb.color(255, 0, 0));
                 stop();
             }
             (*info).map_size = size;
@@ -599,7 +629,7 @@ pub extern "efiapi" fn efi_main(
                 break;
             }
         }
-        fb.text("BOOT FAILED", 24, 64, fb.color(255, 0, 0));
+        fb.text_grid("BOOT FAILED", grid::LABEL, grid::CORE, fb.color(255, 0, 0));
         stop();
     }
 }

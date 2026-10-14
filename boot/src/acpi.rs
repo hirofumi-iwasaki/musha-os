@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use musha_framebuffer::metrics as grid;
 use musha_memory::{MemoryMap, Range};
 use musha_platform::Timer;
 use r_efi::efi;
@@ -250,7 +251,12 @@ pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) -> bool
         show_evidence();
         super::debug(b"MUSHA: ACPI_TIMER_UNAVAILABLE\n");
         unsafe {
-            fb.text("TIMER UNAVAILABLE", 24, 260, fb.color(255, 180, 0));
+            fb.text_grid(
+                "TIMER UNAVAILABLE",
+                grid::LABEL,
+                grid::TIMER,
+                fb.color(255, 180, 0),
+            );
         }
         return false;
     }
@@ -264,7 +270,12 @@ pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) -> bool
                 super::debug(&super::cpu::hex(ms));
                 super::debug(b"\n");
                 unsafe {
-                    fb.text("TIMER READY", 24, 260, fb.color(0, 240, 100));
+                    fb.text_grid(
+                        "TIMER READY",
+                        grid::LABEL,
+                        grid::TIMER,
+                        fb.color(0, 240, 100),
+                    );
                 }
                 return true;
             }
@@ -274,7 +285,12 @@ pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) -> bool
     }
     super::debug(b"MUSHA: ACPI_TIMER_STALLED\n");
     unsafe {
-        fb.text("TIMER STALLED", 24, 260, fb.color(255, 0, 0));
+        fb.text_grid(
+            "TIMER STALLED",
+            grid::LABEL,
+            grid::TIMER,
+            fb.color(255, 0, 0),
+        );
     }
     false
 }

@@ -3,6 +3,7 @@
 //! PCI configuration mechanism 1: segment zero, firmware-configured buses.
 use core::arch::asm;
 use musha_framebuffer::Framebuffer;
+use musha_framebuffer::metrics as grid;
 
 // The boot CPU is the sole caller; interrupts stay disabled. CF8/CFC transactions
 // cannot interleave. Discovery does not size BARs or reconfigure buses.
@@ -84,28 +85,28 @@ pub(crate) fn diagnose(fb: Framebuffer, selected: Controller) {
     // Discovery is diagnostic: zero devices in a class is reported, not treated
     // as proof of a working driver or as a reason to stop unrelated hardware.
     unsafe {
-        fb.text("PCI DEVICES", 24, 164, fb.color(0, 220, 240));
+        fb.text_grid("PCI DEVICES", grid::LABEL, grid::PCI, fb.color(0, 220, 240));
         let digits = super::cpu::hex(count);
-        fb.text(
+        fb.text_grid(
             core::str::from_utf8_unchecked(&digits),
-            240,
-            164,
+            grid::VALUE,
+            grid::PCI,
             fb.color(0, 220, 240),
         );
-        fb.text("XHCI", 24, 196, fb.color(0, 220, 240));
+        fb.text_grid("XHCI", grid::LABEL, grid::XHCI, fb.color(0, 220, 240));
         let digits = super::cpu::hex(xhci);
-        fb.text(
+        fb.text_grid(
             core::str::from_utf8_unchecked(&digits),
-            240,
-            196,
+            grid::VALUE,
+            grid::XHCI,
             fb.color(0, 220, 240),
         );
-        fb.text("INTEL LAN", 24, 228, fb.color(0, 220, 240));
+        fb.text_grid("INTEL LAN", grid::LABEL, grid::LAN, fb.color(0, 220, 240));
         let digits = super::cpu::hex(intel_lan);
-        fb.text(
+        fb.text_grid(
             core::str::from_utf8_unchecked(&digits),
-            240,
-            228,
+            grid::VALUE,
+            grid::LAN,
             fb.color(0, 220, 240),
         );
     }

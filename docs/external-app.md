@@ -14,7 +14,10 @@ A matching file must be 64 bytes to 16 MiB. The kernel reads at most 4096 bytes 
 
 The display changes to `Loading AUTORUN.ELF ...` on detection. After reading and verified device shutdown, the kernel checks ELF/NOTE and memory policy, then starts the application. It records OS_READY for the external application, APP_ENTERING before the privilege transition, and APP_RUNNING on the first `query`. It does not mark the static viewer as running for this path.
 
-`log` displays text in a kernel-owned **80-column × 24-row** console at pixel (16,16). Glyphs use 6×8 cells with scale 1 below GOP height 2160, scale 2 below 2880, and scale 3 above. Visible columns/rows are calculated from dimensions and scale, capped at 80×24. Default QEMU height 2048 remains scale 1. Lines wrap and overflow discards the oldest row. Printable ASCII and newline are interpreted. Every other byte becomes `.` like the viewer (a multibyte character can produce several dots). UTF-8 validation still occurs first. The existing log permission, 4096-byte limit, return status and written-byte count are unchanged. All input is copied through the C2 owned supervisor aliases before drawing; applications receive neither framebuffer addresses nor hardware registers.
+`log` displays text in a kernel-owned **80-column × 24-row** console at grid cell (2,2). Boot, diagnostic and console text share 6x8 base glyphs,
+scale clamp(round(GOP height/600),1,4), 6*scale cell width and 10*scale line pitch.
+Two-cell margins are reserved on all sides. Visible columns/rows are computed
+from this grid and capped at 80x24. The default 2048-high QEMU mode uses scale 3. Lines wrap and overflow discards the oldest row. Printable ASCII and newline are interpreted. Every other byte becomes `.` like the viewer (a multibyte character can produce several dots). UTF-8 validation still occurs first. The existing log permission, 4096-byte limit, return status and written-byte count are unchanged. All input is copied through the C2 owned supervisor aliases before drawing; applications receive neither framebuffer addresses nor hardware registers.
 
 - `exit`: `AUTORUN.ELF exited: status <n>` displays the signed 32-bit result, including nonzero results, and halts.
 - User exception: `AUTORUN.ELF faulted` displays vector, error code and RIP/RSP in hexadecimal, then halts. Kernel exceptions retain the fatal diagnostic path.
@@ -36,7 +39,7 @@ MacBook Pro 2018は現行開発版で起動しますがストレージ未認識�
 
 検出後は`Loading AUTORUN.ELF ...`を表示し、読込みと機器停止を確認してからELF／NOTE・メモリ検査と実行へ進みます。外部アプリ用のOS_READY、特権遷移前のAPP_ENTERING、最初の`query`でAPP_RUNNINGを記録し、静的ビューアーの起動記録と区別します。
 
-`log`はカーネル所有の**80桁×24行**の領域へ描画します。原点は(16,16)、6×8の文字セルをGOP高さ2160未満で1倍、2880未満で2倍、それ以上で3倍にします。画面寸法と倍率から表示桁数・行数を計算し、80×24を上限にします。既定QEMUの高さ2048では等倍を保持します。折返しと最古行の破棄を行います。ASCII印字可能文字と改行以外は、既存ビューアーと同じ`.`へバイト単位で置換します。UTF-8検査、権限、4096バイト上限、戻り値・バイト数は不変です。C2の所有alias経由コピーを終えてから描画し、アプリに画面アドレスやレジスターを渡しません。
+`log`はカーネル所有の**80桁×24行**の領域へ描画します。原点はグリッド(2,2)です。起動・診断と同じ基本字形6×8、倍率clamp(round(GOP高さ/600),1,4)、セル幅6×倍率、行ピッチ10×倍率を使用します。四辺に2セルの余白を確保し、画面から計算した列・行数に80×24の上限を適用します。既定QEMUの高さ2048では3倍です。折返しと最古行の破棄を行います。ASCII印字可能文字と改行以外は、既存ビューアーと同じ`.`へバイト単位で置換します。UTF-8検査、権限、4096バイト上限、戻り値・バイト数は不変です。C2の所有alias経由コピーを終えてから描画し、アプリに画面アドレスやレジスターを渡しません。
 
 終了時は`AUTORUN.ELF exited: status <n>`に符号付き32ビットの結果を表示して停止します。ユーザー例外では`AUTORUN.ELF faulted`とvector／error／RIP／RSPを16進数で表示します。拒否は`AUTORUN.ELF rejected: <reason>`で示し、ファイル・期限・中断・ELF・CPU・arena・配置／guardの拒否理由を残します。カーネル例外は従来の致命的停止です。
 

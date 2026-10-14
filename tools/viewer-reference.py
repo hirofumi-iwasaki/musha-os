@@ -28,12 +28,12 @@ def derive(source, output):
         width, height = map(int, header.groups())
         pixels = bytearray(original[header.end():])
         assert len(pixels) == width*height*3
-        scale = max(1, min(4, (width-32)//480, (height-32)//224))
+        scale = max(1, min(4, (height+300)//600, width//504, height//320))
         if name == 'list.ppm':
             bg, fg = bytes([12,20,32]), bytes([218,228,238])
             for row in range(8*scale):
                 for column in range(80*6*scale):
-                    x,y = 16+column,16+7*8*scale+row
+                    x,y = 12*scale+column,90*scale+row
                     if x>=width or y>=height: continue
                     cell = column//(6*scale)
                     glyph = font.get(NOTICE[cell],font['?']) if cell<len(NOTICE) else font[' ']

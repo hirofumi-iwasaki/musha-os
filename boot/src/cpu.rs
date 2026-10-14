@@ -7,6 +7,7 @@ use core::{
     arch::{asm, naked_asm},
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
+use musha_framebuffer::metrics as grid;
 
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
@@ -282,12 +283,18 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
         if frame.vector == 14 {
             asm!("mov {}, cr2",out(reg) cr2,options(nomem,nostack,preserves_flags));
         }
-        for y in 100..260 {
-            for x in 0..fb.width.min(600) {
+        let m = grid::Metrics::new(fb.width, fb.height);
+        for y in m.y(grid::CORE)..m.y(grid::DISCOVERY + 4).min(fb.height) {
+            for x in m.x(grid::LABEL)..m.x(m.columns.saturating_sub(grid::MARGIN)) {
                 fb.pixel(x, y, fb.color(32, 0, 0));
             }
         }
-        fb.text("CPU EXCEPTION", 24, 104, fb.color(255, 80, 80));
+        fb.text_grid(
+            "CPU EXCEPTION",
+            grid::LABEL,
+            grid::CORE,
+            fb.color(255, 80, 80),
+        );
         for (i, (label, value)) in [
             ("VECTOR", frame.vector),
             ("ERROR", frame.error),
@@ -297,13 +304,18 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
         .iter()
         .enumerate()
         {
-            fb.text(label, 24, 136 + i * 28, fb.color(255, 220, 220));
+            fb.text_grid(
+                label,
+                grid::LABEL,
+                grid::DISCOVERY + i,
+                fb.color(255, 220, 220),
+            );
             let bytes = hex(*value);
             // SAFETY: hex constructs only ASCII characters.
-            fb.text(
+            fb.text_grid(
                 core::str::from_utf8_unchecked(&bytes),
-                160,
-                136 + i * 28,
+                grid::VALUE,
+                grid::DISCOVERY + i,
                 fb.color(255, 220, 220),
             );
         }

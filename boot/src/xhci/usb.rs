@@ -1,5 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
+use musha_framebuffer::metrics as grid;
 mod file;
 mod hub;
 mod storage;
@@ -1027,10 +1028,10 @@ fn run_keyboard(
 ",
     );
     unsafe {
-        host.framebuffer.text(
+        host.framebuffer.text_grid(
             "KEYBOARD READY",
-            24,
-            292,
+            grid::LABEL,
+            grid::KEYBOARD,
             host.framebuffer.color(0, 240, 100),
         );
     }

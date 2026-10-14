@@ -1,16 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded kernel console model. Bytes outside printable ASCII become '.'.
 use crate::Framebuffer;
-/// Keep the current QEMU 2048-high GOP mode at the native regression scale.
-pub const fn scale_for_height(height: usize) -> usize {
-    if height < 2160 {
-        1
-    } else if height < 2880 {
-        2
-    } else {
-        3
-    }
-}
+pub use crate::metrics::scale_for_height;
+use crate::metrics::{MARGIN, Metrics};
 pub const COLS: usize = 80;
 pub const ROWS: usize = 24;
 pub struct Console {
@@ -40,8 +32,12 @@ impl Console {
     pub fn for_framebuffer(fb: Framebuffer) -> Self {
         let mut c = Self::new();
         c.scale = scale_for_height(fb.height);
-        c.columns = (fb.width.saturating_sub(16) / (6 * c.scale)).clamp(1, COLS);
-        c.rows = (fb.height.saturating_sub(16) / (8 * c.scale)).clamp(1, ROWS);
+        c.columns = Metrics::new(fb.width, fb.height)
+            .usable_columns()
+            .clamp(1, COLS);
+        c.rows = Metrics::new(fb.width, fb.height)
+            .usable_rows()
+            .clamp(1, ROWS);
         c
     }
     pub fn line(&self, row: usize) -> &[u8] {
@@ -73,10 +69,13 @@ impl Console {
     pub unsafe fn render(&self, fb: Framebuffer) {
         // Resolution-aware text; wrap/scroll within the visible cell grid.
         let scale = self.scale;
+        let m = Metrics::new(fb.width, fb.height);
+        let left = m.x(MARGIN);
+        let top = m.y(MARGIN);
         let width = self.columns * 6 * scale;
-        let height = self.rows * 8 * scale;
-        for y in 16..(16 + height).min(fb.height) {
-            for x in 16..(16 + width).min(fb.width) {
+        let height = self.rows * m.line_pitch;
+        for y in top..(top + height).min(fb.height) {
+            for x in left..(left + width).min(fb.width) {
                 unsafe {
                     fb.pixel(x, y, fb.color(12, 20, 32));
                 }
@@ -87,8 +86,8 @@ impl Console {
             unsafe {
                 fb.text_scaled(
                     text,
-                    16,
-                    16 + row * 8 * scale,
+                    left,
+                    top + row * m.line_pitch,
                     fb.color(240, 240, 240),
                     scale,
                 );
@@ -141,7 +140,7 @@ mod tests {
             format: 0,
         };
         let mut c = Console::for_framebuffer(fb);
-        assert_eq!((c.columns, c.rows, c.scale), (80, 24, 1));
+        assert_eq!((c.columns, c.rows, c.scale), (80, 24, 2));
         c.append(&[b'A'; 80]);
         c.append(b"B");
         assert_eq!(c.line(1)[0], b'B');
@@ -153,11 +152,11 @@ mod tests {
             &c.line(23)[..b"AUTORUN.ELF exited: status 0".len()],
             b"AUTORUN.ELF exited: status 0"
         );
-        assert_eq!(scale_for_height(2048), 1);
-        assert_eq!(scale_for_height(2159), 1);
-        assert_eq!(scale_for_height(2160), 2);
-        assert_eq!(scale_for_height(2879), 2);
-        assert_eq!(scale_for_height(2880), 3);
+        assert_eq!(scale_for_height(2048), 3);
+        assert_eq!(scale_for_height(2159), 4);
+        assert_eq!(scale_for_height(2160), 4);
+        assert_eq!(scale_for_height(2879), 4);
+        assert_eq!(scale_for_height(2880), 4);
         let tiny = Console::for_framebuffer(Framebuffer {
             width: 1,
             height: 1,
