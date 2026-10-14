@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Boot the staged EFI on QEMU USB storage; verify the post-exit marker."""
 import argparse, hashlib, importlib.util, json, os, pathlib, shutil, socket, subprocess, time
+from smoke_qemu_checks import check_hub_enumerations
 parser=argparse.ArgumentParser()
 parser.add_argument('--output',type=pathlib.Path,help='Directory for local smoke evidence')
 parser.add_argument('--qemu',default='qemu-system-x86_64')
@@ -234,7 +235,7 @@ with (out/'qemu.log').open('w') as err:
        else:required+=['MUSHA: XHCI_INPUT BDF=0000000000000018']
       if args.usb_hub or args.hub_depth:required+=['MUSHA: USB2_HUB_READY']
       if args.hub_depth:
-       if text.count('MUSHA: USB2_HUB_READY') != args.hub_depth:raise RuntimeError('Hub count differs')
+       check_hub_enumerations(text, args.hub_depth)
        required+=['MUSHA: HUB_CHILD_RESET_OK']
       if args.usb_image:required+=['MUSHA: DIAG FILE DIAGNOSE.TXT BYTES 00000010','MUSHA: DIAG FILE HASH 9A42A948C590F507']
      else:
