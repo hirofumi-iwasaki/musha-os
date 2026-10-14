@@ -2,17 +2,9 @@
 
 ## English
 
-Current acceptance basis (2026-10-14): IMG_7633 shows one cold-start NO MEDIUM with PRE OWN D8=0; IMG_7634 shows one Hello/exit 0 with D0=0x7FF/D8=0xF already routed. Operations after run 1 and power-off durations for runs 2/3 are UNKNOWN; the owner approved this correction. Three consecutive cold-start successes are not proven. Earlier success counts below remain historical owner reports, not acceptance of the next candidate. See [hardware acceptance](hardware-acceptance-0.3.0.md).
+Notes updated: 2026-10-14. Publication date: PENDING.
 
-Historical local normal test candidate: 5e4af31ece007550ba4d41a8a5c58d8b7a3b493e8665f277b7817134dd8911af, rebuilt after owner-reported diagnostic cold-boot 3/3 successes on NUC5 and Ryzen (Ryzen also hot 1/1). Manifest/QEMU: out/nuc5-accepted-normal/. This is uncommitted source; NUC5 normal-candidate cold boots passed 3/3 (owner report; IMG_7627.MOV shows Hello and exit 0, associated through the preceding USB deployment). Ryzen normal-candidate cold 3/3 and hot 1/1 also passed (owner report; IMG_7628 2.mov confirms Hello/exit 0). Slow discovery remains a known issue. Mac Basic Data boot, final packaging and current-source remote CI remain pending. The older revision and publication-provenance records below are retained as history.
-
-Historical local hardware-test revision: Address Device recovery, normal EFI `2d8b3a0669108cc6ece04c696dc84292e180a1f6bc2e85f185695ef9a168a09f`, diagnostic EFI `7eba0377ffdc39fea24544a52c8fed86bbf7254c2869d753fceebaffb948676a`; uncommitted source and physical acceptance pending. [Validation and provenance](handoff/0.3.0-address-recovery-results.md). The package/CI records below describe the preceding committed candidate.
-
-Historical Intel-routing candidate: it addressed an unconfirmed hypothesis after a failed NUC5 cold boot with USB keyboard and SanDisk attached. Hardware recovery is NOT yet verified. See [routing policy](intel-xhci-routing.md). Remote CI success below applies to the preceding 4319b58 source, not this new candidate.
-
-Candidate notes updated: 2026-10-14. Publication date: not set.
-
-Status: **release candidate, not published.** Final candidate source is not yet selected. Historical build sources `01f6efc859646fada7ef28fffa9322d266245469` and `4319b58` are retained below. Items marked PENDING are completed before the tag; the owner decides publication after the [scope conditions](release-scope-0.3.0.md) are met. Published v0.2.0 assets are unchanged.
+Status: **release candidate, not published.** Pre-build documentation is prepared under procedure A. The next candidate source, EFI hash, full candidate regressions, hardware acceptance and final-source CI are PENDING. The owner decides publication after the [scope conditions](release-scope-0.3.0.md) are met. Published v0.2.0 assets are unchanged. Historical development observations remain in [hardware acceptance](hardware-acceptance-0.3.0.md) and [USB startup timing](usb-startup-timing.md); they are not acceptance of the next candidate.
 
 ### Main changes
 
@@ -22,6 +14,7 @@ Status: **release candidate, not published.** Final candidate source is not yet 
 - Kernel-owned text console for application `log` output (up to 80 columns × 24 rows, bounded by the framebuffer and scaled by display height), with on-screen exit status, user-fault and refusal messages.
 - Select the largest RGB/BGR GOP mode before leaving UEFI, and show the chosen width/height/stride in the diagnostic panel.
 - Change the single boot FAT32 partition type from EFI System Partition to Microsoft Basic Data so macOS and Windows show the USB as a normal drive. The OS still accepts existing ESP media.
+- Intel shared-port routing changes only mask-selected bits. Attachment grace is 150 ms normally and 500 ms after an actual routing write; an eligible empty session gets one bounded rescan. The NUC5 no-medium cause was identified by review and fixed; the provisional grace and physical recovery still require candidate acceptance.
 - Separate relocatable **C SDK** archive: crt0, linker script, libmusha, headers, ABI schema, ELF checker, C Hello and a CMake entry point.
 - Boot readiness separation (policy 3.0): typed readiness/application states, explicit record and row-diff rendering, OS-owned device lifetime.
 
@@ -52,7 +45,7 @@ Unchanged from v0.2.0: external USB Boot Keyboard required; Up/Down selects, Ent
 
 ### Known issues
 
-- When `AUTORUN.ELF` is present, the viewer does not start.
+- When `AUTORUN.ELF` is present, the viewer does not start. Returning to the viewer after application exit is deferred to a later release; reboot to start another session.
 
 - MacBook Pro 2018: the 0.3.0 build boots and detects an external keyboard, but does not recognize the USB storage, so the viewer and external applications are unavailable there. Whether this is a regression from the 10/12 rc1 observation or a connection difference is not yet determined. The internal keyboard is unsupported (T2 unimplemented).
 - NUC5: cold NO MEDIUM is observed in IMG_7633. The routing/grace fix requires retesting on the next candidate. Cold-boot repeatability is recorded under hardware validation below.
@@ -64,11 +57,26 @@ Unchanged from v0.2.0: external USB Boot Keyboard required; Up/Down selects, Ent
 
 ### Validation scope
 
+Latest completed local implementation checks: 272 host tests and 194 QEMU cases for the AUTORUN rename on the USB grace/rescan implementation, including both partition types, five-level hubs, split controllers, C1/C2/C3, delayed attachment (+200/+800/+5000 ms), and normal absent pixels/debug 0 bytes. [Detailed results](handoff/0.3.0-autorun-rename-results.md). After the reproducible-link change, two clean builds matched and two normal QEMU checks (Hello and absent pixels) passed (`out/repro-brepro-nodebug/report.json`). These do not replace the next candidate's full regression or hardware acceptance.
+
+
 Historical validation: host tests 261. The Intel-routing candidate passed all 186 QEMU cases (`out/intel-routing/report.json`), covering external ELF loading on Basic Data and legacy ESP media, console/exit/fault/refusal display, absent-file viewer pixel regression with zero debug bytes, viewer/cooperative/hub regressions, and the C1/C2/C3 probes (8/14/20). The SDK was rebuilt in a separate directory containing spaces and reproduced the same Hello hash. Deployment and update tools were tested on virtual images and regular directories.
 
 Hardware: during development, the external Hello ran at Ring 3 on NUC5i5RYH (GOP 1600×1200) and on a Ryzen 7 machine (GOP 3840×2160) with on-screen output and exit status 0; these runs used development EFIs, not the candidate. Candidate acceptance on the exact release EFI — three cold boots each on NUC5 and Ryzen, and Basic Data boot on MacBook Pro 2018 — is **PENDING** and will be recorded in [hardware acceptance](hardware-acceptance-0.3.0.md). QEMU and host results are not hardware evidence.
 
 ### Final artifact verification
+
+| Gate | Status / required evidence |
+|---|---|
+| Candidate source, EFI and package hashes | PENDING: approved clean source; build-manifest and SHA256SUMS |
+| Full candidate QEMU regression | PENDING: candidate hash and suite reports |
+| Hardware acceptance | PENDING: NUC5 cold 3 consecutive; Ryzen cold 3 + hot 1 and READ OK-to-Hello seconds; Mac Basic Data boot with AUTORUN present (storage result recorded, not a gate) |
+| Final-source remote CI | PENDING: owner-approved run URL and result |
+| Final documentation commit / accepted EFI equality | PENDING: clean rebuild and full-file SHA-256 comparison under procedure A |
+| Published downloads | PENDING: download every asset and verify hashes after publication |
+
+Cold means power off for at least 10 seconds. For NUC5 record PRE OWN D8=0 on the diagnostic build for each cold run; D8=0xF is not cold evidence. Record diagnostic and normal EFI identities separately. A hold is a failure; Hello and exit 0 must occur within the same boot. Any failed acceptance run returns to capture/fix/rebuild. Full run records belong in [hardware acceptance](hardware-acceptance-0.3.0.md). Historical hashes/CI below are not final-candidate attestations.
+
 
 SDK Hello ELF SHA-256: `d60006f88e1e36409867546df31c778cf3d5fb7c077fba376ebb5bd3fbb2810f` (13,312 bytes).
 
@@ -81,17 +89,9 @@ Publication provenance: procedure A (reproducible EFI) adopted. `/Brepro` alone 
 
 ## 日本語
 
-現在の受入判定（2026-10-14）：IMG_7633で冷間NO MEDIUMを1回（PRE OWN D8=0）、IMG_7634で切替済みD0=0x7FF/D8=0xFのHello・終了0を1回確認。run 1後の操作とrun 2/3の電源断時間は所有者も正確には覚えておらずUNKNOWNです。所有者はこの訂正を承認済みです。冷間3回連続成功は未証明。以下の成功回数は過去の所有者報告として保持し、次候補の受入には転用しません。[実機受入記録](hardware-acceptance-0.3.0.md)を参照。
+ノート更新日：2026-10-14。公開日：未完了。
 
-過去の通常版実機試験候補は 5e4af31ece007550ba4d41a8a5c58d8b7a3b493e8665f277b7817134dd8911af。所有者報告で診断版のNUC5・Ryzen各冷間3/3成功（Ryzenはホット1/1も成功）後に再生成。manifest・QEMUはout/nuc5-accepted-normal/。未コミットソースであり、NUC5通常版候補の冷間起動3/3は成功（所有者申告、IMG_7627.MOVでHello・終了0を確認、直前USB配備と関連付け）。Ryzen通常版候補も冷間3/3・ホット1/1成功（所有者申告、IMG_7628 2.movでHello・終了0）。探索の待ち時間が長い課題あり。MacのBasic Data起動・最終梱包・現行ソースのリモートCIは未完了。以下の旧版・公開来歴は過去の記録として保持する。
-
-過去のローカル実機試験版はAddress Device復旧版です。通常EFI `2d8b3a0669108cc6ece04c696dc84292e180a1f6bc2e85f185695ef9a168a09f`、診断EFI `7eba0377ffdc39fea24544a52c8fed86bbf7254c2869d753fceebaffb948676a`。未コミット・実機受入前です。[検証と来歴](handoff/0.3.0-address-recovery-results.md)。以下の梱包・CI記録は前のコミット済み候補の記録です。
-
-USBキーボード・SanDisk接続時のNUC5冷間起動失敗を受け、未確定のIntelルーティング仮説へ対応する当時の候補でした。現行修正の実機受入は未確認です。[切替方針](intel-xhci-routing.md)を参照。以下のリモートCI成功は前ソース4319b58の結果であり、新候補の結果ではありません。
-
-候補ノート更新日：2026-10-14。公開日：未定。
-
-状態：**公開候補、未公開。** 最終候補ソースは未選定。以下の `01f6efc859646fada7ef28fffa9322d266245469` と `4319b58` は過去のビルド記録です。「未完了」の項目はタグ作成前に埋め、公開可否は[公開範囲](release-scope-0.3.0.md)の条件を満たした後に所有者が判断します。公開済み v0.2.0 配布物は変更しません。
+状態：**公開候補、未公開。** 方式Aに従いビルド前に確定できる文書を整理しました。次候補のソース・EFIハッシュ・候補の全回帰・実機受入・最終ソースのCIは未完了です。[公開範囲](release-scope-0.3.0.md)の条件を満たした後に所有者が公開を判断します。公開済みv0.2.0配布物は変更しません。過去の開発版観測は[実機受入記録](hardware-acceptance-0.3.0.md)・[USB起動時間](usb-startup-timing.md)に保持し、次候補の受入へ転用しません。
 
 ### 主な変更
 
@@ -101,6 +101,7 @@ USBキーボード・SanDisk接続時のNUC5冷間起動失敗を受け、未確
 - アプリの `log` 出力をカーネル所有のテキストコンソール（最大80桁×24行、画面内に収めて高さに応じて拡大）に表示し、終了コード・ユーザー例外・拒否理由も画面に出します。
 - UEFI を抜ける前に最大の RGB/BGR GOP モードを選び、幅・高さ・stride を診断パネルに表示します。
 - 起動用 FAT32 のパーティション種別を EFI System Partition から Microsoft Basic Data に変更し、macOS・Windows で通常の USB として表示されるようにしました。既存の ESP 媒体も引き続き起動できます。
+- Intel共有ポートの切替はマスク指定ビットだけを変更します。接続猶予は通常150ms、実際の切替書込み後500msとし、条件を満たす未検出セッションで1回だけ有界の再探索を行います。NUC5の媒体未検出はレビューで原因特定・修正済みですが、暫定猶予と実機での解消は候補で再確認します。
 - 再配置可能な **C SDK** を別アーカイブで配布：crt0、リンカースクリプト、libmusha、ヘッダー、ABI スキーマ、ELF 検査、C Hello、CMake 入口。
 - 起動分離（方針3.0）：起動状態・アプリ状態の型付け、記録と差分描画の分離、OS による機器寿命の所有。
 
@@ -131,7 +132,7 @@ v0.2.0 から変更なし：外付け USB Boot Keyboard が必要。上下で選
 
 ### 既知の問題
 
-- `AUTORUN.ELF` があるとビューアーは起動しません。
+- `AUTORUN.ELF` があるとビューアーは起動しません。終了後のビューアー復帰は次版以降へ先送りし、次のセッションには再起動が必要です。
 
 - MacBook Pro 2018：0.3.0 は起動し外付けキーボードを検出しますが、USB ストレージを認識しないため、ビューアーと外部アプリは使えません。10/12 の rc1 で観測した FAT32 認識との違いが退行か接続構成差かは未特定です。内蔵キーボードは未対応（T2 未実装）。
 - NUC5：IMG_7633で冷間NO MEDIUMを観測。ルーティング・猶予修正は次候補で再確認が必要です。冷間起動の再現性は下記の実機確認で記録します。
@@ -143,11 +144,26 @@ v0.2.0 から変更なし：外付け USB Boot Keyboard が必要。上下で選
 
 ### 検証範囲
 
+最新の完了済みローカル検証：USB猶予・再探索を含むAUTORUN改名版でホスト272件、QEMU194件合格。両パーティション種別、5段ハブ、分割制御器、C1/C2/C3、遅延接続（+200/+800/+5000ms）、通常版absentピクセルとdebug 0バイトを含みます。[詳細](handoff/0.3.0-autorun-rename-results.md)。再現リンク設定変更後はクリーンビルド2回が一致し、通常版QEMUのHello・absentピクセルの2件が合格しました（`out/repro-brepro-nodebug/report.json`）。次候補の全回帰や実機受入を代替するものではありません。
+
+
 過去の検証：ホスト試験261件。Intelルーティング候補のQEMU全186件合格（`out/intel-routing/report.json`）：Basic Data と従来 ESP 両媒体での外部 ELF 読込み、コンソール・終了・例外・拒否の表示、ファイル不在時のビューアーのピクセル回帰（debug 出力 0 byte）、ビューアー・協調 I/O・ハブの回帰、C1/C2/C3 試験（8/14/20）。SDK は空白を含む別ディレクトリーで再ビルドし、同一の Hello ハッシュを再現しました。配備・更新ツールは仮想イメージと通常ディレクトリーで試験しました。
 
 実機：開発中に NUC5i5RYH（GOP 1600×1200）と Ryzen 7 機（GOP 3840×2160）で外部 Hello が Ring 3 で動作し、画面出力と終了コード 0 を確認しました。これらは開発版 EFI での結果で、候補 EFI ではありません。候補 EFI での受入——NUC5・Ryzen 各3回の冷間起動、MacBook Pro 2018 の Basic Data 起動——は**未完了**で、[実機受入記録](hardware-acceptance-0.3.0.md)に記録します。QEMU とホストの結果は実機の根拠にしません。
 
 ### 最終配布物の確認
+
+| 条件 | 状態・必要な証拠 |
+|---|---|
+| 候補ソース・EFI・配布物ハッシュ | 未完了：承認済みクリーンソース、build-manifest、SHA256SUMS |
+| 候補のQEMU全回帰 | 未完了：候補ハッシュと各試験報告 |
+| 実機受入 | 未完了：NUC5冷間3回連続、Ryzen冷間3回＋ホット1回とREAD OK→Hello秒数、MacはAUTORUNを置いたBasic Data起動（ストレージ結果は記録のみ） |
+| 最終ソースのリモートCI | 未完了：所有者承認後のrun URLと結果 |
+| 最終文書コミットと受入済みEFIの一致 | 未完了：方式Aによるクリーン再ビルドと全バイトSHA-256照合 |
+| 公開配布物 | 未完了：公開後に全配布物を取得してハッシュ照合 |
+
+冷間は電源断10秒以上。NUC5は各冷間runの診断版PRE OWN D8=0を記録し、0xFは冷間の証拠に数えません。診断版と通常版のEFI識別を分けます。ホールドは失敗、Helloと終了0は同一起動内に必要です。1回でも不合格なら採取・修正・再ビルドへ戻します。runごとの記録は[実機受入](hardware-acceptance-0.3.0.md)に残します。以下の過去ハッシュ・CIは最終候補の証明ではありません。
+
 
 SDK Hello ELF SHA-256：`d60006f88e1e36409867546df31c778cf3d5fb7c077fba376ebb5bd3fbb2810f`（13,312 byte）。
 

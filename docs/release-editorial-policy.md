@@ -23,6 +23,7 @@ Release notes must state the version/date, changes, purpose of each download, co
 2. Check language order, untranslated prose, equivalent facts and numbers, links, version, asset names, and source/hash references.
 3. Build and test the approved artifacts. Do not claim hardware coverage from host or QEMU tests.
    Before publication, review the release notes' PENDING fields and update them with actual results or explicitly retained limitations. In the same pass, change the README English banner from `v0.3.0 release candidate (not published)` to `v0.3.0 release`, and remove the corresponding Japanese `公開候補（未公開）` wording. Keep candidate wording until publication is approved; do not mark unfinished checks as complete.
+   Under procedure A, complete hardware acceptance before removing the three-machine pending statements in distribution policy §4.4 and the deployment guide. Record the results, rebuild the final documentation commit, compare its entire EFI with the accepted EFI, and generate its matching manifest/packages before tagging. A mismatch blocks publication. Keep separate owner approvals for push, candidate generation, USB update, remote CI, tag and Release.
 4. Derive the GitHub Release description from the versioned notes. Convert relative links into absolute GitHub URLs pinned to the appropriate documentation commit. Keep binary provenance tied to its original source commit.
 5. Read back the published README and Release description. Verify links and artifact hashes, and record the PR, tag, Release URL, and remaining validation items.
 
@@ -59,6 +60,7 @@ READMEにはOS、自動起動するチェック処理、組込みアプリ、前
 2. 言語の順序、未翻訳の本文、事実・数値の対応、リンク、版、配布物名、ソース・ハッシュの参照を確認します。
 3. 承認された配布物をビルド・試験します。ホストやQEMUの試験を実機確認として扱いません。
    公開時にリリースノートのPENDING欄を確認し、実際の結果または明示して残す制限へ更新します。同時にREADME英語バナーの `v0.3.0 release candidate (not published)` を `v0.3.0 release` に変更し、日本語の `公開候補（未公開）` も外します。公開承認までは候補表記を維持し、未完了の検証を完了扱いにしません。
+   方式Aでは実機受入後に配布方針§4.4・配備手順の3機確認前表記を外します。結果を記録した最終文書コミットを再ビルドし、受入済みEFIとの全バイト一致を確認して、そのコミットのmanifest・配布物を生成してからタグを作成します。不一致なら公開を停止します。push・候補生成・USB更新・リモートCI・タグ・Releaseはそれぞれ所有者承認を得ます。
 4. 版ごとのノートからGitHub Release本文を作成します。相対リンクは適切な文書コミットに固定したGitHubの絶対URLへ変換します。バイナリーの来歴は元のソースコミットを指すままにします。
 5. 公開後のREADMEとRelease本文を読み戻します。リンクと配布物のハッシュを確認し、PR、タグ、Release URL、残る検証項目を記録します。
 

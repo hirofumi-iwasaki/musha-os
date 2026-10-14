@@ -20,7 +20,9 @@ Owner decision, 2026-10-13: these are limitations, not work to investigate in th
 | Rust guest | Compile-only layout/wrapper checks; no runnable Rust SDK, custom core/alloc or guest claim. Excluded from C SDK distribution. |
 | Mac internal keyboard | T2 unimplemented; unsupported. |
 
-Release gates still pending: same candidate EFI, NUC5/Ryzen three cold boots each, Mac Basic Data boot, owner-authorized final-source remote CI and final artifacts. Documentation drafts have been received; older results do not satisfy the new candidate gates. [Hardware records](hardware-acceptance-0.3.0.md).
+Measured historical latency: IMG_7630 showed 17,996 ms of accumulated attachment/SS waits across six passes; ownership/reset/quiesce did not reach their deadlines. The current grace/rescan implementation requires new normal-candidate timing, not inference from diagnostic-page duration. See [timing evidence](usb-startup-timing.md).
+
+Release gates still pending: same candidate EFI, NUC5/Ryzen three cold boots each and Ryzen one hot reboot with READ OK-to-Hello timing, Mac Basic Data boot, owner-authorized final-source remote CI and final artifacts. Documentation drafts have been received; older results do not satisfy the new candidate gates. [Hardware records](hardware-acceptance-0.3.0.md).
 
 ## 日本語
 
@@ -40,4 +42,6 @@ Release gates still pending: same candidate EFI, NUC5/Ryzen three cold boots eac
 - Rust guest：型・ラッパーのcompile-only検査のみ。Rust実行SDK、core/alloc、guest実行は未実装でC SDK配布へ含めない。
 - Mac内蔵キーボード：T2未実装のため未対応。
 
-公開候補EFIによるNUC5・Ryzen各3回冷間起動、MacのBasic Data起動、所有者承認後の最終ソースのリモートCI、最終配布物の確認は残件です。README／リリースノート草案は受領済み。旧版の結果を次候補の合格には転用しません。
+過去の実測：IMG_7630で6走査の接続・SS待ち合計17,996ms。所有権移行・リセット・停止は期限へ達していません。現行の猶予・再探索実装では新通常候補で再計測し、診断ページ表示時間から推測しません。[計測証拠](usb-startup-timing.md)を参照。
+
+公開候補EFIによるNUC5・Ryzen各3回冷間起動とRyzenホット1回・READ OK→Hello秒数、MacのBasic Data起動、所有者承認後の最終ソースのリモートCI、最終配布物の確認は残件です。README／リリースノート草案は受領済み。旧版の結果を次候補の合格には転用しません。

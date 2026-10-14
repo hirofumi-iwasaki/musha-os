@@ -8,7 +8,7 @@
 
 Build a C program with the SDK, copy it to the USB as `AUTORUN.ELF`, and Musha-OS runs it at Ring 3 and shows its output. The ABI is experimental and may change. External Hello was observed on development builds on NUC5 and a Ryzen 7 machine; candidate hardware acceptance is pending; MacBook Pro 2018 boots but does not recognize USB storage in this release. See [known issues](docs/open-issues-0.3.0.md).
 
-Published v0.2.0 assets are unchanged.
+Published v0.2.0 assets are unchanged. The Intel routing/attachment-grace fix is implemented; repeat hardware acceptance on the next candidate remains pending.
 
 Musha-OS is a thin bare-metal execution environment based on x86-64 / UEFI.
 It aims to make use of older PCs and provide applications with a display, input,
@@ -142,7 +142,7 @@ and record its source, version, and changes.
 
 SDK で C プログラムを作り、`AUTORUN.ELF` として USB へコピーすると、Musha-OS が Ring 3 で実行して出力を表示します。ABI は実験版で変更の可能性があります。外部 Hello は開発版で NUC5 と Ryzen 7 機の動作を観測しました。候補 EFI の実機受入は未完了です。MacBook Pro 2018 は起動しますが本版では USB ストレージを認識しません。[既知の問題](docs/open-issues-0.3.0.md)を参照。
 
-公開済み v0.2.0 配布物は変更していません。
+公開済み v0.2.0 配布物は変更していません。Intelルーティング・接続猶予の修正は実装済みで、次候補による実機再受入は未完了です。
 
 Musha-OSは、x86-64 / UEFIベースの薄いベアメタル実行環境です。
 古いPCを活用し、アプリケーションに必要な画面、入力、USBストレージ、
