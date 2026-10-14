@@ -110,7 +110,7 @@ GPTのエントリー順にかかわらずexFATが選ばれ、FAT32単独探索�
 
 Rust・UEFI target・依存はリポジトリの固定設定とlockfileを尊重する。ランナーやClang、QEMU、firmwareの版・識別情報も記録する。既存試験を落としてビルドを通す変更は行わない。
 
-正式候補は固定コミットとcleanなソースから生成する。未コミット変更を含む成果物はプレビューと明記し、正式候補へ昇格させない。検証済みEFIを受け取ってパッケージ化する経路を設け、実機確認後の公開時には再ビルドしない。
+正式候補は固定コミットとcleanなソースから生成する。未コミット変更を含む成果物はプレビューと明記し、正式候補へ昇格させない。検証済みEFIを受け取ってパッケージ化する経路を設け、方式Aでは実機確認後の文書コミットを同条件で再ビルドし、以下の同等性検査を必須とする。
 
 ### 6.1 Reproducible build conditions and tag provenance / 再現ビルド条件とタグの来歴
 
@@ -135,6 +135,45 @@ commit equivalence or hardware acceptance. Published tags/binaries remain fixed.
 既存検査の迂回は行いません。不一致なら公開を停止して原因調査・所有者判断へ戻します。
 今回のローカル一致は将来の最終文書コミットの一致や実機受入の証明ではありません。
 公開済みタグ・バイナリーは固定します。
+
+### 6.2 Owner clarification: comparison boundaries (2026-10-14)
+
+For two clean builds of the **same commit**, require identical EFI and all five
+distribution archives, with matching manifests/checksums under the same recorded
+toolchain, environment and packaging inputs. Record differences; do not silently
+normalize existing output or declare byte equality using a payload-only comparison.
+
+For an approved **documentation-only successor**, require identical EFI and
+runtime payload (all managed USB content except generated provenance manifests,
+plus the SDK Hello ELF). Regenerate packages with truthful final-commit provenance.
+Compare extracted members: only approved documentation, source-commit provenance
+and their derived manifests/checksums may differ. Record both commits, archive and
+member hashes, approved paths and reasons; any executable/data difference or
+unexplained metadata difference stops publication. The final tag equals the final
+build-manifest source commit. No package format change is authorized by this rule.
+
+Publication consists of five archives (initial image, file update, C SDK,
+deployment tools, complete tar.gz), build-manifest.json and SHA256SUMS: seven
+uploaded files. EFI is included inside the archives, not a standalone asset.
+The whole-package reproduction gate remains unverified until stage 3.
+
+### 6.2 所有者による照合範囲の明確化（2026-10-14）
+
+**同一コミット**のクリーンビルド2回は、同じ記録済みツール・環境・梱包入力のもと、
+EFI・5配布アーカイブ・manifest・チェックサムの一致を要求します。不一致は記録し、
+生成後の無断正規化やpayloadだけの比較で全バイト一致と扱ってはいけません。
+
+承認済みの**文書のみの後続コミット**ではEFIと実行用payload（生成来歴manifestを除く
+USB管理ファイル一式、およびSDK Hello ELF）の一致を要求します。最終コミットの正しい
+来歴で再梱包し、展開メンバー単位で比較します。承認した文書・ソースコミット来歴・
+それらから派生するmanifestとチェックサムだけ変更を認めます。両コミット、アーカイブ・
+各メンバーのハッシュ、許可パスと理由を記録し、実行コード・データの差分や説明できない
+メタデータ差分があれば公開を停止します。タグは最終build-manifestのソースコミットと
+一致させます。この規則は配布形式の変更を許可するものではありません。
+
+公開は5アーカイブ（初回イメージ・更新ZIP・C SDK・配備ツール・一式tar.gz）と
+build-manifest.json・SHA256SUMSの計7ファイル。EFIはアーカイブ内に含めます。
+全配布物の再現性ゲートは段階3で検証するまで未確認です。
 
 ## 7. GitHub ActionsからReleaseへ
 

@@ -48,11 +48,28 @@ They do not generate, write, or hash an entire USB device, reformat it, or fall 
 See [macOS](docs/usb-install-macos.md), [Windows](docs/usb-install-windows.md), [Linux](docs/usb-install-linux.md), and [recovery and limitations](docs/distribution-usage.md).
 Windows/Linux device adapters remain unimplemented. Unsigned EFI requires appropriate Secure Boot settings. Internal Mac keyboard support remains optional and unavailable.
 
+### Files on this drive
+
+| Path | Purpose |
+|---|---|
+| `EFI/BOOT/BOOTX64.EFI` | Musha-OS itself; do not rename |
+| `AUTORUN.ELF` | Your optional program, added by you |
+| `DIAGNOSE.TXT` | Startup-check marker; keep it |
+| `LICENSE`, `NOTICE` | Apache-2.0 license and third-party notices |
+| `third_party/` | Third-party license texts |
+| `README.TXT` | ASCII/CRLF quick-start instructions |
+
+Build the C sample with `musha-os-v0.3.0-x64-c-sdk.zip`, copy the resulting ELF
+as `AUTORUN.ELF`, and boot through UEFI with Secure Boot off. Without the program,
+the read-only viewer requires an external USB keyboard. Musha-OS never writes
+to this drive. The application ABI is experimental and may change.
+The updater also manages `update-manifest.json` for file verification.
+
 ### Current status
 
-The external application path, kernel console, GOP mode selection and Basic Data partition type are part of the v0.3.0 normal build. The [C1](docs/ring3-prototype.md), [C2](docs/ring3-elf.md) and [C3](docs/ring3-lifecycle.md) probes remain opt-in; returning to the OS after application exit is not a normal-build feature. The [ABI](docs/application-abi.md) is experimental candidate r1. Rust guest execution, practical application I/O (input, files, display commands, network) and physical NIC networking remain pending. See [policy](docs/boot-readiness-policy.md), [validation](docs/boot-api-validation.md) and [open issues](docs/open-issues-0.3.0.md).
+The external application path, kernel console, shared display grid, GOP mode selection and Basic Data partition type are part of the v0.3.0 normal build. The [C1](docs/ring3-prototype.md), [C2](docs/ring3-elf.md) and [C3](docs/ring3-lifecycle.md) probes remain opt-in; returning to the OS after application exit is not a normal-build feature. The [ABI](docs/application-abi.md) is experimental candidate r1. Rust guest execution, practical application I/O (input, files, display commands, network) and physical NIC networking remain pending. See [policy](docs/boot-readiness-policy.md), [validation](docs/boot-api-validation.md) and [open issues](docs/open-issues-0.3.0.md).
 
-Development builds ran Ring 3 Hello on NUC5 and Ryzen 7. Candidate cold-boot acceptance remains incomplete; NUC5 device discovery is under investigation. MacBook Pro 2018 reaches boot and external keyboard detection, but USB storage is not recognized. See [hardware acceptance](docs/hardware-acceptance-0.3.0.md).
+Development builds ran Ring 3 Hello on NUC5 and Ryzen 7. The NUC5 routing/grace cause is identified and fixed; acceptance will be repeated on the next clean candidate including the display grid. NUC5 readability and Ryzen 4K output were observed on the local test EFI, with three Ryzen cold boots owner-reported. MacBook Pro 2018 reaches boot and external keyboard detection, but USB storage is not recognized. See [hardware acceptance](docs/hardware-acceptance-0.3.0.md).
 
 ### Policy and hardware documentation
 
@@ -181,11 +198,28 @@ USB全容量のイメージ生成・書込み・ハッシュ走査や再フォ�
 [macOS](docs/usb-install-macos.md)、[Windows](docs/usb-install-windows.md)、[Linux](docs/usb-install-linux.md)、[復旧と制限](docs/distribution-usage.md)を参照してください。
 Windows/Linuxの実デバイス用アダプターは未実装です。未署名EFIに適したSecure Boot設定が必要です。Mac内蔵キーボード対応はオプショナルで、現状は未対応です。
 
+### USB内のファイル
+
+| パス | 用途 |
+|---|---|
+| `EFI/BOOT/BOOTX64.EFI` | Musha-OS本体。改名しないでください |
+| `AUTORUN.ELF` | 利用者が任意で追加するプログラム |
+| `DIAGNOSE.TXT` | 起動チェック用のマーカー。保持してください |
+| `LICENSE`, `NOTICE` | Apache-2.0ライセンスと第三者の帰属表示 |
+| `third_party/` | 第三者ライセンス本文 |
+| `README.TXT` | ASCII・CRLFの起動案内 |
+
+`musha-os-v0.3.0-x64-c-sdk.zip`でCサンプルをビルドし、生成ELFを
+`AUTORUN.ELF`として置き、Secure Bootを無効にしてUEFI起動します。
+プログラムがなければ読出し専用ビューアーが起動し、外付けUSBキーボードが必要です。
+Musha-OS自体はこの媒体に書き込みません。アプリABIは実験段階で変更の可能性があります。
+更新ツールはファイル照合用の`update-manifest.json`も管理します。
+
 ### 現在の状態
 
-外部アプリの実行経路、カーネルコンソール、GOP モード選択、Basic Data 種別は v0.3.0 の通常版に含まれます。[C1](docs/ring3-prototype.md)・[C2](docs/ring3-elf.md)・[C3](docs/ring3-lifecycle.md) は任意試験構成のままで、アプリ終了後の OS 復帰は通常版の機能ではありません。[ABI](docs/application-abi.md) は実験候補 r1 です。Rust guest、アプリ向け実用 I/O（入力・ファイル・描画命令・通信）、実機 NIC 通信は残件です。[方針](docs/boot-readiness-policy.md)・[検証](docs/boot-api-validation.md)・[残件](docs/open-issues-0.3.0.md)を参照してください。
+外部アプリの実行経路、カーネルコンソール、共通文字グリッド、GOP モード選択、Basic Data 種別は v0.3.0 の通常版に含まれます。[C1](docs/ring3-prototype.md)・[C2](docs/ring3-elf.md)・[C3](docs/ring3-lifecycle.md) は任意試験構成のままで、アプリ終了後の OS 復帰は通常版の機能ではありません。[ABI](docs/application-abi.md) は実験候補 r1 です。Rust guest、アプリ向け実用 I/O（入力・ファイル・描画命令・通信）、実機 NIC 通信は残件です。[方針](docs/boot-readiness-policy.md)・[検証](docs/boot-api-validation.md)・[残件](docs/open-issues-0.3.0.md)を参照してください。
 
-開発版ではNUC5・Ryzen 7でRing 3 Helloが動作しました。公開候補の冷間起動受入は未達で、NUC5の機器探索を調査中です。MacBook Pro 2018は起動・外付けキーボード検出までで、USBストレージは未認識です。[実機受入](docs/hardware-acceptance-0.3.0.md)を参照してください。
+開発版ではNUC5・Ryzen 7でRing 3 Helloが動作しました。NUC5のルーティング・接続猶予の原因は特定・修正済みで、表示グリッドを含む次のクリーン候補で再受入します。ローカル試験EFIではNUC5の読みやすさとRyzenの4K出力を確認し、Ryzen冷間3回の所有者報告を記録しています。MacBook Pro 2018は起動・外付けキーボード検出までで、USBストレージは未認識です。[実機受入](docs/hardware-acceptance-0.3.0.md)を参照してください。
 
 ### 方針・実機文書
 

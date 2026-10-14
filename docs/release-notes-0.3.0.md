@@ -2,11 +2,14 @@
 
 ## English
 
-Notes updated: 2026-10-14. Publication date: PENDING.
+Notes updated: 2026-10-14. Publication date:
 
 Status: **release candidate, not published.** Pre-build documentation is prepared under procedure A. The next candidate source, EFI hash, full candidate regressions, hardware acceptance and final-source CI are PENDING. The owner decides publication after the [scope conditions](release-scope-0.3.0.md) are met. Published v0.2.0 assets are unchanged. Historical development observations remain in [hardware acceptance](hardware-acceptance-0.3.0.md) and [USB startup timing](usb-startup-timing.md); they are not acceptance of the next candidate.
 
 ### Main changes
+
+- Shared resolution-based text grid: scale `clamp(round(height/600),1,4)`, 6x8 base glyphs, 10xscale row pitch and two-cell margins across boot, diagnostics and the console. The fixed-layout viewer caps scale to fit its existing columns/rows. NUC5 and Ryzen readability observations are recorded separately from repeat candidate acceptance.
+- Reproducible EFI linking with `/Brepro` and `/debug:none`; procedure A requires same-source full-package reproduction and documentation-successor runtime-payload equality.
 
 - Root `README.TXT` provides ASCII/CRLF quick-start instructions. The startup marker is now `DIAGNOSE.TXT` (same 16 bytes and FNV hash). File updates back up and remove the retired `MUSHA.TXT`; user programs are preserved.
 
@@ -21,6 +24,8 @@ Status: **release candidate, not published.** Pre-build documentation is prepare
 - Boot readiness separation (policy 3.0): typed readiness/application states, explicit record and row-diff rendering, OS-owned device lifetime.
 
 ### Downloads
+
+Five distribution archives plus build-manifest and SHA256SUMS: seven uploaded files. EFI is inside the archives, not a separate Release asset.
 
 - `musha-os-v0.3.0-x64-usb.img.gz`: 64 MiB GPT/Basic Data FAT32 boot image for QEMU and as the initial/recovery source image.
 - `musha-os-v0.3.0-x64-files.zip`: normal-update EFI, managed files and update manifest.
@@ -51,7 +56,6 @@ Unchanged from v0.2.0: external USB Boot Keyboard required; Up/Down selects, Ent
 
 - MacBook Pro 2018: the 0.3.0 build boots and detects an external keyboard, but does not recognize the USB storage, so the viewer and external applications are unavailable there. Whether this is a regression from the 10/12 rc1 observation or a connection difference is not yet determined. The internal keyboard is unsupported (T2 unimplemented).
 - NUC5: cold NO MEDIUM is observed in IMG_7633. The routing/grace fix requires retesting on the next candidate. Cold-boot repeatability is recorded under hardware validation below.
-- Console scale is 1× below 2160 pixels in height, 2× from 2160 to 2879, and 3× from 2880. A 3840×2160 display uses 2×.
 - Two keyboards on different controllers: the first selected device prevents input from the other (H15).
 - Unoptimized debug-profile builds fault during filesystem discovery (vector 8); release-profile builds are unaffected.
 - Physical NIC communication (I218-V/I219-V) is not implemented; controller detection is not networking.
@@ -59,7 +63,17 @@ Unchanged from v0.2.0: external USB Boot Keyboard required; Up/Down selects, Ent
 
 ### Validation scope
 
-Latest completed local implementation checks: 272 host tests and 194 QEMU cases for the AUTORUN rename on the USB grace/rescan implementation, including both partition types, five-level hubs, split controllers, C1/C2/C3, delayed attachment (+200/+800/+5000 ms), and normal absent pixels/debug 0 bytes. [Detailed results](handoff/0.3.0-autorun-rename-results.md). After the reproducible-link change, two clean builds matched and two normal QEMU checks (Hello and absent pixels) passed (`out/repro-brepro-nodebug/report.json`). These do not replace the next candidate's full regression or hardware acceptance.
+Display-grid implementation checks: 53 host tests, 26 normal QEMU cases,
+6 exact-resolution Hello/absent cases (1024x768, 1600x1200, 3840x2160),
+8 boot/diagnostic captures and 4 independent Hello pixel comparisons passed.
+Evidence: `out/display-grid/{host-close.log,normal-final/report.json,modes-report.json,stages-report.json}`;
+[grid report](display-grid-0.3.0.md). Local test EFI SHA-256:
+`ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`.
+NUC5 IMG_7641.MOV confirms Hello/exit 0 and owner approval of readability;
+Ryzen IMG_7643.MOV shows 4K output/exit 0 with three cold boots owner-reported.
+These are development checks, not the forthcoming clean candidate's full gates.
+
+Earlier completed local implementation checks: 272 host tests and 194 QEMU cases for the AUTORUN rename on the USB grace/rescan implementation, including both partition types, five-level hubs, split controllers, C1/C2/C3, delayed attachment (+200/+800/+5000 ms), and normal absent pixels/debug 0 bytes. [Detailed results](handoff/0.3.0-autorun-rename-results.md). After the reproducible-link change, two clean builds matched and two normal QEMU checks (Hello and absent pixels) passed (`out/repro-brepro-nodebug/report.json`). These do not replace the next candidate's full regression or hardware acceptance.
 
 
 Historical validation: host tests 261. The Intel-routing candidate passed all 186 QEMU cases (`out/intel-routing/report.json`), covering external ELF loading on Basic Data and legacy ESP media, console/exit/fault/refusal display, absent-file viewer pixel regression with zero debug bytes, viewer/cooperative/hub regressions, and the C1/C2/C3 probes (8/14/20). The SDK was rebuilt in a separate directory containing spaces and reproduced the same Hello hash. Deployment and update tools were tested on virtual images and regular directories.
@@ -71,10 +85,11 @@ Hardware: during development, the external Hello ran at Ring 3 on NUC5i5RYH (GOP
 | Gate | Status / required evidence |
 |---|---|
 | Candidate source, EFI and package hashes | PENDING: approved clean source; build-manifest and SHA256SUMS |
+| Same-source reproducibility | PENDING: two clean builds; identical EFI and all five archives, plus matching manifests/checksums under identical recorded conditions |
 | Full candidate QEMU regression | PENDING: candidate hash and suite reports |
 | Hardware acceptance | PENDING: NUC5 cold 3 consecutive; Ryzen cold 3 + hot 1 and READ OK-to-Hello seconds; Mac Basic Data boot with AUTORUN present (storage result recorded, not a gate) |
 | Final-source remote CI | PENDING: owner-approved run URL and result |
-| Final documentation commit / accepted EFI equality | PENDING: clean rebuild and full-file SHA-256 comparison under procedure A |
+| Documentation-successor equivalence | PENDING: EFI and runtime payload equality; regenerated documentation/provenance packages with an allowlisted member-level difference report |
 | Published downloads | PENDING: download every asset and verify hashes after publication |
 
 Cold means power off for at least 10 seconds. For NUC5 record PRE OWN D8=0 on the diagnostic build for each cold run; D8=0xF is not cold evidence. Record diagnostic and normal EFI identities separately. A hold is a failure; Hello and exit 0 must occur within the same boot. Any failed acceptance run returns to capture/fix/rebuild. Full run records belong in [hardware acceptance](hardware-acceptance-0.3.0.md). Historical hashes/CI below are not final-candidate attestations.
@@ -85,17 +100,20 @@ SDK Hello ELF SHA-256: `d60006f88e1e36409867546df31c778cf3d5fb7c077fba376ebb5bd3
 Historical source: `01f6efc859646fada7ef28fffa9322d266245469` (candidate build). EFI SHA-256: `cb0f532d24fb12c238069cec2b906c74f11fdb91b9745855ab5079c86196f23c` (460,288 bytes). Toolchain: Rust 1.99.0, Apple clang 21.0.0.
 Remote CI: SUCCESS on candidate source `4319b58dda03400032c0307eaaa3b85fe8150ac0`: [run 38365638298](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38365638298). GP/DF injection, all remaining workflow regressions and normal candidate packaging passed; draft creation was skipped. This supersedes failed run 38360736372 on 04d986d. Logs are in `out/repro-4319b58/remote-job.log`. The CI-built EFI is a separate artifact, not an attestation of the local USB EFI hash above. Asset download and hash verification after release upload: PENDING.
 
-Publication provenance: procedure A (reproducible EFI) adopted. `/Brepro` alone still differed in 20 metadata bytes; `/Brepro` + `/debug:none` produced two byte-identical clean local builds, SHA-256 `f7d21cb4c96f5ed286562c0564b2de0662f9a3cb9473893b7d7586c7fcdba139` (472,576 bytes), from 54ac242 plus the target-config patch. Evidence: `out/repro-brepro-nodebug/report.json`; this is a reproducibility experiment, not the final candidate or hardware acceptance. Build and accept the next approved candidate. After documentation-only updates, rebuild the final commit with the same inputs/toolchain and require full-file equality with the hardware-accepted EFI. Generate final packages/manifest from that final commit and tag that same source; do not relabel the earlier manifest. Any mismatch blocks publication for investigation and owner decision. Final-source equivalence and hardware acceptance remain PENDING. See [reproducible build conditions](release-distribution-policy.md) and [development instructions](development.md).
+Publication provenance: procedure A (reproducible EFI) adopted. `/Brepro` alone still differed in 20 metadata bytes; `/Brepro` + `/debug:none` produced two byte-identical clean local builds, SHA-256 `f7d21cb4c96f5ed286562c0564b2de0662f9a3cb9473893b7d7586c7fcdba139` (472,576 bytes), from 54ac242 plus the target-config patch. Evidence: `out/repro-brepro-nodebug/report.json`; this is a reproducibility experiment, not the final candidate or hardware acceptance. Build and accept the next approved candidate. After documentation-only updates, rebuild the final commit with the same inputs/toolchain and require full-file equality with the hardware-accepted EFI and runtime payload. Two clean builds of the same source must reproduce all five archives. Across documentation-only commits, archive hashes may change only because of approved documentation and truthful provenance/derived checksums; record extracted member differences, with no unexplained changes. Generate final packages/manifest from that final commit and tag that same source; do not relabel the earlier manifest. Any mismatch blocks publication for investigation and owner decision. Final-source equivalence and hardware acceptance remain PENDING. See [reproducible build conditions](release-distribution-policy.md) and [development instructions](development.md).
 
 ---
 
 ## 日本語
 
-ノート更新日：2026-10-14。公開日：未完了。
+ノート更新日：2026-10-14。公開日：
 
 状態：**公開候補、未公開。** 方式Aに従いビルド前に確定できる文書を整理しました。次候補のソース・EFIハッシュ・候補の全回帰・実機受入・最終ソースのCIは未完了です。[公開範囲](release-scope-0.3.0.md)の条件を満たした後に所有者が公開を判断します。公開済みv0.2.0配布物は変更しません。過去の開発版観測は[実機受入記録](hardware-acceptance-0.3.0.md)・[USB起動時間](usb-startup-timing.md)に保持し、次候補の受入へ転用しません。
 
 ### 主な変更
+
+- 起動・診断・コンソールを解像度依存の共通文字グリッドへ統一。倍率は`clamp(round(高さ/600),1,4)`、基本字形6×8、行ピッチ10×倍率、余白2セルです。固定配置のビューアーは既存の列・行が収まる倍率を上限にします。NUC5・Ryzenの表示観測と候補での再受入は区別します。
+- `/Brepro`と`/debug:none`によるEFI再現リンク。方式Aで同一ソースの全配布物再現と、文書のみの後続コミットの実行用payload一致を要求します。
 
 - ルートの `README.TXT` にASCII・CRLFの起動案内を追加。診断マーカーを `DIAGNOSE.TXT` に変更（16 byteとFNVハッシュは不変）。通常更新は旧 `MUSHA.TXT` を退避後に削除し、利用者のプログラムを保持します。
 
@@ -110,6 +128,8 @@ Publication provenance: procedure A (reproducible EFI) adopted. `/Brepro` alone 
 - 起動分離（方針3.0）：起動状態・アプリ状態の型付け、記録と差分描画の分離、OS による機器寿命の所有。
 
 ### 配布物
+
+5配布アーカイブ＋build-manifest＋SHA256SUMSの計7ファイルを公開します。EFIはアーカイブ内に含め、単体のRelease添付にはしません。
 
 - `musha-os-v0.3.0-x64-usb.img.gz`：QEMU 用および初回・復旧用の 64 MiB GPT/Basic Data FAT32 起動イメージ。
 - `musha-os-v0.3.0-x64-files.zip`：通常更新用の EFI・管理ファイル・更新 manifest。
@@ -140,7 +160,6 @@ v0.2.0 から変更なし：外付け USB Boot Keyboard が必要。上下で選
 
 - MacBook Pro 2018：0.3.0 は起動し外付けキーボードを検出しますが、USB ストレージを認識しないため、ビューアーと外部アプリは使えません。10/12 の rc1 で観測した FAT32 認識との違いが退行か接続構成差かは未特定です。内蔵キーボードは未対応（T2 未実装）。
 - NUC5：IMG_7633で冷間NO MEDIUMを観測。ルーティング・猶予修正は次候補で再確認が必要です。冷間起動の再現性は下記の実機確認で記録します。
-- コンソールの倍率は画面高さ2160px未満で1倍、2160〜2879pxで2倍、2880px以上で3倍です。3840×2160では2倍です。
 - 別コントローラーの2台のキーボード：先に選ばれた機器が他方の入力を妨げます（H15）。
 - 未最適化の debug 構成はファイルシステム探索中に例外（vector 8）を起こします。release 構成には影響しません。
 - 実機の NIC 通信（I218-V/I219-V）は未実装です。制御器の検出は通信ではありません。
@@ -148,7 +167,17 @@ v0.2.0 から変更なし：外付け USB Boot Keyboard が必要。上下で選
 
 ### 検証範囲
 
-最新の完了済みローカル検証：USB猶予・再探索を含むAUTORUN改名版でホスト272件、QEMU194件合格。両パーティション種別、5段ハブ、分割制御器、C1/C2/C3、遅延接続（+200/+800/+5000ms）、通常版absentピクセルとdebug 0バイトを含みます。[詳細](handoff/0.3.0-autorun-rename-results.md)。再現リンク設定変更後はクリーンビルド2回が一致し、通常版QEMUのHello・absentピクセルの2件が合格しました（`out/repro-brepro-nodebug/report.json`）。次候補の全回帰や実機受入を代替するものではありません。
+表示グリッドの実装確認：ホスト53件、通常版QEMU26件、指定3解像度
+（1024×768・1600×1200・3840×2160）のHello/absent6件、起動・診断画面8件、
+独立描画のHello画素比較4件が合格。証拠は
+`out/display-grid/{host-close.log,normal-final/report.json,modes-report.json,stages-report.json}`、
+[表示変更の報告](display-grid-0.3.0.md)を参照してください。ローカル試験EFIのSHA-256は
+`ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`。
+NUC5のIMG_7641.MOVでHello・終了0と所有者の読みやすさ確認、RyzenのIMG_7643.MOVで
+4K出力・終了0、冷間3回の所有者報告を記録しました。次のクリーン候補の全ゲートを
+代替するものではありません。
+
+以前の完了済みローカル検証：USB猶予・再探索を含むAUTORUN改名版でホスト272件、QEMU194件合格。両パーティション種別、5段ハブ、分割制御器、C1/C2/C3、遅延接続（+200/+800/+5000ms）、通常版absentピクセルとdebug 0バイトを含みます。[詳細](handoff/0.3.0-autorun-rename-results.md)。再現リンク設定変更後はクリーンビルド2回が一致し、通常版QEMUのHello・absentピクセルの2件が合格しました（`out/repro-brepro-nodebug/report.json`）。次候補の全回帰や実機受入を代替するものではありません。
 
 
 過去の検証：ホスト試験261件。Intelルーティング候補のQEMU全186件合格（`out/intel-routing/report.json`）：Basic Data と従来 ESP 両媒体での外部 ELF 読込み、コンソール・終了・例外・拒否の表示、ファイル不在時のビューアーのピクセル回帰（debug 出力 0 byte）、ビューアー・協調 I/O・ハブの回帰、C1/C2/C3 試験（8/14/20）。SDK は空白を含む別ディレクトリーで再ビルドし、同一の Hello ハッシュを再現しました。配備・更新ツールは仮想イメージと通常ディレクトリーで試験しました。
@@ -160,10 +189,11 @@ v0.2.0 から変更なし：外付け USB Boot Keyboard が必要。上下で選
 | 条件 | 状態・必要な証拠 |
 |---|---|
 | 候補ソース・EFI・配布物ハッシュ | 未完了：承認済みクリーンソース、build-manifest、SHA256SUMS |
+| 同一ソースの再現性 | 未完了：同一条件を記録したクリーンビルド2回でEFI・5アーカイブ・manifest・チェックサム一致 |
 | 候補のQEMU全回帰 | 未完了：候補ハッシュと各試験報告 |
 | 実機受入 | 未完了：NUC5冷間3回連続、Ryzen冷間3回＋ホット1回とREAD OK→Hello秒数、MacはAUTORUNを置いたBasic Data起動（ストレージ結果は記録のみ） |
 | 最終ソースのリモートCI | 未完了：所有者承認後のrun URLと結果 |
-| 最終文書コミットと受入済みEFIの一致 | 未完了：方式Aによるクリーン再ビルドと全バイトSHA-256照合 |
+| 文書のみの後続コミットの同等性 | 未完了：EFI・実行用payload一致、文書・来歴を含む再生成配布物は許可したメンバー差分を記録 |
 | 公開配布物 | 未完了：公開後に全配布物を取得してハッシュ照合 |
 
 冷間は電源断10秒以上。NUC5は各冷間runの診断版PRE OWN D8=0を記録し、0xFは冷間の証拠に数えません。診断版と通常版のEFI識別を分けます。ホールドは失敗、Helloと終了0は同一起動内に必要です。1回でも不合格なら採取・修正・再ビルドへ戻します。runごとの記録は[実機受入](hardware-acceptance-0.3.0.md)に残します。以下の過去ハッシュ・CIは最終候補の証明ではありません。
@@ -174,4 +204,4 @@ SDK Hello ELF SHA-256：`d60006f88e1e36409867546df31c778cf3d5fb7c077fba376ebb5bd
 過去のソース：`01f6efc859646fada7ef28fffa9322d266245469`（候補ビルド）。EFI SHA-256：`cb0f532d24fb12c238069cec2b906c74f11fdb91b9745855ab5079c86196f23c`（460,288 byte）。ツールチェーン：Rust 1.99.0、Apple clang 21.0.0。
 リモート CI：候補ソース `4319b58dda03400032c0307eaaa3b85fe8150ac0` の[run 38365638298](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38365638298)でSUCCESS。GP/DF注入、残りの全workflow試験、通常版候補の梱包まで合格し、draft作成はスキップしました。04d986dの失敗run 38360736372に対する再試験結果です。ログは `out/repro-4319b58/remote-job.log`。CI生成EFIは別成果物であり、上記ローカルUSB候補のハッシュを証明するものではありません。Releaseアップロード後の取得・ハッシュ照合は未完了です。
 
-公開来歴：方式A（EFI再現ビルド）を採用します。`/Brepro` 単独ではメタデータ20バイトが不一致でしたが、`/Brepro` + `/debug:none` により54ac242＋ターゲット設定変更からのローカルクリーンビルド2回が完全一致しました。SHA-256は `f7d21cb4c96f5ed286562c0564b2de0662f9a3cb9473893b7d7586c7fcdba139`（472,576バイト）、証拠は `out/repro-brepro-nodebug/report.json`。これは再現性実験であり最終候補や実機受入ではありません。次の承認済み候補をビルド・受入後、文書のみの更新を含む最終コミットを同じ入力・ツール版で再ビルドし、実機受入済みEFIとの全バイト一致を要求します。最終配布物・manifestはその最終コミットから生成し、同じソースへタグを付けます。旧manifestの来歴は付け替えません。不一致なら公開を止めて調査・所有者判断へ戻します。最終ソースでの一致と実機受入は未完了です。[再現ビルド条件](release-distribution-policy.md)・[開発手順](development.md)を参照。
+公開来歴：方式A（EFI再現ビルド）を採用します。`/Brepro` 単独ではメタデータ20バイトが不一致でしたが、`/Brepro` + `/debug:none` により54ac242＋ターゲット設定変更からのローカルクリーンビルド2回が完全一致しました。SHA-256は `f7d21cb4c96f5ed286562c0564b2de0662f9a3cb9473893b7d7586c7fcdba139`（472,576バイト）、証拠は `out/repro-brepro-nodebug/report.json`。これは再現性実験であり最終候補や実機受入ではありません。次の承認済み候補をビルド・受入後、文書のみの更新を含む最終コミットを同じ入力・ツール版で再ビルドし、実機受入済みEFI・実行用payloadとの全バイト一致を要求します。同一ソースのクリーンビルド2回では5アーカイブすべての一致を要求します。文書のみの後続コミットでは承認した文書・正確な来歴・派生チェックサムに限ってアーカイブの変更を認め、展開したメンバー単位の差分を記録します。説明できない差分は認めません。最終配布物・manifestはその最終コミットから生成し、同じソースへタグを付けます。旧manifestの来歴は付け替えません。不一致なら公開を止めて調査・所有者判断へ戻します。最終ソースでの一致と実機受入は未完了です。[再現ビルド条件](release-distribution-policy.md)・[開発手順](development.md)を参照。

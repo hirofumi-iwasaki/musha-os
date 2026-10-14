@@ -1,5 +1,49 @@
 # v0.3.0 hardware observations
 
+## Next clean candidate: acceptance worksheet (2026-10-14)
+
+Owner decision: include the display grid in 0.3.0 and repeat acceptance. The
+local ba23cabb display checks below do not fill these gates. After approval,
+build the final pre-build documentation commit; put its full hash and candidate
+EFI SHA-256 in every row. Preserve diagnostic-vs-normal build identities.
+
+Cold means power off for at least 10 seconds. NUC5: first collect diagnostic
+PRE OWN D8=0 photographs for each diagnostic run, then perform three consecutive
+cold boots of the normal candidate. D8=0xF is not cold evidence. A diagnostic
+photograph does not measure D8 in a separate normal boot; link paired records
+without conflating them. A hold is a failure. Hello and exit 0 must appear in the
+same normal boot. Ryzen: cold 3 plus hot 1, recording USB READ OK-to-Hello seconds.
+Mac: boot from Basic Data with AUTORUN present is the gate; storage is observation
+only. On any failure, capture evidence, fix, and return to pre-build documentation.
+
+| Machine / run | Build | EFI SHA-256 | Source commit | Date/time | Power off seconds | D8 / diagnostic evidence | READ OK to Hello seconds | Result | Evidence file |
+|---|---|---|---|---|---|---|---|---|---|
+| NUC5 D1 | diagnostic | PENDING | PENDING | PENDING | PENDING | PENDING | — | PENDING | PENDING |
+| NUC5 D2 | diagnostic | PENDING | PENDING | PENDING | PENDING | PENDING | — | PENDING | PENDING |
+| NUC5 D3 | diagnostic | PENDING | PENDING | PENDING | PENDING | PENDING | — | PENDING | PENDING |
+| NUC5 C1 | normal | PENDING | PENDING | PENDING | PENDING | paired D1; not measured in normal | — | PENDING | PENDING |
+| NUC5 C2 | normal | PENDING | PENDING | PENDING | PENDING | paired D2; not measured in normal | — | PENDING | PENDING |
+| NUC5 C3 | normal | PENDING | PENDING | PENDING | PENDING | paired D3; not measured in normal | — | PENDING | PENDING |
+| Ryzen C1 | normal | PENDING | PENDING | PENDING | PENDING | — | PENDING | PENDING | PENDING |
+| Ryzen C2 | normal | PENDING | PENDING | PENDING | PENDING | — | PENDING | PENDING | PENDING |
+| Ryzen C3 | normal | PENDING | PENDING | PENDING | PENDING | — | PENDING | PENDING | PENDING |
+| Ryzen H1 | normal | PENDING | PENDING | PENDING | hot reboot | — | PENDING | PENDING | PENDING |
+| Mac B1 | normal | PENDING | PENDING | PENDING | record method | — | — | PENDING | PENDING |
+
+### 次のクリーン候補の受入様式
+
+所有者決定により表示グリッドを0.3.0へ含めて再受入します。下記のba23cabb表示確認を
+上表の合格へ転記しません。承認後、ビルド前文書を確定したコミットから生成し、各行に
+ソース・候補EFIの完全なハッシュ、日時、電源断秒数、結果、証拠名を記録してください。
+
+冷間は電源断10秒以上。NUC5は診断版の各runでPRE OWN D8=0の写真を残してから、
+通常版候補で冷間3回連続成功を確認します。D8=0xFは冷間の証拠に数えません。
+診断版の写真は別起動の通常版D8の実測ではないため、対応する記録を紐づけつつ区別します。
+ホールドは失敗、Helloと終了0は同一起動内で必要です。Ryzenは冷間3回＋ホット1回と
+USB READ OK→Hello秒数、MacはAUTORUNを置いたBasic Data媒体からの起動が条件です。
+Macストレージ結果は記録のみ。1回でも失敗したら採取・修正・ビルド前文書確定へ戻ります。
+
+
 ## English
 
 Before accepting the renamed candidate, verify that the selected medium root contains `AUTORUN.ELF` and no legacy `MUSHA.ELF`. The legacy name alone is ignored and starts the viewer. Physical renaming requires owner approval: record the source ELF SHA-256, rename the old file (do not leave both), verify the destination hash matches, and safely eject. This user file is outside update-usb.py management; record old/new paths, EFI identity, hashes and eject result in deployment provenance. No USB operation is performed by this documentation change.
@@ -369,3 +413,79 @@ verified-filesを保存します。third_partyの8ファイル、診断マーカ
 FNV 9A42A948C590F507、旧MUSHA.TXTの不在を確認してください。
 AUTORUN.ELFは利用者が配置する別ファイルです。当時のファイル名はMUSHA.TXT、
 新候補ではDIAGNOSE.TXTです。この準備は実機合格・実USB更新を意味しません。
+
+## NUC5 owner report, 2026-10-14 / NUC5 所有者報告
+
+The owner reports three successful cold boots with the latest deployed normal
+EFI (IMG_7636.MOV). Deployment evidence: out/usb-usability-deploy/provenance.json.
+EFI SHA-256: `982fa2ac30a64182a4a0c495a4f64ceea706d46c537ac28ffc88aab96d646da7`.
+This is the owner-reported count; individual PRE OWN D8 photographs and power-off
+durations are not supplied. It does not validate the subsequent font adjustment.
+
+最新配備の通常版でNUC5冷間起動3回成功との所有者報告（IMG_7636.MOV）。
+配備記録とEFIハッシュは上記に紐づけます。各runのPRE OWN D8写真・電源断時間は
+未提供のため、所有者報告として記録します。後続のフォント調整版の実機結果には
+数えません。
+
+## Ryzen 7 owner report, 2026-10-14 / Ryzen 7 所有者報告
+
+The owner reports three successful cold boots with the deployed normal EFI.
+IMG_7639.MOV's final captured frame shows AUTORUN.ELF (Ring 3), Hello Musha-OS!,
+and exited: status 0. The count of three is owner-reported, not three
+independently verified video sequences. Deployment evidence:
+out/usb-usability-deploy/provenance.json (source f3d2745).
+EFI SHA-256: `982fa2ac30a64182a4a0c495a4f64ceea706d46c537ac28ffc88aab96d646da7`.
+Frames: out/ryzen-7639/. Hot reboot and USB READ OK-to-Hello timing are not
+established here. The subsequent font adjustment remains undeployed.
+
+現在配備した通常版でRyzen 7の冷間起動3回成功との所有者報告。
+動画終盤でAUTORUN.ELF (Ring 3)、Hello Musha-OS!、exited: status 0を
+確認しました。3回という回数は所有者報告で、動画から3起動を独立確認した
+ものではありません。配備来歴・EFIハッシュは上記に紐づけます。今回の
+ホット再起動・USB READ OKからHelloまでの所要時間は未記録です。
+後続のフォント調整版はUSB未配備で、この実機結果の対象外です。
+
+## NUC5 unified-grid display check, 2026-10-14 / NUC5 共通グリッド表示確認
+
+The owner reports that the new display is satisfactory on NUC5 (IMG_7641.MOV).
+The extracted final frame confirms AUTORUN.ELF (Ring 3), Hello Musha-OS!, and
+AUTORUN.ELF exited: status 0. This records a successful execution observation
+and owner approval of readability, not three consecutive cold boots. Power-off
+duration, PRE OWN D8 and repeat count are not established by this report.
+EFI SHA-256: `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`.
+The hash is linked through the preceding USB deployment, not measured from video:
+`out/display-grid/usb-deploy/provenance.json`. Extracted frames:
+`out/display-grid/nuc5-7641/`. Ryzen display validation of this EFI remains pending.
+
+所有者からNUC5の新表示について「これで良さそう」との確認を受領しました
+（IMG_7641.MOV）。抽出した終盤フレームでAUTORUN.ELF (Ring 3)、
+Hello Musha-OS!、exited: status 0を確認しました。実行成功の観測と
+読みやすさの所有者確認として記録し、冷間3回連続成功には数えません。
+電源断時間・PRE OWN D8・反復回数は今回の報告では未確認です。
+EFIは直前のUSB配備記録によって上記ハッシュに紐づけています。
+動画からハッシュを実測したものではありません。このEFIのRyzen表示確認は未完了です。
+
+## Ryzen 7 unified-grid cold boots, 2026-10-14 / Ryzen 7 共通グリッド冷間起動
+
+The owner reports three successful cold boots (IMG_7643.MOV) with the latest
+unified-grid EFI. Captured frames show GOP 3840/2160/3840, PCI DEVICES 34,
+XHCI 5, INTEL LAN 0, USB READ OK, and finally AUTORUN.ELF (Ring 3),
+Hello Musha-OS!, and exited: status 0. The left status and right diagnostic
+panels do not visibly overlap. Three boots is the owner-reported count, not
+three independently verified video sequences. Power-off durations, hot reboot
+and USB READ OK-to-Hello timing are not established here.
+EFI SHA-256: `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`.
+The hash is linked through `out/display-grid/usb-deploy/provenance.json`, not
+measured from video. Frames: `out/display-grid/ryzen-7643/`. This updates the
+previously pending Ryzen display observation, without closing all release
+acceptance requirements or establishing NUC5 repeat counts for this EFI.
+
+共通グリッド版でRyzen 7冷間起動3回成功との所有者報告を受領しました
+（IMG_7643.MOV）。抽出フレームでGOP 3840/2160/3840、PCI DEVICES 34、
+XHCI 5、INTEL LAN 0、USB READ OK、最終的にAUTORUN.ELF (Ring 3)、
+Hello Musha-OS!、exited: status 0を確認しました。左の状態表示と右の診断パネルに
+重なりは見られません。3回という回数は所有者報告で、動画から3起動を独立確認した
+ものではありません。電源断時間・ホット再起動・USB READ OKからHelloまでの
+時間は今回未確認です。直前の配備記録によって上記EFIハッシュに紐づけます。
+Ryzenの表示観測は確認済みとしますが、公開受入全体の完了や、このEFIでの
+NUC5反復成功回数を示すものではありません。
