@@ -2,13 +2,13 @@
 
 ## English
 
-**v0.3.0 release candidate (not published) — developer preview: run your own C program at Ring 3**
+**v0.3.0 release — developer preview: run your own C program at Ring 3**
 
-[Published v0.2.0 download](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0) · [Release notes](docs/release-notes-0.3.0.md) · [Release scope](docs/release-scope-0.3.0.md) · [C SDK](docs/sdk.md)
+[v0.3.0 downloads](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.3.0) · [Release notes](docs/release-notes-0.3.0.md) · [Release scope](docs/release-scope-0.3.0.md) · [C SDK](docs/sdk.md)
 
-Build a C program with the SDK, copy it to the USB as `AUTORUN.ELF`, and Musha-OS runs it at Ring 3 and shows its output. The ABI is experimental and may change. External Hello was observed on development builds on NUC5 and a Ryzen 7 machine; candidate hardware acceptance is pending; MacBook Pro 2018 boots but does not recognize USB storage in this release. See [known issues](docs/open-issues-0.3.0.md).
+Build a C program with the SDK, copy it to the USB as `AUTORUN.ELF`, and Musha-OS runs it at Ring 3 and shows its output. The ABI is experimental and may change. Hardware acceptance passed on NUC5, Ryzen 7 and MacBook Pro 2018. USB read and Hello succeeded on the accepted Mac configuration; older Mac storage failures remain unexplained, and its internal keyboard is unsupported. See [known issues](docs/open-issues-0.3.0.md).
 
-Published v0.2.0 assets are unchanged. The Intel routing/attachment-grace fix is implemented; repeat hardware acceptance on the next candidate remains pending.
+Published v0.2.0 assets are unchanged. Publication correction (2026-10-14): release banner, downloads and hardware status updated after verification; tagged documents and binaries remain unchanged.
 
 Musha-OS is a thin bare-metal execution environment based on x86-64 / UEFI.
 It aims to make use of older PCs and provide applications with a display, input,
@@ -69,7 +69,7 @@ The updater also manages `update-manifest.json` for file verification.
 
 The external application path, kernel console, shared display grid, GOP mode selection and Basic Data partition type are part of the v0.3.0 normal build. The [C1](docs/ring3-prototype.md), [C2](docs/ring3-elf.md) and [C3](docs/ring3-lifecycle.md) probes remain opt-in; returning to the OS after application exit is not a normal-build feature. The [ABI](docs/application-abi.md) is experimental candidate r1. Rust guest execution, practical application I/O (input, files, display commands, network) and physical NIC networking remain pending. See [policy](docs/boot-readiness-policy.md), [validation](docs/boot-api-validation.md) and [open issues](docs/open-issues-0.3.0.md).
 
-Development builds ran Ring 3 Hello on NUC5 and Ryzen 7. The NUC5 routing/grace cause is identified and fixed; acceptance will be repeated on the next clean candidate including the display grid. NUC5 readability and Ryzen 4K output were observed on the local test EFI, with three Ryzen cold boots owner-reported. MacBook Pro 2018 reaches boot and external keyboard detection, but USB storage is not recognized. See [hardware acceptance](docs/hardware-acceptance-0.3.0.md).
+Hardware acceptance: NUC5 three normal cold boots plus one existing diagnostic D8=0 observation under the owner-approved criterion; Ryzen three cold boots and one hot reboot; MacBook Pro 2018 three cold boots. Repetition counts are owner-reported, with individual runs recorded on video. Cold boots used at least 10 seconds powered off (NUC5 AC unplugged; Ryzen/Mac AC connected). Final CI and runtime equivalence passed on `04a470a`. See [hardware acceptance](docs/hardware-acceptance-0.3.0.md) and [release notes](docs/release-notes-0.3.0.md).
 
 ### Policy and hardware documentation
 
@@ -153,13 +153,13 @@ and record its source, version, and changes.
 
 ## 日本語
 
-**v0.3.0 公開候補（未公開）— 開発者プレビュー：自作 C プログラムを Ring 3 で実行**
+**v0.3.0 公開版— 開発者プレビュー：自作 C プログラムを Ring 3 で実行**
 
-[公開済み v0.2.0 のダウンロード](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0) · [リリースノート](docs/release-notes-0.3.0.md) · [公開範囲](docs/release-scope-0.3.0.md) · [C SDK](docs/sdk.md)
+[v0.3.0 ダウンロード](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.3.0) · [リリースノート](docs/release-notes-0.3.0.md) · [公開範囲](docs/release-scope-0.3.0.md) · [C SDK](docs/sdk.md)
 
-SDK で C プログラムを作り、`AUTORUN.ELF` として USB へコピーすると、Musha-OS が Ring 3 で実行して出力を表示します。ABI は実験版で変更の可能性があります。外部 Hello は開発版で NUC5 と Ryzen 7 機の動作を観測しました。候補 EFI の実機受入は未完了です。MacBook Pro 2018 は起動しますが本版では USB ストレージを認識しません。[既知の問題](docs/open-issues-0.3.0.md)を参照。
+SDK で C プログラムを作り、`AUTORUN.ELF` として USB へコピーすると、Musha-OS が Ring 3 で実行して出力を表示します。ABI は実験版で変更の可能性があります。NUC5・Ryzen 7・MacBook Pro 2018で実機受入が合格しました。受入時のMac構成ではUSB読込みとHelloが成功しましたが、過去のストレージ失敗原因は未特定で、内蔵キーボードは未対応です。[既知の問題](docs/open-issues-0.3.0.md)を参照。
 
-公開済み v0.2.0 配布物は変更していません。Intelルーティング・接続猶予の修正は実装済みで、次候補による実機再受入は未完了です。
+公開済み v0.2.0 配布物は変更していません。公開時訂正（2026-10-14）：照合完了後に公開バナー・ダウンロード・実機状況を更新しました。タグ内文書とバイナリーは変更しません。
 
 Musha-OSは、x86-64 / UEFIベースの薄いベアメタル実行環境です。
 古いPCを活用し、アプリケーションに必要な画面、入力、USBストレージ、
@@ -219,7 +219,7 @@ Musha-OS自体はこの媒体に書き込みません。アプリABIは実験段
 
 外部アプリの実行経路、カーネルコンソール、共通文字グリッド、GOP モード選択、Basic Data 種別は v0.3.0 の通常版に含まれます。[C1](docs/ring3-prototype.md)・[C2](docs/ring3-elf.md)・[C3](docs/ring3-lifecycle.md) は任意試験構成のままで、アプリ終了後の OS 復帰は通常版の機能ではありません。[ABI](docs/application-abi.md) は実験候補 r1 です。Rust guest、アプリ向け実用 I/O（入力・ファイル・描画命令・通信）、実機 NIC 通信は残件です。[方針](docs/boot-readiness-policy.md)・[検証](docs/boot-api-validation.md)・[残件](docs/open-issues-0.3.0.md)を参照してください。
 
-開発版ではNUC5・Ryzen 7でRing 3 Helloが動作しました。NUC5のルーティング・接続猶予の原因は特定・修正済みで、表示グリッドを含む次のクリーン候補で再受入します。ローカル試験EFIではNUC5の読みやすさとRyzenの4K出力を確認し、Ryzen冷間3回の所有者報告を記録しています。MacBook Pro 2018は起動・外付けキーボード検出までで、USBストレージは未認識です。[実機受入](docs/hardware-acceptance-0.3.0.md)を参照してください。
+実機受入：NUC5は所有者承認条件の通常版冷間3回＋既存診断D8=0証拠1回、Ryzenは冷間3回＋ホット1回、MacBook Pro 2018は冷間3回が合格。反復回数は所有者報告で、動画は個別runの証拠です。冷間は電源断10秒以上（NUC5はACを抜き、Ryzen・MacはAC接続）。`04a470a`で最終CIと実行用ファイルの同等性確認も合格。[実機受入](docs/hardware-acceptance-0.3.0.md)・[リリースノート](docs/release-notes-0.3.0.md)を参照してください。
 
 ### 方針・実機文書
 
