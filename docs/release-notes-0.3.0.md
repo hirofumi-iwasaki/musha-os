@@ -4,7 +4,17 @@
 
 Notes updated: 2026-10-14. Publication date:
 
-Status: **release candidate, not published.** Pre-build documentation is prepared under procedure A. Refreshed candidate 9f8d999 has passed clean-build reproducibility and local regressions; its EFI is byte-identical to a1762f4. Normal USB deployment is complete; hardware acceptance has passed under the owner-approved NUC5 criterion; final-source CI remains PENDING. The owner decides publication after the [scope conditions](release-scope-0.3.0.md) are met. Published v0.2.0 assets are unchanged. Historical development observations remain in [hardware acceptance](hardware-acceptance-0.3.0.md) and [USB startup timing](usb-startup-timing.md); they are not acceptance of the next candidate.
+Status: **release candidate, not published.** Pre-build documentation is prepared under procedure A. Refreshed candidate 9f8d999 has passed clean-build reproducibility and local regressions; its EFI is byte-identical to a1762f4. Normal USB deployment is complete; hardware acceptance has passed under the owner-approved NUC5 criterion; CI and post-acceptance equivalence passed for `d8d0eef`; a later publication-source commit must be verified separately. The owner decides publication after the [scope conditions](release-scope-0.3.0.md) are met. Published v0.2.0 assets are unchanged. Historical development observations remain in [hardware acceptance](hardware-acceptance-0.3.0.md) and [USB startup timing](usb-startup-timing.md); they are not acceptance of the next candidate.
+
+### CI and provenance update (2026-10-14)
+
+Owner-approved CI passed on `d8d0eef03dc28089da313f406bd1a98b4f772d53`: [run 38551698706](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38551698706). All executed steps passed; draft creation was skipped. Evidence: `out/release-acceptance-ci-file/{run.json,jobs.json}`. This records the configured workflow, not additional tests absent from it.
+
+Earlier runs failed on stale test expectations: the exFAT image golden after the DIAGNOSE.TXT rename, aggregate hub counts across discovery/input passes, and the FAT32 file list after README.TXT was added. Test-only commits `edb0005`, `cae5d3b`, and `d8d0eef` corrected these without changing runtime code. The successful run includes these corrections.
+
+Two clean local builds of `d8d0eef` reproduced the EFI and all seven publication files (condition 1). Against hardware-accepted `9f8d999`, EFI SHA-256 remains `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`; runtime files, the initial image and C SDK are byte-identical (condition 2). Archive changes are limited to the seven previously reviewed documents, truthful commit provenance and derived checksums; update-manifest changes only `commit`. All manifest file/asset hashes were verified. Evidence: `out/release-ci-provenance/{report.json,same-source.json,accepted-efi.json,member-differences.json,reproduction.json}`.
+
+This annotation is a later documentation change, not part of `d8d0eef`. Its commit must undergo the required comparison and final-source CI before publication. No new hardware result, USB update, tag or Release is implied. Publication date and download verification remain pending.
 
 ### Main changes
 
@@ -149,8 +159,8 @@ Hardware: during development, the external Hello ran at Ring 3 on NUC5i5RYH (GOP
 | Same-source reproducibility | PASS: condition 1, EFI and all seven files identical; `out/release-sdk-guide-stage3/compare-same-source.json` |
 | Full candidate QEMU regression | PASS: 194 cases plus resolution/display checks, including recorded retries; `out/release-sdk-guide-stage3/final-report.json` |
 | Hardware acceptance | PASS: NUC5 normal cold 3/3 owner-reported (AC unplugged ≥10 s each; IMG_7647 shows one Hello/exit 0); existing IMG_7645 diagnostic D8=0 evidence accepted by owner (one observation, not three). Ryzen cold 3/3 owner-reported (IMG_7648 Hello/exit 0, approx. 3–5 s READ OK-to-Hello); all three powered off ≥10 s with AC connected; hot 1 PASS (IMG_7652, approx. 3–5 s); Mac Basic Data boot PASS (IMG_7650 USB READ OK / Hello / exit 0; cold 3/3 owner-reported, ≥10 s off, AC connected) |
-| Final-source remote CI | PENDING: owner-approved run URL and result |
-| Documentation-successor equivalence | PENDING: EFI and runtime payload equality; regenerated documentation/provenance packages with an allowlisted member-level difference report |
+| Final-source remote CI | PASS for `d8d0eef`: [run 38551698706](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38551698706); later publication-source verification remains pending |
+| Documentation-successor equivalence | PASS for `d8d0eef`: `out/release-ci-provenance/report.json` and `member-differences.json`; later documentation commit requires its own comparison |
 | Published downloads | PENDING: download every asset and verify hashes after publication |
 
 Cold means power off for at least 10 seconds. For NUC5 the owner-approved criterion is existing IMG_7645 diagnostic PRE OWN D8=0 evidence once plus three normal cold boots; normal-run D8 is not measured. Record diagnostic and normal EFI identities separately. A hold is a failure; Hello and exit 0 must occur within the same boot. Any failed acceptance run returns to capture/fix/rebuild. Full run records belong in [hardware acceptance](hardware-acceptance-0.3.0.md). Historical hashes/CI below are not final-candidate attestations.
@@ -161,15 +171,26 @@ SDK Hello ELF SHA-256: `d60006f88e1e36409867546df31c778cf3d5fb7c077fba376ebb5bd3
 Historical source: `01f6efc859646fada7ef28fffa9322d266245469` (candidate build). EFI SHA-256: `cb0f532d24fb12c238069cec2b906c74f11fdb91b9745855ab5079c86196f23c` (460,288 bytes). Toolchain: Rust 1.99.0, Apple clang 21.0.0.
 Remote CI: SUCCESS on candidate source `4319b58dda03400032c0307eaaa3b85fe8150ac0`: [run 38365638298](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38365638298). GP/DF injection, all remaining workflow regressions and normal candidate packaging passed; draft creation was skipped. This supersedes failed run 38360736372 on 04d986d. Logs are in `out/repro-4319b58/remote-job.log`. The CI-built EFI is a separate artifact, not an attestation of the local USB EFI hash above. Asset download and hash verification after release upload: PENDING.
 
-Publication provenance: procedure A (reproducible EFI) adopted. `/Brepro` alone still differed in 20 metadata bytes; `/Brepro` + `/debug:none` produced two byte-identical clean local builds, SHA-256 `f7d21cb4c96f5ed286562c0564b2de0662f9a3cb9473893b7d7586c7fcdba139` (472,576 bytes), from 54ac242 plus the target-config patch. Evidence: `out/repro-brepro-nodebug/report.json`; this is a reproducibility experiment, not the final candidate or hardware acceptance. Build and accept the next approved candidate. After documentation-only updates, rebuild the final commit with the same inputs/toolchain and require full-file equality with the hardware-accepted EFI and runtime payload. Two clean builds of the same source must reproduce all five archives. Across documentation-only commits, archive hashes may change only because of approved documentation and truthful provenance/derived checksums; record extracted member differences, with no unexplained changes. Generate final packages/manifest from that final commit and tag that same source; do not relabel the earlier manifest. Any mismatch blocks publication for investigation and owner decision. Hardware acceptance passes under the revised criterion; final-source equivalence remains PENDING. See [reproducible build conditions](release-distribution-policy.md) and [development instructions](development.md).
+Publication provenance: procedure A (reproducible EFI) adopted. `/Brepro` alone still differed in 20 metadata bytes; `/Brepro` + `/debug:none` produced two byte-identical clean local builds, SHA-256 `f7d21cb4c96f5ed286562c0564b2de0662f9a3cb9473893b7d7586c7fcdba139` (472,576 bytes), from 54ac242 plus the target-config patch. Evidence: `out/repro-brepro-nodebug/report.json`; this is a reproducibility experiment, not the final candidate or hardware acceptance. Build and accept the next approved candidate. After documentation-only updates, rebuild the final commit with the same inputs/toolchain and require full-file equality with the hardware-accepted EFI and runtime payload. Two clean builds of the same source must reproduce all five archives. Across documentation-only commits, archive hashes may change only because of approved documentation and truthful provenance/derived checksums; record extracted member differences, with no unexplained changes. Generate final packages/manifest from that final commit and tag that same source; do not relabel the earlier manifest. Any mismatch blocks publication for investigation and owner decision. Hardware acceptance passes under the revised criterion; equivalence passes for `d8d0eef`. Any later publication-source commit requires a fresh comparison. See [reproducible build conditions](release-distribution-policy.md) and [development instructions](development.md).
 
 ---
 
 ## 日本語
 
+### CIと来歴の更新（2026-10-14）
+
+所有者承認により `d8d0eef03dc28089da313f406bd1a98b4f772d53` の[run 38551698706](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38551698706)が成功しました。実行した全ステップが合格し、draft作成はスキップ。証拠は `out/release-acceptance-ci-file/{run.json,jobs.json}`。設定されたworkflowの結果であり、含まれない試験まで実行したことは意味しません。
+
+先行runは試験期待値の更新漏れで失敗しました。DIAGNOSE.TXT改名後のexFATイメージハッシュ、初回探索と入力用再初期化を合算したハブ数、README.TXT追加後のFAT32ファイル一覧です。試験のみのコミット `edb0005`・`cae5d3b`・`d8d0eef` で修正し、成功runに含めました。runtimeコードは変更していません。
+
+`d8d0eef`のローカルクリーンビルド2回でEFI・公開予定7ファイルが完全一致（条件1）。実機受入済み`9f8d999`との比較ではEFIのSHA-256は `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad` のまま、実行用ファイル・初回イメージ・C SDKも完全一致（条件2）。アーカイブ差分は既に確認した7文書、正確なコミット来歴、派生チェックサムのみで、update-manifestの変更キーは`commit`だけです。manifestの全ファイル・配布物ハッシュも照合しました。証拠は `out/release-ci-provenance/{report.json,same-source.json,accepted-efi.json,member-differences.json,reproduction.json}`。
+
+この追記は`d8d0eef`に含まれない後続の文書変更です。公開前に、そのコミットで所定の再照合と最終ソースCIを行います。新たな実機結果・USB更新・タグ・Releaseを意味しません。公開日と公開後のダウンロード照合は未完了です。
+
+
 ノート更新日：2026-10-14。公開日：
 
-状態：**公開候補、未公開。** 方式Aに従いビルド前に確定できる文書を整理しました。更新候補9f8d999のクリーンビルド再現性とローカル全回帰は合格し、EFIはa1762f4とバイト一致しました。通常版USB更新と所有者変更後の条件による実機受入は完了。受入後の再ビルド一致確認・最終ソースCIは未完了です。[公開範囲](release-scope-0.3.0.md)の条件を満たした後に所有者が公開を判断します。公開済みv0.2.0配布物は変更しません。過去の開発版観測は[実機受入記録](hardware-acceptance-0.3.0.md)・[USB起動時間](usb-startup-timing.md)に保持し、次候補の受入へ転用しません。
+状態：**公開候補、未公開。** 方式Aに従いビルド前に確定できる文書を整理しました。更新候補9f8d999のクリーンビルド再現性とローカル全回帰は合格し、EFIはa1762f4とバイト一致しました。通常版USB更新と所有者変更後の条件による実機受入は完了。`d8d0eef`で受入後の再ビルド一致確認とCIが合格しました。後続の公開対象コミットは別途確認します。[公開範囲](release-scope-0.3.0.md)の条件を満たした後に所有者が公開を判断します。公開済みv0.2.0配布物は変更しません。過去の開発版観測は[実機受入記録](hardware-acceptance-0.3.0.md)・[USB起動時間](usb-startup-timing.md)に保持し、次候補の受入へ転用しません。
 
 ### 主な変更
 
@@ -310,8 +331,8 @@ NUC5のIMG_7641.MOVでHello・終了0と所有者の読みやすさ確認、Ryze
 | 同一ソースの再現性 | 合格：条件1、EFI・公開予定7ファイル一致。`out/release-sdk-guide-stage3/compare-same-source.json` |
 | 候補のQEMU全回帰 | 合格：再試験を含む194件と解像度・表示確認。`out/release-sdk-guide-stage3/final-report.json` |
 | 実機受入 | 合格：NUC5通常版冷間3/3を所有者報告（全回AC断10秒以上、IMG_7647で1回のHello・終了0を確認）。既存IMG_7645の診断D8=0証拠1回を所有者決定で採用（3回測定ではない）。Ryzen冷間3/3は所有者報告済み（IMG_7648でHello・終了0、READ OK→Hello概算3〜5秒）、全3回電源OFF10秒以上・AC接続を確認済み、ホット1回もIMG_7652で合格（概算3〜5秒）。MacはBasic Data起動合格（IMG_7650でUSB読込み・Hello・終了0、冷間3/3所有者報告、電源OFF10秒以上・AC接続） |
-| 最終ソースのリモートCI | 未完了：所有者承認後のrun URLと結果 |
-| 文書のみの後続コミットの同等性 | 未完了：EFI・実行用payload一致、文書・来歴を含む再生成配布物は許可したメンバー差分を記録 |
+| 最終ソースのリモートCI | `d8d0eef`で合格：[run 38551698706](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38551698706)。後続の公開対象コミットの確認は未完了 |
+| 文書のみの後続コミットの同等性 | `d8d0eef`で合格：`out/release-ci-provenance/report.json`・`member-differences.json`。後続の文書コミットでは再照合が必要 |
 | 公開配布物 | 未完了：公開後に全配布物を取得してハッシュ照合 |
 
 冷間は電源断10秒以上。NUC5は所有者決定で既存IMG_7645の診断PRE OWN D8=0証拠1回＋通常版冷間3回を採用。通常版のD8は未測定です。診断版と通常版のEFI識別を分けます。ホールドは失敗、Helloと終了0は同一起動内に必要です。1回でも不合格なら採取・修正・再ビルドへ戻します。runごとの記録は[実機受入](hardware-acceptance-0.3.0.md)に残します。以下の過去ハッシュ・CIは最終候補の証明ではありません。
@@ -322,4 +343,4 @@ SDK Hello ELF SHA-256：`d60006f88e1e36409867546df31c778cf3d5fb7c077fba376ebb5bd
 過去のソース：`01f6efc859646fada7ef28fffa9322d266245469`（候補ビルド）。EFI SHA-256：`cb0f532d24fb12c238069cec2b906c74f11fdb91b9745855ab5079c86196f23c`（460,288 byte）。ツールチェーン：Rust 1.99.0、Apple clang 21.0.0。
 リモート CI：候補ソース `4319b58dda03400032c0307eaaa3b85fe8150ac0` の[run 38365638298](https://github.com/hirofumi-iwasaki/musha-os/actions/runs/38365638298)でSUCCESS。GP/DF注入、残りの全workflow試験、通常版候補の梱包まで合格し、draft作成はスキップしました。04d986dの失敗run 38360736372に対する再試験結果です。ログは `out/repro-4319b58/remote-job.log`。CI生成EFIは別成果物であり、上記ローカルUSB候補のハッシュを証明するものではありません。Releaseアップロード後の取得・ハッシュ照合は未完了です。
 
-公開来歴：方式A（EFI再現ビルド）を採用します。`/Brepro` 単独ではメタデータ20バイトが不一致でしたが、`/Brepro` + `/debug:none` により54ac242＋ターゲット設定変更からのローカルクリーンビルド2回が完全一致しました。SHA-256は `f7d21cb4c96f5ed286562c0564b2de0662f9a3cb9473893b7d7586c7fcdba139`（472,576バイト）、証拠は `out/repro-brepro-nodebug/report.json`。これは再現性実験であり最終候補や実機受入ではありません。次の承認済み候補をビルド・受入後、文書のみの更新を含む最終コミットを同じ入力・ツール版で再ビルドし、実機受入済みEFI・実行用payloadとの全バイト一致を要求します。同一ソースのクリーンビルド2回では5アーカイブすべての一致を要求します。文書のみの後続コミットでは承認した文書・正確な来歴・派生チェックサムに限ってアーカイブの変更を認め、展開したメンバー単位の差分を記録します。説明できない差分は認めません。最終配布物・manifestはその最終コミットから生成し、同じソースへタグを付けます。旧manifestの来歴は付け替えません。不一致なら公開を止めて調査・所有者判断へ戻します。実機受入は変更後の条件で合格、最終ソースでの一致確認は未完了です。[再現ビルド条件](release-distribution-policy.md)・[開発手順](development.md)を参照。
+公開来歴：方式A（EFI再現ビルド）を採用します。`/Brepro` 単独ではメタデータ20バイトが不一致でしたが、`/Brepro` + `/debug:none` により54ac242＋ターゲット設定変更からのローカルクリーンビルド2回が完全一致しました。SHA-256は `f7d21cb4c96f5ed286562c0564b2de0662f9a3cb9473893b7d7586c7fcdba139`（472,576バイト）、証拠は `out/repro-brepro-nodebug/report.json`。これは再現性実験であり最終候補や実機受入ではありません。次の承認済み候補をビルド・受入後、文書のみの更新を含む最終コミットを同じ入力・ツール版で再ビルドし、実機受入済みEFI・実行用payloadとの全バイト一致を要求します。同一ソースのクリーンビルド2回では5アーカイブすべての一致を要求します。文書のみの後続コミットでは承認した文書・正確な来歴・派生チェックサムに限ってアーカイブの変更を認め、展開したメンバー単位の差分を記録します。説明できない差分は認めません。最終配布物・manifestはその最終コミットから生成し、同じソースへタグを付けます。旧manifestの来歴は付け替えません。不一致なら公開を止めて調査・所有者判断へ戻します。実機受入は変更後の条件で合格し、`d8d0eef`で一致確認も合格しました。後続の公開対象コミットは改めて照合します。[再現ビルド条件](release-distribution-policy.md)・[開発手順](development.md)を参照。
