@@ -5,6 +5,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -56,6 +57,12 @@ class PackageTests(unittest.TestCase):
     def test_c_sdk_is_standalone_deterministic_and_manifested(self):
         a = release.stage(self.root/'sdk-one', self.efi, {'commit':'fixture', 'features': []})
         b = release.stage(self.root/'sdk-two', self.efi, {'commit':'fixture', 'features': []})
+        # Fixture packaging, not candidate generation: compare every top-level
+        # archive and its derived manifest/checksum, not just the C SDK.
+        names = sorted(p.name for p in a.iterdir() if p.is_file())
+        self.assertEqual(names, sorted(p.name for p in b.iterdir() if p.is_file()))
+        for asset in names:
+            self.assertEqual(release.digest(a/asset), release.digest(b/asset), asset)
         version = (release.ROOT/'VERSION').read_text().strip()
         name = f'musha-os-v{version}-x64-c-sdk.zip'
         self.assertEqual((a/name).read_bytes(), (b/name).read_bytes())
@@ -69,6 +76,38 @@ class PackageTests(unittest.TestCase):
             self.assertFalse(any(n.startswith(('rust/','targets/','examples/hello-rust/')) or n.endswith('.rs') for n in names))
             sm=json.loads(z.read('sdk-manifest.json'))
             for n,v in sm['files'].items(): self.assertEqual(hashlib.sha256(z.read(n)).hexdigest(),v['sha256'])
+
+    def test_deployment_zip_ignores_input_metadata_and_order(self):
+        inputs = {}
+        for name in ['tools/update-usb.py', 'LICENSE', 'third_party/r-efi/AUTHORS']:
+            path = self.root/'inputs'/name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(('fixture for '+name).encode())
+            os.utime(path, (946684800, 946684800))
+            path.chmod(0o600)
+            inputs[name] = path
+        first, second = self.root/'first.zip', self.root/'second.zip'
+        release.deployment_zip(first, inputs)
+        for path in inputs.values():
+            os.utime(path, (1735689600, 1735689600))
+            path.chmod(0o755)
+        release.deployment_zip(second, dict(reversed(list(inputs.items()))))
+        self.assertEqual(first.read_bytes(), second.read_bytes())
+        with zipfile.ZipFile(second) as z:
+            self.assertEqual(z.namelist(), sorted(inputs))
+            for entry in z.infolist():
+                self.assertEqual(z.read(entry.filename), inputs[entry.filename].read_bytes())
+                self.assertEqual(entry.date_time, (1980, 1, 1, 0, 0, 0))
+                self.assertEqual(entry.create_system, 3)
+                self.assertEqual(entry.external_attr, 0o100644 << 16)
+        original = first.read_bytes()
+        with self.assertRaises(FileExistsError):
+            release.deployment_zip(first, inputs)
+        self.assertEqual(first.read_bytes(), original)
+        inputs['LICENSE'].write_bytes(b'changed content')
+        third = self.root/'third.zip'
+        release.deployment_zip(third, inputs)
+        self.assertNotEqual(first.read_bytes(), third.read_bytes())
 
     def test_release_metadata_and_readme(self):
         output = release.stage(self.root / 'release', self.efi,

@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import zipfile
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from distribution import version_check, make_zip, json_bytes, usb_readme
@@ -29,6 +30,16 @@ def digest(path):
 
 def command(*args):
     return subprocess.check_output(args, cwd=ROOT, text=True).strip()
+
+def deployment_zip(output, files):
+    """Ignore checkout/copy mtimes and modes; match the deterministic ZIP contract."""
+    with zipfile.ZipFile(output, 'x', zipfile.ZIP_DEFLATED) as archive:
+        for name, path in sorted(files.items()):
+            info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, path.read_bytes())
 
 def stage(destination, efi, provenance, release=False, version=None):
     """Package an already-built candidate into a new directory only."""
@@ -107,15 +118,18 @@ def stage(destination, efi, provenance, release=False, version=None):
         with (work / (prefix+'-usb.img.gz')).open('xb') as raw, gzip.GzipFile(filename='',mode='wb',fileobj=raw,mtime=0) as gz, image.open('rb') as source:
             shutil.copyfileobj(source,gz)
         toolzip = work / (prefix+'-deployment.zip')
-        import zipfile
-        with zipfile.ZipFile(toolzip,'x',zipfile.ZIP_DEFLATED) as z:
-            for name in ['distribution.py','deploy-image.py','update-usb.py']:
-                z.write(ROOT/'tools'/name, 'tools/'+name)
-            for name in ['release-distribution-policy.md','distribution-usage.md']:
-                if (ROOT/'docs'/name).exists(): z.write(ROOT/'docs'/name, 'docs/'+name)
-            for name in ['LICENSE','NOTICE']: z.write(ROOT/name,name)
-            for path in sorted((bundle/'third_party').rglob('*')):
-                if path.is_file(): z.write(path,path.relative_to(bundle).as_posix())
+        deployment = {}
+        for name in ['distribution.py', 'deploy-image.py', 'update-usb.py']:
+            deployment['tools/'+name] = ROOT/'tools'/name
+        for name in ['release-distribution-policy.md', 'distribution-usage.md']:
+            if (ROOT/'docs'/name).exists():
+                deployment['docs/'+name] = ROOT/'docs'/name
+        for name in ['LICENSE', 'NOTICE']:
+            deployment[name] = ROOT/name
+        for path in sorted((bundle/'third_party').rglob('*')):
+            if path.is_file():
+                deployment[path.relative_to(bundle).as_posix()] = path
+        deployment_zip(toolzip, deployment)
         sdk_spec = importlib.util.spec_from_file_location('package_sdk', ROOT/'tools/package-sdk.py')
         sdk_package = importlib.util.module_from_spec(sdk_spec); sdk_spec.loader.exec_module(sdk_package)
         sdk_package.create(work / (prefix+'-c-sdk.zip'), version)

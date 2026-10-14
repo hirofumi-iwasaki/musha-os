@@ -63,6 +63,14 @@ Unchanged from v0.2.0: external USB Boot Keyboard required; Up/Down selects, Ent
 
 ### Validation scope
 
+Candidate reproduction attempt at `dccf104`: two clean builds produced identical
+EFI (`ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`)
+and four archives. Deployment ZIP timestamps differed, propagating to the manifest
+and checksums; the gate failed and full candidate QEMU/USB update did not proceed.
+Evidence: `out/release-grid-stage3/reproduction.json`. Deployment ZIP generation
+now fixes member metadata; fixture packaging tests pass, but two clean builds
+from the new approved source and the candidate gates below remain PENDING.
+
 Display-grid implementation checks: 53 host tests, 26 normal QEMU cases,
 6 exact-resolution Hello/absent cases (1024x768, 1600x1200, 3840x2160),
 8 boot/diagnostic captures and 4 independent Hello pixel comparisons passed.
@@ -166,6 +174,14 @@ v0.2.0 から変更なし：外付け USB Boot Keyboard が必要。上下で選
 - アプリ終了後に再起動なしで OS へ戻る機能は本版に含みません（C3 は任意試験構成のままです）。
 
 ### 検証範囲
+
+`dccf104`の候補再現試験ではクリーンビルド2回のEFI
+（`ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`）と
+4アーカイブが一致しましたが、deployment ZIPの日時が異なり、manifestと
+チェックサムへ波及しました。不合格として候補QEMU全回帰・USB更新へ進まず停止しました。
+証拠は`out/release-grid-stage3/reproduction.json`。ZIP生成時メタデータを固定する
+修正とfixtureによる梱包試験は完了しましたが、新しい承認済みソースのクリーンビルド
+2回による確認と、下記の候補ゲートは未完了です。
 
 表示グリッドの実装確認：ホスト53件、通常版QEMU26件、指定3解像度
 （1024×768・1600×1200・3840×2160）のHello/absent6件、起動・診断画面8件、

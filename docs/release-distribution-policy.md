@@ -155,6 +155,9 @@ build-manifest source commit. No package format change is authorized by this rul
 Publication consists of five archives (initial image, file update, C SDK,
 deployment tools, complete tar.gz), build-manifest.json and SHA256SUMS: seven
 uploaded files. EFI is included inside the archives, not a standalone asset.
+Deployment ZIP generation uses sorted member names, the fixed ZIP timestamp
+1980-01-01 00:00:00, Unix regular-file mode 0644 and DEFLATE, independent of
+source/copy mtimes and permissions. File paths and contents are unchanged.
 The whole-package reproduction gate remains unverified until stage 3.
 
 ### 6.2 所有者による照合範囲の明確化（2026-10-14）
@@ -173,7 +176,9 @@ USB管理ファイル一式、およびSDK Hello ELF）の一致を要求しま�
 
 公開は5アーカイブ（初回イメージ・更新ZIP・C SDK・配備ツール・一式tar.gz）と
 build-manifest.json・SHA256SUMSの計7ファイル。EFIはアーカイブ内に含めます。
-全配布物の再現性ゲートは段階3で検証するまで未確認です。
+deployment ZIPはメンバー名順、固定ZIP日時1980-01-01 00:00:00、Unix通常ファイル
+0644、DEFLATEで生成し、入力やコピー先の更新時刻・権限へ依存させません。
+配置パスと内容は変更しません。全配布物の再現性ゲートは段階3の再検証まで未確認です。
 
 ## 7. GitHub ActionsからReleaseへ
 
