@@ -1,0 +1,160 @@
+# 配布・配備手順 / Distribution and deployment
+
+## v0.3.0 candidate root files / 候補のルートファイル
+
+English: `README.TXT` is generated from VERSION (ASCII, CRLF, at most 72
+columns, under 4 KiB). The diagnostic marker is `DIAGNOSE.TXT`, unchanged
+16-byte contents `Hello Musha-OS!\n` and FNV `9A42A948C590F507`. Initial images
+contain EFI, DIAGNOSE.TXT and README.TXT; license texts are supplied in the
+files/deployment archives as before. Use the matching files ZIP to populate
+all managed USB files, including the eight third-party notices.
+
+Before the next physical acceptance, preview and apply the matching files ZIP
+with `update-usb.py`. Record `verified-files` for EFI, DIAGNOSE.TXT, README.TXT,
+LICENSE, NOTICE, all eight third_party files and update-manifest.json. Confirm
+`verified-absent` contains the old marker. Backups must be outside the USB.
+Place the user's optional AUTORUN.ELF separately and record its hash; eject
+safely. Physical update remains owner-approved. See the
+[manifest migration rules](release-distribution-policy.md#managed-marker-migration-2026-10-14--管理マーカーの移行).
+
+日本語：`README.TXT` はVERSIONから生成し、ASCII・CRLF・72桁以内・4 KiB未満とします。
+診断用ファイルは `DIAGNOSE.TXT`、内容16 byteとFNV `9A42A948C590F507` は不変です。
+初回イメージにはEFI・DIAGNOSE.TXT・README.TXTを配置し、ライセンス類は従来どおり
+files/deploymentアーカイブに同梱します。全管理ファイルをUSBへ揃える際は対応する
+files ZIPを使用し、third_partyの8ファイルも配置してください。
+
+次回の実機受入前に対応するZIPでdry-runとapplyを行い、`verified-files` のEFI・
+DIAGNOSE.TXT・README.TXT・LICENSE・NOTICE・third_partyの8ファイル・
+update-manifest.jsonを確認します。`verified-absent` で旧マーカー不在を確認し、
+退避はUSB外へ保存します。任意のAUTORUN.ELFは別途配置・ハッシュ記録して安全に
+取り外します。実USB更新は所有者承認後に行います。
+
+以下のv0.2.0配布物の記述は公開当時のもので、公開済み配布物は変更しません。
+
+v0.2.0は[GitHub Releases](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0)で公開済みです。
+README・Release本文の作成と公開後の訂正は[リリース文書規約](release-editorial-policy.md)に従ってください。
+v0.1.0の確認実績とv0.2.0候補の確認は別です。
+[配布方針](release-distribution-policy.md)・[実機確認状況](hardware-verification-status.md)・
+[v0.2.0実機受入](hardware-acceptance-0.2.0.md)を参照してください。
+
+## 配布物
+
+- `musha-os-v0.2.0-x64-usb.img.gz`: 初回・復旧用64 MiB GPT/FAT32像、論理512 byteのみ。
+- `musha-os-v0.2.0-x64-files.zip`: 通常更新用。update-manifest.jsonが配置先・長さ・SHA-256を定義。
+- `musha-os-v0.2.0-x64-deployment.zip`: ホストツール、方針、手順、ライセンス・帰属表示。
+- `build-manifest.json`と`SHA256SUMS`: ビルド元、dirty状態、タグ、条件、各成果物識別。
+- `musha-os-0.2.0.tar.gz`: 開発・QEMU検証資料。Source code ZIPも起動媒体ではありません。
+
+イメージとファイルZIPは同じEFIから生成します。イメージはEFIとMUSHA.TXTを保持し、
+ライセンスはfiles.zipとdeployment.zipに同梱します。イメージだけを再配布せず、
+これらを一緒に提供してください。
+
+## 候補作成
+
+固定Rust toolchain・Cargo.lockとClangを使用します。VERSIONはOS配布版を表し、
+内部クレートの版は変更しません。通常featuresは空で、既存Cargo定義にdefault featureはありません。
+独立target-dirでビルドし、任意Rust flags、debug/fault/probeを拒否します。
+
+```sh
+python3 tools/prepare-release.py --version 0.2.0 --output dist/candidate
+# 未コミット変更を試すときだけ。正式候補には昇格できません。
+python3 tools/prepare-release.py --version 0.2.0 --allow-dirty --output dist/preview
+# 承認済み既存タグを指すcleanなHEAD上で。タグは作成しません。
+python3 tools/prepare-release.py --version 0.2.0 --tag v0.2.0 --output dist/tagged-candidate
+# 同一commit・version・tagの検証済み通常EFIと元manifestを再使用
+python3 tools/prepare-release.py --version 0.2.0 --tag v0.2.0 --efi verified/BOOTX64.EFI --provenance verified/build-manifest.json --output dist/repack
+```
+
+公開時は再生成も不要です。試験した候補ファイルをそのまま添付してください。
+再パッケージは元EFIの来歴・ハッシュ照合用で、既存assetの置換を許可しません。
+来歴JSONは信頼できる保管元から取得する必要があります。EFIのバイトだけからビルド条件を証明する機能ではありません。
+
+## 初回イメージ：通常ファイルでの容量調整
+
+1. 配布物とSHA256SUMSを取得し、信頼できる配布元とハッシュを確認。
+2. 対象USBの型番、正確な容量、論理セクターサイズを識別。初回作成は既存データを消去します。
+3. 以下では実USBではなく、新規の疎ファイルだけを作成します。
+4. 実デバイス用初回書込みアダプターは未提供。容量調整済み疎ファイル全体のdd転送を標準手順にしません。
+5. 現在の実機用経路は、検証済みの既存FAT32配置を保持するファイル更新です。
+
+```sh
+(cd dist/candidate && shasum -a 256 -c SHA256SUMS)
+cd dist/candidate
+gzip -dk musha-os-v0.2.0-x64-usb.img.gz
+cd ../..
+python3 tools/deploy-image.py dist/candidate/musha-os-v0.2.0-x64-usb.img out/virtual-usb.img --capacity-bytes 34359738368
+python3 tools/deploy-image.py dist/candidate/musha-os-v0.2.0-x64-usb.img out/virtual-usb.img --capacity-bytes 34359738368 --apply
+```
+
+最初のハッシュ照合は`(cd dist/candidate && shasum -a 256 -c SHA256SUMS)`で実行します。
+capacityは仮想容量の例。実媒体について公称容量から推測してはいけません。
+applyなしはdry-run。既存出力・device path・4Kn・64 MiB未満・128 GiB超・破損GPT/FATを拒否。
+固定FAT32起動パーティションは拡張せず、残りを未割当てにします。主副GPT、配列CRC、usable range、protective MBRを整合。
+書込み範囲は先頭64 MiBから旧副GPTを除いた範囲と媒体末尾33セクターのみ。
+読戻しも固定FAT32起動パーティションと管理情報のみで、全空き容量を走査しません。exFATの作成・拡張は含みません。
+一般的なUSB書込みソフトとの組合せは未検証です。
+
+パーティション種別について：v0.2.0までの媒体は起動用FAT32がEFI System Partition（ESP）のため、
+macOSのFinderやWindowsのエクスプローラーには自動表示されません。macOSではディスクユーティリティで
+「すべてのデバイスを表示」にしてマウントするか、`diskutil list`で識別子を確認して`diskutil mount diskNsM`を実行します。
+v0.3.0以降の媒体は種別をMicrosoft Basic Dataに変更し、通常の外付けUSBとして表示される構成にします
+（[配布方針 4.4](release-distribution-policy.md)）。既存のESP媒体も引き続き起動できます。
+2026-10-14：候補9f8d999の専用Basic Data媒体からNUC5・Ryzen・MacBook Pro 2018の起動を確認しました
+（IMG_7647／7648／7650、[実機記録](hardware-acceptance-0.3.0.md)）。これは当該構成の起動確認であり、
+全ファームウェア互換性やWindowsの自動表示の実機検証を意味しません。公開受入全体は残件があります。
+既存ESP媒体の通常更新では種別を変更しないため、引き続き手動マウントが必要です。
+新規生成は `--partition-type basic-data`（既定）、互換試験は `--partition-type esp`。
+配備は両種別を保持し、更新はファイルだけを差し替えます。
+
+## 通常更新（macOS）
+
+既存のMusha-OS FAT32ボリュームをマウントし、必要な個人データは事前に別媒体へ保存してください。
+別プロセスによる同時更新やマウント変更を避けてください。ZIPは信頼できる配布元のSHA256SUMSと照合します。
+
+```sh
+python3 tools/update-usb.py dist/candidate/musha-os-v0.2.0-x64-files.zip --volume /Volumes/MUSHA-OS --backup out/usb-backup
+# 上で表示されたUUIDを確認してから。ここでは実行しません。
+python3 tools/update-usb.py dist/candidate/musha-os-v0.2.0-x64-files.zip --volume /Volumes/MUSHA-OS --backup out/usb-backup --apply --confirm-volume-uuid VERIFIED_UUID --eject
+```
+
+dry-runで対象・変更・省略を表示。外付け物理USB・FAT32・512byteを確認し、
+内蔵／システム／不明媒体を拒否します。apply直前とeject直前に再識別。
+旧ファイルはホスト側に退避し、一時ファイルへの書込み・同期・照合後に置換します。
+レイアウト版1のみ対応。旧H19は既存EFI配置を移行入口として受け入れます。
+無関係なデータの削除やGPT変更、媒体全容量のイメージ生成・転送・ハッシュ走査は行いません。
+失敗しても全量書込みへフォールバックしません。
+更新後はfile fsyncと同期・ファイル照合を行います。キャッシュを除いた検証が必要なら、
+一度安全に取り外し、再接続・再識別後、同じコマンドのdry-runで全payloadがskippedになることを確認します。
+この再接続・新ツールによる実USB更新は未検証です。
+
+通常ディレクトリでの試験（macOSで実施、Windows/Linuxは未実行）:
+```sh
+python3 tools/update-usb.py dist/candidate/musha-os-v0.2.0-x64-files.zip --volume out/test-volume --backup out/test-backup --test-directory
+```
+test-volumeには既存EFI配置が必要です。`--apply`で通常ディレクトリへ反映できます。
+物理媒体はテストモードに渡さないでください。
+
+## 復旧・制限
+
+FAT32の複数ファイル更新は停電に対して完全に原子的ではありません。
+失敗時はbackup/update-result.jsonのcompletedとerrorを確認し、ホスト側backupの旧EFIと
+変更済み旧ファイルを、対象を再識別したうえで元の相対位置へ戻して照合します。
+新規追加ファイルの削除は記録を確認して個別に判断し、ユーザーファイルを一括削除しません。
+USBがマウント不能なら更新を再試行せず、別媒体への救出と明示的な復旧作業へ分離します。
+
+UEFI x64 / GOP / 対応xHCI / 外付けUSB Boot Keyboardが必要。未署名EFIのためSecure Boot設定も確認。
+Mac内蔵キーボードはオプショナルで、今回の公開必須条件に追加しません。
+Q終了後は再起動。FAT32起動USBとexFATデータUSBの自動選択制約は実機受入書を参照。
+
+## Actionsと承認
+
+PR・手動既定・v*タグpushは候補と試験記録のみ保存します。失敗ログはalwaysで保存し、
+合格配布物は全試験成功後だけ保存します。タグは既存refをcommitへ解決してHEADと照合。
+手動入力create_draft=trueと既存タグ指定の場合だけ、別ジョブへcontents:writeを付与します。
+そのジョブではdefault branchのレビュー済みスクリプトだけを実行し、取得したassetはデータとして扱います。
+同じタグの実行を直列化し、公開済みRelease・異なる下書き・不完全な下書きは拒否。
+完全一致の下書きだけ再利用。タグ作成・clobber・公開コマンドはありません。
+workflow_dispatchと信頼済み添付スクリプトはdefault branchへ導入済みです。
+v0.2.0はPRのActions試験、タグのソースからのビルド、公開対象EFIそのもののQEMU確認を経て公開しました。
+実機確認の残件と配布物の来歴は[v0.2.0リリースノート](release-notes-0.2.0.md)を参照してください。
+公開時に検証済み配布物を再ビルド・置換しません。

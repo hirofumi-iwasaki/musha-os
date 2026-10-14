@@ -125,11 +125,11 @@ pub(super) fn prepare(
                 e.name()
                     .iter()
                     .copied()
-                    .eq(b"DIAGNOSE.TXT".iter().map(|&b| b as u16))
+                    .eq(b"README.TXT".iter().map(|&b| b as u16))
             });
             let mut bytes = None;
             if let Some(i) = first {
-                if !crate::app::VIEWER && fs.entries()[i].len() <= snapshot.len() as u64 {
+                if fs.entries()[i].len() <= snapshot.len() as u64 {
                     bytes = Some(fs.read_at(i, 0, snapshot)?);
                 }
             }
@@ -148,10 +148,10 @@ pub(super) fn prepare(
         }
         Err(musha_fs::Error::Unsupported) => {
             let mut fs = musha_fs::fat32::FileSystem::discover(blocks, size, &mut read)?;
-            let first = fs.entries().iter().position(|e| e.name() == b"DIAGNOSETXT");
+            let first = fs.entries().iter().position(|e| e.name() == b"README  TXT");
             let mut bytes = None;
             if let Some(i) = first {
-                if !crate::app::VIEWER && fs.entries()[i].len() <= snapshot.len() as u64 {
+                if fs.entries()[i].len() <= snapshot.len() as u64 {
                     bytes = Some(fs.read_at(i, 0, snapshot)?);
                 }
             }

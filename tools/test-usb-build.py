@@ -29,14 +29,13 @@ class BundleTests(unittest.TestCase):
             out = root / 'one'
             result = builder.package(out, efi, size_bytes=64 * 1024 * 1024 + 512)
             self.assertEqual(result['image_bytes'], 64 * 1024 * 1024 + 512)
-            with zipfile.ZipFile(out / 'musha-os-fat32-files.zip') as archive:
-                self.assertEqual(set(archive.namelist()), {'EFI/BOOT/BOOTX64.EFI', 'DIAGNOSE.TXT', 'README.TXT', 'LICENSE', 'NOTICE'} | {f'third_party/{d}/{n}' for d,names in [('lwip',('COPYING','UPSTREAM')),('freebsd-e1000',('COPYING','UPSTREAM')),('freebsd-apple-bce',('COPYING','UPSTREAM')),('r-efi',('AUTHORS','UPSTREAM'))] for n in names})
+            with zipfile.ZipFile(out / f'musha-os-{(builder.ROOT/"VERSION").read_text().strip()}-x64.zip') as archive:
+                self.assertEqual(set(archive.namelist()), set(builder.drive_payload(efi,(builder.ROOT/'VERSION').read_text().strip()))|{'SETTINGS/'})
                 self.assertEqual(archive.read('EFI/BOOT/BOOTX64.EFI'), data)
                 self.assertEqual(archive.read('README.TXT'), builder.usb_readme((builder.ROOT/'VERSION').read_text().strip()))
-                self.assertEqual(archive.read('DIAGNOSE.TXT'), b'Hello Musha-OS!\n')
-                self.assertEqual(archive.read('third_party/r-efi/AUTHORS'), (builder.ROOT / 'third_party/r-efi/AUTHORS').read_bytes())
+                self.assertEqual(archive.read('DOCS/third_party/r-efi/AUTHORS'), (builder.ROOT / 'third_party/r-efi/AUTHORS').read_bytes())
                 for name in ('LICENSE', 'NOTICE'):
-                    self.assertEqual(archive.read(name), (builder.ROOT / name).read_bytes())
+                    self.assertEqual(archive.read("DOCS/"+name), (builder.ROOT / name).read_bytes())
             for name, value in result['sha256'].items():
                 self.assertEqual(builder.digest(out / name), value)
             with self.assertRaises(FileExistsError):

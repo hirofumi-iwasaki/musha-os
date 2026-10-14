@@ -13,7 +13,7 @@ import sys
 import zipfile
 import tempfile
 
-from distribution import usb_readme
+from distribution import usb_readme,drive_payload,make_zip
 
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = 'x86_64-unknown-uefi'
@@ -34,36 +34,24 @@ def package(output, efi, size_mib=64, size_bytes=None, files_only=False):
     boot = esp / 'EFI' / 'BOOT'
     boot.mkdir(parents=True)
     shutil.copyfile(efi, boot / 'BOOTX64.EFI')
-    (esp / 'README.TXT').write_bytes(usb_readme((ROOT/'VERSION').read_text().strip()))
-    (esp / 'DIAGNOSE.TXT').write_bytes(b'Hello Musha-OS!\n')
-    for name in ('LICENSE', 'NOTICE'):
-        shutil.copyfile(ROOT / name, esp / name)
-    for dependency, names in [('lwip', ('COPYING','UPSTREAM')), ('freebsd-e1000', ('COPYING','UPSTREAM')), ('freebsd-apple-bce', ('COPYING','UPSTREAM')), ('r-efi', ('AUTHORS','UPSTREAM'))]:
-        for name in names:
-            target=esp/'third_party'/dependency/name
-            target.parent.mkdir(parents=True,exist_ok=True)
-            shutil.copyfile(ROOT/'third_party'/dependency/name,target)
+    version=(ROOT/'VERSION').read_text().strip()
+    payload=drive_payload(efi,version)
+    (esp/'SETTINGS').mkdir()
+    for name,data in payload.items():
+        dest=esp/name;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(data)
     image = None
     if not files_only:
         spec = importlib.util.spec_from_file_location('usb_image', ROOT / 'tools/make-usb-image.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         image = module.create(output / 'musha-os.img', boot / 'BOOTX64.EFI', size_mib, size_bytes)
-    with zipfile.ZipFile(output / 'musha-os-fat32-files.zip', 'x', zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(esp.rglob('*')):
-            if path.is_file():
-                info = zipfile.ZipInfo(path.relative_to(esp).as_posix(), (1980, 1, 1, 0, 0, 0))
-                info.compress_type = zipfile.ZIP_DEFLATED
-                info.external_attr = 0o100644 << 16
-                archive.writestr(info, path.read_bytes())
-    for name in ('LICENSE', 'NOTICE'):
-        shutil.copyfile(ROOT / name, output / name)
-    shutil.copyfile(ROOT / 'third_party/r-efi/AUTHORS', output / 'r-efi-AUTHORS')
-    paths = ([image] if image else []) + [output / 'musha-os-fat32-files.zip', boot / 'BOOTX64.EFI', esp / 'README.TXT']
+    zipname=f'musha-os-{version}-x64.zip'
+    make_zip(output/zipname,payload,version,{'commit':'developer-bundle'})
+    paths = ([image] if image else []) + [output / zipname, boot / 'BOOTX64.EFI', esp / 'README.TXT']
     checksums = {str(path.relative_to(output)): digest(path) for path in paths}
     (output / 'SHA256SUMS').write_text(''.join(f'{value}  {name}\n' for name, value in checksums.items()), encoding='utf-8')
     return {'image_bytes': image.stat().st_size if image else 0, 'sha256': checksums, 'features': [],
-            'image_use': 'Exact-capacity raw USB image, or QEMU; default 64MiB is for QEMU.',
+            'image_use': 'QEMU only; physical raw-image installation is not supported.',
             'file_bundle_use': 'Extract at the root of an existing FAT32 USB. No formatting performed.'}
 
 
@@ -113,7 +101,7 @@ def main():
                      'working_tree_dirty': bool(run(['git', 'status', '--porcelain'], True).stdout.strip())})
     (output / 'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     print(f'Created {output}')
-    print('Legacy developer bundle: musha-os-fat32-files.zip. Use prepare-release.py for manifest-driven distribution.')
+    print('Developer drive ZIP. Use prepare-release.py for provenance-controlled distribution.')
     build_temp.cleanup()
 
 

@@ -309,17 +309,13 @@ with (out/'qemu.log').open('w') as err:
     assert text.rindex('LIVE_STORAGE_WAIT') < text.index('APP_KEY_DOWN=0000000000000029') < text.index('STORAGE_RELEASED') < text.rindex('XHCI_QUIESCED')
     print('PASS: live READ(10) data hash, key/UDP progress while pending, Esc during DATA, slot release and DMA stop')
   if a.live_file:
-   expected=b'Hello Musha-OS!\n';h=0xcbf29ce484222325
+   expected=usb_readme((root/'VERSION').read_text().strip());h=0xcbf29ce484222325
    for byte in expected:h=((h^byte)*0x100000001b3)&0xffffffffffffffff
    assert f'LIVE_FILE_API_OK BYTES={len(expected):016X} HASH={h:016X}' in text
    begin=text.index('LIVE_FILE_REQUEST');done=text.index('LIVE_FILE_API_OK')
-   payloads=[('DIAGNOSE.TXT',expected)]
+   payloads=[('README.TXT',expected)]
    if a.exfat_boot_image:
     payloads += [('FRAGMENT.BIN',bytes(range(256))*5+b'end'),('Long name for exFAT test.txt',b'Long file name\n'),('EMPTY.TXT',b''),('ZEROTAIL.BIN',b'valid'+b'\0'*695)]
-   else:
-    # make-usb-image.py includes the versioned README as the second root file.
-    # Keep exact name/content/count/request checks; do not ignore extra entries.
-    payloads.append(('README.TXT',usb_readme((root/'VERSION').read_text().strip())))
    requests=0
    for index,(name,payload) in enumerate(payloads):
     digest=0xcbf29ce484222325

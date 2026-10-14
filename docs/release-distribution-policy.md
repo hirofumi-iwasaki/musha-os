@@ -1,3 +1,15 @@
+# v0.4.0 distribution contract / 配布契約
+
+## English
+
+Status: stage1 development. Goals1/2/3/11 in [scope](release-scope-0.4.0.md) supersede the future-facing contract below for v0.4.0 only. See [current usage](distribution-usage.md) for schema3 ZIP-comment metadata, explicit empty SETTINGS, hash-protected stateless updates, no-v asset names, separate SDKs and QEMU-only image. Rust SDK is a source scaffold; release draft validation stays closed. Docs.zip requires goal17. Same-source assets and docs-only EFI/QEMU image/SDK samples are compared without weakening equality. Owner decision2026-10-15: image-embedded documents/licenses are outside condition2 and require renewed acceptance. Image-external docs qualify only with every runtime member identical. No new physical-media or release acceptance is claimed.
+
+## 日本語
+
+状態：工程1開発。v0.4.0は[範囲](release-scope-0.4.0.md)の1/2/3/11を優先。[現利用手順](distribution-usage.md)がschema3 ZIP comment/空SETTINGS/前版hash保護ステートレス更新/v無し配布名/別SDK/QEMU専用像を規定。Rustはscaffoldでdraft gate閉鎖。docs.zipは17後。全assetとdocs-only runtime全要素の一致を維持し、2026-10-15所有者判断で像内文書/licenseは条件2外・再受入、像外文書もruntime全要素一致時のみ。実機・公開合格を主張しません。
+
+## Historical policy through v0.3.0 / v0.3.0までの方針（原文保持）
+
 # Musha-OS 配布・リリース自動化方針
 
 作成日：2026-10-12  

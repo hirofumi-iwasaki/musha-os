@@ -1,3 +1,36 @@
+# File viewer / ファイルビューアー
+
+## English
+
+Status: v0.4.0 stage1 development. The viewer remains read-only and root-only. With no AUTORUN.ELF it starts; automatic program launch remains unchanged. Launching a selected ELF, returning after exit and pairing via P are goals10/12, not implemented here. DOCS contains this guide but subdirectory browsing is not yet supported; read DOCS on the host. README.TXT replaces the diagnostic marker and is the sole normal root document.
+
+The viewer lists root files from the first available FAT32/exFAT medium; selection constraints follow [stream file API](stream-file-api.md). An external USB Boot Keyboard is currently required; internal T2 input is later work.
+
+| Key | List | Contents |
+|---|---|---|
+| Up/Down | Previous/next file | Previous/next256 bytes |
+| Page Up/Down | Move10 items | Previous/next256 bytes |
+| Home | First item | File start |
+| End | Last item | No action |
+| Enter | Open selected file for reading | No action |
+| Left/Right | Previous/next portion of selected name | Same |
+| Esc/Backspace | No action | Return/cancel pending read |
+| Q | End session | Same |
+
+One action per press; no held-key repeat. Data is hex plus ASCII, decimal position above/hex offsets per row. Bytes start..end excludes end. EOF and empty files have explicit states. Pending reads clear the page so a failed request never leaves old contents displayed.
+
+Limits:128 root files,10 list rows/page, no subdirectory navigation. List shows47 name characters plus~ truncation, ID and size. Full selected UTF-16 name is escaped in72-character slices: printable ASCII is drawn, other units (including each surrogate and backslash) use uXXXX escapes. Selection uses API IDs, never displayed text. Files≤64 MiB, pages256 bytes, no whole-file allocation. Page deadline10s cancels on timeout; USB timeout ends media session. Backward movement closes/reopens and skips sequential pages, so distant seeks can reach deadline. Disconnect/input end invalidates IDs/data and asks for reboot; no automatic reattach recovery.640x480 is the visibility baseline; smaller modes clip safely without guaranteeing all text fits.
+
+Implementation: fixed-state musha-viewer uses Application::files, not direct USB. Canceled in-flight requests retain DMA until completion; new open waits Again. Draw slices clear≤8192 pixels or render≤80 characters; text_at accepts scale1–4/clips outside bounds. Viewer<16 KiB plus256-byte read buffer. Normal build suppresses the old post-discovery diagnostics but retains discovery/RAM/network/shutdown. qemu-debug/t2-diagnostics keep their diagnostic UI; file-viewer-probe adds frame-completion logs and unbounded input. FNV page hashes check bytes, not cryptographic authenticity.
+
+Historical checkpoint evidence below belongs to v0.2.0, not a v0.4.0 acceptance claim: host224 and seven QEMU viewer configurations plus two cooperative I/O runs (257 UDP echoes each), normal/debug pixel agreement and a recorded old EFI hash. Cases covered paging/EOF/empty/128entries/duplicate displayed names/Unicode/name scroll/oversize/cancellation/timeouts/corruption/disconnect; drawing1x1/640x480/1280x800 guards/stride/scales/ASCII. QEMU selected FAT32 and five exFAT files, fragmented last page/long name/empty/ValidDataLength zero fill, same/split xHCI, cancel/reopen/disconnect/fault-timeout/no medium, readonly image hashes. These old results are preserved, not reused for the new marker candidate.
+
+Development rerun: build musha-boot with file-viewer-probe, generate a new boot image and exFAT fixture, then run tools/smoke-viewer.py with firmware-dir/boot-image/data-image. Add split-controller for separate input. cancel/disconnect use file-viewer-probe,live-file-probe; timeout uses file-viewer-probe,file-app-timeout. FAT32 uses --format fat32 and a generated FAT32 data image; no-medium uses a boot-checksum-corrupt data fixture. Follow the actual workflow for full commands. New standard-formatter media and real display/input remain owner hardware gates. No USB update is performed by this guide.
+
+## 日本語
+
+状態：v0.4.0工程1。root読出し専用viewerを保持。AUTORUN無しで開始、自動実行は従来どおり。選択ELF起動/終了後復帰/Pペアリングは目標10/12で未実装。DOCSの本文はhostで読み、viewerのsubdirectory閲覧は未対応。起動markerはREADME.TXTで通常rootの文書はこれだけです。下記の日付付きv0.2.0説明・結果は原文保持し、新marker候補の実機/QEMU受入へ転用しません。
+
 # ファイル一覧・内容表示（工程6）
 
 2026-10-12。`release/0.2.0` の通常版に組み込む読出し専用ビューアー。

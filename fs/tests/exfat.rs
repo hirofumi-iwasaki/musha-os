@@ -10,7 +10,7 @@ fn fixture(case: &str) -> Vec<u8> {
 }
 fn fixture_size(case: &str, size: usize) -> Vec<u8> {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/make-exfat-fixture.py");
-    let out=Command::new("python3").arg("-c").arg("import importlib.util,sys; s=importlib.util.spec_from_file_location('fixture',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); sys.stdout.buffer.write(m.build(sys.argv[2],int(sys.argv[3]))[0])").arg(script).arg(case).arg(size.to_string()).output().expect("python3 fixture generator");
+    let out=Command::new("python3").arg("-c").arg("import importlib.util,sys; s=importlib.util.spec_from_file_location('fixture',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); sys.stdout.buffer.write(m.build(sys.argv[2],int(sys.argv[3]),legacy_marker=True)[0])").arg(script).arg(case).arg(size.to_string()).output().expect("python3 fixture generator");
     assert!(
         out.status.success(),
         "{}",
@@ -684,7 +684,7 @@ fn malformed_secondary_counts_and_missing_names_are_rejected() {
 #[test]
 fn mixed_esp_and_exfat_prefers_exfat_and_rejects_fat32_discovery() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/make-fat32-fixture.py");
-    let out=Command::new("python3").arg("-c").arg("import importlib.util,sys,tempfile,pathlib; s=importlib.util.spec_from_file_location('fat',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/'fat.img'; m.create(p,'superfloppy'); sys.stdout.buffer.write(p.read_bytes())").arg(path).output().unwrap();
+    let out=Command::new("python3").arg("-c").arg("import importlib.util,sys,tempfile,pathlib; s=importlib.util.spec_from_file_location('fat',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/'fat.img'; m.create(p,'superfloppy',legacy_marker=True); sys.stdout.buffer.write(p.read_bytes())").arg(path).output().unwrap();
     assert!(
         out.status.success(),
         "{}",

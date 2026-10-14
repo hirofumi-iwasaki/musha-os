@@ -4,8 +4,12 @@
 """Create a new sparse FAT32 test image; never operates on a device."""
 import argparse,pathlib,struct
 import importlib.util
-PAYLOAD=b'Hello Musha-OS!\n'+b'FAT32 file read over USB.\n'*45
-def create(path,layout='mbr',corrupt=False):
+import sys
+sys.path.insert(0,str(pathlib.Path(__file__).resolve().parent))
+from distribution import usb_readme
+PAYLOAD=usb_readme((pathlib.Path(__file__).resolve().parents[1]/'VERSION').read_text().strip())
+def create(path,layout='mbr',corrupt=False,legacy_marker=False):
+ payload=b'Hello Musha-OS!\n'+b'FAT32 file read over USB.\n'*45 if legacy_marker else PAYLOAD
  size=512;clusters=65536;reserved=32;fatsecs=(clusters+2)*4//size+1
  start=2048 if layout in ['mbr','gpt'] else 0
  data=reserved+2*fatsecs;total=data+clusters
@@ -33,20 +37,20 @@ def create(path,layout='mbr',corrupt=False):
   struct.pack_into('<III',info,484,0x61417272,0xffffffff,0xffffffff)
   struct.pack_into('<I',info,508,0xaa550000);sector(file,start+1,info);sector(file,start+7,info)
   fat=bytearray(size)
-  for n,next_cluster in [(0,0x0ffffff8),(1,0xffffffff),(2,4),(4,0x0fffffff),
-                          (3,3 if corrupt else 5),(5,7),(7,0x0fffffff)]:
+  chain=[3+2*i for i in range((len(payload)+size-1)//size)]
+  for n,next_cluster in [(0,0x0ffffff8),(1,0xffffffff),(2,4),(4,0x0fffffff)]+[(n,n if corrupt and i==0 else chain[i+1] if i+1<len(chain) else 0x0fffffff) for i,n in enumerate(chain)]:
    struct.pack_into('<I',fat,n*4,next_cluster)
   for offset in [reserved,reserved+fatsecs]:sector(file,start+offset,fat)
   root=bytearray(size)
   for i in range(0,size,32):root[i]=0xe5
   sector(file,start+data,root)
-  root=bytearray(size);root[:11]=b'DIAGNOSETXT';root[11]=32
-  struct.pack_into('<H',root,26,3);struct.pack_into('<I',root,28,len(PAYLOAD))
+  root=bytearray(size);root[:11]=b'DIAGNOSETXT' if legacy_marker else b'README  TXT';root[11]=32
+  struct.pack_into('<H',root,26,3);struct.pack_into('<I',root,28,len(payload))
   sector(file,start+data+2,root)
-  for index,cluster in enumerate([3,5,7]):
-   chunk=PAYLOAD[index*size:(index+1)*size]
+  for index,cluster in enumerate(chain):
+   chunk=payload[index*size:(index+1)*size]
    sector(file,start+data+cluster-2,chunk.ljust(size,b'\0'))
- return len(PAYLOAD)
+ return len(payload)
 if __name__=='__main__':
  parser=argparse.ArgumentParser()
  parser.add_argument('output');parser.add_argument('--layout',choices=['mbr','superfloppy','gpt'],default='mbr')

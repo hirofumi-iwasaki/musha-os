@@ -1,82 +1,112 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-import gzip
-import hashlib
-import importlib.util
-import io
-import json
+"""Drive contract, stateless migration, unsafe inputs and fixture packaging."""
+import gzip,hashlib,importlib.util,io,json,struct,subprocess,sys,tempfile,unittest,zipfile,zlib
 from pathlib import Path
-import struct
-import subprocess
-import sys
-import tempfile
-import unittest
 from unittest.mock import patch
-import zipfile
-import zlib
-from distribution import make_zip, read_zip, digest, json_bytes, usb_readme
+from distribution import *
 
 def load(name):
-    spec=importlib.util.spec_from_file_location(name,Path(__file__).with_name(name+'.py'))
-    m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
-usb=load('make-usb-image'); deploy=load('deploy-image'); update=load('update-usb'); release=load('prepare-release'); draft=load('draft-release'); ident=load('candidate-identity')
-
-VERSION=(release.ROOT/'VERSION').read_text().strip()
+    spec=importlib.util.spec_from_file_location(name,Path(__file__).with_name(name+'.py'));m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
+usb=load('make-usb-image');deploy=load('deploy-image');update=load('update-usb');release=load('prepare-release');draft=load('draft-release');comparison=load('compare-candidates')
+VERSION=(ROOT/'VERSION').read_text().strip()
 
 class DistributionTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup); self.root=Path(self.tmp.name).resolve()
-        self.efi=self.root/'test.efi'; b=bytearray(1800); b[:2]=b'MZ'; struct.pack_into('<I',b,60,128); b[128:132]=b'PE\0\0'
-        struct.pack_into('<H',b,132,0x8664); struct.pack_into('<H',b,152,0x20b); struct.pack_into('<H',b,220,10); self.efi.write_bytes(b)
+        self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name).resolve()
+        self.efi=self.root/'test.efi';b=bytearray(1800);b[:2]=b'MZ';struct.pack_into('<I',b,60,128);b[128:132]=b'PE\0\0'
+        struct.pack_into('<H',b,132,0x8664);struct.pack_into('<H',b,152,0x20b);struct.pack_into('<H',b,220,10);self.efi.write_bytes(b)
         self.prov={'commit':'a'*40,'features':[],'working_tree':'','tag':f'v{VERSION}'}
-    def package(self):
-        return release.stage(self.root/'release',self.efi,self.prov)
-    def zip(self,payload=None):
-        p=self.root/'update.zip'; make_zip(p,payload or {'EFI/BOOT/BOOTX64.EFI':self.efi.read_bytes(),'DIAGNOSE.TXT':b'text'},f'{VERSION}',self.prov); return p
-    def volume(self):
-        p=self.root/'volume'; (p/'EFI/BOOT').mkdir(parents=True); (p/'EFI/BOOT/BOOTX64.EFI').write_bytes(b'old'); (p/'user.txt').write_bytes(b'keep'); return p
-    def test_image_zip_payload_and_manifest(self):
-        out=self.package(); m=json.loads((out/'build-manifest.json').read_text()); version=f'musha-os-v{VERSION}-x64'
-        image=gzip.decompress((out/(version+'-usb.img.gz')).read_bytes())
-        inspected=deploy.inspect(io.BytesIO(image),len(image))
-        um,payload=read_zip(out/(version+'-files.zip'))
-        self.assertEqual(inspected['efi'],self.efi.read_bytes()); self.assertEqual(payload['EFI/BOOT/BOOTX64.EFI'],inspected['efi'])
-        self.assertEqual(payload['README.TXT'], usb_readme(VERSION))
-        self.assertIn('README.TXT', m['payload'])
-        self.assertEqual(m['update_schema'],2)
-        self.assertEqual(m['retired_files'],['MUSHA.TXT'])
-        self.assertEqual(m['image_uncompressed'],{'bytes':len(image),'sha256':hashlib.sha256(image).hexdigest()})
-        for name in ['LICENSE','NOTICE','third_party/lwip/COPYING','third_party/freebsd-e1000/COPYING','third_party/freebsd-apple-bce/COPYING','third_party/r-efi/AUTHORS']: self.assertIn(name,payload)
-        with zipfile.ZipFile(out/(version+'-deployment.zip')) as z: self.assertIn('tools/update-usb.py',z.namelist())
-        draft.validate(out,f'v{VERSION}','a'*40)
-    def test_readme_contract_and_fat_chain(self):
-        expected = usb_readme(VERSION)
-        self.assertLess(len(expected), 4096)
-        self.assertTrue(expected.isascii())
-        self.assertNotIn(b'\n', expected.replace(b'\r\n', b''))
-        self.assertTrue(all(len(line) <= 72 for line in expected.splitlines()))
-        self.assertIn(f'musha-os-v{VERSION}-x64-c-sdk.zip'.encode(), expected)
-        self.assertIn(b'https://github.com/hirofumi-iwasaki/musha-os/blob/main/docs/sdk-guide.md', expected)
-        self.assertIn(b'AUTORUN.ELF', expected)
-        for kind in ('esp', 'basic-data'):
-            image = usb.create(self.root/(kind+'-readme.img'), self.efi, partition_type=kind).read_bytes()
-            first = struct.unpack_from('<Q', image, 1024+32)[0]
-            boot = image[first*512:(first+1)*512]
-            spc = boot[13]; reserved = struct.unpack_from('<H', boot, 14)[0]
-            fat_size = struct.unpack_from('<I', boot, 36)[0]
-            fat = (first+reserved)*512
-            data = (first+reserved+2*fat_size)*512
-            root = image[data:data+spc*512]
-            entries = [root[i:i+32] for i in range(0,len(root),32)]
-            entry = next(e for e in entries if e[:11] == b'README  TXT')
-            cluster = struct.unpack_from('<H',entry,26)[0]
-            length = struct.unpack_from('<I',entry,28)[0]
-            contents = b''
-            while cluster < 0x0ffffff8:
-                offset = data+(cluster-2)*spc*512
-                contents += image[offset:offset+spc*512]
-                cluster = struct.unpack_from('<I',image,fat+cluster*4)[0] & 0x0fffffff
-            self.assertEqual(contents[:length], expected)
+    def zip(self,payload=None,previous=None,name='update.zip'):
+        path=self.root/name;make_zip(path,payload or drive_payload(self.efi,VERSION),VERSION,self.prov,previous);return path
+    def volume(self,efi=None):
+        path=self.root/'volume';(path/'EFI/BOOT').mkdir(parents=True);(path/'EFI/BOOT/BOOTX64.EFI').write_bytes(efi or self.efi.read_bytes());return path
+    def test_clean_layout_and_metadata_extraction(self):
+        archive=self.zip();m,files=read_zip(archive);volume=self.root/'extract'
+        with zipfile.ZipFile(archive) as z:z.extractall(volume);self.assertLessEqual(len(z.comment),65535)
+        self.assertEqual({p.name for p in volume.iterdir()},{'EFI','DOCS','SETTINGS','README.TXT'})
+        self.assertEqual(list((volume/'SETTINGS').iterdir()),[]);self.assertFalse((volume/'update-manifest.json').exists())
+        self.assertTrue(all('DOCS/'+n in files for n in USER_DOCS));self.assertEqual(m['layout_version'],2)
+    def test_stateless_settings_preservation_idempotence(self):
+        z=self.zip();v=self.volume();(v/'SETTINGS').mkdir();(v/'SETTINGS/SECRET.BIN').write_bytes(b'private');stamp=(v/'SETTINGS/SECRET.BIN').stat().st_mtime_ns
+        dry=update.update(z,v,self.root/'backup');self.assertFalse((self.root/'backup').exists())
+        result=update.update(z,v,self.root/'backup',True);self.assertTrue(result['applied']);self.assertNotIn('SETTINGS/SECRET.BIN',result['verified-files'])
+        self.assertEqual((v/'SETTINGS/SECRET.BIN').stat().st_mtime_ns,stamp)
+        self.assertEqual(update.update(z,v,self.root/'unused',True)['changed'],[]);self.assertFalse((self.root/'unused').exists())
+        self.assertFalse(any((v/n).exists() for n in ('musha-install.json','update-manifest.json')))
+    def test_unknown_and_modified_files_rejected_before_writes(self):
+        z=self.zip();v=self.volume(b'unknown')
+        with self.assertRaisesRegex(ValueError,'User-modified'):update.update(z,v,self.root/'backup',True)
+        self.assertFalse((self.root/'backup').exists());self.assertEqual((v/'EFI/BOOT/BOOTX64.EFI').read_bytes(),b'unknown')
+    def legacy(self):
+        payload={'EFI/BOOT/BOOTX64.EFI':b'old EFI','DIAGNOSE.TXT':b'Hello Musha-OS!\n','LICENSE':b'old license'}
+        m={'schema':2,'layout_version':1,'version':'0.3.0','commit':'b'*40,'tag':'v0.3.0','retired_files':['MUSHA.TXT'],
+           'files':{n:{'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()} for n,b in payload.items()}}
+        path=self.root/'legacy.zip'
+        with zipfile.ZipFile(path,'x') as z:
+            for n,b in dict(payload,**{'update-manifest.json':json_bytes(m)}).items():z.writestr(n,b)
+        return path,m,payload
+    def test_previous_package_migration_and_changed_obsolete_refusal(self):
+        prior,old,payload=self.legacy();catalog=previous_catalog([prior]);z=self.zip(previous=catalog);v=self.volume(b'old EFI')
+        for n,b in payload.items():d=v/n;d.parent.mkdir(parents=True,exist_ok=True);d.write_bytes(b)
+        (v/'update-manifest.json').write_bytes(json_bytes(old));(v/'musha-install.json').write_bytes(json_bytes({'layout_version':1,'version':'0.3.0','commit':'b'*40}))
+        (v/'AUTORUN.ELF').write_bytes(b'user program');(v/'LICENSE').write_bytes(b'user change')
+        with self.assertRaisesRegex(ValueError,'User-modified'):update.update(z,v,self.root/'bad',True)
+        self.assertFalse((self.root/'bad').exists());(v/'LICENSE').write_bytes(b'old license')
+        result=update.update(z,v,self.root/'backup',True);self.assertTrue(result['applied']);self.assertEqual((v/'AUTORUN.ELF').read_bytes(),b'user program')
+        self.assertTrue(all(not (v/n).exists() for n in ('LICENSE','DIAGNOSE.TXT','update-manifest.json','musha-install.json')))
+        self.assertEqual((self.root/'backup/LICENSE').read_bytes(),b'old license')
+    def test_failure_backup_and_temporary_cleanup(self):
+        z=self.zip(previous={'EFI/BOOT/BOOTX64.EFI':[hashlib.sha256(b'old').hexdigest()]});v=self.volume(b'old')
+        with patch('os.replace',side_effect=OSError('injected')):
+            with self.assertRaises(OSError):update.update(z,v,self.root/'backup',True)
+        self.assertEqual((v/'EFI/BOOT/BOOTX64.EFI').read_bytes(),b'old');self.assertEqual(list(v.rglob('.musha-update-*')),[])
+        self.assertIn('error',json.loads((self.root/'backup/update-result.json').read_text()))
+    def rewrite(self,name,entries,comment):
+        path=self.root/name
+        with zipfile.ZipFile(path,'w') as z:
+            z.comment=comment
+            for n,b in entries:z.writestr(n,b)
+        return path
+    def test_untrusted_zip_paths_duplicates_symlinks_and_comment(self):
+        good=self.zip()
+        with zipfile.ZipFile(good) as z:entries=[(i,z.read(i)) for i in z.infolist()];comment=z.comment
+        for i,name in enumerate(('../escape','/absolute','a\\b','EFI/../bad','a:b','NUL.txt','SETTINGS/CONFIG.TXT','README.TXT','readme.txt','DOCS')):
+            z=self.rewrite(f'bad{i}.zip',entries+[(name,b'x')],comment)
+            with self.assertRaises((ValueError,KeyError)):read_zip(z)
+        link=zipfile.ZipInfo('DOCS/link');link.external_attr=0o120777<<16
+        with self.assertRaises(ValueError):read_zip(self.rewrite('link.zip',entries+[(link,b'/tmp')],comment))
+        for i,raw in enumerate((b'{}',COMMENT_PREFIX+b'{"schema":3,"schema":3}',COMMENT_PREFIX+json_bytes(dict(json.loads(comment[len(COMMENT_PREFIX):]),extra=1)))):
+            with self.assertRaises((ValueError,KeyError)):read_zip(self.rewrite(f'comment{i}.zip',entries,raw))
+    def test_metadata_size_and_invalid_settings(self):
+        many={f'DOCS/file{i}.txt':b'x' for i in range(500)};many.update(drive_payload(self.efi,VERSION))
+        with self.assertRaisesRegex(ValueError,'comment limit'):self.zip(many)
+        self.assertFalse((self.root/'update.zip').exists())
+        z=self.zip(name='valid.zip');v=self.volume();(v/'SETTINGS').symlink_to(self.root/'outside',target_is_directory=True)
+        with self.assertRaises(ValueError):update.update(z,v,self.root/'backup',True)
+        self.assertFalse((self.root/'backup').exists())
+    def test_destination_alias_and_symlink(self):
+        z=self.zip();v=self.volume();(v/'readme.txt').write_bytes(b'x')
+        with self.assertRaises(ValueError):update.update(z,v,self.root/'backup',True)
+        (v/'readme.txt').unlink();(v/'README.TXT').symlink_to(self.root/'outside')
+        with self.assertRaises(ValueError):update.update(z,v,self.root/'backup',True)
+    def test_reproducibility_assets_and_rust_release_gate(self):
+        a=release.stage(self.root/'one',self.efi,self.prov);b=release.stage(self.root/'two',self.efi,self.prov)
+        result=comparison.compare(a,b,'same-source');self.assertTrue(result['passed']);self.assertFalse(result['sdk_runtime_complete'])
+        self.assertEqual(set(json.loads((a/'build-manifest.json').read_text())['assets']),{f'musha-os-{VERSION}{s}' for s in ('-x64.zip','-x64-qemu.img.gz','-c-sdk.zip','-rust-sdk.zip')})
+        with self.assertRaisesRegex(ValueError,'SDK implementation'):draft.validate(a,'v'+VERSION,'a'*40)
+        draft.validate(a,'v'+VERSION,'a'*40,require_complete=False)
+        with self.assertRaises(FileExistsError):release.stage(a,self.efi,self.prov)
+    def test_readme_expected_fat_chain_and_fsck(self):
+        data=usb_readme(VERSION);self.assertLess(len(data),4096);self.assertTrue(data.isascii());self.assertTrue(all(len(l)<=72 for l in data.splitlines()))
+        image=usb.create(self.root/'test.img',self.efi)
+        with image.open('rb') as f:info=deploy.inspect(f,image.stat().st_size)
+        self.assertEqual(info['efi'],self.efi.read_bytes())
+        if Path('/sbin/fsck_msdos').is_file():
+            part=self.root/'partition.img'
+            with image.open('rb') as f:f.seek(info['first']*512);part.write_bytes(f.read((info['last']-info['first']+1)*512))
+            r=subprocess.run(['/sbin/fsck_msdos','-n',str(part)],capture_output=True,text=True)
+            self.assertEqual(r.returncode,0,r.stdout+r.stderr)
 
     def test_partition_types_reproducible_and_preserved(self):
         for kind in ('basic-data', 'esp'):
@@ -124,6 +154,7 @@ class DistributionTests(unittest.TestCase):
                     f.seek(128*1024**2); self.assertEqual(f.read(512),bytes(512))
             self.assertLess(out.stat().st_blocks*512,128*1024**2)
             with self.assertRaises(ValueError): deploy.adjust(image,out,capacity,apply=True)
+
     def test_reject_size_sector_corruption_before_write(self):
         image=usb.create(self.root/'source.img',self.efi); out=self.root/'out.img'
         for size,sector in [(1024,512),(64*1024**2+1,512),(128*1024**2,4096)]:
@@ -132,156 +163,6 @@ class DistributionTests(unittest.TestCase):
         with image.open('r+b') as f: f.seek(512+16); f.write(b'BAD!')
         with self.assertRaises(ValueError): deploy.adjust(image,out,128*1024**2,apply=True)
         self.assertFalse(out.exists())
-    def test_changed_only_backup_no_subprocess(self):
-        z=self.zip(); v=self.volume(); (v/'DIAGNOSE.TXT').write_bytes(b'text'); before=(v/'DIAGNOSE.TXT').stat().st_mtime_ns
-        with patch('subprocess.run',side_effect=AssertionError('No image/raw command')),patch('subprocess.check_output',side_effect=AssertionError('No raw read')):
-            dry=update.update(z,v,self.root/'backup'); self.assertEqual(dry['changed'],['EFI/BOOT/BOOTX64.EFI','update-manifest.json']); self.assertFalse((self.root/'backup').exists())
-            result=update.update(z,v,self.root/'backup',True)
-            self.assertTrue(result['applied']); self.assertEqual((v/'user.txt').read_bytes(),b'keep')
-            self.assertEqual((v/'DIAGNOSE.TXT').stat().st_mtime_ns,before)
-            self.assertEqual((self.root/'backup/EFI/BOOT/BOOTX64.EFI').read_bytes(),b'old')
-            self.assertEqual(update.update(z,v,self.root/'unused',True)['changed'],[]); self.assertFalse((self.root/'unused').exists())
-    def test_retired_marker_dry_run_backup_remove_and_verified_files(self):
-        out=self.package(); z=out/f'musha-os-v{VERSION}-x64-files.zip'
-        m,payload=read_zip(z); v=self.volume()
-        (v/'MUSHA.TXT').write_bytes(b'locally edited marker')
-        (v/'AUTORUN.ELF').write_bytes(b'user program')
-        (v/'musha-install.json').write_text('{"layout_version":1}')
-        dry=update.update(z,v,self.root/'backup')
-        self.assertEqual(dry['removed'],['MUSHA.TXT'])
-        self.assertTrue((v/'MUSHA.TXT').exists())
-        self.assertFalse((self.root/'backup').exists())
-        result=update.update(z,v,self.root/'backup',True)
-        self.assertEqual((self.root/'backup/MUSHA.TXT').read_bytes(),b'locally edited marker')
-        self.assertFalse((v/'MUSHA.TXT').exists())
-        self.assertEqual(result['verified-absent'],['MUSHA.TXT'])
-        self.assertEqual(set(result['verified-files']),set(payload)|{'update-manifest.json'})
-        self.assertEqual(sum(n.startswith('third_party/') for n in result['verified-files']),8)
-        self.assertEqual(json.loads((v/'update-manifest.json').read_text()),m)
-        self.assertEqual((v/'AUTORUN.ELF').read_bytes(),b'user program')
-        again=update.update(z,v,self.root/'unused',True)
-        self.assertFalse(again['changed'] or again['removed'])
-        self.assertEqual(again['verified-files'],result['verified-files'])
-        self.assertFalse((self.root/'unused').exists())
-
-    def test_retirement_only_and_failure_before_retirement(self):
-        z=self.zip(); v=self.volume()
-        update.update(z,v,self.root/'first',True)
-        (v/'MUSHA.TXT').write_bytes(b'old marker')
-        result=update.update(z,v,self.root/'retirement',True)
-        self.assertEqual(result['changed'],[])
-        self.assertEqual(result['removed_completed'],['MUSHA.TXT'])
-        (v/'MUSHA.TXT').write_bytes(b'retry marker')
-        (v/'EFI/BOOT/BOOTX64.EFI').write_bytes(b'old EFI')
-        with patch('os.replace',side_effect=OSError('interrupted')):
-            with self.assertRaises(OSError):update.update(z,v,self.root/'interrupted',True)
-        self.assertEqual((v/'MUSHA.TXT').read_bytes(),b'retry marker')
-        self.assertEqual((self.root/'interrupted/MUSHA.TXT').read_bytes(),b'retry marker')
-
-    def test_legacy_schema_and_retirement_rejections(self):
-        z=self.zip(); m,payload=read_zip(z)
-        for i,retired in enumerate([['user.txt'],['../outside'],['MUSHA.TXT','MUSHA.TXT'],['musha.txt'],[]]):
-            bad=self.root/f'retired-{i}.zip'
-            with zipfile.ZipFile(bad,'w') as f:
-                for n,b in payload.items():f.writestr(n,b)
-                f.writestr('update-manifest.json',json_bytes(dict(m,retired_files=retired)))
-            with self.assertRaises(ValueError):read_zip(bad)
-        legacy=self.root/'legacy.zip'
-        with zipfile.ZipFile(legacy,'w') as f:
-            for n,b in payload.items():f.writestr(n,b)
-            old=dict(m,schema=1); old.pop('retired_files')
-            f.writestr('update-manifest.json',json_bytes(old))
-        v=self.volume(); (v/'MUSHA.TXT').write_bytes(b'keep on legacy update')
-        update.update(legacy,v,self.root/'legacy-backup',True)
-        self.assertTrue((v/'MUSHA.TXT').exists())
-        (v/'MUSHA.TXT').unlink(); (v/'MUSHA.TXT').symlink_to(self.root/'outside')
-        with self.assertRaises(ValueError):update.update(z,v,self.root/'symlink-backup',True)
-        self.assertFalse((self.root/'symlink-backup').exists())
-
-    def test_failure_preserves_old_and_records_backup(self):
-        z=self.zip(); v=self.volume()
-        with patch('os.replace',side_effect=OSError('simulated failure')):
-            with self.assertRaises(OSError): update.update(z,v,self.root/'backup',True)
-        self.assertEqual((v/'EFI/BOOT/BOOTX64.EFI').read_bytes(),b'old')
-        self.assertIn('error',json.loads((self.root/'backup/update-result.json').read_text()))
-        self.assertEqual(list(v.rglob('.musha-update-*')),[])
-    def test_zip_traversal_alias_symlink_and_hash(self):
-        for i,name in enumerate(['../escape','/absolute','a\\b','EFI/../bad','a:b','NUL.txt']):
-            z=self.root/f'bad{i}.zip'
-            with zipfile.ZipFile(z,'w') as f: f.writestr(name,b'x')
-            with self.assertRaises(ValueError): read_zip(z)
-        z=self.root/'link.zip'
-        with zipfile.ZipFile(z,'w') as f:
-            n=zipfile.ZipInfo('link'); n.external_attr=0o120777<<16; f.writestr(n,b'/tmp')
-        with self.assertRaises(ValueError): read_zip(z)
-        z=self.root/'alias.zip'
-        with zipfile.ZipFile(z,'w') as f: f.writestr('ABC',b'a'); f.writestr('abc',b'b')
-        with self.assertRaises(ValueError): read_zip(z)
-        z=self.zip(); v=self.volume(); (v/'DIAGNOSE.TXT').symlink_to(self.root/'outside')
-        with self.assertRaises(ValueError): update.update(z,v,self.root/'backup',True)
-        self.assertFalse((self.root/'backup').exists())
-    def test_unknown_layout_space_and_changed_device(self):
-        z=self.zip(); v=self.volume(); (v/'musha-install.json').write_text('{"layout_version":2}')
-        with self.assertRaises(ValueError): update.update(z,v,self.root/'backup',True)
-        (v/'musha-install.json').unlink()
-        with patch('shutil.disk_usage',return_value=type('Usage',(),{'free':0})()):
-            with self.assertRaises(ValueError): update.update(z,v,self.root/'backup',True)
-        calls=iter([{'id':1},{'id':2}])
-        with self.assertRaises(ValueError): update.update(z,v,self.root/'backup',True,lambda _:next(calls))
-        self.assertEqual((v/'EFI/BOOT/BOOTX64.EFI').read_bytes(),b'old')
-    def test_bad_versions_features_and_dirty_draft(self):
-        for version in ['../bad','1.2','0.2.0\n','$(bad)']:
-            with self.assertRaises(ValueError): release.stage(self.root/'bad',self.efi,self.prov,version=version)
-        for field,value in [('features',['qemu-debug']),('RUSTFLAGS','--cfg foo')]:
-            with self.assertRaises(ValueError): release.stage(self.root/'bad',self.efi,dict(self.prov,**{field:value}))
-        with self.assertRaises(ValueError): ident.identity(f'{VERSION}','v0.1.0','a'*40,lambda _: 'a'*40)
-        with self.assertRaises(ValueError): ident.identity(f'{VERSION}',f'v{VERSION}','a'*40,lambda _: 'b'*40)
-        out=self.package(); p=out/'build-manifest.json'; m=json.loads(p.read_text()); m['working_tree']='dirty'; p.write_bytes(json_bytes(m))
-        with self.assertRaises(ValueError): draft.validate(out,f'v{VERSION}','a'*40)
-    def test_draft_api_mock_no_publish_no_tag_creation(self):
-        out=self.package(); calls=[]
-        def api(*a):
-            calls.append(a)
-            if 'git/ref/tags' in a[-1]: return json_bytes({'object':{'type':'commit','sha':'a'*40}})
-            if '/releases/tags/' in a[-1]: raise subprocess.CalledProcessError(1,a,stderr=b'Not Found (HTTP 404)')
-            return b''
-        self.assertIn('Dry-run',draft.attach(out,f'v{VERSION}','a'*40,api=api)); self.assertFalse(any(a[0]=='release' for a in calls))
-        draft.attach(out,f'v{VERSION}','a'*40,True,api)
-        create=[a for a in calls if a[0]=='release'][0]; self.assertIn('--draft',create); self.assertIn('--verify-tag',create); self.assertNotIn('--clobber',create)
-        def published(*a):
-            if 'git/ref/tags' in a[-1]: return json_bytes({'object':{'type':'commit','sha':'a'*40}})
-            return json_bytes({'draft':False})
-        with self.assertRaises(ValueError): draft.attach(out,f'v{VERSION}','a'*40,True,published)
-    def test_identical_draft_and_mismatch(self):
-        out=self.package(); _,names=draft.validate(out,f'v{VERSION}','a'*40)
-        def api(*a):
-            if 'git/ref/tags' in a[-1]: return json_bytes({'object':{'type':'commit','sha':'a'*40}})
-            if '/releases/tags/' in a[-1]: return json_bytes({'draft':True,'body':'Musha source: '+'a'*40,'assets':[{'name':n,'id':i} for i,n in enumerate(names)]})
-            return (out/names[int(a[-1].rsplit('/',1)[-1])]).read_bytes()
-        self.assertIn('retained',draft.attach(out,f'v{VERSION}','a'*40,True,api))
-        def corrupt(*a):
-            if '/assets/' in a[-1]: return b'corrupt'
-            return api(*a)
-        with self.assertRaises(ValueError): draft.attach(out,f'v{VERSION}','a'*40,True,corrupt)
-
-    def test_no_image_work_in_files_only_build(self):
-        builder=load('build-usb')
-        with patch('importlib.util.module_from_spec') as module_factory:
-            module_factory.side_effect=AssertionError('Image module must not load')
-            # This tests the legacy build entry point's files-only path.
-            builder.package(self.root/'files-only',self.efi,files_only=True)
-        self.assertFalse((self.root/'files-only/musha-os.img').exists())
-
-    def test_update_rejects_corrupt_payload_before_writing(self):
-        z=self.zip(); v=self.volume()
-        with zipfile.ZipFile(z) as src: entries={i.filename:src.read(i) for i in src.infolist()}
-        entries['DIAGNOSE.TXT']=b'corrupt'
-        bad=self.root/'bad.zip'
-        with zipfile.ZipFile(bad,'w') as dst:
-            for n,b in entries.items(): dst.writestr(n,b)
-        with self.assertRaises(ValueError): update.update(bad,v,self.root/'backup',True)
-        self.assertFalse((self.root/'backup').exists())
-        self.assertEqual((v/'EFI/BOOT/BOOTX64.EFI').read_bytes(),b'old')
 
     def test_adjust_actual_io_never_visits_unused_capacity(self):
         image=usb.create(self.root/'source.img',self.efi); output=self.root/'large.img'; capacity=32*1024**3
@@ -303,10 +184,6 @@ class DistributionTests(unittest.TestCase):
         for kind,offset,length in operations:
             self.assertTrue(offset+length<=64*1024**2 or offset>=capacity-33*512,(kind,offset,length))
         self.assertLess(sum(n for _,_,n in operations),140*1024**2)
-
-    def test_cli_version_mismatch_before_build(self):
-        result=subprocess.run([sys.executable,str(Path(__file__).with_name('prepare-release.py')),'--version','9.9.9','--allow-dirty','--output',str(self.root/'bad')],capture_output=True,text=True)
-        self.assertNotEqual(result.returncode,0); self.assertIn('VERSION mismatch',result.stderr); self.assertFalse((self.root/'bad').exists())
 
     def test_workflow_privilege_and_success_boundary(self):
         text=(release.ROOT/'.github/workflows/release-candidate.yml').read_text()
@@ -330,5 +207,81 @@ class DistributionTests(unittest.TestCase):
             with self.assertRaises(ValueError): release.validate_efi(self.efi,dict(original,**{field:value}),f'{VERSION}',f'v{VERSION}','a'*40,'')
         self.efi.write_bytes(b'changed')
         with self.assertRaises(ValueError): release.validate_efi(self.efi,original,f'{VERSION}',f'v{VERSION}','a'*40,'')
+    def test_parent_directory_alias_symlink_and_race_are_rejected(self):
+        z=self.zip()
+        for i,mode in enumerate(('docs-symlink','old-symlink','docs-alias','backup-symlink')):
+            v=self.root/f'volume{i}';(v/'EFI/BOOT').mkdir(parents=True);(v/'EFI/BOOT/BOOTX64.EFI').write_bytes(self.efi.read_bytes())
+            outside=self.root/f'outside{i}';outside.mkdir();(outside/'KEEP').write_bytes(b'keep')
+            backup=self.root/f'backup{i}'
+            if mode=='docs-symlink':(v/'DOCS').symlink_to(outside,target_is_directory=True)
+            if mode=='old-symlink':(v/'third_party').symlink_to(outside,target_is_directory=True)
+            if mode=='docs-alias':(v/'docs').mkdir()
+            if mode=='backup-symlink':backup.symlink_to(outside,target_is_directory=True)
+            with self.assertRaises(ValueError):update.update(z,v,backup,True)
+            self.assertEqual((outside/'KEEP').read_bytes(),b'keep');self.assertEqual(list(outside.iterdir()),[outside/'KEEP'])
+        v=self.volume();calls=iter([{'id':1},{'id':2}])
+        original_stat=Path.stat
+        class DifferentDevice:
+            def __init__(self,wrapped):self.wrapped=wrapped;self.st_dev=-1
+            def __getattr__(self,name):return getattr(self.wrapped,name)
+        def stat(path,*args,**kwargs):
+            value=original_stat(path,*args,**kwargs)
+            return DifferentDevice(value) if path==v else value
+        with patch.object(Path,'stat',stat):
+            with self.assertRaisesRegex(ValueError,'identity changed'):update.update(z,v,self.root/'racebackup',True,lambda _:next(calls))
+        self.assertFalse((v/'DOCS').exists())
+    def test_insufficient_space_and_source_metadata_corruption(self):
+        z=self.zip();v=self.volume()
+        with patch('shutil.disk_usage',return_value=type('Usage',(),{'free':0})()):
+            with self.assertRaisesRegex(ValueError,'space'):update.update(z,v,self.root/'backup',True)
+        self.assertFalse((self.root/'backup').exists())
+        with zipfile.ZipFile(z) as a:entries=[(i,a.read(i)) for i in a.infolist()];m=json.loads(a.comment[len(COMMENT_PREFIX):])
+        m['files']['README.TXT']['sha256']='0'*64
+        corrupted=self.rewrite('corrupt.zip',entries,COMMENT_PREFIX+json_bytes(m))
+        with self.assertRaises(ValueError):update.update(corrupted,v,self.root/'backup',True)
+        self.assertFalse((self.root/'backup').exists())
+    def test_image_embedded_document_change_never_passes_runtime_equivalence(self):
+        a=release.stage(self.root/'left',self.efi,self.prov)
+        payload=drive_payload(self.efi,VERSION);payload['DOCS/file-viewer.md']+=b'changed docs'
+        with patch('distribution.drive_payload',return_value=payload):b=release.stage(self.root/'right',self.efi,self.prov)
+        result=comparison.compare(a,b,'same-source')
+        self.assertTrue(result['efi_identical']);self.assertFalse(result['runtime_identical']);self.assertFalse(result['passed'])
+        self.assertFalse(result['runtime_members']['QEMU image']['identical'])
+    def test_scaffold_draft_gate_prevents_all_remote_calls(self):
+        out=release.stage(self.root/'draft',self.efi,self.prov)
+        with self.assertRaisesRegex(ValueError,'SDK implementation'):draft.attach(out,'v'+VERSION,'a'*40,True,lambda *args:self.fail('Remote access before SDK gate'))
 
-if __name__=='__main__': unittest.main()
+    def test_draft_boundary_published_immutable_remote_tag_and_api_reuse(self):
+        # Isolate attachment API rules from the separately tested scaffold gate.
+        out=release.stage(self.root/'attach-fixture',self.efi,self.prov)
+        validated=draft.validate(out,'v'+VERSION,'a'*40,require_complete=False)
+        names=validated[1];calls=[]
+        def tag(*args):return json_bytes({'object':{'type':'commit','sha':'a'*40}})
+        def missing(*args):
+            calls.append(args)
+            if 'git/ref/tags' in args[-1]:return tag(*args)
+            if '/releases/tags/' in args[-1]:raise subprocess.CalledProcessError(1,args,stderr=b'Not Found (HTTP 404)')
+            return b''
+        def published(*args):
+            if 'git/ref/tags' in args[-1]:return tag(*args)
+            return json_bytes({'draft':False})
+        def identical(*args):
+            if 'git/ref/tags' in args[-1]:return tag(*args)
+            if '/releases/tags/' in args[-1]:return json_bytes({'draft':True,'body':'Musha source: '+'a'*40,'assets':[{'name':n,'id':i} for i,n in enumerate(names)]})
+            return (out/names[int(args[-1].rsplit('/',1)[-1])]).read_bytes()
+        with patch.object(draft,'validate',return_value=validated):
+            self.assertIn('Dry-run',draft.attach(out,'v'+VERSION,'a'*40,api=missing));self.assertFalse(any(a[0]=='release' for a in calls))
+            draft.attach(out,'v'+VERSION,'a'*40,True,missing)
+            create=next(a for a in calls if a[0]=='release');self.assertIn('--draft',create);self.assertIn('--verify-tag',create);self.assertNotIn('--clobber',create)
+            with self.assertRaisesRegex(ValueError,'immutable'):draft.attach(out,'v'+VERSION,'a'*40,True,published)
+            self.assertIn('retained',draft.attach(out,'v'+VERSION,'a'*40,True,identical))
+            with self.assertRaisesRegex(ValueError,'Remote tag mismatch'):draft.attach(out,'v'+VERSION,'a'*40,True,lambda *args:json_bytes({'object':{'type':'commit','sha':'b'*40}}))
+            def corrupt(*args):return b'corrupt' if '/assets/' in args[-1] else identical(*args)
+            with self.assertRaisesRegex(ValueError,'differs'):draft.attach(out,'v'+VERSION,'a'*40,True,corrupt)
+    def test_dirty_draft_and_release_sdk_gates(self):
+        out=release.stage(self.root/'dirty-fixture',self.efi,dict(self.prov,working_tree='dirty'))
+        with self.assertRaisesRegex(ValueError,'provenance'):draft.validate(out,'v'+VERSION,'a'*40)
+        with self.assertRaisesRegex(ValueError,'Release SDK'):release.stage(self.root/'release-gate',self.efi,self.prov,release=True)
+        self.assertFalse((self.root/'release-gate').exists())
+
+if __name__=='__main__':unittest.main()

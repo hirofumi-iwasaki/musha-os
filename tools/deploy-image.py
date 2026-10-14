@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from distribution import usb_readme
 import stat
 import struct
 import zlib
@@ -74,8 +75,8 @@ def inspect(f, size):
         return bytes(b[:length])
     root=struct.unpack_from('<I',boot,44)[0]
     ec,_=find(root,b'EFI        '); bc,_=find(ec,b'BOOT       ')
-    efi=file(*find(bc,b'BOOTX64 EFI')); text=file(*find(root,b'DIAGNOSETXT'))
-    if text!=b'Hello Musha-OS!\n': raise ValueError('DIAGNOSE.TXT mismatch')
+    efi=file(*find(bc,b'BOOTX64 EFI')); text=file(*find(root,b'README  TXT'))
+    if not text.isascii() or not 0<len(text)<4096: raise ValueError('Invalid README.TXT marker')
     return {'first':first,'last':last,'efi_sha256':hashlib.sha256(efi).hexdigest(),'efi':efi,'headers':headers,'array':a,'mbr':m}
 
 def adjust(source, output, capacity, sector_size=512, apply=False):

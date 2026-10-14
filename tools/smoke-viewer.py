@@ -2,6 +2,7 @@
 # Copyright 2026 Hirofumi Iwasaki
 # SPDX-License-Identifier: Apache-2.0
 """Drive the production viewer with QMP keys; verify rendered-page hashes and cleanup."""
+from distribution import usb_readme
 import argparse, hashlib, json, pathlib, shutil, socket, subprocess, time
 p=argparse.ArgumentParser()
 p.add_argument('--firmware-dir',required=True)
@@ -67,13 +68,13 @@ with (out/'qemu.log').open('w') as err:
   if a.case in ('cancel','disconnect','timeout'):
    start=key('ret');wait('LIVE_STORAGE_WAIT',start)
    if a.case=='cancel':
-    start=key('esc');frame('LIST',start=start);start=key('ret');frame('PAGE',payload=b'Hello Musha-OS!\n',start=start)
+    start=key('esc');frame('LIST',start=start);start=key('ret');frame('PAGE',payload=usb_readme((root/'VERSION').read_text().strip())[:256],start=start)
    else:
     if a.case=='disconnect':control('device_del',{'id':'storage'})
     wait('INPUT_SOURCE_DETACHED',start);frame('UNAVAILABLE',start=start);screen(a.case)
     assert 'VIEWER_FRAME PAGE' not in log.read_text()[start:]
   elif a.case=='normal':
-   start=key('ret');frame('PAGE',payload=b'Hello Musha-OS!\n',start=start);screen('text')
+   start=key('ret');frame('PAGE',payload=usb_readme((root/'VERSION').read_text().strip())[:256],start=start);screen('text')
    start=key('esc');frame('LIST',start=start)
    if a.format=='exfat':
     start=key('down');frame('LIST',index=1,start=start);start=key('ret');chunk=bytes(range(256));frame('PAGE',1,payload=chunk,start=start);screen('binary')

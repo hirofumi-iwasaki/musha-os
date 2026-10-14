@@ -88,6 +88,7 @@ jobs:
           python3 tools/test-usb-build.py
           python3 tools/test-release-package.py
           python3 tools/test-distribution.py
+          python3 tools/test-candidate-comparison.py
       - name: Experimental SDK compile and conformance (no guest execution)
         run: python3 tools/check-sdk.py
       - name: HID mutation and state properties
@@ -106,6 +107,7 @@ jobs:
       - name: QEMU USB, input and network regression
         run: |
           python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/debug.img
+          python3 tools/smoke-startup-marker.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --image out/ci/debug.img --output out/qemu-marker-negative
           python3 tools/smoke-network.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/debug.img
           for case in traffic input-idle no-keyboard keyboard-disconnect link-down; do
             python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/debug.img --case "$case"
@@ -210,15 +212,19 @@ jobs:
           args=()
           if [ -n "$RELEASE_TAG" ]; then args+=(--tag "$RELEASE_TAG"); fi
           python3 tools/prepare-release.py --output dist/candidate "${args[@]}"
+      - name: Unpack QEMU asset and generate local exFAT fixture
+        run: |
+          gzip -dc "dist/candidate/musha-os-$(cat VERSION)-x64-qemu.img.gz" > out/ci/normal.img
+          python3 tools/make-exfat-fixture.py out/ci/normal-exfat.img > out/ci/normal-exfat.json
       - name: Normal candidate display and input acceptance
         run: |
-          bundle="dist/candidate/musha-os-$(cat VERSION)-candidate"
-          python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/exfat-test-data.img" --reference out/qemu-viewer-exfat-normal --output out/qemu-normal-exfat
-          python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$bundle/musha-qemu-64MiB.img" --data-image "$bundle/musha-qemu-64MiB.img" --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-fat32
+          image="out/ci/normal.img"
+          python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$image" --data-image out/ci/normal-exfat.img --reference out/qemu-viewer-exfat-normal --output out/qemu-normal-exfat
+          python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image "$image" --data-image "$image" --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-fat32
       - name: Fixed ESP on a larger virtual medium
         run: |
-          bundle="dist/candidate/musha-os-$(cat VERSION)-candidate"
-          python3 tools/deploy-image.py "$bundle/musha-qemu-64MiB.img" out/ci/normal-128MiB.img --capacity-bytes 134217728 --apply
+          image="out/ci/normal.img"
+          python3 tools/deploy-image.py "$image" out/ci/normal-128MiB.img --capacity-bytes 134217728 --apply
           python3 tools/smoke-normal-viewer.py --bootfile-absent --firmware-dir "$MUSHA_FIRMWARE_DIR" --boot-image out/ci/normal-128MiB.img --data-image out/ci/normal-128MiB.img --reference out/qemu-viewer-fat32-normal --output out/qemu-normal-larger
       - name: Preserve passed distribution only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

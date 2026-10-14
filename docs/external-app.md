@@ -2,6 +2,8 @@
 
 ## English
 
+Stage1 v0.4.0 development: this C/r1 behavior is retained; Rust execution/r2 and viewer launch/return remain later work. The drive now has DOCS and empty SETTINGS and README is the startup marker. See [distribution usage](distribution-usage.md).
+
 Owner decision (2026-10-14): the automatic boot filename is `AUTORUN.ELF`; the previous `MUSHA.ELF` is not accepted. This implementation choice does not change the ABI, syscalls, NOTE or SDK-generated ELF. When AUTORUN.ELF is present, the viewer does not start.
 
 MacBook Pro 2018 currently boots but does not recognize storage in this development build; external applications are unsupported there. Internal keyboard support is absent because T2 is unimplemented. NUC5/Ryzen development Hello results do not replace candidate cold-boot acceptance.
@@ -26,6 +28,8 @@ from this grid and capped at 80x24. The default 2048-high QEMU mode uses scale 3
 Reboot to return to the OS. C3 rollback/relaunch/OS return stays opt-in; it is not part of this normal path. Rust guest execution, application file/input/network/display APIs, new syscalls, scheduling and a public ABI freeze remain outside this work. SDK distribution and three recorded hardware cold boots remain release gates.
 
 ## 日本語
+
+v0.4.0工程1：以下のC/r1動作を保持し、Rust実行/r2・viewer起動/復帰は後工程。媒体はDOCS/空SETTINGS/README起動markerへ変更。[配布利用](distribution-usage.md)参照。
 
 所有者決定（2026-10-14）：自動実行名は `AUTORUN.ELF` とし、旧 `MUSHA.ELF` は受理しません。実装上の選択でありABI・syscall・NOTE・SDK生成ELFは変更しません。AUTORUN.ELFがあるとビューアーは起動しません。
 

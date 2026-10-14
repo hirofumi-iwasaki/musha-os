@@ -83,7 +83,8 @@ if args.usb_image:
  cmd[index]=f'if=none,id=esp,format=raw,readonly=on,file={args.usb_image}'
 fixture=None
 fixture_hash=None
-boot_payload=b'Hello Musha-OS!\n'
+from distribution import usb_readme
+boot_payload=usb_readme((root/'VERSION').read_text().strip())
 def fnv(data):
  value=0xcbf29ce484222325
  for byte in data:value=((value^byte)*0x100000001b3)&0xffffffffffffffff
@@ -237,7 +238,7 @@ with (out/'qemu.log').open('w') as err:
       if args.hub_depth:
        check_hub_enumerations(text, args.hub_depth)
        required+=['MUSHA: HUB_CHILD_RESET_OK']
-      if args.usb_image:required+=['MUSHA: DIAG FILE DIAGNOSE.TXT BYTES 00000010','MUSHA: DIAG FILE HASH 9A42A948C590F507']
+      if args.usb_image:required+=[f'MUSHA: DIAG FILE README.TXT BYTES {len(boot_payload):08X}',f'MUSHA: DIAG FILE HASH {fnv(boot_payload):016X}']
      else:
       required+=['MUSHA: DIAG FAIL AT USB STEP','MUSHA: DIAG USB ERROR']
       stages={'xhci-timeout':'HALT','xhci-command-timeout':'RINGS / COMMANDS','usb-descriptor-timeout':'DEVICE DESCRIPTOR','storage-timeout':'STORAGE SECTOR READ','fat-corrupt':'FAT32 FILE READ'}

@@ -44,6 +44,9 @@ mod appconsole;
 mod bootstate;
 mod cpu;
 mod diagnostics;
+mod marker {
+    include!(concat!(env!("OUT_DIR"), "/marker.rs"));
+}
 #[cfg(external_app)]
 mod external;
 mod graphics;

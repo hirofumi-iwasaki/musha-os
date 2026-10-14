@@ -442,7 +442,7 @@ pub(super) fn probe(
             crate::external::duplicate_catalog(name, host.framebuffer);
         }
     }
-    let skip_snapshot = crate::app::VIEWER || matches!(mounted, Ok(None));
+    let skip_snapshot = matches!(mounted, Ok(None));
     let (prepared, file_result) = match mounted {
         Ok(Some((p, bytes))) => (Some(p), bytes.ok_or(musha_fs::Error::NotFound)),
         Ok(None) => (None, Err(musha_fs::Error::Unsupported)),
@@ -457,7 +457,13 @@ pub(super) fn probe(
     if !skip_snapshot {
         match file_result {
             Ok(bytes) => {
-                crate::diagnostics::set(38, format_args!("FILE DIAGNOSE.TXT BYTES {:08X}", bytes));
+                if bytes != crate::marker::BYTES
+                    || storage::hash(&file[..bytes]) != crate::marker::HASH
+                {
+                    crate::diagnostics::failure("STARTUP MARKER", "README MISMATCH");
+                    return Err("README MARKER");
+                }
+                crate::diagnostics::set(38, format_args!("FILE README.TXT BYTES {:08X}", bytes));
                 crate::diagnostics::set(
                     39,
                     format_args!("FILE HASH {:016X}", storage::hash(&file[..bytes])),
@@ -495,7 +501,7 @@ pub(super) fn probe(
                 crate::debug(b"MUSHA: FAT32_UNSUPPORTED\n");
             }
             Err(musha_fs::Error::NotFound) => {
-                crate::diagnostics::set(38, format_args!("FILE DIAGNOSE.TXT MISSING"));
+                crate::diagnostics::set(38, format_args!("FILE README.TXT MISSING"));
                 crate::diagnostics::set(39, format_args!("FILE HASH UNKNOWN"));
                 tick(super::super::AppEvent::FileError(
                     musha_api::Error::NotFound,

@@ -41,6 +41,8 @@ The ABI stays experimental. No application network API is promised.
 | 16 | Startup timing ✔ | Keep the PM-epoch stage timers in the normal build; show a one-line summary at the `devices` level. | Ryzen and NUC5 numbers recorded for the candidate |
 | 17 | Documentation structure and README ✔ | Stage 2 of the documentation cleanup (`docs/README.md` index, `Status:` lines, `docs/history/`, merges, bilingual user pages) and a rewritten README.md for first-time readers: what Musha-OS is and is not, intended uses, a ten-minute try-out (QEMU and USB), Hello World in five steps, and how to go further. The README's USB route ("format FAT32, unpack the drive ZIP") is documented only after the formatted-media gate below passes. | Link check passes; README.md links only to the index and user pages; the formatted-media boot is recorded in `hardware-verification-status.md` |
 
+Owner addition (2026-10-15) ✔: changes to documents/licenses embedded in the QEMU image are outside provenance condition2 (docs-only) and require renewed acceptance. Full runtime/image comparison remains mandatory; only documentation outside that image can qualify when every runtime member is identical.
+
 ### Hardware gates ✔
 
 - **Formatted-media gate (before documenting the easy route):** the published v0.3.0 `files.zip` unpacked by hand (no updater, no `AUTORUN.ELF`) onto USB media formatted by macOS Disk Utility as FAT32/MBR and FAT32/GPT and by Windows Explorer as FAT32; one cold boot to the viewer per route on NUC5 and Ryzen (six runs). Procedure: [formatted-media-boot-verification.md](formatted-media-boot-verification.md).
@@ -104,6 +106,8 @@ ABI は実験版のまま。アプリ向け通信 API は約束しない。
 | 15 | Mac 内蔵キーボード（T2）✔ | 既存の `bce/` T2 BCE モデルを入力経路に接続し、MacBook Pro 2018 の内蔵キーボードでビューアーを操作できるようにする。 | 外付けキーボード無しで内蔵キーボードがビューアーを操作できる。外付け経路は不変 |
 | 16 | 起動時間計測 ✔ | PM epoch の段階タイマーを通常版に残し、`devices` レベルで 1 行の要約を出す。 | 候補で Ryzen・NUC5 の数値を記録 |
 | 17 | 文書構造と README ✔ | 文書整理 第 2 段（`docs/README.md` 索引、`Status:` 行、`docs/history/`、統合、利用者向けページの二言語化）と、初めて読む人向けの README.md 書き直し：Musha-OS が何で何でないか、想定用途、10 分で試す方法（QEMU と USB）、5 手順の Hello World、さらに使う方法。README の USB 経路（「FAT32 でフォーマットして USB 用 ZIP を展開」）は下記のフォーマット媒体の節目が通ってから記載する。 | リンク検査合格。README.md は索引と利用者向けページだけにリンク。フォーマット済み媒体の起動を `hardware-verification-status.md` に記録 |
+
+所有者追加判断（2026-10-15）✔：QEMU像に同梱する文書・ライセンス等の変更は来歴条件2（文書のみ）の対象外とし、再受入を必要とする。runtime/像全体の完全比較は維持。像外文書だけの変更もruntime全要素一致時に限り対象とする。
 
 ### 実機の節目 ✔
 

@@ -2,6 +2,29 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::{env, path::PathBuf, process::Command};
 fn main() {
+    let marker_root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
+        .parent()
+        .unwrap()
+        .to_owned();
+    for name in [
+        "VERSION",
+        "tools/distribution.py",
+        "tools/generate-marker.py",
+    ] {
+        println!(
+            "cargo:rerun-if-changed={}",
+            marker_root.join(name).display()
+        );
+    }
+    let marker_path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("marker.rs");
+    assert!(
+        Command::new("python3")
+            .arg(marker_root.join("tools/generate-marker.py"))
+            .arg(marker_path)
+            .status()
+            .expect("marker generator")
+            .success()
+    );
     let probe = env::var_os("CARGO_FEATURE_RING3_PROBE").is_some();
     let embedded = env::var_os("CARGO_FEATURE_RING3_ELF_PROBE").is_some();
     let external = !probe || env::var_os("CARGO_FEATURE_EXTERNAL_ELF_PROBE").is_some();

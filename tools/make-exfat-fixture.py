@@ -11,6 +11,10 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from distribution import usb_readme
+MARKER=usb_readme((Path(__file__).resolve().parents[1]/"VERSION").read_text().strip())
 
 SECTOR = 512
 CLUSTERS = 4096
@@ -61,7 +65,9 @@ def entry_set(name, payload, chain, contiguous, valid):
     return result
 
 
-def build(case='normal', sector_size=512):
+def build(case='normal', sector_size=512, legacy_marker=False):
+    marker=b'Hello Musha-OS!\n' if legacy_marker else MARKER
+    marker_name='DIAGNOSE.TXT' if legacy_marker else 'README.TXT'
     if sector_size not in (512, 4096):
         raise ValueError('unsupported fixture sector size')
     SECTOR = sector_size
@@ -121,7 +127,7 @@ def build(case='normal', sector_size=512):
 
     # Expected data is defined before image serialization, not recovered from it.
     files = [
-        ('DIAGNOSE.TXT', b'Hello Musha-OS!\n', [260], True, 16),
+        (marker_name, marker, list(range(260,260+(len(marker)+SECTOR-1)//SECTOR)), True, len(marker)),
         ('FRAGMENT.BIN', bytes(range(256)) * (2 * SECTOR // 256 + 1) + b'end', [270, 272, 271], False, 2 * SECTOR + 259),
         ('Long name for exFAT test.txt', b'Long file name\n', [280], True, 15),
         ('EMPTY.TXT', b'', [], False, 0),

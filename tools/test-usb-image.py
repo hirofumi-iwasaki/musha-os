@@ -71,13 +71,13 @@ class ImageTests(unittest.TestCase):
                     cluster = struct.unpack_from('<I', fat, cluster * 4)[0] & 0x0fffffff
                 return bytes(result[:length])
             root = read(data_start)
-            self.assertEqual(root[:11], b'EFI        ')
-            self.assertEqual(file_from_entry(root[32:64]), usb.PAYLOAD)
-            efi_dir = read(data_start + 1)
-            self.assertEqual(efi_dir[64:75], b'BOOT       ')
-            boot_dir = read(data_start + 2)
-            self.assertEqual(boot_dir[64:75], b'BOOTX64 EFI')
-            self.assertEqual(file_from_entry(boot_dir[64:96]), self.efi.read_bytes())
+            def find(directory,name):
+                return next(directory[i:i+32] for i in range(0,len(directory),32) if directory[i:i+11]==name)
+            def contents(entry):return read(data_start+struct.unpack_from('<H',entry,26)[0]-2)
+            self.assertEqual(file_from_entry(find(root,b'README  TXT')),usb.usb_readme((usb.pathlib.Path(__file__).resolve().parent.parent/'VERSION').read_text().strip()))
+            efi_dir=contents(find(root,b'EFI        '));boot_dir=contents(find(efi_dir,b'BOOT       '))
+            self.assertEqual(file_from_entry(find(boot_dir,b'BOOTX64 EFI')),self.efi.read_bytes())
+            self.assertEqual({root[i:i+11] for i in range(0,len(root),32) if root[i]},{b'DOCS       ',b'EFI        ',b'README  TXT',b'SETTINGS   '})
 
     def test_reproducible_and_refuses_existing_files_and_symlinks(self):
         a = usb.create(self.root / 'a.img', self.efi)
@@ -108,11 +108,13 @@ class ImageTests(unittest.TestCase):
             self.assertGreaterEqual(clusters, 65525)
             self.assertGreaterEqual(fatsecs * 512 // 4, clusters + 2)
             data = 2048 + 32 + 2 * fatsecs
-            disk.seek((data + 2 * bpb[13]) * 512)
-            boot_dir = disk.read(512)
-            cluster = struct.unpack_from('<H', boot_dir, 64 + 26)[0]
-            disk.seek((data + (cluster - 2) * bpb[13]) * 512)
-            self.assertEqual(disk.read(len(self.efi.read_bytes())), self.efi.read_bytes())
+            def find(cluster,name):
+                disk.seek((data+(cluster-2)*bpb[13])*512);records=disk.read(bpb[13]*512)
+                entry=next(records[i:i+32] for i in range(0,len(records),32) if records[i:i+11]==name)
+                return (struct.unpack_from('<H',entry,20)[0]<<16)|struct.unpack_from('<H',entry,26)[0]
+            cluster=find(find(find(2,b'EFI        '),b'BOOT       '),b'BOOTX64 EFI')
+            disk.seek((data+(cluster-2)*bpb[13])*512)
+            self.assertEqual(disk.read(len(self.efi.read_bytes())),self.efi.read_bytes())
         with self.assertRaises(ValueError):
             usb.create(self.root / 'invalid.img', self.efi, size_bytes=capacity + 1)
 

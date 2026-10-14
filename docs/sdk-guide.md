@@ -2,6 +2,8 @@
 
 ## English
 
+Stage1 v0.4.0 development: this C/r1 behavior is retained; Rust execution/r2 and viewer launch/return remain later work. The drive now has DOCS and empty SETTINGS and README is the startup marker. See [distribution usage](distribution-usage.md).
+
 This guide is for people who want to write their own program, not only build the sample. Tool commands are in the [SDK reference](sdk.md); how the OS loads and runs the file is in [running an application](external-app.md); the exact numbers are in the [ABI ledger](application-abi.md). The ABI is **experimental candidate r1** and may change in a later version.
 
 ### 1. What a program can do in 0.3.0
@@ -106,6 +108,8 @@ Validated on 2026-10-14 by temporarily replacing the actual sample, running `che
 Rust programs (the Rust files in the repository are compile-only checks), input, files, timers, drawing commands, networking, returning to the viewer without reboot, more than one program per boot, and any ABI stability promise.
 
 ## 日本語
+
+v0.4.0工程1：以下のC/r1動作を保持し、Rust実行/r2・viewer起動/復帰は後工程。媒体はDOCS/空SETTINGS/README起動markerへ変更。[配布利用](distribution-usage.md)参照。
 
 本書はサンプルをビルドするだけでなく、自分のプログラムを書きたい人向けの案内です。ツールのコマンドは[SDK リファレンス](sdk.md)、OS がファイルを読み込んで実行する手順は[アプリの実行](external-app.md)、正確な数値は[ABI 台帳](application-abi.md)にあります。ABI は**実験候補 r1** で、後続の版で変わる可能性があります。
 

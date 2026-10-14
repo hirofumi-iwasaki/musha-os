@@ -22,16 +22,15 @@ class Fixtures(unittest.TestCase):
         self.assertEqual(ma, mb)
         self.assertEqual(len(a), ma['blocks'] * ma['sector_size'])
         self.assertEqual(hashlib.sha256(a).hexdigest(), ma['image_sha256'])
-        # DIAGNOSE.TXT replaced MUSHA.TXT; the marker payload is unchanged.
-        self.assertEqual(ma['image_sha256'],
-                         '9b57b27780ad01ca202aa0b87f6fe807df1b618b4601834e23fce6d46e9a54d9')
+        self.assertEqual(ma['files'][0]['name'],'README.TXT')
+        self.assertEqual(ma['files'][0]['sha256'],hashlib.sha256(fixture.MARKER).hexdigest())
         self.assertEqual(a[:6144], a[6144:12288])
         self.assertEqual(a[3:11], b'EXFAT   ')
 
     def test_known_payloads_and_allocation(self):
         image, m = fixture.build()
-        self.assertEqual([f['length'] for f in m['files']], [16, 1283, 15, 0, 700])
-        expected = [b'Hello Musha-OS!\n', bytes(range(256)) * 5 + b'end',
+        self.assertEqual([f['length'] for f in m['files']], [len(fixture.MARKER), 1283, 15, 0, 700])
+        expected = [fixture.MARKER, bytes(range(256)) * 5 + b'end',
                     b'Long file name\n', b'', b'valid' + bytes(695)]
         heap = struct.unpack_from('<I', image, 88)[0] * 512
         bitmap = image[heap + 512:heap + 1024]

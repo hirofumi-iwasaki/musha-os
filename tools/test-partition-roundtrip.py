@@ -9,7 +9,7 @@ import plistlib
 import subprocess
 import sys
 from pathlib import Path
-from distribution import make_zip
+from distribution import make_zip,drive_payload,usb_readme
 
 
 def module(name):
@@ -43,8 +43,13 @@ def main():
     out.mkdir(parents=True, exist_ok=False)
     usb, deploy, update = (module(n) for n in ('make-usb-image', 'deploy-image', 'update-usb'))
     package = out / 'update.zip'
-    make_zip(package, {'EFI/BOOT/BOOTX64.EFI': a.efi.read_bytes(), 'DIAGNOSE.TXT': b'Updated file only\n'},
-             '0.3.0', {'commit': '0' * 40, 'features': [], 'working_tree': 'local virtual test'})
+    version=(Path(__file__).resolve().parents[1]/'VERSION').read_text().strip()
+    payload=drive_payload(a.efi,version)
+    payload['DOCS/distribution-usage.md']+=b'\nVirtual roundtrip fixture.\n'
+    original=drive_payload(a.efi,version)
+    previous={n:[hashlib.sha256(b).hexdigest()] for n,b in original.items()}
+    previous['MUSHA.TXT']=[hashlib.sha256(b'Hello Musha-OS!\n').hexdigest()]
+    make_zip(package,payload,version,{'commit':'0'*40},previous)
     report = {'scope': 'Virtual images only; no physical acceptance', 'cases': []}
     try:
         for kind, content in [('basic-data', 'Microsoft Basic Data'), ('esp', 'EFI')]:
@@ -73,12 +78,14 @@ def main():
                 # The physical CLI's identity checks are not weakened.
                 (volume/'MUSHA.TXT').write_bytes(b'Hello Musha-OS!\n')
                 result = update.update(package, volume, out / (kind + '-backup'), apply=True)
-                assert result['changed'] == ['DIAGNOSE.TXT','update-manifest.json'] and result['applied']
+                assert result['changed']==['DOCS/distribution-usage.md'] and result['applied']
                 assert result['removed_completed']==['MUSHA.TXT']
                 assert not (volume/'MUSHA.TXT').exists()
                 assert (out/(kind+'-backup')/'MUSHA.TXT').read_bytes()==b'Hello Musha-OS!\n'
                 assert efi.stat().st_mtime_ns == stamp
-                assert (volume / 'DIAGNOSE.TXT').read_bytes() == b'Updated file only\n'
+                assert (volume/'DOCS/distribution-usage.md').read_bytes()==payload['DOCS/distribution-usage.md']
+                assert not (volume/'update-manifest.json').exists()
+                assert not (volume/'musha-install.json').exists()
                 assert update.update(package, volume, out / (kind + '-unused'), apply=True)['changed'] == []
                 assert not (out / (kind + '-unused')).exists()
             finally:

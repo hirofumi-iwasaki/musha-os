@@ -37,7 +37,7 @@ impl Diagnostic {
             return Ok(());
         }
         if self.file_handle.is_none() {
-            match ctx.file_open("/DIAGNOSE.TXT") {
+            match ctx.file_open("/README.TXT") {
                 Ok(handle) => self.file_handle = Some(handle),
                 Err(Error::Again) => return Ok(()),
                 Err(Error::NotFound | Error::Unsupported | Error::Io) => {

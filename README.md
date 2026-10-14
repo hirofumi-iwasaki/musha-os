@@ -34,6 +34,8 @@ See the [application guide](docs/external-app.md), [SDK](docs/sdk.md), [viewer g
 
 ### Downloads and USB updates
 
+v0.4.0 development uses planned `musha-os-<ver>-x64.zip`, `-x64-qemu.img.gz` (QEMU only), `-c-sdk.zip` and `-rust-sdk.zip`, with checksum/provenance assets. Rust remains a source scaffold and these are not published downloads. See the [development distribution contract](docs/distribution-usage.md); the simple USB route awaits its hardware gate.
+
 [GitHub Releases](https://github.com/hirofumi-iwasaki/musha-os/releases) provides OS binaries. GitHub's **Source code** archives contain source only.
 v0.3.0 separates the small initial/recovery image (`*-usb.img.gz`), the normal file update (`*-files.zip`) and the C SDK (`*-c-sdk.zip`). The boot partition type is now Microsoft Basic Data, so macOS and Windows show the USB as a normal drive; existing ESP media still boot.
 See the [distribution instructions](docs/distribution-usage.md) and [distribution policy](docs/release-distribution-policy.md).
@@ -183,6 +185,8 @@ Musha-OS は、OS の実行環境を初期化した後、組込みのチェッ�
 [アプリの利用方法](docs/external-app.md)、[SDK](docs/sdk.md)、[ファイルビューアー](docs/file-viewer.md)、[実機診断表示](docs/hardware-diagnostics.md)を参照してください。
 
 ### ダウンロードとUSB更新
+
+v0.4.0開発は`musha-os-<ver>-x64.zip`、`-x64-qemu.img.gz`（QEMU専用）、`-c-sdk.zip`、`-rust-sdk.zip`とチェックサム/来歴へ整理中。Rustはsource scaffoldで公開ダウンロードではありません。[開発配布契約](docs/distribution-usage.md)参照。簡易USB経路は実機の節目待ちです。
 
 [GitHub Releases](https://github.com/hirofumi-iwasaki/musha-os/releases)からOSバイナリーを取得できます。GitHubの **Source code** アーカイブはソースコードのみです。
 v0.3.0 では初回・復旧用の小型イメージ（`*-usb.img.gz`）、通常更新用 ZIP（`*-files.zip`）、C SDK（`*-c-sdk.zip`）を分けています。起動パーティションの種別を Microsoft Basic Data に変更し、macOS・Windows で通常の USB として表示されます。既存の ESP 媒体も起動できます。
