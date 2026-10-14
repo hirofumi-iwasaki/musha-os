@@ -41,7 +41,7 @@ pub fn step(
     }
     let state = reader.step(files, bytes, now);
     if before == State::Searching && reader.claimed() {
-        crate::appconsole::start(fb, b"Loading MUSHA.ELF ...\n");
+        crate::appconsole::start(fb, b"Loading AUTORUN.ELF ...\n");
         crate::bootstate::update(|r, t| {
             r.ready(true, t);
         });
@@ -104,7 +104,7 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
             if musha_memory::elf::Plan::parse(image()).is_err() {
                 reject(info, "Invalid ELF or ABI NOTE");
             }
-            crate::appconsole::start(info.framebuffer, b"MUSHA.ELF  (Ring 3)\n");
+            crate::appconsole::start(info.framebuffer, b"AUTORUN.ELF  (Ring 3)\n");
             crate::debug(b"MUSHA: EXTERNAL_ELF_DEVICES_STOPPED\n");
             crate::ring3::run(arena, info);
         }
@@ -112,7 +112,7 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
             info,
             match reason {
                 Rejection::Size => "File size outside 64 bytes to 16 MiB",
-                Rejection::Duplicate => "Ambiguous MUSHA.ELF name",
+                Rejection::Duplicate => "Ambiguous AUTORUN.ELF name",
                 Rejection::Timeout => "File read deadline exceeded",
                 Rejection::Stream(_) => "File read failed or medium removed",
                 Rejection::Interrupted => "Device session did not complete",
@@ -136,18 +136,20 @@ pub fn running() {
 }
 
 pub fn boot_name(name: &[u16; 12]) -> bool {
-    name[..9]
+    name[..musha_api::bootfile::NAME.len()]
         .iter()
-        .zip(b"MUSHA.ELF")
+        .zip(musha_api::bootfile::NAME)
         .all(|(&a, &b)| a <= 127 && (a as u8).to_ascii_uppercase() == b)
-        && name[9..].iter().all(|&c| c == 0)
+        && name[musha_api::bootfile::NAME.len()..]
+            .iter()
+            .all(|&c| c == 0)
 }
 pub fn duplicate_catalog(name: &[u16; 12], fb: musha_framebuffer::Framebuffer) {
     if boot_name(name) {
         unsafe {
             (&mut *STAGING.0.get()).0.duplicate();
         }
-        crate::appconsole::start(fb, b"Loading MUSHA.ELF ...\n");
+        crate::appconsole::start(fb, b"Loading AUTORUN.ELF ...\n");
         crate::bootstate::update(|r, t| {
             r.ready(true, t);
         });

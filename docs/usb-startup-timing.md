@@ -2,6 +2,8 @@
 
 ## English
 
+Historical captures retain their original filename, MUSHA.ELF. From the renamed candidate onward, use AUTORUN.ELF.
+
 ### Grace and one-shot rescan implementation (2026-10-14)
 
 B/C: attachment polling uses time since port power was established, sampled every 20 ms. Empty CCS0/PLS5 is provisional for 150 ms normally, or 500 ms when Intel routing actually writes D0/D8. Already-routed mask bits are not rewritten. The same power epoch/grace is passed to the SuperSpeed policy; the grace is not paid twice. Pending links can extend the initial attach phase to 1000 ms. Existing USB2 100 ms debounce, CCS1-only WPR (maximum three), and ownership/reset/stop deadlines are unchanged. 150 ms rounds to about 160 ms with 20 ms polling; scheduler/rendering overhead can increase this.
@@ -102,6 +104,8 @@ The Basic Data timeout case initially showed Device session did not complete ins
 Evidence: out/usb-empty/validation.json and manifest.json. Diagnostic EFI SHA-256: f10672d4a89bf9d9c56206ff24cc4f885f6b0c2df13e4c43832aa0c4c1e5ab20. Normal EFI SHA-256: 64cc3110266ea887718ef6c1e30d41cf3a66e458707f06703a3f97073c3da6d3. The diagnostic EFI f10672d4 was deployed on 2026-10-14 JST: EFI-only update, verified readback, Hello unchanged, Basic Data unchanged and safe eject. Evidence: out/usb-empty/physical-usb/provenance.json. Hardware acceptance remains pending; the normal EFI has not been deployed.
 
 ## 日本語
+
+過去の撮影記録は当時のファイル名 MUSHA.ELF のまま保持します。改名後の候補以降は AUTORUN.ELF を使用します。
 
 ### 猶予と1回限りの再探索（2026-10-14）
 

@@ -2,6 +2,8 @@
 
 ## English
 
+Historical captures retain their original filename, MUSHA.ELF. From the renamed candidate onward, use AUTORUN.ELF.
+
 ### Next capture: routing grace and one-shot rescan (2026-10-14, not deployed)
 
 The current source adds 150 ms ordinary / 500 ms actual-Intel-write grace and one bounded rescan only if no device enumeration was attempted. See [USB startup timing](usb-startup-timing.md). Local test artifacts under out/usb-grace are not a promoted release candidate and have not been written to USB. Older EFI hashes below identify historical captures, not this new revision.
@@ -182,6 +184,8 @@ Conservative source catalogue of error constructors/mappings in run_session, nes
 | `USB PROTOCOL` | `boot/src/xhci/usb.rs:31` |
 
 ## 日本語
+
+過去の撮影記録は当時のファイル名 MUSHA.ELF のまま保持します。改名後の候補以降は AUTORUN.ELF を使用します。
 
 ### 次回採取：ルーティング後の猶予と1回限定再探索（2026-10-14、未配備）
 

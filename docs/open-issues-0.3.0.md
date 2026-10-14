@@ -2,6 +2,8 @@
 
 ## English
 
+Owner decision (2026-10-14): the automatic boot filename is `AUTORUN.ELF`; the previous `MUSHA.ELF` is not accepted. This implementation choice does not change the ABI, syscalls, NOTE or SDK-generated ELF. When AUTORUN.ELF is present, the viewer does not start.
+
 Owner decision, 2026-10-13: these are limitations, not work to investigate in this release-preparation task.
 
 | Issue | Current evidence / next work |
@@ -17,6 +19,8 @@ Owner decision, 2026-10-13: these are limitations, not work to investigate in th
 Release gates still pending: same candidate EFI, NUC5/Ryzen three cold boots each, Mac Basic Data boot, owner-authorized remote CI, supplied release-note/README drafts. Ryzen final-frame still-image supplement is pending. [Hardware records](hardware-acceptance-0.3.0.md).
 
 ## 日本語
+
+所有者決定（2026-10-14）：自動実行名は `AUTORUN.ELF` とし、旧 `MUSHA.ELF` は受理しません。実装上の選択でありABI・syscall・NOTE・SDK生成ELFは変更しません。AUTORUN.ELFがあるとビューアーは起動しません。
 
 2026-10-13所有者判断。以下は本作業で調査を始めず、制約・残件として保持します。
 

@@ -6,7 +6,7 @@
 
 [Published v0.2.0 download](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0) · [Release notes](docs/release-notes-0.3.0.md) · [Release scope](docs/release-scope-0.3.0.md) · [C SDK](docs/sdk.md)
 
-Build a C program with the SDK, copy it to the USB as `MUSHA.ELF`, and Musha-OS runs it at Ring 3 and shows its output. The ABI is experimental and may change. External Hello was observed on development builds on NUC5 and a Ryzen 7 machine; candidate hardware acceptance is pending; MacBook Pro 2018 boots but does not recognize USB storage in this release. See [known issues](docs/open-issues-0.3.0.md).
+Build a C program with the SDK, copy it to the USB as `AUTORUN.ELF`, and Musha-OS runs it at Ring 3 and shows its output. The ABI is experimental and may change. External Hello was observed on development builds on NUC5 and a Ryzen 7 machine; candidate hardware acceptance is pending; MacBook Pro 2018 boots but does not recognize USB storage in this release. See [known issues](docs/open-issues-0.3.0.md).
 
 Published v0.2.0 assets are unchanged.
 
@@ -26,9 +26,9 @@ Musha-OS initializes its runtime, then automatically runs built-in checks and on
 
 1. **OS startup:** boot from UEFI, select the largest GOP mode, and initialize memory, CPU state, timers, and the runtime.
 2. **Checks:** test RAM and discover USB controllers and connected devices. These checks progress cooperatively with application execution.
-3. **Application:** if the root of the FAT32/exFAT data medium contains `MUSHA.ELF`, the kernel validates it, stops devices, and runs it at Ring 3; its `log` output, exit status, fault or refusal appears on screen, and the machine halts until reboot. Otherwise the bundled **`USB file viewer | READ ONLY`** starts: it lists root files and shows selected contents as hexadecimal and ASCII. The viewer does not write or delete files.
+3. **Application:** if the root of the FAT32/exFAT data medium contains `AUTORUN.ELF`, the kernel validates it, stops devices, and runs it at Ring 3; its `log` output, exit status, fault or refusal appears on screen, and the machine halts until reboot. Otherwise the bundled **`USB file viewer | READ ONLY`** starts: it lists root files and shows selected contents as hexadecimal and ASCII. The viewer does not write or delete files.
 
-Boot screens distinguish OS startup from the SDK example: before ExitBootServices, `Musha-OS <VERSION>  starting...`; after arena initialization, `Musha-OS <VERSION>  runtime` and `CORE READY`; device enumeration adds `DEVICE DISCOVERY` on the left. VERSION is embedded from the repository file. The external console heading is `MUSHA.ELF  (Ring 3)`. `Hello Musha-OS!` is SDK sample output only. When the boot-file reader explicitly reports absence, the viewer list status says `MUSHA.ELF not found in root. Starting file viewer.`; unreadable media keep the existing error and rejected files still halt. There is no application launcher; one application runs per boot.
+Boot screens distinguish OS startup from the SDK example: before ExitBootServices, `Musha-OS <VERSION>  starting...`; after arena initialization, `Musha-OS <VERSION>  runtime` and `CORE READY`; device enumeration adds `DEVICE DISCOVERY` on the left. VERSION is embedded from the repository file. The external console heading is `AUTORUN.ELF  (Ring 3)`. `Hello Musha-OS!` is SDK sample output only. When the boot-file reader explicitly reports absence, the viewer list status says `AUTORUN.ELF not found in root. Starting file viewer.`; unreadable media keep the existing error and rejected files still halt. There is no application launcher; one application runs per boot.
 Connect an external USB keyboard to operate the viewer. Q ends the application session; restart to use it again.
 See the [application guide](docs/external-app.md), [SDK](docs/sdk.md), [viewer guide](docs/file-viewer.md) and [diagnostic screen guide](docs/hardware-diagnostics.md).
 
@@ -140,7 +140,7 @@ and record its source, version, and changes.
 
 [公開済み v0.2.0 のダウンロード](https://github.com/hirofumi-iwasaki/musha-os/releases/tag/v0.2.0) · [リリースノート](docs/release-notes-0.3.0.md) · [公開範囲](docs/release-scope-0.3.0.md) · [C SDK](docs/sdk.md)
 
-SDK で C プログラムを作り、`MUSHA.ELF` として USB へコピーすると、Musha-OS が Ring 3 で実行して出力を表示します。ABI は実験版で変更の可能性があります。外部 Hello は開発版で NUC5 と Ryzen 7 機の動作を観測しました。候補 EFI の実機受入は未完了です。MacBook Pro 2018 は起動しますが本版では USB ストレージを認識しません。[既知の問題](docs/open-issues-0.3.0.md)を参照。
+SDK で C プログラムを作り、`AUTORUN.ELF` として USB へコピーすると、Musha-OS が Ring 3 で実行して出力を表示します。ABI は実験版で変更の可能性があります。外部 Hello は開発版で NUC5 と Ryzen 7 機の動作を観測しました。候補 EFI の実機受入は未完了です。MacBook Pro 2018 は起動しますが本版では USB ストレージを認識しません。[既知の問題](docs/open-issues-0.3.0.md)を参照。
 
 公開済み v0.2.0 配布物は変更していません。
 
@@ -159,9 +159,9 @@ Musha-OS は、OS の実行環境を初期化した後、組込みのチェッ�
 
 1. **OS 起動**：UEFI から起動し、最大の GOP モードを選び、メモリー・CPU・タイマー・ランタイムを初期化します。
 2. **チェック処理**：RAM の検査と USB コントローラー・接続機器の探索を行います。これらはアプリの実行と協調して進みます。
-3. **アプリ**：FAT32/exFAT データ媒体のルートに `MUSHA.ELF` があれば、カーネルが検査し、機器を停止して Ring 3 で実行します。`log` 出力・終了コード・例外・拒否理由を画面に表示し、再起動まで停止します。なければ同梱の **`USB file viewer | READ ONLY`** が起動し、ルートのファイル一覧と選択したファイルの内容を16進数と ASCII で表示します。書込み・削除は行いません。
+3. **アプリ**：FAT32/exFAT データ媒体のルートに `AUTORUN.ELF` があれば、カーネルが検査し、機器を停止して Ring 3 で実行します。`log` 出力・終了コード・例外・拒否理由を画面に表示し、再起動まで停止します。なければ同梱の **`USB file viewer | READ ONLY`** が起動し、ルートのファイル一覧と選択したファイルの内容を16進数と ASCII で表示します。書込み・削除は行いません。
 
-起動表示はSDKサンプルと区別します。ExitBootServices前は `Musha-OS <VERSION>  starting...`、arena初期化後は `Musha-OS <VERSION>  runtime` と `CORE READY`、機器探索開始時は左列に `DEVICE DISCOVERY` を表示します。版はリポジトリのVERSIONを埋め込みます。外部アプリの見出しは `MUSHA.ELF  (Ring 3)` で、`Hello Musha-OS!` はSDKサンプルの出力専用です。起動ファイルの不在が確定した場合だけ、ファイラー一覧の状態行に `MUSHA.ELF not found in root. Starting file viewer.` を表示します。媒体を読めない場合の文言とrejected時の停止は変更しません。アプリを選ぶランチャーはなく、1起動につき1アプリです。
+起動表示はSDKサンプルと区別します。ExitBootServices前は `Musha-OS <VERSION>  starting...`、arena初期化後は `Musha-OS <VERSION>  runtime` と `CORE READY`、機器探索開始時は左列に `DEVICE DISCOVERY` を表示します。版はリポジトリのVERSIONを埋め込みます。外部アプリの見出しは `AUTORUN.ELF  (Ring 3)` で、`Hello Musha-OS!` はSDKサンプルの出力専用です。起動ファイルの不在が確定した場合だけ、ファイラー一覧の状態行に `AUTORUN.ELF not found in root. Starting file viewer.` を表示します。媒体を読めない場合の文言とrejected時の停止は変更しません。アプリを選ぶランチャーはなく、1起動につき1アプリです。
 ビューアーの操作には外付け USB キーボードが必要です。Q でセッションを終了し、再度使う場合は再起動します。
 [アプリの利用方法](docs/external-app.md)、[SDK](docs/sdk.md)、[ファイルビューアー](docs/file-viewer.md)、[実機診断表示](docs/hardware-diagnostics.md)を参照してください。
 

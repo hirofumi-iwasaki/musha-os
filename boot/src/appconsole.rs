@@ -61,7 +61,7 @@ pub fn message(args: fmt::Arguments<'_>) {
 }
 pub fn rejected(reason: &[u8]) {
     message(format_args!(
-        "\nMUSHA.ELF rejected: {}\n",
+        "\nAUTORUN.ELF rejected: {}\n",
         core::str::from_utf8(reason).unwrap_or("Unknown reason")
     ));
     crate::bootstate::update(|r, _| r.finish(false));
@@ -69,7 +69,7 @@ pub fn rejected(reason: &[u8]) {
 /// Never borrows STATE: even a fault during drawing can use the fatal display.
 pub unsafe fn fault(fb: Framebuffer, vector: u64, error: u64, rip: u64, rsp: u64) {
     let mut c = Console::for_framebuffer(fb);
-    c.append(b"MUSHA.ELF faulted\n");
+    c.append(b"AUTORUN.ELF faulted\n");
     for (label, value) in [
         (b"VECTOR " as &[u8], vector),
         (b"ERROR ", error),

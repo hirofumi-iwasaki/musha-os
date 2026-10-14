@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 
 ROOT = Path(__file__).resolve().parents[1]
-NOTICE = 'MUSHA.ELF not found in root. Starting file viewer.'
+NOTICE = 'AUTORUN.ELF not found in root. Starting file viewer.'
 
 
 def derive(source, output):
@@ -44,7 +44,7 @@ def derive(source, output):
         result=original[:header.end()]+pixels
         (output/name).write_bytes(result)
         records.append({'file':name,'before':hashlib.sha256(original).hexdigest(),'after':hashlib.sha256(result).hexdigest()})
-    (output/'reference-provenance.json').write_text(json.dumps({'source':str(source.resolve()),'reason':'Explicit State::Absent viewer status; only list row 7 changes, page unchanged; expected pixels derived from source font, not guest captures','notice':NOTICE,'records':records},indent=2)+'\n')
+    (output/'reference-provenance.json').write_text(json.dumps({'source':str(source.resolve()),'reason':'Owner decision 2026-10-14: AUTORUN.ELF replaces the previous automatic boot filename; explicit State::Absent status; only list row 7 changes, page unchanged; expected pixels derived from source font, not guest captures','notice':NOTICE,'records':records},indent=2)+'\n')
 
 if __name__=='__main__':
     import argparse

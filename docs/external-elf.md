@@ -13,9 +13,9 @@ existing scale-1 pixels are preserved. Diagnostic text remains scale 6. The boun
 
 ### Selection, state and lifetime
 
-The existing file service selects the data medium. Its root catalogue is checked for ASCII case-insensitive `MUSHA.ELF`; absence starts the unchanged viewer. Size is 64 bytes–16 MiB; reads are at most 4096 bytes with one outstanding request and a 5000 ms deadline. The viewer is initialized only after the absent/no-service decision. Matching files instead show `Loading MUSHA.ELF ...` and external OS_READY; APP_ENTERING precedes the Ring 3 transition and the first query records APP_RUNNING.
+The existing file service selects the data medium. Its root catalogue is checked for ASCII case-insensitive `AUTORUN.ELF`; absence starts the unchanged viewer. Size is 64 bytes–16 MiB; reads are at most 4096 bytes with one outstanding request and a 5000 ms deadline. The viewer is initialized only after the absent/no-service decision. Matching files instead show `Loading AUTORUN.ELF ...` and external OS_READY; APP_ENTERING precedes the Ring 3 transition and the first query records APP_RUNNING.
 
-Both filesystem parsers reject duplicate names before catalogue publication. A bounded name prefix in the internal `DuplicateName` error preserves this refusal and lets the selected boot medium display an ambiguous-MUSHA.ELF reason. Discovery does not claim an application or render this error from an unselected medium. Other duplicate names remain filesystem failures. No duplicate file is opened and no scan beyond the existing medium selection is introduced.
+Both filesystem parsers reject duplicate names before catalogue publication. A bounded name prefix in the internal `DuplicateName` error preserves this refusal and lets the selected boot medium display an ambiguous-AUTORUN.ELF reason. Discovery does not claim an application or render this error from an unselected medium. Other duplicate names remain filesystem failures. No duplicate file is opened and no scan beyond the existing medium selection is introduced.
 
 Staging is permanent CPU-owned memory, never a USB DMA target. Stream errors, short reads, removal, replacement, interruption and deadline expiry never publish partial data. Closing cancels pending work while retaining its slot until DMA completion/quiescence. Even completed bytes are invalidated if device session completion fails. USB and network owners stop before runtime returns and before arena reuse. USB stop-unconfirmed does not enter the mapper; failed network quiescence halts in its owner.
 
@@ -60,7 +60,7 @@ Historical 2a evidence remains `out/external-elf-accepted/report.json` (12 cases
 
 開発版の通常構成へ外部ELF読込み・画面出力を統合しました。[利用方法](external-app.md)、[2b記録](handoff/0.3.0-step2b-results.md)、[2c記録](handoff/0.3.0-step2c-results.md)で実装・QEMU・実機未検証を区別しています。ABIは実験候補r1、公開済みv0.2.0配布物は不変です。
 
-既存サービスが選択した媒体のルートの`MUSHA.ELF`を、64バイト～16MiB・1要求4096バイト・期限5000msで読みます。未検出なら従来ビューアー、検出後は読込み案内と外部OS_READYを表示・記録し、APP_ENTERING、最初のqueryでAPP_RUNNINGへ進みます。FSで一覧公開前に拒否される重複名も、選択された媒体に限って理由を画面へ伝えます。
+既存サービスが選択した媒体のルートの`AUTORUN.ELF`を、64バイト～16MiB・1要求4096バイト・期限5000msで読みます。未検出なら従来ビューアー、検出後は読込み案内と外部OS_READYを表示・記録し、APP_ENTERING、最初のqueryでAPP_RUNNINGへ進みます。FSで一覧公開前に拒否される重複名も、選択された媒体に限って理由を画面へ伝えます。
 
 stagingはCPU専用で、arena／DMAとは別です。部分読込み、短い応答、切断、媒体交換、中断、期限超過は実行へ進めません。取消しではDMA停止までスロットを保持し、USB／ネットワーク停止後にのみarenaを再利用します。ELF検査は従来どおり機器停止後です。早期検査でも停止は必要なため、検査と終了処理を二重化せず、不変な完成画像を一度渡す方式を維持しました。拒否・終了・例外は表示して停止し、通常版にOS復帰は入れません。
 

@@ -13,8 +13,13 @@ fn entry(name: &str, bytes: u64) -> Entry {
 }
 #[test]
 fn bounded_exact_copy_both_formats_and_case_insensitive_name() {
-    for format in [Format::Fat32, Format::Exfat] {
-        let entries = [entry("OTHER.ELF", 100), entry("musha.elf", 9001)];
+    for (format, name) in [
+        (Format::Fat32, "autorun.elf"),
+        (Format::Fat32, "Autorun.Elf"),
+        (Format::Exfat, "autorun.elf"),
+        (Format::Exfat, "Autorun.Elf"),
+    ] {
+        let entries = [entry("OTHER.ELF", 100), entry(name, 9001)];
         let data: Vec<u8> = (0..9001).map(|n| n as u8).collect();
         let mut output = vec![0xa5; 9010];
         let mut f = Files::new();
@@ -43,21 +48,23 @@ fn bounded_exact_copy_both_formats_and_case_insensitive_name() {
 #[test]
 fn absent_duplicate_and_size_before_io() {
     for (entries, expected) in [
-        (vec![entry("MUSHA.ELF.TXT", 64)], State::Absent),
+        (vec![entry("AUTORUN.ELF.TXT", 64)], State::Absent),
+        // Previous development filename is deliberately not a compatibility alias.
+        (vec![entry("MUSHA.ELF", 64)], State::Absent),
         (
-            vec![entry("MUSHA.ELF", 64), entry("musha.elf", 64)],
+            vec![entry("AUTORUN.ELF", 64), entry("autorun.elf", 64)],
             State::Rejected(Rejection::Duplicate),
         ),
         (
-            vec![entry("MUSHA.ELF", 63)],
+            vec![entry("AUTORUN.ELF", 63)],
             State::Rejected(Rejection::Size),
         ),
         (
-            vec![entry("MUSHA.ELF", MAX_BYTES as u64 + 1)],
+            vec![entry("AUTORUN.ELF", MAX_BYTES as u64 + 1)],
             State::Rejected(Rejection::Size),
         ),
         (
-            vec![entry("MUSHA.ELF", 65)],
+            vec![entry("AUTORUN.ELF", 65)],
             State::Rejected(Rejection::Size),
         ),
     ] {
@@ -73,7 +80,7 @@ fn absent_duplicate_and_size_before_io() {
 #[test]
 fn short_error_disconnect_never_publish_partial_image() {
     for mode in 0..3 {
-        let entries = [entry("MUSHA.ELF", 5000)];
+        let entries = [entry("AUTORUN.ELF", 5000)];
         let mut f = Files::new();
         f.mount(Format::Exfat, &entries).unwrap();
         let mut r = Reader::new();
@@ -108,7 +115,7 @@ fn short_error_disconnect_never_publish_partial_image() {
 }
 #[test]
 fn deadline_cancels_outstanding_request_without_reusing_transport() {
-    let entries = [entry("MUSHA.ELF", 64)];
+    let entries = [entry("AUTORUN.ELF", 64)];
     let mut f = Files::new();
     f.mount(Format::Fat32, &entries).unwrap();
     let mut r = Reader::new();
@@ -126,7 +133,7 @@ fn deadline_cancels_outstanding_request_without_reusing_transport() {
 }
 #[test]
 fn incomplete_and_completed_images_invalidated_by_session_failure() {
-    let entries = [entry("MUSHA.ELF", 64)];
+    let entries = [entry("AUTORUN.ELF", 64)];
     let mut f = Files::new();
     f.mount(Format::Fat32, &entries).unwrap();
     let mut r = Reader::new();
@@ -141,7 +148,7 @@ fn incomplete_and_completed_images_invalidated_by_session_failure() {
 
 #[test]
 fn replacement_after_partial_copy_keeps_old_handle_invalid() {
-    let entries = [entry("MUSHA.ELF", 5000)];
+    let entries = [entry("AUTORUN.ELF", 5000)];
     let mut f = Files::new();
     f.mount(Format::Fat32, &entries).unwrap();
     let mut r = Reader::new();
@@ -163,7 +170,7 @@ fn replacement_after_partial_copy_keeps_old_handle_invalid() {
 
 #[test]
 fn interruption_while_request_is_pending_never_publishes_ready() {
-    let entries = [entry("MUSHA.ELF", 64)];
+    let entries = [entry("AUTORUN.ELF", 64)];
     let mut f = Files::new();
     f.mount(Format::Fat32, &entries).unwrap();
     let mut r = Reader::new();

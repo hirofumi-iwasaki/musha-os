@@ -50,7 +50,7 @@ Validate protective MBR coverage without hybrid entries, both header CRCs, array
 ### Media selection and mixed layouts
 
 The runtime selects the first available supported medium in the existing controller/media
-scan order, not the first medium containing `MUSHA.ELF`. Within each medium it tries
+scan order, not the first medium containing `AUTORUN.ELF`. Within each medium it tries
 exFAT first and FAT32 only on `Unsupported`; corruption/I/O errors do not fall back.
 Thus a valid exFAT Basic Data volume alongside FAT32 Basic Data (or ESP) is selected
 as exFAT regardless of partition entry order. FAT32-only discovery rejects that
@@ -115,7 +115,7 @@ protective MBRの範囲とhybridなし、主・副header CRC、array CRC、主�
 
 ### 媒体選択と混在構成
 
-既存のcontroller・媒体走査順で最初に利用可能な媒体を選び、`MUSHA.ELF` を探して
+既存のcontroller・媒体走査順で最初に利用可能な媒体を選び、`AUTORUN.ELF` を探して
 媒体を乗り換えることはしない。各媒体ではexFATを先に試し、Unsupportedの場合だけ
 FAT32を試す。破損・I/Oエラーからはフォールバックしない。
 したがって有効なexFAT Basic DataとFAT32 Basic Data（またはESP）が同居すると、

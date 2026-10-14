@@ -148,10 +148,10 @@ mod tests {
         for _ in 0..24 {
             c.append(b"\n");
         }
-        c.append(b"MUSHA.ELF exited: status 0");
+        c.append(b"AUTORUN.ELF exited: status 0");
         assert_eq!(
-            &c.line(23)[..b"MUSHA.ELF exited: status 0".len()],
-            b"MUSHA.ELF exited: status 0"
+            &c.line(23)[..b"AUTORUN.ELF exited: status 0".len()],
+            b"AUTORUN.ELF exited: status 0"
         );
         assert_eq!(scale_for_height(2048), 1);
         assert_eq!(scale_for_height(2159), 1);

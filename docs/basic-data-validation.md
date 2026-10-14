@@ -48,7 +48,7 @@ this count excludes the initial failed timeout attempt. Final aggregate: `report
   ambiguous candidates. GPT CRCs, both copies, geometry, bounds, GUID uniqueness,
   protective MBR and overlap checks are unchanged.
 - The runtime retains the first available supported medium in its existing scan
-  order; it does not search other media for MUSHA.ELF. Within a medium it tries exFAT
+  order; it does not search other media for AUTORUN.ELF. Within a medium it tries exFAT
   first, then FAT32 only on `Unsupported`. A valid exFAT Basic Data plus FAT32 Basic
   Data (or ESP) therefore selects exFAT, irrespective of entry order. Direct FAT32
   discovery rejects the multiple candidates. Corrupt exFAT does not silently fall

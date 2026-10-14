@@ -43,7 +43,7 @@ def fixture(path, efi, payload, fmt, declared=None, partition_type='basic-data')
                 struct.pack_into('<I', fat, n*4, n+1 if n+1<start+count else 0xfffffff)
             for at in (fat_start, fat_start+fat_sectors):
                 f.seek(at*512); f.write(fat)
-            entry = bytearray(32); entry[:11] = b'MUSHA   ELF'; entry[11] = 0x20
+            entry = bytearray(32); entry[:11] = b'AUTORUN ELF'; entry[11] = 0x20
             struct.pack_into('<H', entry, 20, start>>16)
             struct.pack_into('<HI', entry, 26, start&65535, len(payload) if declared is None else declared)
             f.seek(data*512+64); f.write(entry)
@@ -58,7 +58,7 @@ def fixture(path, efi, payload, fmt, declared=None, partition_type='basic-data')
             at = 64
             while root[at] != 0:
                 at += (root[at+1]+1)*32
-            entry = ex.entry_set('MUSHA.ELF',payload,chain,True,len(payload))
+            entry = ex.entry_set('AUTORUN.ELF',payload,chain,True,len(payload))
             if declared is not None:
                 struct.pack_into('<Q',entry,56,declared)
                 struct.pack_into('<H',entry,2,ex.checksum(entry,16,(2,3)))
@@ -141,7 +141,7 @@ def main():
         large_arena=bytearray(good);struct.pack_into('<Q',large_arena,off+52,64*1024*1024)
         cases['elf-memory']=(large_arena,'fat32','reject','ELF_MEMORY')
         cases['cpu-reject']=(good,'fat32','reject','CPU')
-        cases.update({'too-large':(good,'fat32','reject','File size outside'), 'too-small':(b'X'*63,'fat32','reject','File size outside'),'duplicate':(good,'fat32','reject','Ambiguous MUSHA.ELF name')})
+        cases.update({'too-large':(good,'fat32','reject','File size outside'), 'too-small':(b'X'*63,'fat32','reject','File size outside'),'duplicate':(good,'fat32','reject','Ambiguous AUTORUN.ELF name')})
         for size in (16384,1048576,16777216):
             cases['timing-'+str(size)]=(good.ljust(size,b'\0'),'fat32','timing',0)
         cases['timeout']=(good.ljust(1048576,b'\0'),'fat32','reject','File read deadline exceeded')
@@ -245,7 +245,7 @@ def main():
                             if a.normal:
                                 control('screendump',{'filename':str(d/'screen.ppm')})
                                 shown='\n'.join(screen_rows(d/'screen.ppm'))
-                                if any(x in shown for x in ['MUSHA.ELF exited:', 'MUSHA.ELF faulted', 'MUSHA.ELF rejected:']): break
+                                if any(x in shown for x in ['AUTORUN.ELF exited:', 'AUTORUN.ELF faulted', 'AUTORUN.ELF rejected:']): break
                             if text.endswith('\n') and any(x in text for x in ['EXTERNAL_APP_EXIT','EXCEPTION VECTOR=','EXTERNAL_ELF_REJECT','RING3_REJECT']): break
                             if proc.poll() is not None: raise RuntimeError((d/'qemu.log').read_text())
                             time.sleep(.02)
@@ -254,7 +254,7 @@ def main():
                         time.sleep(.3);control('screendump',{'filename':str(d/'screen.ppm')})
                     if not a.normal and len(payload)>=1048576 and name!='too-large':
                         loading_text='\n'.join(screen_rows(d/'loading.ppm'));(d/'loading.txt').write_text(loading_text+'\n')
-                        assert 'Loading MUSHA.ELF ...' in loading_text,loading_text
+                        assert 'Loading AUTORUN.ELF ...' in loading_text,loading_text
                     if name=='hello-high-resolution':
                         import re
                         dimensions=re.match(rb'P6\s+(\d+)\s+(\d+)',(d/'screen.ppm').read_bytes())
@@ -281,8 +281,8 @@ def main():
                         assert 'DIAGNOSTIC_HOLD NO_MEDIUM' in text and 'RING3_ELF_ENTERING' not in text,text
                         assert 'MUSHA: RESCAN 1/1 DONE' in text,text
                     if kind=='exit':
-                        assert f'MUSHA.ELF exited: status {detail}' in screen,screen
-                        if name.startswith('hello'): assert 'MUSHA.ELF  (Ring 3)' in screen,screen
+                        assert f'AUTORUN.ELF exited: status {detail}' in screen,screen
+                        if name.startswith('hello'): assert 'AUTORUN.ELF  (Ring 3)' in screen,screen
                         if name.startswith('hello'): assert 'Hello Musha-OS!' in screen,screen
                         if name=='log-long':
                             # The 4096-byte log scrolls at the framebuffer's visible width.
@@ -291,10 +291,10 @@ def main():
                         if name=='log-utf8': assert 'ASCII..... ......' in screen and 'END' in screen,screen
                     elif kind=='fault':
                         vector=14 if name=='fault-pf' else 6
-                        assert 'MUSHA.ELF faulted' in screen and f'VECTOR {vector:016X}' in screen and f'ERROR {(6 if vector==14 else 0):016X}' in screen and 'RIP ' in screen and 'RSP ' in screen,screen
+                        assert 'AUTORUN.ELF faulted' in screen and f'VECTOR {vector:016X}' in screen and f'ERROR {(6 if vector==14 else 0):016X}' in screen and 'RIP ' in screen and 'RSP ' in screen,screen
                         if not a.normal: assert 'RING3_FAULT_KERNEL_STACK_OK' in text,text
                     elif kind in ('reject','disconnect'):
-                        assert 'MUSHA.ELF rejected:' in screen and 'RING3_ELF_ENTERING' not in text,screen+text
+                        assert 'AUTORUN.ELF rejected:' in screen and 'RING3_ELF_ENTERING' not in text,screen+text
                         if kind=='reject': assert detail in screen,screen
                         else: assert removed and 'XHCI_QUIESCED' in text and ('File read failed' in screen or 'Device session did not complete' in screen),screen+text
                     elif kind=='timing': assert 'EXTERNAL_ELF_ELAPSED_MS=' in text,text

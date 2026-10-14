@@ -460,7 +460,7 @@ impl Viewer {
                         "No supported FAT32/exFAT medium. External USB keyboard required."
                     }),
                     View::Catalog | View::List if self.bootfile_absent => {
-                        out.write_str("MUSHA.ELF not found in root. Starting file viewer.")
+                        out.write_str("AUTORUN.ELF not found in root. Starting file viewer.")
                     }
                     View::Catalog => out.write_str("Reading file list..."),
                     View::List if self.count == 0 => {
@@ -605,13 +605,13 @@ mod tests {
         v.view = View::List;
         assert_eq!(
             v.line(7).as_str(),
-            "MUSHA.ELF not found in root. Starting file viewer."
+            "AUTORUN.ELF not found in root. Starting file viewer."
         );
         v.view = View::Error;
         assert!(v.line(7).as_str().starts_with("Cannot read:"));
         let mut ordinary = Viewer::new();
         ordinary.view = View::List;
-        assert!(!ordinary.line(7).as_str().contains("MUSHA.ELF"));
+        assert!(!ordinary.line(7).as_str().contains("AUTORUN.ELF"));
     }
     fn entry(name: &str, bytes: u64) -> Entry {
         let mut e = Entry {

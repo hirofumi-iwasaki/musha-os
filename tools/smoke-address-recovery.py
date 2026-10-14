@@ -85,7 +85,7 @@ try:
                 assert 'BAD COMPLETION' not in text and 'COMMAND TIMEOUT' not in text,text
                 shown='\n'.join(load('smoke-external-elf').screen_rows(d/'screen.ppm'))
                 (d/'screen.txt').write_text(shown+'\n')
-                assert 'Hello Musha-OS!' in shown and 'MUSHA.ELF exited: status 0' in shown,shown
+                assert 'Hello Musha-OS!' in shown and 'AUTORUN.ELF exited: status 0' in shown,shown
                 assert hashlib.sha256(data.read_bytes()).hexdigest()==before
                 report['cases'].append({'case':first+'-fails-next-storage-runs','passed':True,'completion_code':5,'screen':str(d/'screen.ppm')})
                 print('PASS',first,flush=True)

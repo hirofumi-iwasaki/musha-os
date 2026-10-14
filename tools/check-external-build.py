@@ -19,7 +19,7 @@ for term in ['musha_probe_start','musha_probe_end','lifecycle','C1_PROBE','user.
     assert term not in m and term.encode() not in b,term
 assert a.hello.read_bytes() not in b, 'Embedded SDK ELF'
 # Header comparison constants in machine code and the OS greeting are expected.
-assert b'Loading MUSHA.ELF' in b and b'MUSHA.ELF exited:' in b
+assert b'Loading AUTORUN.ELF' in b and b'AUTORUN.ELF exited:' in b
 image=struct.unpack_from('<I',b,opt+56)[0]
 assert len(b)<1024*1024 and 16*1024*1024<image<=32*1024*1024
 assert any(s['virtual_bytes']-s['file_bytes']>=16*1024*1024 for s in sections)

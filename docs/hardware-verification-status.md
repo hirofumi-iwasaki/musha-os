@@ -1,5 +1,9 @@
 # 実機確認状況（配布用PDFの参照資料）
 
+Historical captures retain their original filename, MUSHA.ELF. From the renamed candidate onward, use AUTORUN.ELF.
+
+過去の撮影記録は当時のファイル名 MUSHA.ELF のまま保持します。改名後の候補以降は AUTORUN.ELF を使用します。
+
 更新日: 2026-10-13（日本時間）。写真・利用者の報告・ローカル検証記録に基づく。別スレッドでPDFを作成する場合は、本ファイルを最新状況の参照元とする。過去の日付の準備記録にある「実機未確認」「実物USBへの書込み未実施」を現在の全体状況として転記しない。
 
 ## 配布資料に使用できる確認状況

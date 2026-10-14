@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! One-shot boot-file reader over the bounded stream service. No DMA or allocation.
 use crate::stream::{Error, Files, Handle, MAX_READ};
-pub const NAME: &[u8] = b"MUSHA.ELF";
+pub const NAME: &[u8] = b"AUTORUN.ELF";
 pub const MAX_BYTES: usize = 16 * 1024 * 1024;
 pub const TIMEOUT_MS: u64 = 5000;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

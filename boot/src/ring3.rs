@@ -281,7 +281,7 @@ extern "win64" fn dispatch(frame: &mut Frame) {
                 #[cfg(external_app)]
                 {
                     crate::appconsole::message(format_args!(
-                        "\nMUSHA.ELF exited: status {}\n",
+                        "\nAUTORUN.ELF exited: status {}\n",
                         frame.rdi as i32
                     ));
                     crate::bootstate::update(|r, _| r.finish(true));

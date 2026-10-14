@@ -2,6 +2,10 @@
 
 ## English
 
+Before accepting the renamed candidate, verify that the selected medium root contains `AUTORUN.ELF` and no legacy `MUSHA.ELF`. The legacy name alone is ignored and starts the viewer. Physical renaming requires owner approval: record the source ELF SHA-256, rename the old file (do not leave both), verify the destination hash matches, and safely eject. This user file is outside update-usb.py management; record old/new paths, EFI identity, hashes and eject result in deployment provenance. No USB operation is performed by this documentation change.
+
+Historical captures retain their original filename, MUSHA.ELF. From the renamed candidate onward, use AUTORUN.ELF.
+
 ### Corrected NUC5 acceptance basis (2026-10-14, independent review)
 
 Owner follow-up: exact operations after run 1 and power-off durations for runs 2/3 are not remembered and remain UNKNOWN. The owner approves the corrected record below. This resolves approval of the correction, not the missing run evidence.
@@ -185,6 +189,10 @@ The owner requested smaller log text. The local follow-up changes only external-
 Local validation: `out/nuc5-font-review/host-tests.log` (10 framebuffer tests), `report.json` (seven normal-EFI QEMU cases: Hello, long log, UTF-8 replacement, exit 42, PF, UD, absent viewer). The absent case retains the existing pixel reference and zero debug bytes. These are local checks, not additional physical boots.
 
 ## 日本語
+
+改名後候補の受入前に、選択媒体ルートが `AUTORUN.ELF` で旧 `MUSHA.ELF` が残っていないことを必ず確認します。旧名だけでは不在扱いでビューアーへ進みます。実USBの改名は所有者承認後に、元ELFのSHA-256を記録し、旧名を残さず改名、変更後ハッシュ一致を確認して安全に取り外します。この利用者ファイルはupdate-usb.py管理対象外です。旧／新パス・EFI識別情報・ハッシュ・取り外し結果を配備provenanceへ記録します。本変更ではUSB操作は行いません。
+
+過去の撮影記録は当時のファイル名 MUSHA.ELF のまま保持します。改名後の候補以降は AUTORUN.ELF を使用します。
 
 所有者の追加回答（2026-10-14）：run 1後の操作とrun 2・3の電源断時間は正確には覚えていないため不明。記録を「冷間NO MEDIUMを1回、D0/D8切替済み状態でHelloを1回確認。冷間3回連続成功は未証明」と訂正することは承認済み。記録訂正への承認と、欠けている実機証拠を区別する。
 

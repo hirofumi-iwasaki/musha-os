@@ -78,7 +78,7 @@ GPTと起動用FAT32を維持し、配布イメージは媒体の公称容量で
 
 ### 4.4 パーティション種別：Basic Dataを採用（v0.3.0、2026-10-13決定）
 
-これまでの起動用FAT32はGPTの種別をEFI System Partition（ESP）としてきた。macOSのFinderとWindowsのエクスプローラーはESPを自動マウントしないため、利用者が`MUSHA.ELF`や自分のファイルを置けない。v0.3.0以降、**起動用FAT32の種別はMicrosoft Basic Data（`EBD0A0A2-B9E5-4433-87C0-68B6B72699C7`）**とし、単一パーティション構成を維持する。UEFIのリムーバブル媒体からの起動は`\EFI\BOOT\BOOTX64.EFI`がFATで見つかれば足り、ESPの種別GUIDを要求しない。
+これまでの起動用FAT32はGPTの種別をEFI System Partition（ESP）としてきた。macOSのFinderとWindowsのエクスプローラーはESPを自動マウントしないため、利用者が`AUTORUN.ELF`や自分のファイルを置けない。v0.3.0以降、**起動用FAT32の種別はMicrosoft Basic Data（`EBD0A0A2-B9E5-4433-87C0-68B6B72699C7`）**とし、単一パーティション構成を維持する。UEFIのリムーバブル媒体からの起動は`\EFI\BOOT\BOOTX64.EFI`がFATで見つかれば足り、ESPの種別GUIDを要求しない。
 
 - OS側のFAT32探索はGPTのBasic DataとESPの両方を受け入れ、FAT32候補がちょうど一つであることを要求する。既存のESP構成の媒体（Mac・Ryzen・NUC5で使用中の専用SanDisk）は引き続き起動できる。候補が複数ある場合は従来どおり拒否し、「安易に緩めない」原則を保つ。exFATデータ媒体の探索（Basic Data）と同じ媒体にFAT32とexFATが同居する構成は対象外のままとする。
 - イメージ生成（`make-usb-image.py`）はBasic Dataを既定にし、互換試験のためESPも選べるようにする。配備（`deploy-image.py`）と通常更新（`update-usb.py`）は両種別を受け入れ、種別の書換えは行わない。
@@ -86,7 +86,7 @@ GPTと起動用FAT32を維持し、配布イメージは媒体の公称容量で
 
 実装上の候補はESPとBasic Dataの合計で数え、BPB検証前に一つを要求する。既存のGPT検証は緩めない。
 各媒体ではexFAT探索を先に行い、Unsupported時のみFAT32へ進む。最初に利用可能な媒体を保持し、
-MUSHA.ELFの有無で媒体を乗り換えない。有効なexFATとFAT32が同居する対象外構成では、
+AUTORUN.ELFの有無で媒体を乗り換えない。有効なexFATとFAT32が同居する対象外構成では、
 GPTのエントリー順にかかわらずexFATが選ばれ、FAT32単独探索は複数候補を拒否する。
 現在の状態は「ローカル検証・実機3機確認前」。証拠は[Basic Data検証記録](basic-data-validation.md)に分離する。
 
