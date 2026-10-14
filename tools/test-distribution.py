@@ -56,6 +56,7 @@ class DistributionTests(unittest.TestCase):
         self.assertNotIn(b'\n', expected.replace(b'\r\n', b''))
         self.assertTrue(all(len(line) <= 72 for line in expected.splitlines()))
         self.assertIn(f'musha-os-v{VERSION}-x64-c-sdk.zip'.encode(), expected)
+        self.assertIn(b'https://github.com/hirofumi-iwasaki/musha-os/blob/main/docs/sdk-guide.md', expected)
         self.assertIn(b'AUTORUN.ELF', expected)
         for kind in ('esp', 'basic-data'):
             image = usb.create(self.root/(kind+'-readme.img'), self.efi, partition_type=kind).read_bytes()

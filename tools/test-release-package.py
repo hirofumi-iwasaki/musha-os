@@ -71,9 +71,12 @@ class PackageTests(unittest.TestCase):
         self.assertIn(f'{release.digest(a/name)}  {name}', (a/'SHA256SUMS').read_text())
         with zipfile.ZipFile(a/name) as z:
             names=z.namelist()
-            for needed in ['src/crt0.S','src/libmusha.c','linker/app.ld','sysroot/include/musha/api.h','tools/check-sdk.py','tools/app-check.py','examples/hello-c/main.c','CMakeLists.txt','LICENSE','NOTICE']:
+            for needed in ['src/crt0.S','src/libmusha.c','linker/app.ld','sysroot/include/musha/api.h','tools/check-sdk.py','tools/app-check.py','examples/hello-c/main.c','CMakeLists.txt','LICENSE','NOTICE','docs/sdk-guide.md']:
                 self.assertIn(needed,names)
             self.assertFalse(any(n.startswith(('rust/','targets/','examples/hello-rust/')) or n.endswith('.rs') for n in names))
+            self.assertEqual(z.read('docs/sdk-guide.md'), (release.ROOT/'docs/sdk-guide.md').read_bytes())
+            self.assertIn(b'(docs/sdk-guide.md)', z.read('README.md'))
+            self.assertIn(b'(sdk-guide.md)', z.read('docs/sdk.md'))
             sm=json.loads(z.read('sdk-manifest.json'))
             for n,v in sm['files'].items(): self.assertEqual(hashlib.sha256(z.read(n)).hexdigest(),v['sha256'])
 

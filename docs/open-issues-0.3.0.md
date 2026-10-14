@@ -30,7 +30,7 @@ Release gates still pending: same candidate EFI, NUC5/Ryzen three cold boots eac
 
 - Mac storage isolation under identical connections, including the v0.2.0 A/B and diagnostics.
 - Return to the file viewer after application exit; execute an ELF selected in the viewer.
-- Subdirectory reads and moving diagnostic marker files under `/MUSHA/`.
+- USB root layout: `DOCS/` for license texts, `README.TXT` doubling as the startup marker (removing `DIAGNOSE.TXT`), and a stateless update tool without an on-drive manifest. See the [v0.4.0 draft scope](release-scope-0.4.0.md).
 - Permanent startup timing instrumentation.
 
 These are planning items only: this release does not implement them or relocate DIAGNOSE.TXT.
@@ -63,7 +63,7 @@ These are planning items only: this release does not implement them or relocate 
 
 - 同一接続でのv0.2.0とのA/B・診断採取を含むMacストレージ切り分け。
 - アプリ終了後のファイラー復帰、ファイラーで選択したELFの実行。
-- サブディレクトリー読出し、診断ファイルの`/MUSHA/`配下への退避。
+- USBルート構成の整理：`DOCS/`にライセンス類、`README.TXT`を起動マーカーに統合して`DIAGNOSE.TXT`を廃止、更新ツールのステートレス化でUSB上のmanifestを廃止。[v0.4.0範囲草案](release-scope-0.4.0.md)を参照。
 - 起動時間計測の常設。
 
 計画項目であり、本版では実装せずDIAGNOSE.TXTの配置も変更しません。

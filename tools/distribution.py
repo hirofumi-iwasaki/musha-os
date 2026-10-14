@@ -108,7 +108,9 @@ LICENSE, NOTICE       Apache-2.0 license and third-party notices
 third_party/          Third-party license texts
 README.TXT            This file
 
-Documentation, source and updates:
+Documentation:
+https://github.com/hirofumi-iwasaki/musha-os/blob/main/docs/sdk-guide.md
+Source and updates:
 https://github.com/hirofumi-iwasaki/musha-os
 
 The application ABI is experimental and may change between versions.

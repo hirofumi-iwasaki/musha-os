@@ -18,7 +18,7 @@ only. On any failure, capture evidence, fix, and return to pre-build documentati
 
 | Machine / run | Build | EFI SHA-256 | Source commit | Date/time | Power off seconds | D8 / diagnostic evidence | READ OK to Hello seconds | Result | Evidence file |
 |---|---|---|---|---|---|---|---|---|---|
-| NUC5 D1 | diagnostic | PENDING | PENDING | PENDING | PENDING | PENDING | — | PENDING | PENDING |
+| NUC5 D1 | diagnostic | `0614fbe998836f2eb5f837ca2429b922bedd8668b21db9e2c13bbfe6e65085b0` | `a1762f423516d702bc2d9e00a9425d2b173e00c9` | 2026-10-14; time unspecified | AC unplugged 10 s (owner) | PRE OWN D8=0, frame-016 | — | PASS: Hello / exit 0; diagnostic only | IMG_7645.MOV |
 | NUC5 D2 | diagnostic | PENDING | PENDING | PENDING | PENDING | PENDING | — | PENDING | PENDING |
 | NUC5 D3 | diagnostic | PENDING | PENDING | PENDING | PENDING | PENDING | — | PENDING | PENDING |
 | NUC5 C1 | normal | PENDING | PENDING | PENDING | PENDING | paired D1; not measured in normal | — | PENDING | PENDING |
@@ -489,3 +489,93 @@ Hello Musha-OS!、exited: status 0を確認しました。左の状態表示と�
 時間は今回未確認です。直前の配備記録によって上記EFIハッシュに紐づけます。
 Ryzenの表示観測は確認済みとしますが、公開受入全体の完了や、このEFIでの
 NUC5反復成功回数を示すものではありません。
+
+## NUC5 diagnostic observation IMG_7644, 2026-10-14
+
+One diagnostic boot shows AUTORUN.ELF (Ring 3), Hello Musha-OS! and exit status 0.
+Source: `a1762f423516d702bc2d9e00a9425d2b173e00c9`; release + diagnostics-detail.
+EFI SHA-256: `0614fbe998836f2eb5f837ca2429b922bedd8668b21db9e2c13bbfe6e65085b0`.
+Identity is linked through `out/release-grid-stage3-r2/usb-diagnostic-deploy/provenance.json`,
+not measured from the video. Frames and observations:
+`out/release-grid-stage3-r2/nuc5-7644/`.
+
+| Evidence / video offset | Observed value |
+|---|---|
+| IMG_7644.MOV, 18 s, first PRE OWN (page 5/17) | D0=0x7FF, D4=0x4FF, D8=0xF, DC=0xF; P12 PORTSC=0x1203, CCS=1, PED=1, SPEED=4, PLS=0 |
+| 18 s, ownership | BIOS/OS 1/0 to 0/1, elapsed 0 ms, OK |
+| 20 s, routing | WRITES 0, MATCH 1; D0/D8 unchanged |
+| 22 s, attachment | ATTACH WAIT 160 MS MAX 1000; P12 U0 TRY 0; SESSION 1 RESCAN 0 |
+| 28 s, enumeration | ROOT 12 SLOT 3, speed ID 4 Super; descriptor/configuration/storage sector/FAT32 file read stages |
+| 40 s, diagnostic limitation | JOURNAL LIMIT / MORE OMITTED |
+| 44 s, application | AUTORUN.ELF (Ring 3), Hello Musha-OS!, exited: status 0 |
+
+This is a successful diagnostic execution, not a qualifying D8=0 cold run and
+not normal-candidate acceptance. The owner subsequently reports powering off for a few seconds, then turning
+the machine on again. This does not meet the required 10-second minimum.
+Whether AC was disconnected remains unspecified. D8=0xF alone does not
+establish what power operation the owner performed. The 500 ms post-routing-write grace path is not exercised
+by this observed WRITES 0 run. Keep D1-D3 acceptance gates pending. Video offsets
+are capture positions, not hardware-stage elapsed times.
+
+### 日本語
+
+IMG_7644.MOVで診断版の1起動を確認し、AUTORUN.ELF (Ring 3)、Hello Musha-OS!、
+終了0を読み取りました。EFIは上記の直前配備記録に紐づけ、動画からハッシュを
+測定したものではありません。初回PRE OWNはD0=0x7FF、D4=0x4FF、D8=0xF、DC=0xF。
+P12は既にCCS=1・PED=1・SPEED=4・PLS=0でした。所有権移行は0 msで成功、
+ルーティング書込み0回、接続待ち160 ms、P12はU0 TRY 0、RESCAN 0です。
+ROOT 12 SLOT 3でストレージ・FAT32読出し段階へ進み、最終的にHello・終了0を確認。
+途中にJOURNAL LIMIT / MORE OMITTEDがあり、全診断履歴の完全採取とは扱いません。
+
+動作成功の観測として記録しますが、D8=0の冷間条件を満たすrunや通常版候補の
+受入には数えません。所有者から「数秒電源を落として再度入れた」と追加回答を受領しました。
+所定の電源断10秒以上を満たさず、ACを抜いたかは未回答です。D8=0xFだけで
+所有者が行った電源操作を断定しません。書込み0回のため、切替書込み後500 ms猶予の
+実機確認にもなりません。D1〜D3の受入欄は未完了を維持します。表の秒数は動画位置で、
+各ハードウェア処理の所要時間ではありません。
+
+## NUC5 D1: AC-disconnected cold diagnostic boot, 2026-10-14
+
+The owner reports unplugging AC for 10 seconds before IMG_7645.MOV. The first
+PRE OWN snapshot shows D0=0x300, D4=0x4FF, D8=0, DC=0xF (16 s video offset).
+Routing changes D0 to 0x7FF and D8 to 0xF; WRITES=3 is a bitmask for the two
+register writes, not a count of three writes. MATCH=1. Hello and exit status 0
+appear at 44 s. This qualifies as diagnostic D1, one successful cold observation;
+D2/D3 and all normal-candidate acceptance runs remain pending.
+
+EFI SHA-256: `0614fbe998836f2eb5f837ca2429b922bedd8668b21db9e2c13bbfe6e65085b0`.
+Source: `a1762f423516d702bc2d9e00a9425d2b173e00c9`, release + diagnostics-detail.
+Identity is linked through `out/release-grid-stage3-r2/usb-diagnostic-deploy/provenance.json`,
+not measured from the video. Frames and structured readings are in
+`out/release-grid-stage3-r2/nuc5-7645/`.
+
+Important limitation: first ATTACH WAIT shows 500 ms (PM timing 499 ms), but
+P12 remains CCS=0/PLS=5 at ROUTE+505 ms and is classified Empty. A later controller
+pass in SESSION 1 shows P12 CCS=1/PED=1/SPEED=4/PLS=0 and queues enumeration;
+RESCAN remains 0. This does not demonstrate that 500 ms alone is sufficient to
+establish the cold SuperSpeed link. ROOT 1 Address Device reports completion
+code 4; its slot is disabled and enumeration continues. Final timing records show
+a second attach wait of 159 ms, WPR count 0 for both passes, ELF read 217 ms and
+quiesce 0 ms. Preserve this successful end-to-end result together with the
+intermediate failure and delayed P12 observation; do not claim a clean first-pass
+storage discovery or a RESCAN recovery. Video offsets include diagnostic page
+presentation and are not the device operation timings.
+
+### 日本語
+
+所有者報告は「ACアダプターを抜いて10秒」。IMG_7645.MOVの初回PRE OWNで
+D0=0x300、D4=0x4FF、D8=0、DC=0xFを確認しました（動画16秒）。
+切替後はD0=0x7FF、D8=0xF、MATCH=1。WRITES=3は2レジスターへの書込みを示す
+ビットマスクで、書込み3回という意味ではありません。44秒でHello・終了0を確認。
+診断版D1の冷間成功1回として記録し、D2/D3と通常版候補の受入は未完了です。
+EFI・ソースは上記配備記録に紐づけます。
+
+ただし初回ATTACH WAITは500 ms（PM計測499 ms）を実行しても、P12は
+ROUTE+505 msでCCS=0/PLS=5のままEmpty判定でした。同じSESSION 1の後続パスでは
+P12がCCS=1・PED=1・SPEED=4・PLS=0になり列挙へ進み、RESCANは0です。
+この結果だけで500 msの猶予単独が十分とは判断しません。ROOT 1ではAddress Deviceの
+completion code 4が出ましたが、slotを無効化して残りの列挙を続行しています。
+最終時間記録は後続の接続待ち159 ms、両パスWPR 0、ELF読出し217 ms、停止0 ms。
+最終成功と途中の拒否・P12接続遅延を両方残し、初回探索ですべて成功した、または
+RESCANで回復したとは扱いません。動画位置の秒数は診断ページ表示時間を含み、
+デバイス処理時間ではありません。

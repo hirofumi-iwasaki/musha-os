@@ -4,7 +4,7 @@
 
 Notes updated: 2026-10-14. Publication date:
 
-Status: **release candidate, not published.** Pre-build documentation is prepared under procedure A. The next candidate source, EFI hash, full candidate regressions, hardware acceptance and final-source CI are PENDING. The owner decides publication after the [scope conditions](release-scope-0.3.0.md) are met. Published v0.2.0 assets are unchanged. Historical development observations remain in [hardware acceptance](hardware-acceptance-0.3.0.md) and [USB startup timing](usb-startup-timing.md); they are not acceptance of the next candidate.
+Status: **release candidate, not published.** Pre-build documentation is prepared under procedure A. Candidate a1762f4 has passed clean-build reproducibility and local regressions. USB update, hardware acceptance and final-source CI remain PENDING. The owner decides publication after the [scope conditions](release-scope-0.3.0.md) are met. Published v0.2.0 assets are unchanged. Historical development observations remain in [hardware acceptance](hardware-acceptance-0.3.0.md) and [USB startup timing](usb-startup-timing.md); they are not acceptance of the next candidate.
 
 ### Main changes
 
@@ -63,13 +63,32 @@ Unchanged from v0.2.0: external USB Boot Keyboard required; Up/Down selects, Ent
 
 ### Validation scope
 
+Current clean candidate: `a1762f423516d702bc2d9e00a9425d2b173e00c9`.
+Normal EFI SHA-256: `ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`.
+Diagnostic-only EFI SHA-256: `0614fbe998836f2eb5f837ca2429b922bedd8668b21db9e2c13bbfe6e65085b0`.
+Two clean builds match the EFI and all seven release files. Host 274, packaging 8,
+QEMU 194 (both partition types, five-level hubs, split controllers, C1/C2/C3 and
+three delayed attachments), resolution Hello/absent 6 and boot/diagnostic captures 8
+passed. Three independent resolution console pixel comparisons also passed. The
+extracted C SDK built in a path with spaces reproduces the Hello ELF. Evidence:
+`out/release-grid-stage3-r2/{final-report.json,reproduction.json,artifact-verification.json}`
+and `display/{modes-report.json,stages-report.json}` beneath that directory.
+The initial partition suite could not create its QMP socket because a clean clone
+lacked the output directory; no guest executed. After creating it, all 38 retry
+cases passed without changing the OS. Original failure logs remain available.
+Normal absent pixels match `out/display-grid/reference-default` with zero debug
+bytes. Exact-resolution references use the documented grid conversion from
+`out/usb-usability/pixels`. USB deployment and candidate hardware acceptance are
+PENDING; these local results do not replace them. These result annotations are
+later working-tree documentation, not members of the a1762f4 candidate archives.
+
 Candidate reproduction attempt at `dccf104`: two clean builds produced identical
 EFI (`ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`)
 and four archives. Deployment ZIP timestamps differed, propagating to the manifest
 and checksums; the gate failed and full candidate QEMU/USB update did not proceed.
 Evidence: `out/release-grid-stage3/reproduction.json`. Deployment ZIP generation
-now fixes member metadata; fixture packaging tests pass, but two clean builds
-from the new approved source and the candidate gates below remain PENDING.
+now fixes member metadata. The approved a1762f4 retry passed as recorded below;
+the failed attempt remains part of the history.
 
 Display-grid implementation checks: 53 host tests, 26 normal QEMU cases,
 6 exact-resolution Hello/absent cases (1024x768, 1600x1200, 3840x2160),
@@ -92,9 +111,9 @@ Hardware: during development, the external Hello ran at Ring 3 on NUC5i5RYH (GOP
 
 | Gate | Status / required evidence |
 |---|---|
-| Candidate source, EFI and package hashes | PENDING: approved clean source; build-manifest and SHA256SUMS |
-| Same-source reproducibility | PENDING: two clean builds; identical EFI and all five archives, plus matching manifests/checksums under identical recorded conditions |
-| Full candidate QEMU regression | PENDING: candidate hash and suite reports |
+| Candidate source, EFI and package hashes | PASS: a1762f4; `out/release-grid-stage3-r2/artifact-verification.json` and candidate-1 manifest/checksums |
+| Same-source reproducibility | PASS: EFI and all seven files identical; `out/release-grid-stage3-r2/reproduction.json` |
+| Full candidate QEMU regression | PASS: 194 cases plus resolution/display checks; `out/release-grid-stage3-r2/final-report.json` |
 | Hardware acceptance | PENDING: NUC5 cold 3 consecutive; Ryzen cold 3 + hot 1 and READ OK-to-Hello seconds; Mac Basic Data boot with AUTORUN present (storage result recorded, not a gate) |
 | Final-source remote CI | PENDING: owner-approved run URL and result |
 | Documentation-successor equivalence | PENDING: EFI and runtime payload equality; regenerated documentation/provenance packages with an allowlisted member-level difference report |
@@ -116,7 +135,7 @@ Publication provenance: procedure A (reproducible EFI) adopted. `/Brepro` alone 
 
 ノート更新日：2026-10-14。公開日：
 
-状態：**公開候補、未公開。** 方式Aに従いビルド前に確定できる文書を整理しました。次候補のソース・EFIハッシュ・候補の全回帰・実機受入・最終ソースのCIは未完了です。[公開範囲](release-scope-0.3.0.md)の条件を満たした後に所有者が公開を判断します。公開済みv0.2.0配布物は変更しません。過去の開発版観測は[実機受入記録](hardware-acceptance-0.3.0.md)・[USB起動時間](usb-startup-timing.md)に保持し、次候補の受入へ転用しません。
+状態：**公開候補、未公開。** 方式Aに従いビルド前に確定できる文書を整理しました。候補a1762f4のクリーンビルド再現性とローカル全回帰は合格しました。USB更新・実機受入・最終ソースのCIは未完了です。[公開範囲](release-scope-0.3.0.md)の条件を満たした後に所有者が公開を判断します。公開済みv0.2.0配布物は変更しません。過去の開発版観測は[実機受入記録](hardware-acceptance-0.3.0.md)・[USB起動時間](usb-startup-timing.md)に保持し、次候補の受入へ転用しません。
 
 ### 主な変更
 
@@ -175,13 +194,30 @@ v0.2.0 から変更なし：外付け USB Boot Keyboard が必要。上下で選
 
 ### 検証範囲
 
+今回のクリーン候補：`a1762f423516d702bc2d9e00a9425d2b173e00c9`。
+通常EFI SHA-256：`ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`。
+診断専用EFI SHA-256：`0614fbe998836f2eb5f837ca2429b922bedd8668b21db9e2c13bbfe6e65085b0`。
+クリーンビルド2回でEFIと公開予定7ファイルがすべて一致しました。ホスト274件、
+梱包8件、QEMU194件（両パーティション種別・5段ハブ・分割制御器・C1/C2/C3・
+遅延接続3件）、解像度別Hello/absent6件、起動・診断画面採取8件が合格。
+解像度別コンソールの独立画素照合3件も合格し、空白を含むパスへ展開したC SDKで
+Hello ELFのハッシュを再現しました。証拠は
+`out/release-grid-stage3-r2/{final-report.json,reproduction.json,artifact-verification.json}`
+と同配下の`display/{modes-report.json,stages-report.json}`です。
+最初のパーティション試験はクリーン複製内の出力先不足でQMPソケットを作れず、
+ゲスト実行前に停止しました。出力先作成後、OS変更なしで38件すべて再試験合格。
+失敗ログも保持しています。通常版absentは`out/display-grid/reference-default`と
+画素一致し、debug出力0バイト。解像度別参照は`out/usb-usability/pixels`から
+文書化済みのグリッド規則で変換しました。USB配備と候補の実機受入は未完了で、
+ローカル結果で代替しません。この結果追記は候補生成後の作業ツリー文書であり、
+a1762f4の候補アーカイブには含まれていません。
+
 `dccf104`の候補再現試験ではクリーンビルド2回のEFI
 （`ba23cabb988af8349924b78914000d030899ac3589568ce8b79fa7e3bcf21cad`）と
 4アーカイブが一致しましたが、deployment ZIPの日時が異なり、manifestと
 チェックサムへ波及しました。不合格として候補QEMU全回帰・USB更新へ進まず停止しました。
 証拠は`out/release-grid-stage3/reproduction.json`。ZIP生成時メタデータを固定する
-修正とfixtureによる梱包試験は完了しましたが、新しい承認済みソースのクリーンビルド
-2回による確認と、下記の候補ゲートは未完了です。
+修正後、承認済みa1762f4で以下の再試験が合格しました。不合格の経緯は保持します。
 
 表示グリッドの実装確認：ホスト53件、通常版QEMU26件、指定3解像度
 （1024×768・1600×1200・3840×2160）のHello/absent6件、起動・診断画面8件、
@@ -204,9 +240,9 @@ NUC5のIMG_7641.MOVでHello・終了0と所有者の読みやすさ確認、Ryze
 
 | 条件 | 状態・必要な証拠 |
 |---|---|
-| 候補ソース・EFI・配布物ハッシュ | 未完了：承認済みクリーンソース、build-manifest、SHA256SUMS |
-| 同一ソースの再現性 | 未完了：同一条件を記録したクリーンビルド2回でEFI・5アーカイブ・manifest・チェックサム一致 |
-| 候補のQEMU全回帰 | 未完了：候補ハッシュと各試験報告 |
+| 候補ソース・EFI・配布物ハッシュ | 合格：a1762f4、`out/release-grid-stage3-r2/artifact-verification.json`とcandidate-1のmanifest・チェックサム |
+| 同一ソースの再現性 | 合格：EFI・公開予定7ファイル一致。`out/release-grid-stage3-r2/reproduction.json` |
+| 候補のQEMU全回帰 | 合格：194件と解像度・表示確認。`out/release-grid-stage3-r2/final-report.json` |
 | 実機受入 | 未完了：NUC5冷間3回連続、Ryzen冷間3回＋ホット1回とREAD OK→Hello秒数、MacはAUTORUNを置いたBasic Data起動（ストレージ結果は記録のみ） |
 | 最終ソースのリモートCI | 未完了：所有者承認後のrun URLと結果 |
 | 文書のみの後続コミットの同等性 | 未完了：EFI・実行用payload一致、文書・来歴を含む再生成配布物は許可したメンバー差分を記録 |

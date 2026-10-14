@@ -2,6 +2,8 @@
 
 ## English
 
+Start with the [C programming guide](sdk-guide.md) to write your own program.
+
 The separate `musha-os-vVERSION-x64-c-sdk.zip` contains C sources, crt0, minimal libmusha/memory routines, linker script, headers, ABI schema, ELF checker, tests, C Hello and a CMake entry point. Extract into any directory, including a path containing spaces. It has no dependency on the OS source checkout. The ABI is **experimental candidate r1**, not frozen compatibility. Rust material in the repository is **compile-only** and is not included in this archive. No libc/POSIX or practical application I/O is supplied.
 
 Required: Python 3, Clang with x86-64 ELF support, and LLVM LLD (`ld.lld` or `rust-lld`). CMake 3.20+ is optional. `CC` selects Clang; `LD_LLD` selects LLD. With a standalone LLD, Rust is not required. If LLD is omitted, the checker can use the installed Rust toolchain's LLD (repository validation uses pinned Rust 1.99.0). Record the exact versions in `build/report.json`; Hello hashes are reproducible for the same compiler/linker versions and options, not promised across toolchain versions.
@@ -32,6 +34,8 @@ Inside the OS repository the equivalent command is `python3 tools/check-sdk.py -
 NUC5/Ryzen development builds have owner-reported Hello success. **Mac external applications are currently unsupported because the development build does not recognize its storage.** Candidate cold-boot acceptance is pending. Published v0.2.0 assets remain unchanged.
 
 ## 日本語
+
+自作プログラムの書き方は[Cプログラミングガイド](sdk-guide.md)を参照してください。
 
 独立配布の`musha-os-vVERSION-x64-c-sdk.zip`にCソース、crt0、libmusha／メモリ処理、リンカースクリプト、ヘッダー、ABIスキーマ、ELF検査、試験、Hello、CMake入口を含めます。空白入りを含む任意の場所へ展開でき、OSリポジトリを必要としません。ABIは**実験候補r1**で変更の可能性があります。Rustはリポジトリ内の**compile-only**検査のみで、ZIPには同梱しません。libc／POSIXやアプリ向け実用I/Oはありません。
 

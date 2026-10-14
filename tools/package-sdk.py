@@ -19,8 +19,10 @@ def create(output, version):
     payload['tools/check-sdk.py']=(ROOT/'tools/check-sdk.py').read_bytes()
     for name in ('LICENSE','NOTICE'): payload[name]=(ROOT/name).read_bytes()
     # Include the source ledger for inspection, not as a parent-directory dependency.
-    for name in ('application-abi.md','sdk.md','external-app.md'):
+    for name in ('application-abi.md','sdk.md','sdk-guide.md','external-app.md'):
         payload['docs/'+name]=(ROOT/'docs'/name).read_bytes()
+    # The repository README lives one directory below docs; the archive is standalone.
+    payload['README.md']=payload['README.md'].replace(b'(../docs/', b'(docs/')
     manifest={'version':version,'language':'C','abi':'experimental candidate r1','public_compatibility_fixed':False,
               'rust_included':False,'files':{n:{'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()} for n,b in sorted(payload.items())}}
     payload['sdk-manifest.json']=(json.dumps(manifest,indent=2)+'\n').encode()
