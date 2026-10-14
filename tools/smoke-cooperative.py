@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Verify concurrent keyboard, cached file reads and actual NIC traffic."""
 import argparse, pathlib, socket, struct, subprocess, time, shutil, json, hashlib
+from distribution import usb_readme
 parser=argparse.ArgumentParser()
 parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
@@ -315,6 +316,10 @@ with (out/'qemu.log').open('w') as err:
    payloads=[('DIAGNOSE.TXT',expected)]
    if a.exfat_boot_image:
     payloads += [('FRAGMENT.BIN',bytes(range(256))*5+b'end'),('Long name for exFAT test.txt',b'Long file name\n'),('EMPTY.TXT',b''),('ZEROTAIL.BIN',b'valid'+b'\0'*695)]
+   else:
+    # make-usb-image.py includes the versioned README as the second root file.
+    # Keep exact name/content/count/request checks; do not ignore extra entries.
+    payloads.append(('README.TXT',usb_readme((root/'VERSION').read_text().strip())))
    requests=0
    for index,(name,payload) in enumerate(payloads):
     digest=0xcbf29ce484222325
