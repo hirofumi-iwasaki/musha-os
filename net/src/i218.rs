@@ -39,6 +39,11 @@
 //! are deliberately not exposed by this bounded probe foundation.
 //! Rust adaptation copyright 2026 Hirofumi Iwasaki; BSD-3-Clause.
 
+pub mod power;
+pub mod flash;
+pub mod reset;
+pub mod link;
+
 pub const MDIC: usize = 0x20;
 pub const EXTCNF_CTRL: usize = 0xf00;
 const SWFLAG: u32 = 0x20;
@@ -67,6 +72,12 @@ pub fn classify(id: u32) -> Option<Device> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Resource,
+    Nvm,
+    NvmTimeout,
+    LinkTimeout,
+    LinkMode,
+    InvalidMac,
+    MasterPending,
     Clock,
     SemaphoreBusy,
     SemaphoreDenied,
@@ -82,6 +93,12 @@ pub enum Error {
 impl Error {
     pub const fn label(self) -> &'static str {
         match self {
+            Self::LinkTimeout => "I218 LINK TIMEOUT",
+            Self::LinkMode => "I218 LINK MODE UNSUPPORTED",
+            Self::MasterPending => "I218 MASTER STOP UNCONFIRMED",
+            Self::InvalidMac => "I218 MAC INVALID",
+            Self::Nvm => "I218 NVM INVALID",
+            Self::NvmTimeout => "I218 NVM TIMEOUT",
             Self::Resource => "I218 RESOURCE",
             Self::Clock => "I218 CLOCK",
             Self::SemaphoreBusy => "I218 PHY BUSY",

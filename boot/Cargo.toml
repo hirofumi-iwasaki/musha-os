@@ -60,6 +60,10 @@ app-step-error = ["qemu-debug"]
 
 # Experimental PHY identity probe only; does not enable I218 networking.
 i218-phy-probe = []
+# Managed-ME ULP exit then PHY identity only; no reset/link/DMA.
+i218-power-probe = ["i218-phy-probe"]
+# Experimental complete I218 backend; physical acceptance remains required.
+i218-network = ["i218-phy-probe"]
 
 # Opt-in QEMU EP0 wrap/short-response validation; excluded from normal images.
 usb-control-probe = ["qemu-debug"]

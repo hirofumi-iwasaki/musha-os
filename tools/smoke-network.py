@@ -3,6 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Exercise ARP, ICMP and checksummed UDP through the actual QEMU NIC rings."""
 import argparse, pathlib, socket, struct, subprocess, time, shutil, json, hashlib
+import importlib.util
+_spec=importlib.util.spec_from_file_location("dhcp_fixture",pathlib.Path(__file__).with_name("dhcp-fixture.py"))
+dhcp_fixture=importlib.util.module_from_spec(_spec);_spec.loader.exec_module(dhcp_fixture)
 parser=argparse.ArgumentParser()
 parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
@@ -47,9 +50,7 @@ with (out/'qemu.log').open('w') as err:
    except OSError:time.sleep(.05)
   if peer is None:raise RuntimeError('network socket unavailable')
   peer.settimeout(2)
-  while 'NET_READY' not in log.read_text():
-   if time.monotonic()>deadline or proc.poll() is not None:raise RuntimeError(log.read_text())
-   time.sleep(.05)
+  dhcp_server=dhcp_fixture.acquire(peer,log,proc,deadline)
   if a.case=='link-down':
    qs=socket.socket(socket.AF_UNIX);qs.connect(str(qmp));stream=qs.makefile('rwb');stream.readline()
    def control(name,args={}):
@@ -67,7 +68,7 @@ with (out/'qemu.log').open('w') as err:
    print('PASS: link-down is bounded, DMA disabled, runtime completes')
    raise SystemExit(0)
   def send(frame):
-   frame=frame.ljust(60,b'\0');peer.sendall(struct.pack('!I',len(frame))+frame)
+   frame=frame.ljust(60,b'\0');dhcp_server.stream.send(frame)
   def exact(n):
    b=b''
    while len(b)<n:
@@ -79,9 +80,10 @@ with (out/'qemu.log').open('w') as err:
    end=time.monotonic()+timeout
    while time.monotonic()<end:
     peer.settimeout(max(.01,end-time.monotonic()))
-    size=struct.unpack('!I',exact(4))[0]
-    if not 14<=size<=65536:raise RuntimeError('invalid QEMU frame length')
-    frame=exact(size)
+    frame=dhcp_server.stream.receive()
+    renewal=dhcp_server.handle(frame)
+    if renewal:
+     send(renewal);continue
     if match(frame):return frame
    raise TimeoutError('expected frame missing')
   arp=struct.pack('!HHBBH',1,0x800,6,4,1)+host+hip+bytes(6)+gip
@@ -126,7 +128,20 @@ with (out/'qemu.log').open('w') as err:
    if time.monotonic()>deadline:raise RuntimeError('network termination timeout')
    time.sleep(.05)
   text=log.read_text();assert 'NET_FAILED' not in text and 'UDP=0000000000000061' in text
-  assert 'RX_WRAP=0000000000000006' in text and 'TX_WRAP=000000000000000C' in text
+  # Count every actual Ethernet frame independently at the socket boundary,
+  # including DHCP/ACD. Exact ring-wrap equality remains mandatory.
+  peer.settimeout(.2)
+  while True:
+   try:dhcp_server.stream.receive()
+   except socket.timeout:break
+  import re
+  observed_rx=int(re.search(r'RX_WRAP=([0-9A-F]{16})',text).group(1),16)
+  observed_tx=int(re.search(r'TX_WRAP=([0-9A-F]{16})',text).group(1),16)
+  expected_rx=dhcp_server.stream.sent//16
+  expected_tx=dhcp_server.stream.received//8
+  counts={'host_to_guest_frames':dhcp_server.stream.sent,'guest_to_host_frames':dhcp_server.stream.received,'expected_rx_wrap':expected_rx,'expected_tx_wrap':expected_tx,'observed_rx_wrap':observed_rx,'observed_tx_wrap':observed_tx,'dhcp_events':dhcp_server.events}
+  (out/'wire-counts.json').write_text(json.dumps(counts,indent=2)+'\n')
+  assert observed_rx==expected_rx and observed_tx==expected_tx,counts
   assert 'EXIT_BOOT_SERVICES_OK' in text
   qs=socket.socket(socket.AF_UNIX);qs.connect(str(qmp));stream=qs.makefile('rwb');stream.readline()
   def command(name,args={}):

@@ -111,6 +111,8 @@ fn main() {
         "core/timeouts.c",
         "core/udp.c",
         "core/ipv4/etharp.c",
+        "core/ipv4/dhcp.c",
+        "core/ipv4/acd.c",
         "core/ipv4/icmp.c",
         "core/ipv4/ip4.c",
         "core/ipv4/ip4_addr.c",

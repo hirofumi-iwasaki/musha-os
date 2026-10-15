@@ -41,13 +41,13 @@ mod acpi;
 mod app;
 #[cfg(external_app)]
 mod appconsole;
-mod bootlog;
 mod bluetooth;
+mod bootlog;
 mod bootstate;
 mod cpu;
 mod diagnostics;
-mod settings;
 mod entropy;
+mod settings;
 mod marker {
     include!(concat!(env!("OUT_DIR"), "/marker.rs"));
 }
@@ -120,6 +120,7 @@ struct BootInfo {
     boot_owner: u16,
     pci_resource_safe: [pci::ResourceEvidence; pci::MAX_CONTROLLERS],
     nic: pci::Controller,
+    nic_flash: pci::Controller,
     net_dma_base: usize,
     net_dma_bytes: usize,
     dma_base: usize,
@@ -531,6 +532,10 @@ pub extern "efiapi" fn efi_main(
         let pci_resource_safe = pci::resource_safety(bs, &xhcis);
         let xhci = xhcis.entries[0];
         let nic = pci::discover(bs, true);
+        #[cfg(feature = "i218-network")]
+        let nic_flash = pci::nic_flash(bs, nic);
+        #[cfg(not(feature = "i218-network"))]
+        let nic_flash = pci::Controller::NONE;
         let mut bases = [0u64; 7];
         bases[5] = 0xffff_ffff;
         bases[6] = 0xffff_ffff;
@@ -591,6 +596,7 @@ pub extern "efiapi" fn efi_main(
                 boot_owner,
                 pci_resource_safe,
                 nic,
+                nic_flash,
                 net_dma_base: net_dma as usize,
                 net_dma_bytes: 16 * 4096,
                 dma_base: dma as usize,

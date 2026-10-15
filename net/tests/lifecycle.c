@@ -11,6 +11,7 @@ int musha_lwip_init(const u8_t *);
 void musha_lwip_poll(u32_t);
 int musha_lwip_tx(u8_t *, u16_t);
 u32_t sys_now(void);
+int musha_lwip_address(u8_t *);
 _Noreturn void musha_lwip_assert(void) { __builtin_trap(); }
 #define CHECK(test) do { if (!(test)) return __LINE__; } while (0)
 int main(void) {
@@ -26,13 +27,18 @@ int main(void) {
         CHECK(sys_now() == before); /* Endpoint restart never rewinds time. */
         CHECK(musha_lwip_init(mac) == -1); /* Cannot replace a live endpoint. */
         CHECK(netif_list && netif_list == netif_default && !netif_list->next);
-        CHECK(udp_pcbs && !udp_pcbs->next);
+        CHECK(udp_pcbs && udp_pcbs->next && !udp_pcbs->next->next);
+        u8_t address[4];
+        CHECK(!musha_lwip_address(address)); /* DHCP pending, never static IP. */
         struct pbuf *payload = pbuf_alloc(PBUF_TRANSPORT, 17, PBUF_POOL);
         CHECK(payload);
         ip_addr_t destination;
         IP_ADDR4(&destination,10,0,2,2);
-        CHECK(udp_sendto(udp_pcbs,payload,&destination,43210) == ERR_OK);
-        pbuf_free(payload); /* ARP retains its own queued reference. */
+        struct udp_pcb *application = udp_pcbs;
+        while (application && application->local_port != 12345) application = application->next;
+        CHECK(application);
+        CHECK(udp_sendto(application,payload,&destination,43210) == ERR_RTE);
+        pbuf_free(payload); /* No route exists until a DHCP lease is supplied. */
         musha_lwip_poll(1000 + session * 10);
         musha_lwip_stop();
         musha_lwip_stop();
@@ -43,7 +49,7 @@ int main(void) {
             heap = lwip_stats.mem.used;
         } else {
             for (unsigned i = 0; i < MEMP_MAX; ++i) CHECK(used[i] == lwip_stats.memp[i]->used);
-            CHECK(heap == lwip_stats.mem.used); /* Includes queued ARP pbufs. */
+            CHECK(heap == lwip_stats.mem.used); /* Includes pending DHCP/frame queue allocations. */
         }
     }
     return 0;

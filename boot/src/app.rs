@@ -103,6 +103,10 @@ impl Application for Diagnostic {
         }
         #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
         if !VIEWER {
+            #[cfg(feature = "live-file-probe")]
+            if !crate::net::probe_address_ready() {
+                return Ok(());
+            }
             self.stream.step(files)?;
         }
         Ok(())

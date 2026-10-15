@@ -128,7 +128,9 @@ with (o/'qemu.log').open('w') as log:
                 assert 'XHCI_QUIESCED DMA_DISABLED' in text[start:scrub]
                 assert 'STREAM_MOUNT_'+a.format.upper() in text[scrub:frame]
                 if a.lan:
-                    assert 'NET_READY' in text[scrub:frame] and 'LWIP INIT' not in text, text
+                    wait('NET_READY', scrub)
+                    text = debug.read_text()
+                    assert 'NET_READY IP=10.0.2.15 UDP=12345 DHCP' in text[scrub:] and 'LWIP INIT' not in text, text
                     payload = ('stage5-'+a.format+'-mount-'+str(launch)).encode()
                     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as peer:
                         peer.settimeout(.5)

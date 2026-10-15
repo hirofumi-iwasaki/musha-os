@@ -3,10 +3,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """Verify concurrent keyboard, cached file reads and actual NIC traffic."""
 import argparse, pathlib, socket, struct, subprocess, time, shutil, json, hashlib
+import importlib.util
+_spec=importlib.util.spec_from_file_location("dhcp_fixture",pathlib.Path(__file__).with_name("dhcp-fixture.py"))
+dhcp_fixture=importlib.util.module_from_spec(_spec);_spec.loader.exec_module(dhcp_fixture)
 from distribution import usb_readme
 parser=argparse.ArgumentParser()
 parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
+parser.add_argument('--dhcp-address',default='10.0.2.15',help='Fixture DHCP lease, also used as the verified peer destination')
 parser.add_argument('--case',choices=['traffic','input-idle','no-keyboard','keyboard-disconnect','link-down','tx-timeout','app-error'],default='traffic')
 parser.add_argument('--usb-image',type=pathlib.Path)
 parser.add_argument('--exfat-boot-image',type=pathlib.Path,help='Boot EFI from this FAT SATA disk; --usb-image is exFAT data')
@@ -79,7 +83,7 @@ def checksum(b):
  n=sum(struct.unpack('!'+str(len(b)//2)+'H',b))
  while n>>16:n=(n&65535)+(n>>16)
  return (~n)&65535
-host=bytes.fromhex('02aabbccddee');hip=socket.inet_aton('10.0.2.2');gip=socket.inet_aton('10.0.2.15')
+host=bytes.fromhex('02aabbccddee');hip=socket.inet_aton('10.0.2.2');gip=socket.inet_aton(a.dhcp_address)
 with (out/'qemu.log').open('w') as err:
  proc=subprocess.Popen(cmd,stdout=err,stderr=err);peer=None;qs=None
  try:
@@ -89,9 +93,12 @@ with (out/'qemu.log').open('w') as err:
    except OSError:time.sleep(.05)
   if peer is None:raise RuntimeError('network socket unavailable')
   peer.settimeout(2)
-  while 'NET_READY' not in log.read_text():
-   if time.monotonic()>deadline or proc.poll() is not None:raise RuntimeError(log.read_text())
-   time.sleep(.05)
+  # The TX-timeout feature withholds the first descriptor doorbell, including
+  # DHCP DISCOVER. Its failure is deliberately before a lease, never a fake lease.
+  dhcp_server=None
+  if a.case!='tx-timeout':
+   dhcp_server=dhcp_fixture.acquire(peer,log,proc,deadline,a.dhcp_address)
+   (out/"dhcp-lease.json").write_text(json.dumps({"address":a.dhcp_address,"exchanges":dhcp_server.events,"ready_requires_supplied_lease":True},indent=2)+"\n")
   qs=socket.socket(socket.AF_UNIX);qs.connect(str(qmp));stream=qs.makefile('rwb');stream.readline()
   def control(name,args=None):
    stream.write((json.dumps({'execute':name,'arguments':args or {}})+'\n').encode());stream.flush()
@@ -169,6 +176,9 @@ with (out/'qemu.log').open('w') as err:
   if a.case in ['link-down','tx-timeout']:
    if a.case=='link-down':control('set_link',{'name':'net0','up':False})
    reason='LINK DOWN' if a.case=='link-down' else 'TX TIMEOUT'
+   if a.case=='tx-timeout':
+    text=log.read_text()
+    assert 'NET_DHCP_STARTED NO_ADDRESS' in text and 'NET_READY IP=' not in text
    wait_marker('NET_FAILED '+reason);wait_marker('NET_QUIESCED DMA_DISABLED')
    if image_hash:wait_marker('APP_FILE_RECHECK_OK')
    control('send-key',{'keys':[{'type':'qcode','data':'a'}],'hold-time':50})
@@ -198,9 +208,10 @@ with (out/'qemu.log').open('w') as err:
    end=time.monotonic()+timeout
    while time.monotonic()<end:
     peer.settimeout(max(.01,end-time.monotonic()))
-    size=struct.unpack('!I',exact(4))[0]
-    if not 14<=size<=65536:raise RuntimeError('invalid QEMU frame length')
-    frame=exact(size)
+    frame=dhcp_server.stream.receive()
+    renewal=dhcp_server.handle(frame)
+    if renewal:
+     send(renewal);continue
     if match(frame):return frame
    raise TimeoutError('expected frame missing')
   arp=struct.pack('!HHBBH',1,0x800,6,4,1)+host+hip+bytes(6)+gip

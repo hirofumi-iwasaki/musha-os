@@ -3,3 +3,6 @@ Tag: STABLE-2_2_1_RELEASE
 Commit: 77dcd25a72509eb83f72b033d219b1d40cd8eb95
 Version: 2.2.1
 Selected source files, complete upstream headers, and COPYING are unmodified.
+DHCP client added from the same pinned commit: src/core/ipv4/dhcp.c.
+Its original Leon Woestenberg/Axon BSD-3-Clause header is retained in COPYING-DHCP.
+DHCP address-conflict support added from the same commit: src/core/ipv4/acd.c; its header is also in COPYING-DHCP.

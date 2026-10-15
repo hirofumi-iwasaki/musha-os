@@ -1379,3 +1379,71 @@ pub(crate) fn route_intel_ports(c: Controller) -> bool {
     ));
     e.writes != 0
 }
+
+/// I218/PCH-LPT flash is BAR1 (FreeBSD if_em.h EM_BAR_TYPE_FLASH=0x14).
+/// Copy only the matching segment-zero BDF's firmware-described MMIO range.
+#[cfg(feature = "i218-network")]
+pub(crate) unsafe fn nic_flash(bs: *mut r_efi::efi::BootServices, nic: Controller) -> Controller {
+    use r_efi::{efi, protocols::pci_io};
+    unsafe {
+        if nic.base == 0 || read(nic.bus, nic.device, nic.function, 0) != 0x15a38086 {
+            return Controller::NONE;
+        }
+        let mut guid = pci_io::PROTOCOL_GUID;
+        let mut count = 0;
+        let mut handles = core::ptr::null_mut();
+        if ((*bs).locate_handle_buffer)(
+            efi::BY_PROTOCOL,
+            &mut guid,
+            core::ptr::null_mut(),
+            &mut count,
+            &mut handles,
+        )
+        .is_error()
+            || handles.is_null()
+        {
+            return Controller::NONE;
+        }
+        let mut result = Controller::NONE;
+        if count <= 1024 {
+            for handle in core::slice::from_raw_parts(handles, count) {
+                let mut raw = core::ptr::null_mut();
+                if ((*bs).handle_protocol)(*handle, &mut guid, &mut raw).is_error() || raw.is_null()
+                {
+                    continue;
+                }
+                let p = raw as *mut pci_io::Protocol;
+                let (mut segment, mut bus, mut device, mut function) = (0, 0, 0, 0);
+                if ((*p).get_location)(p, &mut segment, &mut bus, &mut device, &mut function)
+                    .is_error()
+                    || (segment, bus, device, function)
+                        != (
+                            0,
+                            nic.bus as usize,
+                            nic.device as usize,
+                            nic.function as usize,
+                        )
+                {
+                    continue;
+                }
+                let mut resources = core::ptr::null_mut();
+                if ((*p).get_bar_attributes)(p, 1, core::ptr::null_mut(), &mut resources).is_error()
+                    || resources.is_null()
+                {
+                    break;
+                }
+                let range = musha_platform::bar_resource(core::slice::from_raw_parts(
+                    resources as *const u8,
+                    48,
+                ));
+                ((*bs).free_pool)(resources);
+                if let Some((base, bytes)) = range {
+                    result = Controller { base, bytes, ..nic };
+                }
+                break;
+            }
+        }
+        ((*bs).free_pool)(handles.cast());
+        result
+    }
+}

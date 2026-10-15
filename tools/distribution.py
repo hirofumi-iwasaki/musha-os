@@ -43,7 +43,7 @@ def json_bytes(value):
 
 USER_DOCS = ('sdk-guide.md','external-app.md','file-viewer.md','distribution-usage.md')
 LICENSE_FILES = tuple('third_party/'+d+'/'+n for d,names in (
-    ('lwip',('COPYING','UPSTREAM')),('freebsd-e1000',('COPYING','UPSTREAM')),
+    ('lwip',('COPYING','COPYING-DHCP','UPSTREAM')),('freebsd-e1000',('COPYING','UPSTREAM')),
     ('freebsd-apple-bce',('COPYING','UPSTREAM')),('r-efi',('AUTHORS','UPSTREAM')),
     ('bluetooth-crypto-licenses',('COPYING','UPSTREAM.json','SHA256SUMS'))) for n in names)
 OBSOLETE_FILES = ('DIAGNOSE.TXT','MUSHA.TXT','update-manifest.json','musha-install.json',

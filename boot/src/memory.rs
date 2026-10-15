@@ -291,10 +291,11 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             }
         }
         crate::diagnostics::set(10, format_args!("MEM CHECK MMIO"));
-        let mut mmio = [None; crate::pci::MAX_CONTROLLERS + 1];
+        let mut mmio = [None; crate::pci::MAX_CONTROLLERS + 2];
         for (index, controller) in info.xhcis.entries[..info.xhcis.count]
             .iter()
             .chain(core::iter::once(&info.nic))
+            .chain(core::iter::once(&info.nic_flash))
             .enumerate()
         {
             if controller.bytes == 0 {

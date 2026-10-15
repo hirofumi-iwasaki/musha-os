@@ -4,6 +4,7 @@
 #include "lwip/netif.h"
 #include "lwip/etharp.h"
 #include "lwip/udp.h"
+#include "lwip/dhcp.h"
 #include "lwip/timeouts.h"
 #include "lwip/stats.h"
 #include "netif/ethernet.h"
@@ -39,6 +40,10 @@ static void receive(void *arg,struct udp_pcb *pcb,struct pbuf *p,const ip_addr_t
 /* The core/timeouts are boot-owned and initialized exactly once. Endpoint and
  * frame-queue lifetimes are scoped to a stopped NIC session, never DMA buffers. */
 void musha_lwip_stop(void) {
+    if (initialized) {
+        dhcp_stop(&nic);
+        dhcp_cleanup(&nic);
+    }
     if (echo) {
         udp_remove(echo);
         echo = NULL;
@@ -61,9 +66,9 @@ int musha_lwip_init(const u8_t *mac) {
     }
     memset(&nic, 0, sizeof(nic));
     ip4_addr_t ip, mask, gw;
-    IP4_ADDR(&ip,10,0,2,15);
-    IP4_ADDR(&mask,255,255,255,0);
-    IP4_ADDR(&gw,10,0,2,2);
+    ip4_addr_set_zero(&ip);
+    ip4_addr_set_zero(&mask);
+    ip4_addr_set_zero(&gw);
     if (!netif_add(&nic,&ip,&mask,&gw,0,setup,ethernet_input)) return -1;
     initialized = 1;
     memcpy(nic.hwaddr,mac,6);
@@ -77,6 +82,10 @@ int musha_lwip_init(const u8_t *mac) {
     }
     udp_received = tx_drops = rx_drops = 0;
     udp_recv(echo,receive,0);
+    if (dhcp_start(&nic) != ERR_OK) {
+        musha_lwip_stop();
+        return -1;
+    }
     return 0;
 }
 void musha_lwip_poll(u32_t milliseconds) { now=milliseconds;sys_check_timeouts(); }
@@ -95,4 +104,17 @@ int musha_lwip_tx(u8_t *out,u16_t capacity) {
 void musha_lwip_counters(u32_t *out) {
     out[0]=lwip_stats.etharp.recv;out[1]=lwip_stats.icmp.recv;out[2]=udp_received;
     out[3]=tx_drops;out[4]=rx_drops;
+}
+
+/* Only a supplied DHCP lease qualifies as an address; no static fallback. */
+int musha_lwip_address(u8_t *out) {
+    if (!out || !initialized || !dhcp_supplied_address(&nic) ||
+        ip4_addr_isany_val(*netif_ip4_addr(&nic))) return 0;
+    out[0]=ip4_addr1(netif_ip4_addr(&nic)); out[1]=ip4_addr2(netif_ip4_addr(&nic));
+    out[2]=ip4_addr3(netif_ip4_addr(&nic)); out[3]=ip4_addr4(netif_ip4_addr(&nic));
+    return 1;
+}
+u32_t musha_lwip_dhcp_state(void) {
+    struct dhcp *d=initialized?netif_dhcp_data(&nic):NULL;
+    return d?d->state:0;
 }

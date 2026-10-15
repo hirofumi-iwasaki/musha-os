@@ -1422,7 +1422,8 @@ fn run_keyboard(
                 return Ok(true);
             }
         }
-        if cfg!(feature = "live-storage-probe") && !cfg!(feature = "live-file-probe") {
+        #[cfg(feature = "live-storage-probe")]
+        if !cfg!(feature = "live-file-probe") && crate::net::probe_address_ready() {
             if let Some(device) = storage.as_deref_mut() {
                 device.probe_step(host)?;
             }

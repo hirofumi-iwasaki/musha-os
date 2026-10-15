@@ -119,17 +119,17 @@ jobs:
           python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --extra-xhci --keyboard-second
       - name: QEMU live storage with input and network
         run: |
-          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-storage-probe
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-storage-probe,input-persistent
           python3 tools/make-usb-image.py out/ci/live-storage.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-storage.img --case traffic --live-storage
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-storage.img --case traffic --live-storage --hub-depth 2
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-storage.img --case traffic --live-storage --live-fault disconnect
-          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-storage-timeout
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-storage-timeout,input-persistent
           python3 tools/make-usb-image.py out/ci/live-storage-timeout.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-storage-timeout.img --case traffic --live-storage --live-fault timeout
       - name: QEMU common file API over retained USB
         run: |
-          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-file-probe
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-file-probe,input-persistent
           python3 tools/make-usb-image.py out/ci/live-file.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-file.img --case traffic --live-file
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --usb-image out/ci/live-file.img --case traffic --live-file --live-file-cancel
@@ -146,7 +146,7 @@ jobs:
           done
       - name: QEMU exFAT common file API
         run: |
-          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-exfat-probe
+          cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-exfat-probe,input-persistent
           python3 tools/make-usb-image.py out/ci/exfat-boot.img --efi target/x86_64-unknown-uefi/release/musha-boot.efi
           python3 tools/make-exfat-fixture.py out/ci/exfat-data.img > out/ci/exfat-manifest.txt
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --case traffic --live-file
@@ -157,7 +157,7 @@ jobs:
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --live-file --split-controller --live-file-cancel
           python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image out/ci/exfat-boot.img --usb-image out/ci/exfat-data.img --live-file --split-controller --file-fault disconnect
           for probe in close timeout; do
-            cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features "file-app-$probe"
+            cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features "file-app-$probe,input-persistent"
             python3 tools/make-usb-image.py "out/ci/file-$probe.img" --efi target/x86_64-unknown-uefi/release/musha-boot.efi
             if [ "$probe" = close ]; then
               python3 tools/smoke-cooperative.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --exfat-boot-image "out/ci/file-$probe.img" --usb-image out/ci/exfat-data.img --live-file --split-controller --file-close

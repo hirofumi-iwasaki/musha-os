@@ -19,6 +19,8 @@ unsafe extern "C" {
     fn musha_lwip_input(bytes: *const u8, length: u16) -> i32;
     fn musha_lwip_tx(bytes: *mut u8, capacity: u16) -> i32;
     fn musha_lwip_counters(out: *mut u32);
+    fn musha_lwip_address(out: *mut u8) -> i32;
+    fn musha_lwip_dhcp_state() -> u32;
 }
 #[unsafe(no_mangle)]
 extern "C" fn musha_lwip_assert() -> ! {
@@ -48,6 +50,8 @@ extern "C" fn musha_lwip_assert() -> ! {
 struct Nic {
     c: pci::Controller,
     dma: usize,
+    flash: pci::Controller,
+    pch: bool,
 }
 impl Nic {
     fn read(&self, r: usize) -> u32 {
@@ -89,35 +93,64 @@ impl Nic {
         unsafe {
             pci::disable_dma(self.c);
         }
-        unsafe { pci::read(self.c.bus, self.c.device, self.c.function, 4) & 4 == 0 }
+        let bme_off = unsafe { pci::read(self.c.bus, self.c.device, self.c.function, 4) & 4 == 0 };
+        if self.pch {
+            struct Stop<'a>(&'a Nic);
+            impl musha_net::i218::Io for Stop<'_> {
+                fn read(&mut self, r: usize) -> Result<u32, musha_net::i218::Error> {
+                    Ok(self.0.read(r))
+                }
+                fn write(&mut self, r: usize, v: u32) -> Result<(), musha_net::i218::Error> {
+                    self.0.write(r, v);
+                    Ok(())
+                }
+                fn delay_us(&mut self, _: u32) -> Result<(), musha_net::i218::Error> {
+                    Err(musha_net::i218::Error::Clock)
+                }
+            }
+            return musha_net::i218::link::stop_master(&mut Stop(self), bme_off).is_ok();
+        }
+        bme_off
     }
     fn initialize(&self, t: &mut acpi::Time) -> Result<(), &'static str> {
-        crate::diagnostics::net_stage("RESET");
-        self.write(0xd8, u32::MAX);
-        self.write(0x100, 0);
-        self.write(0x400, 0);
-        self.write(0, self.read(0) | (1 << 26));
-        self.wait(t, 0, 1 << 26, 0, 100)?;
-        crate::diagnostics::net_stage("EEPROM / MAC");
-        self.wait(t, 0x10, 1 << 9, 1 << 9, 1000)?;
-        self.write(0xd8, u32::MAX);
-        self.write(0xe0, 0);
-        let lo = self.read(0x5400);
-        let hi = self.read(0x5404);
-        let mac = [
-            lo as u8,
-            (lo >> 8) as u8,
-            (lo >> 16) as u8,
-            (lo >> 24) as u8,
-            hi as u8,
-            (hi >> 8) as u8,
-        ];
-        if hi & (1 << 31) == 0 || mac[0] & 1 != 0 || mac == [0; 6] {
-            return Err("MAC");
-        }
-        crate::diagnostics::net_stage("LINK");
-        self.write(0, self.read(0) | (1 << 6));
-        self.wait(t, 8, 2, 2, 3000)?;
+        let mac = if self.pch {
+            #[cfg(feature = "i218-network")]
+            {
+                i218::initialize(self.c, self.flash, t)?
+            }
+            #[cfg(not(feature = "i218-network"))]
+            {
+                return Err("I218 NETWORK DISABLED");
+            }
+        } else {
+            crate::diagnostics::net_stage("RESET");
+            self.write(0xd8, u32::MAX);
+            self.write(0x100, 0);
+            self.write(0x400, 0);
+            self.write(0, self.read(0) | (1 << 26));
+            self.wait(t, 0, 1 << 26, 0, 100)?;
+            crate::diagnostics::net_stage("EEPROM / MAC");
+            self.wait(t, 0x10, 1 << 9, 1 << 9, 1000)?;
+            self.write(0xd8, u32::MAX);
+            self.write(0xe0, 0);
+            let lo = self.read(0x5400);
+            let hi = self.read(0x5404);
+            let mac = [
+                lo as u8,
+                (lo >> 8) as u8,
+                (lo >> 16) as u8,
+                (lo >> 24) as u8,
+                hi as u8,
+                (hi >> 8) as u8,
+            ];
+            if hi & (1 << 31) == 0 || mac[0] & 1 != 0 || mac == [0; 6] {
+                return Err("MAC");
+            }
+            crate::diagnostics::net_stage("LINK");
+            self.write(0, self.read(0) | (1 << 6));
+            self.wait(t, 8, 2, 2, 3000)?;
+            mac
+        };
         crate::diagnostics::net_stage("DMA / LWIP");
         // DMA storage is permanent, dedicated, below 4GiB and mapped UC/RW/NX.
         // No Rust references are formed to device-owned descriptors or buffers.
@@ -157,12 +190,18 @@ impl Nic {
         if unsafe { pci::read(self.c.bus, self.c.device, self.c.function, 4) } & 4 == 0 {
             return Err("BUS MASTER");
         }
-        self.write(0x400, 2 | 8 | (0x10 << 4) | (0x40 << 12));
+        self.write(
+            0x400,
+            2 | 8 | ((if self.pch { 15 } else { 16 }) << 4) | (0x40 << 12),
+        );
         self.write(0x100, 2 | (1 << 15) | (1 << 26));
+        unsafe {
+            musha_lwip_poll(crate::bootstate::epoch_now().ok_or("CLOCK")? as u32);
+        }
         if unsafe { musha_lwip_init(mac.as_ptr()) } != 0 {
             return Err("LWIP INIT");
         }
-        crate::debug(b"MUSHA: NET_READY IP=10.0.2.15 UDP=12345\n");
+        crate::debug(b"MUSHA: NET_DHCP_STARTED NO_ADDRESS\n");
         Ok(())
     }
 }
@@ -178,6 +217,9 @@ pub(crate) struct Session {
     pending: Option<musha_net::TxFlight>,
     polls: u64,
     stopped: bool,
+    address: [u8; 4],
+    address_wait: u64,
+    dhcp_state: u32,
 }
 impl Session {
     pub(crate) fn start(
@@ -192,12 +234,16 @@ impl Session {
             return Ok(None);
         }
         #[cfg(feature = "i218-phy-probe")]
-        if unsafe { pci::read(c.bus, c.device, c.function, 0) } == 0x15a38086 {
+        if !cfg!(feature = "i218-network")
+            && unsafe { pci::read(c.bus, c.device, c.function, 0) } == 0x15a38086
+        {
             i218::probe(c, time)?;
             return Ok(None); // Probe identity is never a network-ready session.
         }
         if c.bytes < 0x6000
-            || unsafe { pci::read(c.bus, c.device, c.function, 0) } != 0x10d38086
+            || !(unsafe { pci::read(c.bus, c.device, c.function, 0) } == 0x10d38086
+                || cfg!(feature = "i218-network")
+                    && unsafe { pci::read(c.bus, c.device, c.function, 0) } == 0x15a38086)
             || unsafe { pci::read(c.bus, c.device, c.function, 4) } & 2 == 0
             || !musha_net::valid_dma(info.net_dma_base, info.net_dma_bytes)
         {
@@ -221,6 +267,8 @@ impl Session {
             nic: Nic {
                 c,
                 dma: info.net_dma_base,
+                flash: info.nic_flash,
+                pch: unsafe { pci::read(c.bus, c.device, c.function, 0) } == 0x15a38086,
             },
             started: time.now()?,
             rx: 0,
@@ -231,6 +279,9 @@ impl Session {
             pending: None,
             polls: 0,
             stopped: false,
+            address: [0; 4],
+            address_wait: time.now()?,
+            dhcp_state: 0,
         };
         if let Err(error) = session.nic.initialize(time) {
             crate::diagnostics::net_failure(error);
@@ -266,6 +317,47 @@ impl Session {
         unsafe {
             // lwIP core timers survive endpoint sessions: never restart their clock.
             musha_lwip_poll(crate::bootstate::epoch_now().ok_or("CLOCK")? as u32);
+        }
+        let state = unsafe { musha_lwip_dhcp_state() };
+        if state != self.dhcp_state {
+            self.dhcp_state = state;
+            crate::debug(b"MUSHA: DHCP_STATE=");
+            crate::debug(&crate::cpu::hex(state as u64));
+            crate::debug(b"\n");
+        }
+        let mut address = [0; 4];
+        if unsafe { musha_lwip_address(address.as_mut_ptr()) } != 0 {
+            if address != self.address {
+                self.address = address;
+                crate::debug(b"MUSHA: NET_READY IP=");
+                for (i, n) in address.into_iter().enumerate() {
+                    if i != 0 {
+                        crate::debug(b".");
+                    }
+                    let mut digits = [0u8; 3];
+                    let mut at = 3;
+                    let mut n = n;
+                    loop {
+                        at -= 1;
+                        digits[at] = b'0' + n % 10;
+                        n /= 10;
+                        if n == 0 {
+                            break;
+                        }
+                    }
+                    crate::debug(&digits[at..]);
+                }
+                crate::debug(b" UDP=12345 DHCP\n");
+            }
+        } else {
+            if self.address != [0; 4] {
+                self.address = [0; 4];
+                self.address_wait = now;
+                crate::debug(b"MUSHA: NET_DHCP_ADDRESS_LOST\n");
+            }
+            if now.saturating_sub(self.address_wait) >= 30_000 {
+                return Err("DHCP TIMEOUT");
+            }
         }
         let mut bytes = [0u8; BUFFER_BYTES];
         for _ in 0..8 {
@@ -407,4 +499,12 @@ pub(crate) fn failed(error: &str) {
     crate::debug(b"MUSHA: NET_FAILED ");
     crate::debug(error.as_bytes());
     crate::debug(b"\n");
+}
+
+/// Test-only synchronization: pending storage/file and UDP overlap begins after DHCP.
+/// This exposes no network API to applications and does not gate normal I/O.
+#[cfg(any(feature = "live-file-probe", feature = "live-storage-probe"))]
+pub(crate) fn probe_address_ready() -> bool {
+    BDF.load(Ordering::Relaxed) == u32::MAX
+        || unsafe { musha_lwip_address([0u8; 4].as_mut_ptr()) != 0 }
 }

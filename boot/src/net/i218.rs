@@ -31,7 +31,9 @@ impl Io for Registers<'_> {
     }
     fn write(&mut self, offset: usize, value: u32) -> Result<(), Error> {
         // PHY probe may issue only MDIO commands and software ownership writes.
-        if !matches!(offset, i218::MDIC | i218::EXTCNF_CTRL) {
+        if !matches!(offset, i218::MDIC | i218::EXTCNF_CTRL)
+            && !(cfg!(feature = "i218-power-probe") && offset == i218::power::H2ME)
+        {
             return Err(Error::Resource);
         }
         let p = self.address(offset)?;
@@ -65,6 +67,13 @@ pub(super) fn probe(c: pci::Controller, time: &mut acpi::Time) -> Result<(), &'s
     crate::debug(b"MUSHA: I218_PHY_PROBE DMA_DISABLED REV=");
     crate::debug(&crate::cpu::hex(revision as u64));
     crate::debug(b"\n");
+    #[cfg(feature = "i218-power-probe")]
+    {
+        crate::diagnostics::net_stage("I218 ME ULP EXIT / NO DMA");
+        i218::power::managed_exit(&mut io, i218::Device::I218V3)
+            .map_err(i218::power::Error::label)?;
+        crate::debug(b"MUSHA: I218_ME_ULP_EXIT_OK NO_NETWORK DMA_DISABLED\n");
+    }
     let (id, rev) = i218::phy_id(&mut io).map_err(Error::label)?;
     crate::diagnostics::set(8, format_args!("I218 PHY ID {:08X} REV {:02X}", id, rev));
     crate::debug(b"MUSHA: I218_PHY_ID=");
@@ -81,4 +90,150 @@ pub(super) fn probe(c: pci::Controller, time: &mut acpi::Time) -> Result<(), &'s
     crate::diagnostics::net_stage("I218 PROBE DONE DMA DISABLED");
     crate::debug(b"MUSHA: I218_PHY_PROBE_OK NO_NETWORK DMA_DISABLED\n");
     Ok(())
+}
+
+#[cfg(feature = "i218-network")]
+struct NetworkRegisters<'a> {
+    c: pci::Controller,
+    flash: pci::Controller,
+    region: Option<i218::flash::Region>,
+    time: &'a mut acpi::Time,
+}
+#[cfg(feature = "i218-network")]
+impl NetworkRegisters<'_> {
+    fn pointer(&self, c: pci::Controller, offset: usize, width: usize) -> Result<*mut u8, Error> {
+        if c.base == 0
+            || c.base % 4096 != 0
+            || offset % width != 0
+            || offset.checked_add(width).is_none_or(|n| n > c.bytes)
+        {
+            return Err(Error::Resource);
+        }
+        c.base
+            .checked_add(offset)
+            .map(|p| p as *mut u8)
+            .ok_or(Error::Resource)
+    }
+}
+#[cfg(feature = "i218-network")]
+impl Io for NetworkRegisters<'_> {
+    fn read(&mut self, r: usize) -> Result<u32, Error> {
+        Ok(unsafe { self.pointer(self.c, r, 4)?.cast::<u32>().read_volatile() })
+    }
+    fn write(&mut self, r: usize, v: u32) -> Result<(), Error> {
+        if r == 0 && v & (1 << 26) != 0 {
+            return Err(Error::Resource);
+        } // Only raw reset path.
+        unsafe {
+            self.pointer(self.c, r, 4)?.cast::<u32>().write_volatile(v);
+        }
+        self.read(8)?;
+        Ok(())
+    }
+    fn delay_us(&mut self, us: u32) -> Result<(), Error> {
+        self.time.delay_us(us).map_err(|_| Error::Clock)
+    }
+}
+#[cfg(feature = "i218-network")]
+impl i218::flash::Io for NetworkRegisters<'_> {
+    fn read16(&mut self, r: usize) -> Result<u16, Error> {
+        if !matches!(r, 4 | 6) {
+            return Err(Error::Resource);
+        }
+        Ok(unsafe {
+            self.pointer(self.flash, r, 2)?
+                .cast::<u16>()
+                .read_volatile()
+        })
+    }
+    fn write16(&mut self, r: usize, v: u16) -> Result<(), Error> {
+        if !matches!(r, 4 | 6) || r == 6 && v & 6 != 0 {
+            return Err(Error::Resource);
+        } // No write/erase cycle.
+        unsafe {
+            self.pointer(self.flash, r, 2)?
+                .cast::<u16>()
+                .write_volatile(v);
+        }
+        Ok(())
+    }
+    fn read32(&mut self, r: usize) -> Result<u32, Error> {
+        if !matches!(r, 0 | 0x10) {
+            return Err(Error::Resource);
+        }
+        Ok(unsafe {
+            self.pointer(self.flash, r, 4)?
+                .cast::<u32>()
+                .read_volatile()
+        })
+    }
+    fn write32(&mut self, r: usize, v: u32) -> Result<(), Error> {
+        if r != 8 || v > 0xffffff {
+            return Err(Error::Resource);
+        }
+        unsafe {
+            self.pointer(self.flash, r, 4)?
+                .cast::<u32>()
+                .write_volatile(v);
+        }
+        Ok(())
+    }
+    fn delay_us(&mut self, us: u32) -> Result<(), Error> {
+        Io::delay_us(self, us)
+    }
+}
+#[cfg(feature = "i218-network")]
+impl i218::reset::Io for NetworkRegisters<'_> {
+    fn pci_id(&mut self) -> Result<u32, Error> {
+        Ok(unsafe { pci::read(self.c.bus, self.c.device, self.c.function, 0) })
+    }
+    fn bus_master(&mut self) -> Result<bool, Error> {
+        Ok(unsafe { pci::read(self.c.bus, self.c.device, self.c.function, 4) } & 4 != 0)
+    }
+    fn raw_write(&mut self, r: usize, v: u32) -> Result<(), Error> {
+        if !matches!(r, 0 | 0xc) {
+            return Err(Error::Resource);
+        }
+        unsafe {
+            self.pointer(self.c, r, 4)?.cast::<u32>().write_volatile(v);
+        }
+        Ok(())
+    }
+    fn nvm_word(&mut self, n: u16) -> Result<u16, Error> {
+        let region = match self.region {
+            Some(r) => r,
+            None => {
+                let r = i218::flash::Region::open(self)?;
+                self.region = Some(r);
+                r
+            }
+        };
+        region.word(self, n)
+    }
+}
+#[cfg(feature = "i218-network")]
+pub(super) fn initialize(
+    c: pci::Controller,
+    flash: pci::Controller,
+    time: &mut acpi::Time,
+) -> Result<[u8; 6], &'static str> {
+    if c.bytes < 0x6000 || flash.bytes < 0x1000 || flash.bdf() != c.bdf() {
+        return Err("I218 FLASH RESOURCE");
+    }
+    let mut io = NetworkRegisters {
+        c,
+        flash,
+        region: None,
+        time,
+    };
+    match i218::reset::initialize(&mut io) {
+        Ok(()) => {}
+        Err(i218::reset::Error::ResetUnconfirmed) => {
+            crate::debug(b"MUSHA: I218_RESET_UNCONFIRMED DMA_DISABLED QUARANTINED\n");
+            crate::stop();
+        }
+        Err(e) => return Err(e.label()),
+    }
+    crate::debug(b"MUSHA: I218_RESET_OK DMA_DISABLED\n");
+    i218::link::initialize(&mut io).map_err(Error::label)
 }
