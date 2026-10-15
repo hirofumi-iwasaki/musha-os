@@ -115,6 +115,10 @@ impl Nic {
     }
     fn initialize(&self, t: &mut acpi::Time) -> Result<(), &'static str> {
         let init_start = t.now()?;
+        #[cfg(feature = "i218-nvm-reject-probe")]
+        {
+            return Err("I218 SOFTWARE NVM CONFIG REQUIRED");
+        }
         let mac = if self.pch {
             #[cfg(feature = "i218-network")]
             {

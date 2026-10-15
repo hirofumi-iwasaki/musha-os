@@ -75,6 +75,15 @@ struct FaultFrame {
     ss: u64,
 }
 
+// Stubs push one synthetic zero only for vectors without hardware error codes.
+// Keep the C frame offsets aligned with common's naked assembly argument.
+const _: () = {
+    assert!(core::mem::offset_of!(FaultFrame, vector) == 0);
+    assert!(core::mem::offset_of!(FaultFrame, error) == 8);
+    assert!(core::mem::offset_of!(FaultFrame, rip) == 16);
+    assert!(core::mem::offset_of!(FaultFrame, cs) == 24);
+};
+
 // SAFETY: called once on BSP with interrupts disabled and permanent LoaderData
 // mappings. TABLES is never moved/reclaimed. No references to static mut escape.
 pub unsafe fn initialize(info: *const BootInfo) {
@@ -140,6 +149,9 @@ pub unsafe fn initialize(info: *const BootInfo) {
         asm!("sgdt [{}]","sidt [{}]",in(reg) &mut actual_gdt,in(reg) &mut actual_idt,options(nostack,preserves_flags));
         let cs: u16;
         let tr: u16;
+        let fs: u16;
+        let gs: u16;
+        asm!("mov {0:x}, fs", "mov {1:x}, gs", out(reg) fs, out(reg) gs, options(nomem,nostack,preserves_flags));
         asm!("mov {0:x}, cs","str {1:x}",out(reg) cs,out(reg) tr,options(nomem,nostack,preserves_flags));
         if actual_gdt.base != gdtr.base
             || actual_gdt.limit != gdtr.limit
@@ -147,8 +159,21 @@ pub unsafe fn initialize(info: *const BootInfo) {
             || actual_idt.limit != 4095
             || cs != 8
             || tr != 24
+            || fs != 16
+            || gs != 16
         {
             stop();
+        }
+        #[cfg(feature = "segment-takeover-probe")]
+        crate::debug(b"MUSHA: SEGMENT_TAKEOVER_PROBE OLD_FS_GS=18 NEW=10 OK\n");
+        #[cfg(all(feature = "segment-takeover-probe", feature = "i218-phy-probe"))]
+        {
+            let mut time = crate::acpi::Time::new(boot.timer).unwrap();
+            assert!(time.delay_us(0).is_err());
+            let before = time.now().unwrap();
+            time.delay_us(50_000).unwrap();
+            assert!(time.now().unwrap().saturating_sub(before) >= 50);
+            crate::debug(b"MUSHA: I218_LONG_DELAY_50000US_OK ZERO_REJECTED\n");
         }
     }
 }
@@ -165,9 +190,24 @@ unsafe extern "win64" fn load_gdt(_gdtr: *const Descriptor) {
         "mov ds, ax",
         "mov es, ax",
         "mov ss, ax",
+        // Model firmware's cached data selector0x18 before this slot becomes TSS.
+        // Restore the descriptor before LTR; this fixture never enables DMA.
+        ".if {inject}",
+        "mov r10, [rcx+2]", "mov r11, [r10+24]",
+        "mov rax, 0x00cf92000000ffff", "mov [r10+24], rax",
+        "mov ax, 24", "mov fs, ax", "mov gs, ax",
+        "mov [r10+24], r11",
+        "mov ax, fs", "cmp ax, 24", "jne 3f",
+        "mov ax, gs", "cmp ax, 24", "je 4f",
+        "3:", "ud2", "4:",
+        ".endif",
+        // Own every data selector when replacing the firmware GDT. Cached
+        // firmware FS/GS selectors may now name a TSS or lie outside our table.
+        "mov ax, 16", "mov fs, ax", "mov gs, ax",
         "mov ax, 24",
         "ltr ax",
-        "ret"
+        "ret",
+        inject = const cfg!(feature = "segment-takeover-probe") as u8
     );
 }
 macro_rules! stub {
@@ -312,9 +352,15 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
                 fb.color(255, 220, 220),
             );
             let bytes = hex(*value);
+            let text =
+                if *label == "ERROR" && !musha_platform::exceptions::hardware_error(frame.vector) {
+                    "N/A"
+                } else {
+                    core::str::from_utf8_unchecked(&bytes)
+                };
             // SAFETY: hex constructs only ASCII characters.
             fb.text_grid(
-                core::str::from_utf8_unchecked(&bytes),
+                text,
                 grid::VALUE,
                 grid::DISCOVERY + i,
                 fb.color(255, 220, 220),

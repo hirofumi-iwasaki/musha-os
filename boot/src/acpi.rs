@@ -311,18 +311,27 @@ impl Time {
     }
     #[cfg(feature = "i218-phy-probe")]
     pub(crate) fn delay_us(&mut self, us: u32) -> Result<(), &'static str> {
-        let start = unsafe { read(self.timer.port) };
-        self.clock.sample(start).ok_or("CLOCK OVERFLOW")?;
-        let delay = musha_platform::ShortDelay::new(self.timer, start, us).ok_or("DELAY RANGE")?;
-        for _ in 0..2_000_000 {
-            let raw = unsafe { read(self.timer.port) };
-            self.clock.sample(raw).ok_or("CLOCK OVERFLOW")?;
-            if delay.complete(raw) {
-                return Ok(());
+        let chunks = musha_platform::driver_delay_chunks(us).ok_or("DELAY RANGE")?;
+        for us in chunks {
+            let start = unsafe { read(self.timer.port) };
+            self.clock.sample(start).ok_or("CLOCK OVERFLOW")?;
+            let delay =
+                musha_platform::ShortDelay::new(self.timer, start, us).ok_or("DELAY RANGE")?;
+            let mut complete = false;
+            for _ in 0..2_000_000 {
+                let raw = unsafe { read(self.timer.port) };
+                self.clock.sample(raw).ok_or("CLOCK OVERFLOW")?;
+                if delay.complete(raw) {
+                    complete = true;
+                    break;
+                }
+                core::hint::spin_loop();
             }
-            core::hint::spin_loop();
+            if !complete {
+                return Err("CLOCK STALLED");
+            }
         }
-        Err("CLOCK STALLED")
+        Ok(())
     }
     pub(crate) fn now(&mut self) -> Result<u64, &'static str> {
         let raw = unsafe { read(self.timer.port) };

@@ -453,3 +453,39 @@ pub mod pci_recovery;
 pub mod t2_diagnostics;
 
 pub mod user_io;
+
+pub mod exceptions;
+
+/// Split bounded driver waits into the PM timer's supported short-delay units.
+/// Zero and excessive waits are errors, never unbounded busy loops.
+pub fn driver_delay_chunks(us: u32) -> Option<impl Iterator<Item = u32>> {
+    if !(1..=1_000_000).contains(&us) {
+        return None;
+    }
+    Some((0..us.div_ceil(1000)).map(move |n| (us - n * 1000).min(1000)))
+}
+#[cfg(test)]
+mod driver_delay_tests {
+    use super::*;
+    #[test]
+    fn zero_and_outside_bound_reject() {
+        assert!(driver_delay_chunks(0).is_none());
+        assert!(driver_delay_chunks(1_000_001).is_none());
+        assert!(driver_delay_chunks(u32::MAX).is_none());
+    }
+    #[test]
+    fn i218_long_waits_are_exact_bounded_short_chunks() {
+        for us in [
+            1, 50, 1000, 1001, 5000, 10_000, 20_000, 30_000, 50_000, 1_000_000,
+        ] {
+            let (mut count, mut sum) = (0, 0);
+            for n in driver_delay_chunks(us).unwrap() {
+                count += 1;
+                sum += n;
+                assert!(ShortDelay::new(Timer { port: 1, bits: 24 }, 0, n).is_some());
+            }
+            assert_eq!(sum, us);
+            assert!(count <= 1000);
+        }
+    }
+}

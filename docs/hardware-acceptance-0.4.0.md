@@ -6,6 +6,12 @@ Status: current (blank acceptance worksheet, 2026-10-15). All gates PENDING; no 
 
 ### English
 
+### Appended NUC5 observation and corrected development EFI — 2026-10-16
+
+`IMG_7654.MOV` with the prior `268b9a49…` I218 EFI is **FAIL**, not acceptance: software-NVM configuration refused; later separate #GP (VECTOR D, ERROR18h, RIP140056D89h) during FS restore. No Hello exit/viewer return or DHCP/echo is established; cold-off/AC conditions are unverified. Original worksheet rows and evidence remain unchanged. See [exact diagnosis](nuc5-segment-recovery-0.4.0.md).
+
+Corrected development-only EFI: `out/i218-segment-fix-20261016/files/EFI/BOOT/BOOTX64.EFI`, SHA256 `2275d088fe7bebedab61556cced9ff705cff309c4c6dae1cd800ad553f7fcf53`, `i218-network` only, `log=devices`, HEADd44cdab plus recorded uncommitted source. This corrects CPU recovery/timer handling; software-NVM refusal remains and physical retest is PENDING. It does not replace or relabel the three historical EFI identities above. No USB action in this correction task.
+
 These are **three development diagnostics, not the normal release candidate**. All physical/hardware gates below remain PENDING. No USB was written, formatted, mounted or deployed by this preparation. The published v0.3.0 files ZIP used for the separate formatted-media six-run gate is unchanged.
 
 | Purpose / exact development EFI | Requested features | EFI SHA256 |
@@ -21,6 +27,12 @@ Both new EFIs were built with `cargo build --locked --release --target x86_64-un
 `i218-network` also enables `i218-phy-probe`. **`log=devices` is a SETTINGS/CONFIG.TXT runtime setting, not a build feature**; record the actual media CONFIG bytes/hash before a test. The HCI probe transitively enables `qemu-debug` and is an explicit development transport reset, not the normal Bluetooth pairing/runtime build. It sends HCI Reset without loading firmware; an ASUS reset response does not prove CSR reference-dongle, pairing, Xbox or HOGP compatibility. Record exact USB IDs/revision/class and response/error as the [Bluetooth quickcheck](bluetooth-hardware-quickcheck.md) specifies. Instructions describe owner execution only; the normal candidate identity above remains PENDING.
 
 ### 日本語
+
+### NUC5観測追記と修正開発EFI — 2026-10-16
+
+旧`268b9a49…` I218 EFIによる`IMG_7654.MOV`は**FAIL**です。software-NVM構成拒否と、その後の別#GP（VECTOR D、ERROR18h、RIP140056D89h、FS復元時）を記録。Hello終了/viewer復帰・DHCP/echoは未確認、電源断/AC条件も不明。元表・旧証拠は保持。[正確な診断](nuc5-segment-recovery-0.4.0.md)参照。
+
+修正開発EFIは`out/i218-segment-fix-20261016/files/EFI/BOOT/BOOTX64.EFI`、SHA256 `2275d088fe7bebedab61556cced9ff705cff309c4c6dae1cd800ad553f7fcf53`、`i218-network`のみ・`log=devices`、HEADd44cdab＋記録した未commit差分。CPU復帰/timerを修正し、software-NVM拒否は保持。実機再確認はPENDINGで、上の旧3EFI識別を置換しません。本修正作業でUSB操作なし。
 
 以下は**3本の開発診断EFIで通常release候補ではありません**。下記実機gateは全てPENDING。本準備で実USBの書込み/format/mount/配備は行っていません。別のformatter6runに用いる公開v0.3.0 files ZIPも不変です。
 

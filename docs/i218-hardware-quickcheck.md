@@ -4,6 +4,8 @@ Status: current (procedure only, 2026-10-15). Physical networking remains unveri
 
 ## English
 
+Recorded2026-10-16 NUC5 trial (`IMG_7654.MOV`, previous EFI268b9a49…): **FAIL** at software-NVM refusal, followed by separate #GP during app CPU recovery. No DHCP/echo or cold criteria confirmed. [Diagnosis and corrected development EFI](nuc5-segment-recovery-0.4.0.md); physical retest remains pending. Preserve that failure and do not count local QEMU recovery as a physical pass. For corrected EFI2275d088… record three separate checks: (1) no #GP and USB READ → AUTORUN → ready/viewer recovery, (2) LAN succeeds or the NVM reason remains visible while boot continues nonfatally, (3) UDP echo only after an actual DHCP lease. This EFI retains NVM refusal; it is primarily a CPU-recovery/fallback retest, not an expectation of LAN success.
+
 1. Connect NUC5 Ethernet and the Mac to the same IPv4 LAN with a working DHCP server. Record switch/router, cable/ports, Mac interface/IP, NUC model/firmware and link LEDs. Connect boot USB and external keyboard directly; photograph topology. A direct cable without DHCP does not satisfy this test.
 2. Identify the approved development EFI by commit/hash and **`i218-network`** feature. Build-only command: `cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features i218-network`. Output is `target/x86_64-unknown-uefi/release/musha-boot.efi` unless target-dir overrides it. `tools/build-usb.py` has no arbitrary-features option. Packaging/copying to physical USB is a separate owner operation, not performed here. `i218-phy-probe`/`i218-power-probe` alone do not enable LAN; the normal build does not establish physical I218 support.
 3. Use `log=devices`, cold boot ≥10 s and record AC state. Capture actual Ethernet PCI ID/revision/BDF (8086:15A3 is a candidate), MAC/PHY/reset/link diagnostics, supplied DHCP IPv4 and ready/error pages. Initialization shares one5-second budget across PHY/reset/flash waits. Expiry disables and quarantines LAN, then boot continues only after PCI confirms BME off; an unconfirmed stop remains a safe halt. Photograph the concrete phases reason and devices backend/link/address/init and lease durations. There is no static-IP fallback; initial/no-address timeout is 30 s. A link LED or detected PCI function alone is not communication.
@@ -21,6 +23,8 @@ Status: current (procedure only, 2026-10-15). Physical networking remains unveri
 See [implementation limits](i218-network-0.4.0-progress.md) and [LAN plan](lan-plan-0.4.0.md).
 
 ## 日本語
+
+2026-10-16記録のNUC5試行（`IMG_7654.MOV`・旧EFI268b9a49…）はsoftware-NVM拒否、その後app CPU復帰時の別#GPにより**FAIL**。DHCP/echo・冷間条件は未確認。[診断・修正開発EFI](nuc5-segment-recovery-0.4.0.md)参照、実機再確認は未実施。失敗を保持し、QEMU回復を実機合格と数えません。修正EFI2275d088…では3点を別記録：①#GP無しでUSB READ→AUTORUN→ready/viewer復帰、②LAN成功又はNVM理由付きの非致命boot継続、③実DHCP lease取得時のみUDP echo。本EFIはNVM拒否を保持するため、LAN成功を期待する試験ではなくCPU復帰/正常fallback再試験が主目的です。
 
 1. NUC5有線LANとMacをDHCP serverのある同一IPv4 LANへ接続。switch/router、cable/port、Mac interface/IP、NUC型番/firmware、link LEDを記録。起動USB/外付けkeyboardを直結し接続写真を保存。DHCP無し直結は本試験を満たしません。
 2. 承認対象の開発EFIをcommit/hashと**`i218-network`** featureで識別。buildのみのcommandは`cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features i218-network`。target-dir指定がなければ出力は`target/x86_64-unknown-uefi/release/musha-boot.efi`。`tools/build-usb.py`に任意feature引数はありません。物理USBへのpackage/copyは別途所有者操作で、本作業では実行しません。PHY/power probeだけではLANを有効にせず、通常buildも実I218対応の証拠ではありません。

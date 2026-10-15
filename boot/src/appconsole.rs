@@ -94,7 +94,11 @@ pub unsafe fn fault(fb: Framebuffer, vector: u64, error: u64, rip: u64, rsp: u64
         (b"RSP ", rsp),
     ] {
         c.append(label);
-        c.append(&crate::cpu::hex(value));
+        if label == b"ERROR " && !musha_platform::exceptions::hardware_error(vector) {
+            c.append(b"N/A");
+        } else {
+            c.append(&crate::cpu::hex(value));
+        }
         c.append(b"\n");
     }
     unsafe { c.render(fb) };

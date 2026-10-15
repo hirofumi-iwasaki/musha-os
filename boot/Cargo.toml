@@ -26,6 +26,10 @@ musha-viewer = { path = "../viewer" }
 
 [features]
 qemu-debug = []
+# Development fixture for firmware FS/GS selectors aliased by the OS TSS slot.
+segment-takeover-probe = ["qemu-debug"]
+# Fail before DMA admission to exercise LAN rejection -> application recovery.
+i218-nvm-reject-probe = ["i218-network", "qemu-debug"]
 # Disposable-image SETTINGS write/cleanup checks only; excluded from normal builds.
 settings-write-probe = ["qemu-debug"]
 settings-write-timeout = ["settings-write-probe"]
