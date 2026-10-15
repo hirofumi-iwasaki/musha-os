@@ -1,6 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-//! One-shot external ELF execution, plus opt-in C1/C2/C3 probes.
+//! External ELF execution under a saved continuation, plus C1/C2/C3 probes.
 //! No scheduler, IRQ return, general user copies, or public application entry.
 use core::arch::{asm, naked_asm, x86_64::__cpuid};
 use musha_memory::PAGE;
@@ -11,7 +11,7 @@ mod abi;
 mod elf;
 #[cfg(elf_app)]
 pub(crate) mod io;
-#[cfg(feature = "ring3-lifecycle-probe")]
+#[cfg(any(feature = "ring3-lifecycle-probe", external_app))]
 pub mod lifecycle;
 #[cfg(c1_probe)]
 const CODE: usize = abi::IMAGE_BASE as usize;
@@ -54,13 +54,13 @@ fn failed(reason: &[u8]) -> ! {
     crate::debug(b"\n");
     #[cfg(external_app)]
     crate::appconsole::rejected(reason);
-    #[cfg(feature = "ring3-lifecycle-probe")]
+    #[cfg(any(feature = "ring3-lifecycle-probe", external_app))]
     lifecycle::reject(reason);
-    #[cfg(not(feature = "ring3-lifecycle-probe"))]
+    #[cfg(not(any(feature = "ring3-lifecycle-probe", external_app)))]
     crate::stop()
 }
 pub fn run(arena: &mut [u8], _info: &crate::BootInfo) -> ! {
-    // This consumes the arena permanently. The normal application is never run.
+    // Only lifecycle recovery may restore mappings and authorize arena reuse.
     let pa = arena.as_mut_ptr() as usize;
     if arena.len() < 20 * PAGE || pa % PAGE != 0 {
         failed(b"ARENA");
@@ -313,9 +313,9 @@ extern "win64" fn dispatch(frame: &mut Frame) {
                     ));
                     crate::bootstate::update(|r, _| r.finish(true));
                     crate::debug(b"MUSHA: EXTERNAL_APP_EXIT\n");
-                    crate::stop();
+                    lifecycle::exit(frame.rdi);
                 }
-                #[cfg(feature = "ring3-lifecycle-probe")]
+                #[cfg(any(feature = "ring3-lifecycle-probe", external_app))]
                 lifecycle::exit(frame.rdi);
                 #[cfg(not(any(feature = "ring3-lifecycle-probe", external_app)))]
                 {

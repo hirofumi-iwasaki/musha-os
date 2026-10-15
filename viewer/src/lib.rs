@@ -23,12 +23,14 @@ pub enum View {
 #[derive(Clone, Copy)]
 struct Item {
     id: Option<Id>,
+    elf: bool,
     bytes: u64,
     name: Text<48>,
 }
 impl Item {
     const EMPTY: Self = Self {
         id: None,
+        elf: false,
         bytes: 0,
         name: Text::new(),
     };
@@ -74,6 +76,13 @@ pub fn name_text(name: &[u16]) -> Text<1530> {
     }
     out
 }
+fn executable_name(name: &[u16]) -> bool {
+    name.len() >= 4
+        && name[name.len() - 4..]
+            .iter()
+            .zip(b".ELF")
+            .all(|(&a, &b)| a <= 127 && (a as u8).to_ascii_uppercase() == b)
+}
 /// Bounded, CPU-only viewer. Catalog identities belong to the borrowed Files;
 /// application buffers never escape callbacks. No full-file allocation or seek I/O.
 pub struct Viewer {
@@ -91,6 +100,8 @@ pub struct Viewer {
     ended: bool,
     keyboard_missing: bool,
     bootfile_absent: bool,
+    returned: Option<(u64, u64)>,
+    launch: Option<Id>,
     handle: Option<Handle>,
     closing: bool,
     position: u64,
@@ -126,6 +137,8 @@ impl Viewer {
             ended: false,
             keyboard_missing: false,
             bootfile_absent: false,
+            returned: None,
+            launch: None,
             handle: None,
             closing: false,
             position: 0,
@@ -145,6 +158,19 @@ impl Viewer {
             self.bootfile_absent = true;
             self.repaint();
         }
+    }
+    pub fn returned(&mut self, kind: u64, detail: u64) {
+        if self.returned.is_none() {
+            self.returned = Some((kind, detail));
+            self.repaint();
+        }
+    }
+    /// CPU-only request; runtime revalidates this opaque ID in the same mount.
+    pub fn launch_request(&self) -> Option<Id> {
+        self.launch
+    }
+    pub fn launch_consumed(&mut self) {
+        self.launch = None;
     }
     fn repaint(&mut self) {
         self.clear = 0;
@@ -220,6 +246,11 @@ impl Viewer {
                     0x4a => self.selected = 0,
                     0x4d => self.selected = self.count - 1,
                     0x28 => {
+                        if self.items[self.selected].elf {
+                            self.launch = self.items[self.selected].id;
+                            self.closing = true;
+                            return;
+                        }
                         self.load(0, now);
                     }
                     _ => {}
@@ -265,6 +296,7 @@ impl Viewer {
     }
     pub fn closed(&mut self, keyboard_missing: bool) {
         self.keyboard_missing = keyboard_missing;
+        self.launch = None;
         self.handle = None;
         self.cursor = None;
         self.closing = false;
@@ -323,6 +355,7 @@ impl Viewer {
                     self.items[self.count] = Item {
                         id: Some(id),
                         bytes: entry.bytes,
+                        elf: executable_name(&entry.name[..entry.name_len as usize]),
                         name,
                     };
                     self.count += 1;
@@ -450,6 +483,13 @@ impl Viewer {
                 let start = (self.name_page * 72).min(self.name.len);
                 let _ = out.write_str(&self.name.as_str()[start..(start + 72).min(self.name.len)]);
             }
+            6 if self.returned.is_some() => {
+                let _ = match self.returned.unwrap() {
+                    (0, status) => write!(out, "ELF exited: status {}.", status as i32),
+                    (1, vector) => write!(out, "ELF faulted: vector {}.", vector),
+                    _ => out.write_str("ELF refused."),
+                };
+            }
             7 => {
                 let _ = match self.view {
                     View::Unavailable => out.write_str(if self.keyboard_missing {
@@ -459,6 +499,9 @@ impl Viewer {
                     } else {
                         "No supported FAT32/exFAT medium. External USB keyboard required."
                     }),
+                    View::Catalog | View::List if self.returned.is_some() => {
+                        out.write_str("Select an ELF and press Enter.")
+                    }
                     View::Catalog | View::List if self.bootfile_absent => {
                         out.write_str("AUTORUN.ELF not found in root. Starting file viewer.")
                     }
@@ -598,6 +641,46 @@ mod tests {
     use super::*;
     use musha_api::stream::{Entry, MAX_FILE_BYTES};
     use std::vec::Vec;
+    #[test]
+    fn repeated_return_status_does_not_restart_every_render_slice() {
+        let mut viewer = Viewer::new();
+        viewer.returned(0, 42);
+        viewer.dirty = false;
+        viewer.clear = 8192;
+        viewer.returned(0, 42);
+        assert!(!viewer.dirty);
+        assert_eq!(viewer.clear, 8192);
+        viewer.view = View::List;
+        assert_eq!(viewer.line(6).as_str(), "ELF exited: status 42.");
+    }
+    #[test]
+    fn elf_selection_uses_complete_name_and_never_starts_a_page_read() {
+        for name in [
+            "demo.elf",
+            "A-very-long-name-that-is-truncated-by-the-list-and-still-an-ELF.ELF",
+        ] {
+            let entries = [entry(name, 64)];
+            let mut files = Files::new();
+            files.mount(Format::Exfat, &entries).unwrap();
+            let mut viewer = Viewer::new();
+            catalog(&mut viewer, &mut files);
+            viewer.key(0x28, 1);
+            let id = viewer.launch_request().unwrap();
+            assert_eq!(viewer.view(), View::List);
+            assert!(files.take_request().is_none());
+            assert!(files.open_id(id).is_ok());
+            viewer.launch_consumed();
+            assert!(viewer.launch_request().is_none());
+            viewer.closed(false);
+            assert!(viewer.launch_request().is_none());
+        }
+        assert!(!executable_name(
+            &"sample.elf.txt".encode_utf16().collect::<Vec<_>>()
+        ));
+        assert!(!executable_name(
+            &"sample.ＥＬＦ".encode_utf16().collect::<Vec<_>>()
+        ));
+    }
     #[test]
     fn absent_notice_requires_explicit_result_and_preserves_errors() {
         let mut v = Viewer::new();

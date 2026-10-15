@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! BSP/IF=0 one-shot input loan. Host state stays on OS stack until terminal stop.
+//! BSP/IF=0 scoped input loan. Host state stays live until detach and return.
 use super::{abi, elf};
 use core::cell::UnsafeCell;
 use musha_platform::user_io::{Event, KEY, Queue};
@@ -26,8 +26,9 @@ static STATE: Shared = Shared(UnsafeCell::new(State {
     stop_info: core::ptr::null(),
 }));
 /// # Safety
-/// callback, all borrowed Hosts/rings and info must remain live until stop().
-/// Caller must enter the non-returning Ring3 path immediately, without moving F.
+/// callback, all borrowed Hosts/rings and info must remain live until detach.
+/// Caller enters Ring3 immediately without moving F. A lifecycle continuation
+/// may return only after detach confirms stop; outer session cleanup still runs.
 pub unsafe fn attach<F: FnMut() -> Result<(), &'static str>>(
     callback: &mut F,
     info: &crate::BootInfo,
@@ -162,23 +163,31 @@ pub fn wait(timeout: u64, flags: u64) -> (i32, u64) {
     }
 }
 pub fn shutdown() {
+    let _ = detach();
+}
+pub fn detach() -> bool {
     let info = unsafe {
         let s = &mut *STATE.0.get();
         let info = s.stop_info;
         s.stop_info = core::ptr::null();
         s.poll = None;
         s.context = core::ptr::null_mut();
+        s.queue = None;
+        s.busy = false;
         info
     };
     if !info.is_null() {
-        // Halting never reclaims the stack/arena/DMA pool, even on failure.
+        // detach does not reclaim memory. Recovery additionally waits for all
+        // enclosing session callbacks/Drop scopes before scrubbing/restarting.
         let stopped = unsafe { crate::xhci::quiesce_app(&*info) };
         crate::debug(if stopped {
             b"MUSHA: APP_INPUT_STOPPED DMA_DISABLED\n"
         } else {
             b"MUSHA: APP_INPUT_STOP_UNCONFIRMED QUARANTINED\n"
         });
+        return stopped;
     }
+    true
 }
 
 pub fn pointer(values: [i32; 3], buttons: u32) {

@@ -547,14 +547,14 @@ pub unsafe fn probe_vacant(va: usize, bytes: usize) -> Result<(), Error> {
 
 // C3 BSP-only transaction: snapshot the bounded table pool before any mapping
 // changes. No concurrent page-table writers or global mappings are permitted.
-#[cfg(feature = "ring3-lifecycle-probe")]
+#[cfg(any(feature = "ring3-lifecycle-probe", external_app))]
 #[repr(C, align(4096))]
 pub struct ProbeSnapshot {
     bytes: [u8; 256 * PAGE],
     used: usize,
     pages: usize,
 }
-#[cfg(feature = "ring3-lifecycle-probe")]
+#[cfg(any(feature = "ring3-lifecycle-probe", external_app))]
 impl ProbeSnapshot {
     pub const fn new() -> Self {
         Self {

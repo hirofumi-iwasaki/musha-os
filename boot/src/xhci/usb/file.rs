@@ -14,7 +14,8 @@ use musha_fs::{
 const MAX: usize = musha_api::stream::MAX_FILES;
 struct Shared<T>(UnsafeCell<T>);
 // Single boot CPU; mount reservation and session claim exclude aliasing. No
-// published catalog is reused during this boot, including after a failed session.
+// published catalog is reused until release_stopped confirms no remaining
+// callbacks/references and every owning controller has stopped DMA.
 unsafe impl<T> Sync for Shared<T> {}
 static RESERVED: AtomicBool = AtomicBool::new(false);
 static CLAIMED: AtomicBool = AtomicBool::new(false);
@@ -330,4 +331,25 @@ fn api_error(e: musha_fs::Error) -> musha_api::stream::Error {
         musha_fs::Error::TooLarge => A::TooLarge,
         musha_fs::Error::Limit => A::Limit,
     }
+}
+
+/// # Safety
+/// All callbacks/Prepared/Session borrows have returned and every owning xHCI
+/// controller has confirmed halt plus PCI bus mastering disabled. Never call on
+/// an unconfirmed stop: canceled DMA may still reference these buffers.
+pub(crate) unsafe fn release_stopped() {
+    let s = unsafe { &mut *STATE.0.get() };
+    s.files.disconnect();
+    if let Some(request) = s.request.take() {
+        s.files
+            .complete(request, Err(musha_api::stream::Error::Disconnected));
+    }
+    s.files.disconnect();
+    s.operation = None;
+    s.sector = None;
+    s.sector_bytes.fill(0);
+    s.result.fill(0);
+    CLAIMED.store(false, Ordering::Release);
+    RESERVED.store(false, Ordering::Release);
+    crate::debug(b"MUSHA: FILE_IDENTITIES_RELEASED AFTER_DMA_STOP\n");
 }

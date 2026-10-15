@@ -4,6 +4,7 @@
 import argparse, hashlib, importlib.util, json, os, pathlib, shutil, socket, subprocess, time
 from smoke_qemu_checks import check_hub_enumerations
 parser=argparse.ArgumentParser()
+parser.add_argument('--efi',type=pathlib.Path,help='Stage this EFI in the private output ESP; avoids shared-root build races')
 parser.add_argument('--output',type=pathlib.Path,help='Directory for local smoke evidence')
 parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
@@ -38,13 +39,16 @@ root=pathlib.Path(__file__).resolve().parent.parent
 out=args.output.resolve() if args.output else root/'out'/('qemu-'+args.case);out.mkdir(parents=True,exist_ok=True)
 firmware=pathlib.Path(args.firmware_dir)
 shutil.copyfile(firmware/'edk2-i386-vars.fd',out/'vars.fd')
+esp=root/'out/esp'
+if args.efi:
+ esp=out/'esp';(esp/'EFI/BOOT').mkdir(parents=True,exist_ok=True);shutil.copyfile(args.efi,esp/'EFI/BOOT/BOOTX64.EFI')
 log=out/'debug.log';log.write_text('')
-qmp_path=out/'qmp.sock'
+qmp_path=root/'out'/('sq-'+hashlib.sha256(str(out).encode()).hexdigest()[:12]+'.sock')
 if qmp_path.exists(): qmp_path.unlink()
 cmd=[args.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev','user,id=net0','-device',args.nic+',netdev=net0',
  '-drive',f'if=pflash,format=raw,readonly=on,file={firmware / "edk2-x86_64-code.fd"}',
  '-drive',f'if=pflash,format=raw,file={out / "vars.fd"}',
- '-drive',f'if=none,id=esp,format=raw,file=fat:rw:{root / "out/esp"}',
+ '-drive',f'if=none,id=esp,format=raw,file=fat:rw:{esp}',
  '-device',('qemu-xhci,id=usbhost,p3=1' if args.storage_high_speed else 'qemu-xhci,id=usbhost'),'-device',('usb-storage,drive=esp,bus=usbhost.0,port=2' if args.storage_high_speed else 'usb-storage,drive=esp,bus=usbhost.0'),'-device',f'usb-kbd,id=testkbd,bus=usbhost.0,usb_version={args.keyboard_usb_version}'+(',port=3' if args.storage_high_speed else ''),'-vga','std','-display','none',
  '-debugcon',f'file:{log}','-global','isa-debugcon.iobase=0xe9',
  '-qmp',f'unix:{qmp_path},server=on,wait=off','-no-reboot']

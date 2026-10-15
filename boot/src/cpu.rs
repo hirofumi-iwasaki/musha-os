@@ -225,7 +225,7 @@ const STUBS: [extern "win64" fn() -> !; 32] = [
 extern "win64" fn common() -> ! {
     naked_asm!("cli","cld","mov rcx, rsp","and rsp, -16","sub rsp, 32",
         ".if {recover}","fninit","mov dword ptr [rsp],0x1f80","ldmxcsr [rsp]",".endif",
-        "call {handler}","ud2",handler=sym fatal,recover=const cfg!(feature="ring3-lifecycle-probe") as usize);
+        "call {handler}","ud2",handler=sym fatal,recover=const cfg!(any(feature="ring3-lifecycle-probe", external_app)) as usize);
 }
 pub(crate) fn hex(value: u64) -> [u8; 16] {
     let mut bytes = [b'0'; 16];
@@ -235,8 +235,7 @@ pub(crate) fn hex(value: u64) -> [u8; 16] {
     bytes
 }
 extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
-    let _visible = musha_framebuffer::OutputGuard::allow();
-    #[cfg(feature = "ring3-lifecycle-probe")]
+    #[cfg(any(feature = "ring3-lifecycle-probe", external_app))]
     unsafe {
         crate::ring3::lifecycle::fault(
             frame as usize,
@@ -245,6 +244,7 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
             (*frame).error,
         );
     }
+    let _visible = musha_framebuffer::OutputGuard::allow();
     if FAULTING.swap(true, Ordering::AcqRel) {
         stop();
     }

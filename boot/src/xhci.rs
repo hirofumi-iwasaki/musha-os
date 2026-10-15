@@ -1122,7 +1122,8 @@ fn clear_line(fb: musha_framebuffer::Framebuffer, row: usize) {
 }
 
 /// Terminal application shutdown. Only the input loan publishes this hook;
-/// all controllers were acquired by run_session before the loan. No reuse follows.
+/// all controllers were acquired by run_session before the loan. Reuse requires
+/// true plus normal return through every enclosing session cleanup scope.
 pub(crate) fn quiesce_app(info: &BootInfo) -> bool {
     let mut ok = true;
     for c in &info.xhcis.entries[..info.xhcis.count] {
@@ -1146,4 +1147,12 @@ pub(crate) fn quiesce_app(info: &BootInfo) -> bool {
         ok &= halted.is_ok() && unsafe { pci::read(c.bus, c.device, c.function, 4) } & 4 == 0;
     }
     ok
+}
+
+/// # Safety
+/// No callback/Host/file-session references remain and DMA stop is confirmed.
+pub(crate) unsafe fn release_files_stopped() {
+    unsafe {
+        usb::release_files_stopped();
+    }
 }

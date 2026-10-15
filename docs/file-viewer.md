@@ -2,7 +2,7 @@
 
 ## English
 
-Status: v0.4.0 stage1 development. The viewer remains read-only and root-only. With no AUTORUN.ELF it starts; automatic program launch remains unchanged. Launching a selected ELF, returning after exit and pairing via P are goals10/12, not implemented here. DOCS contains this guide but subdirectory browsing is not yet supported; read DOCS on the host. README.TXT replaces the diagnostic marker and is the sole normal root document.
+Status: v0.4.0 stage5 local checkpoint. The viewer remains read-only and root-only. AUTORUN.ELF runs automatically once at boot. Normal exit0/nonzero, recoverable user fault or invalid ELF returns to a fresh viewer after device stop, mapping rollback and arena scrub. Enter on a selected .ELF requests execution through the same bounded reader/ELF/NOTE checks; other files open for reading. Full local FAT32/exFAT/QEMU regression passes; physical acceptance remains open; see [stage5 checkpoint](stage5-0.4.0-progress.md). P pairing is still stage6 work. DOCS is read on the host because subdirectory browsing is not supported. README.TXT remains the normal root document.
 
 The viewer lists root files from the first available FAT32/exFAT medium; selection constraints follow [stream file API](stream-file-api.md). An external USB Boot Keyboard is currently required; internal T2 input is later work.
 
@@ -12,7 +12,7 @@ The viewer lists root files from the first available FAT32/exFAT medium; selecti
 | Page Up/Down | Move10 items | Previous/next256 bytes |
 | Home | First item | File start |
 | End | Last item | No action |
-| Enter | Open selected file for reading | No action |
+| Enter | Launch selected .ELF; read other files | No action |
 | Left/Right | Previous/next portion of selected name | Same |
 | Esc/Backspace | No action | Return/cancel pending read |
 | Q | End session | Same |
@@ -29,7 +29,7 @@ Development rerun: build musha-boot with file-viewer-probe, generate a new boot 
 
 ## 日本語
 
-状態：v0.4.0工程1。root読出し専用viewerを保持。AUTORUN無しで開始、自動実行は従来どおり。選択ELF起動/終了後復帰/Pペアリングは目標10/12で未実装。DOCSの本文はhostで読み、viewerのsubdirectory閲覧は未対応。起動markerはREADME.TXTで通常rootの文書はこれだけです。下記の日付付きv0.2.0説明・結果は原文保持し、新marker候補の実機/QEMU受入へ転用しません。
+状態：v0.4.0工程5のローカル到達点。root読出し専用viewerを保持。起動時AUTORUN.ELFを1回自動実行し、exit0/非0・回復可能なuser fault・ELF拒否後は機器停止/CPU mapping復元/arena消去後に新しいviewerへ戻ります。現在のEnterは選択.ELFを同じ上限付きreader/ELF/NOTE検査で起動し、他のファイルは読出し表示します。FAT32/exFAT/QEMUの全ローカル回帰が合格し、実機受入は未確認です。[工程5記録](stage5-0.4.0-progress.md)を参照。Pペアリングは工程6で未接続。DOCSはhostで読みsubdirectory閲覧は未対応。通常root文書はREADME.TXTです。下記の日付付きv0.2.0操作表・結果は歴史記録として保持し、現在のELF Enter仕様と区別します。
 
 # ファイル一覧・内容表示（工程6）
 

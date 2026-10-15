@@ -1275,8 +1275,9 @@ fn run_keyboard(
         }
         Ok(false)
     };
-    tick(super::AppEvent::InputPoll(&mut poll))?;
-    while !poll(tick)? {}
+    if !tick(super::AppEvent::InputPoll(&mut poll))? {
+        while !poll(tick)? {}
+    }
     drop(poll);
     crate::debug(b"MUSHA: HID_DIAGNOSTIC_OK REPORTS=");
     crate::debug(&crate::cpu::hex(reports));
@@ -1433,7 +1434,14 @@ fn run_pointer(
         }
         tick(super::AppEvent::Keys(&[]))
     };
-    tick(super::AppEvent::InputPoll(&mut poll))?;
-    while !poll(tick)? {}
+    if !tick(super::AppEvent::InputPoll(&mut poll))? {
+        while !poll(tick)? {}
+    }
     Ok(())
+}
+
+pub(super) unsafe fn release_files_stopped() {
+    unsafe {
+        file::release_stopped();
+    }
 }

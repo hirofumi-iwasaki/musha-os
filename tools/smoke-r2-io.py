@@ -121,11 +121,21 @@ try:
                     if a.expect == 'denied':
                         assert 'R2 PERMISSIONS OK' in text and 'APP_INPUT_LIVE' not in text, text
                     elif a.expect == 'fault':
-                        assert 'EXCEPTION VECTOR=0000000000000006' in text and 'RING3_FAULT_KERNEL_STACK_OK' in text, text
+                        assert 'C3_APP_FAULT VECTOR=0000000000000006' in text and 'RING3_FAULT_KERNEL_STACK_OK' in text, text
                     elif a.expect == 'overflow':
                         assert 'R2 OVERFLOW OK' in text, text
                     elif a.expect == 'removed':
                         assert 'R2 DISCONNECTED OK' in text, text
+                end = time.monotonic()+60
+                while time.monotonic()<end:
+                    text = debug.read_text()
+                    if 'APP_ARENA_SCRUBBED VIEWER_RESTART' in text and 'VIEWER_FRAME ' in text.split('APP_ARENA_SCRUBBED VIEWER_RESTART')[-1]:
+                        break
+                    time.sleep(.05)
+                assert 'APP_ARENA_SCRUBBED VIEWER_RESTART' in text, text
+                assert 'VIEWER_FRAME ' in text.split('APP_ARENA_SCRUBBED VIEWER_RESTART')[-1], text
+                if a.expect == 'fault':
+                    assert 'APP_RECOVERED KIND=0000000000000001 DETAIL=0000000000000006' in text,text
                 if a.expect != 'fault':
                     assert 'RING3_ELF_EXIT_STATUS=0000000000000000' in text, text
             report.update(passed=True, elf_sha256=hashlib.sha256(a.elf.read_bytes()).hexdigest(), efi_sha256=hashlib.sha256(efi.read_bytes()).hexdigest(), mouse=a.mouse, tablet=a.tablet, expected=a.expect)

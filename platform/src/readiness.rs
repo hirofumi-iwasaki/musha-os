@@ -51,6 +51,30 @@ impl Report {
         self.core_ms = now;
         true
     }
+    pub fn prepare_launch(&mut self, now: Option<u64>) -> bool {
+        if !matches!(
+            self.phase,
+            Phase::AppRunning | Phase::AppExited | Phase::AppFailed | Phase::AppLaunchFailed
+        ) {
+            return false;
+        }
+        self.phase = Phase::OsReady;
+        self.ready_ms = now;
+        self.entry_ms = None;
+        self.running_ms = None;
+        self.first_frame_ms = None;
+        true
+    }
+    pub fn restart(&mut self) {
+        self.phase = Phase::CoreReady;
+        self.ready_ms = None;
+        self.entry_ms = None;
+        self.running_ms = None;
+        self.first_frame_ms = None;
+        self.usb = Service::Stopped;
+        self.files = Service::Stopped;
+        self.network = Service::Stopped;
+    }
     pub fn ready(&mut self, required: bool, now: Option<u64>) -> bool {
         if !required || self.phase != Phase::CoreReady {
             return false;
@@ -93,6 +117,26 @@ impl Report {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn restart_and_selected_launch_preserve_boot_epoch_and_clear_app_boundaries() {
+        let mut report = Report::NEW;
+        assert!(!report.prepare_launch(Some(1)));
+        report.core(Some(2));
+        report.ready(true, Some(3));
+        report.entering(Some(4));
+        report.running(Some(5));
+        report.frame(Some(6));
+        assert!(report.prepare_launch(Some(7)));
+        assert_eq!(report.core_ms, Some(2));
+        assert_eq!(report.entry_ms, None);
+        assert_eq!(report.first_frame_ms, None);
+        report.restart();
+        assert_eq!(report.phase, Phase::CoreReady);
+        assert_eq!(report.usb, Service::Stopped);
+        assert_eq!(report.files, Service::Stopped);
+        assert_eq!(report.core_ms, Some(2));
+        assert!(report.ready(true, Some(8)));
+    }
     #[test]
     fn ordering_and_required_failure() {
         let mut r = Report::NEW;

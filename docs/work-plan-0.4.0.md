@@ -8,6 +8,8 @@ Owner addition2026-10-15 below supersedes the old CONFIG-clearing wording. The o
 
 Stage4 has a [first Rust checkpoint](stage4-0.4.0-progress.md) and [implemented local r2 I/O/mouse checkpoint](stage4-r2-0.4.0-progress.md). [Full local regression](stage4-local-verification-0.4.0.md) passes; separate third-controller input collection and hardware acceptance remain open.
 
+Stage5 implements [viewer lifecycle and full local regression](stage5-0.4.0-progress.md): FAT32/exFAT selected ELFs, safe rollback/scrub/restart and repeated LAN echo pass. Physical acceptance and BCE/Bluetooth integration remain open.
+
 ### Main sequence
 
 | Stage | Work/dependencies | Definition of done and added host/QEMU coverage | Required hardware |
@@ -48,6 +50,8 @@ The original documents/VERSION baseline was committed with owner approval. The o
 所有者追加判断2026-10-15は旧CONFIG消去記述を置換する。scope目標4/5/12の所有者改訂を保持し、文書・診断コードと別commitで記録する承認を得た。工程3は `b745e47` でcommit/push済み。後続のscope・文書・診断commitはローカル承認済みで、追加pushは未承認。[全回帰記録](stage3-0.4.0-progress.md)、[SETTINGS](settings.md)、[機器表](device-support.md)、[LAN計画](lan-plan-0.4.0.md)を参照。
 
 工程4は[初回Rust到達点](stage4-0.4.0-progress.md)から[r2 I/O・mouse実接続](stage4-r2-0.4.0-progress.md)へ進みました。[全ローカル回帰](stage4-local-verification-0.4.0.md)は合格し、別の第3controller入力収集・実機受入は未完です。
+
+工程5は[viewer lifecycle実装と全ローカル回帰](stage5-0.4.0-progress.md)が完了。選択FAT32/exFAT ELF、停止/復元/消去/再開とLAN反復echoが合格。実機受入・BCE/Bluetooth接続は残件です。
 
 ### 主工程
 

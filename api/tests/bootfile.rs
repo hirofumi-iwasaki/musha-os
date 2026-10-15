@@ -185,3 +185,80 @@ fn interruption_while_request_is_pending_never_publishes_ready() {
     );
     assert_eq!(out, [0; 64]);
 }
+
+#[test]
+fn selected_id_uses_current_mount_and_the_same_bounded_copy() {
+    for format in [Format::Fat32, Format::Exfat] {
+        let entries = [entry("SAMPLE.ELF", 64)];
+        let mut files = Files::new();
+        files.mount(format, &entries).unwrap();
+        let id = files
+            .list_next(&mut files.list_begin().unwrap())
+            .unwrap()
+            .unwrap()
+            .0;
+        let mut reader = Reader::viewer();
+        reader.select(&mut files, id, 10).unwrap();
+        let mut output = [0xa5; 65];
+        reader.step(&mut files, &mut output, 10);
+        let request = files.take_request().unwrap();
+        assert_eq!(request.index(), 0);
+        assert!(files.complete(request, Ok(&[7; 64])));
+        assert_eq!(reader.step(&mut files, &mut output, 11), State::Ready(64));
+        assert_eq!(&output[..64], &[7; 64]);
+        assert_eq!(output[64], 0xa5);
+        files.disconnect();
+        files.mount(format, &entries).unwrap();
+        let mut next = Reader::viewer();
+        assert_eq!(
+            next.select(&mut files, id, 12),
+            Err(Rejection::Stream(Error::Invalid))
+        );
+        assert_eq!(next.state(), State::Absent);
+        assert!(files.take_request().is_none());
+    }
+}
+#[test]
+fn selected_size_refusal_and_repeated_reader_do_not_steal_handles() {
+    for bytes in [0, 63, MAX_BYTES as u64 + 1] {
+        let entries = [entry("BAD.ELF", bytes)];
+        let mut files = Files::new();
+        files.mount(Format::Fat32, &entries).unwrap();
+        let id = files
+            .list_next(&mut files.list_begin().unwrap())
+            .unwrap()
+            .unwrap()
+            .0;
+        let mut reader = Reader::viewer();
+        reader.select(&mut files, id, 0).unwrap();
+        assert_eq!(reader.state(), State::Rejected(Rejection::Size));
+        assert!(files.take_request().is_none());
+        assert!(files.open_id(id).is_ok());
+    }
+    let entries = [entry("GOOD.ELF", 64)];
+    let mut files = Files::new();
+    files.mount(Format::Fat32, &entries).unwrap();
+    let id = files
+        .list_next(&mut files.list_begin().unwrap())
+        .unwrap()
+        .unwrap()
+        .0;
+    let mut reader = Reader::viewer();
+    reader.select(&mut files, id, 0).unwrap();
+    assert_eq!(
+        reader.select(&mut files, id, 1),
+        Err(Rejection::Stream(Error::Invalid))
+    );
+    assert_eq!(reader.state(), State::Reading);
+}
+
+#[test]
+fn duplicate_claim_is_only_published_once_during_automatic_search() {
+    let mut automatic = Reader::new();
+    assert!(automatic.duplicate());
+    assert!(!automatic.duplicate());
+    assert_eq!(automatic.state(), State::Rejected(Rejection::Duplicate));
+    let mut viewer = Reader::viewer();
+    assert!(!viewer.duplicate());
+    assert_eq!(viewer.state(), State::Absent);
+}

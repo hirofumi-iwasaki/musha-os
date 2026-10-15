@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! One-shot external-ELF boot path. Staging is CPU-owned, never a DMA target.
+//! Startup/selected external ELF lifecycle. Staging is CPU-owned, never DMA.
 use core::cell::UnsafeCell;
 use musha_api::bootfile::{MAX_BYTES, Reader, Rejection, State};
 const _: () = assert!(MAX_BYTES as u64 == musha_memory::elf::abi::IMAGE_LIMIT);
@@ -8,6 +8,14 @@ struct Shared(UnsafeCell<(Reader, [u8; MAX_BYTES])>);
 // while staging is mutable; image() is called only after runtime has returned.
 unsafe impl Sync for Shared {}
 static mut READ_STARTED: u64 = 0;
+static mut RESUMED: bool = false;
+static mut LAST_OUTCOME: (u64, u64) = (2, 0);
+pub fn outcome() -> (u64, u64) {
+    unsafe { LAST_OUTCOME }
+}
+pub fn resumed() -> bool {
+    unsafe { RESUMED }
+}
 static mut READ_TIMING: Option<crate::timing::Span> = None;
 static STAGING: Shared = Shared(UnsafeCell::new((Reader::new(), [0; MAX_BYTES])));
 /// Linker-owned zero-fill staging must be wholly inside the reserved loaded image.
@@ -78,6 +86,27 @@ pub fn step(
     }
     state
 }
+pub fn select(
+    files: &mut musha_api::stream::Files<'_>,
+    id: musha_api::stream::Id,
+    now: u64,
+) -> bool {
+    let reader = unsafe { &mut (*STAGING.0.get()).0 };
+    match reader.select(files, id, now) {
+        Err(Rejection::Stream(musha_api::stream::Error::Again)) => false,
+        Err(error) => {
+            reader.reject(error);
+            true
+        }
+        Ok(()) => {
+            crate::bootstate::update(|r, t| {
+                r.prepare_launch(t);
+            });
+            crate::debug(b"MUSHA: VIEWER_ELF_SELECTED SAME_VALIDATION\n");
+            true
+        }
+    }
+}
 pub fn session_ended(ok: bool) {
     let reader = unsafe { &mut (*STAGING.0.get()).0 };
     if reader.state() == State::Reading || (!ok && matches!(reader.state(), State::Ready(_))) {
@@ -91,78 +120,109 @@ pub fn image() -> &'static [u8] {
         _ => crate::stop(),
     }
 }
-fn reject(info: &crate::BootInfo, reason: &str) -> ! {
-    crate::debug(b"MUSHA: EXTERNAL_ELF_REJECT ");
-    crate::debug(reason.as_bytes());
-    crate::debug(b"\n");
-    let _ = info;
-    crate::appconsole::rejected(reason.as_bytes());
-    crate::stop()
-}
-pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
-    let state = unsafe { (&*STAGING.0.get()).0.state() };
-    match state {
-        State::Ready(_) => {
-            if musha_memory::elf::Plan::parse(image()).is_err() {
-                reject(info, "Invalid ELF or ABI NOTE");
-            }
-            crate::bootlog::ready(true);
-            crate::appconsole::start(info.framebuffer, b"AUTORUN.ELF  (Ring 3)\n");
-            crate::debug(b"MUSHA: EXTERNAL_ELF_DEVICES_STOPPED\n");
-            let plan = musha_memory::elf::Plan::parse(image()).unwrap();
-            if plan.revision == 2
-                && plan.permissions & musha_memory::elf::abi::PERMISSION_INPUT != 0
-            {
-                let mut bridge = |event: crate::xhci::AppEvent<'_>| {
-                    if let crate::xhci::AppEvent::InputPoll(poll) = event {
-                        let mut input = || {
-                            let mut collect = |event: crate::xhci::AppEvent<'_>| {
-                                match event {
-                                    crate::xhci::AppEvent::Keys(keys) => {
-                                        crate::ring3::io::keys(keys)
-                                    }
-                                    crate::xhci::AppEvent::Pointer(values, buttons) => {
-                                        crate::ring3::io::pointer(values, buttons)
-                                    }
-                                    _ => (),
-                                }
-                                Ok(false)
-                            };
-                            poll(&mut collect).and_then(|done| {
-                                if done {
-                                    Err("INPUT SESSION ENDED")
-                                } else {
-                                    Ok(())
-                                }
-                            })
-                        };
-                        // The old runtime Context is gone. This stack and the Host
-                        // remain live forever; stop() quiesces before halting.
-                        unsafe {
-                            crate::ring3::io::attach(&mut input, info);
+/// Run one guest inside an ordinary USB callback. Returning through that callback
+/// is essential: it drops file sessions before any shared workspace/arena reuse.
+fn execute(arena: &mut [u8], info: &crate::BootInfo) -> crate::ring3::lifecycle::Outcome {
+    let plan = musha_memory::elf::Plan::parse(image()).ok();
+    if plan.as_ref().is_some_and(|p| {
+        p.revision == 2 && p.permissions & musha_memory::elf::abi::PERMISSION_INPUT != 0
+    }) {
+        let mut outcome = None;
+        let mut bridge = |event: crate::xhci::AppEvent<'_>| {
+            if let crate::xhci::AppEvent::InputPoll(poll) = event {
+                let mut input = || {
+                    let mut collect = |event: crate::xhci::AppEvent<'_>| {
+                        match event {
+                            crate::xhci::AppEvent::Keys(keys) => crate::ring3::io::keys(keys),
+                            crate::xhci::AppEvent::Pointer(values, buttons) => {
+                                crate::ring3::io::pointer(values, buttons)
+                            }
+                            _ => (),
                         }
-                        crate::debug(b"MUSHA: APP_INPUT_LIVE\n");
-                        crate::ring3::run(arena, info);
-                    }
-                    Ok(false)
+                        Ok(false)
+                    };
+                    poll(&mut collect).and_then(|done| {
+                        if done {
+                            Err("INPUT SESSION ENDED")
+                        } else {
+                            Ok(())
+                        }
+                    })
                 };
-                let _ = crate::xhci::run_session(info, &mut bridge);
-                drop(bridge);
-                crate::debug(b"MUSHA: APP_INPUT_UNAVAILABLE\n");
+                // The saved continuation is inside this callback, never outside
+                // the session's Drop-bearing scopes. detach runs before return.
+                unsafe {
+                    crate::ring3::io::attach(&mut input, info);
+                }
+                crate::debug(b"MUSHA: APP_INPUT_LIVE\n");
+                outcome = Some(crate::ring3::lifecycle::once(arena, info));
+                return Ok(true);
             }
-            crate::ring3::run(arena, info);
+            Ok(false)
+        };
+        let result = crate::xhci::run_session(info, &mut bridge);
+        drop(bridge);
+        if result == Err("QUIESCE FAILED") {
+            crate::stop();
         }
-        State::Rejected(reason) => reject(
-            info,
-            match reason {
-                Rejection::Size => "File size outside 64 bytes to 16 MiB",
-                Rejection::Duplicate => "Ambiguous AUTORUN.ELF name",
-                Rejection::Timeout => "File read deadline exceeded",
-                Rejection::Stream(_) => "File read failed or medium removed",
-                Rejection::Interrupted => "Device session did not complete",
-            },
-        ),
-        _ => (),
+        // All session callbacks/references have returned and DMA is stopped.
+        unsafe {
+            crate::xhci::release_files_stopped();
+        }
+        if let Some(outcome) = outcome {
+            return outcome;
+        }
+        crate::debug(b"MUSHA: APP_INPUT_UNAVAILABLE\n");
+    }
+    crate::ring3::lifecycle::once(arena, info)
+}
+/// Initial AUTORUN still wins once. Subsequent mounts enter the viewer, never
+/// automatically run it again. Selected IDs belong to each fresh file session.
+pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
+    while claimed() {
+        // runtime already returned its Context and confirmed device shutdown.
+        unsafe {
+            crate::xhci::release_files_stopped();
+        }
+        let state = unsafe { (&*STAGING.0.get()).0.state() };
+        if matches!(state, State::Ready(_)) {
+            crate::bootlog::ready(true);
+            crate::appconsole::start(info.framebuffer, b"External ELF  (Ring 3)\n");
+            crate::debug(b"MUSHA: EXTERNAL_ELF_DEVICES_STOPPED\n");
+            let outcome = execute(arena, info);
+            unsafe {
+                LAST_OUTCOME = (outcome.kind, outcome.detail);
+            }
+            crate::debug(b"MUSHA: APP_RECOVERED KIND=");
+            crate::debug(&crate::cpu::hex(outcome.kind));
+            crate::debug(b" DETAIL=");
+            crate::debug(&crate::cpu::hex(outcome.detail));
+            crate::debug(b"\n");
+        } else if let State::Rejected(reason) = state {
+            unsafe {
+                LAST_OUTCOME = (2, 0);
+            }
+            crate::debug(b"MUSHA: EXTERNAL_ELF_READ_REJECTED VIEWER\n");
+            let _ = reason;
+        }
+        // No Context, file handle, input loan or active DMA can reference arena.
+        arena.fill(0);
+        if arena.iter().any(|&v| v != 0) {
+            crate::stop();
+        }
+        unsafe {
+            let (reader, bytes) = &mut *STAGING.0.get();
+            RESUMED = true;
+            *reader = Reader::viewer();
+            bytes.fill(0);
+        }
+        crate::bootstate::update(|r, _| r.restart());
+        crate::debug(b"MUSHA: APP_ARENA_SCRUBBED VIEWER_RESTART\n");
+        if crate::runtime::run(arena, info).is_err() {
+            // A failed restart cannot authorize another arena/DMA reuse.
+            crate::debug(b"MUSHA: VIEWER_RESTART_FAILED QUARANTINED\n");
+            crate::stop();
+        }
     }
 }
 
@@ -189,10 +249,7 @@ pub fn boot_name(name: &[u16; 12]) -> bool {
             .all(|&c| c == 0)
 }
 pub fn duplicate_catalog(name: &[u16; 12], fb: musha_framebuffer::Framebuffer) {
-    if boot_name(name) {
-        unsafe {
-            (&mut *STAGING.0.get()).0.duplicate();
-        }
+    if boot_name(name) && unsafe { (&mut *STAGING.0.get()).0.duplicate() } {
         if crate::bootlog::devices() {
             crate::appconsole::start(fb, b"Loading AUTORUN.ELF ...\n");
         }

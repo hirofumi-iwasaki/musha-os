@@ -22,6 +22,11 @@ int musha_main(const musha_start_info_v1 *info) {
     const char text[] = "ASCII\t\r\033\001\177 \xe6\x97\xa5\xe6\x9c\xac\nEND\n";
     if (musha_log(text, sizeof text - 1, &written) || written != sizeof text - 1) return 3;
 #endif
+#if defined(EXTERNAL_OBSERVE_LOG) && (EXTERNAL_CASE == 3 || EXTERNAL_CASE == 4)
+    /* Normal builds have no debug transcript. Keep the actual LOG raster visible
+       for a finite fixture-only interval before the expected viewer return. */
+    for (volatile unsigned observe = 0; observe < 100000000U; ++observe) {}
+#endif
     (void)written;
     return 0;
 }

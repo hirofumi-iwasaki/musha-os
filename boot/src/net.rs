@@ -14,6 +14,7 @@ static BDF: AtomicU32 = AtomicU32::new(u32::MAX);
 static USB_BDF: AtomicU32 = AtomicU32::new(u32::MAX);
 unsafe extern "C" {
     fn musha_lwip_init(mac: *const u8) -> i32;
+    fn musha_lwip_stop();
     fn musha_lwip_poll(ms: u32);
     fn musha_lwip_input(bytes: *const u8, length: u16) -> i32;
     fn musha_lwip_tx(bytes: *mut u8, capacity: u16) -> i32;
@@ -263,7 +264,8 @@ impl Session {
             return Err("LINK DOWN");
         }
         unsafe {
-            musha_lwip_poll((now - self.started) as u32);
+            // lwIP core timers survive endpoint sessions: never restart their clock.
+            musha_lwip_poll(crate::bootstate::epoch_now().ok_or("CLOCK")? as u32);
         }
         let mut bytes = [0u8; BUFFER_BYTES];
         for _ in 0..8 {
@@ -386,6 +388,10 @@ impl Session {
             crate::stop();
         }
         crate::diagnostics::net_stage("STOPPED DMA DISABLED");
+        // The controller is stopped before releasing CPU pbuf/netif references.
+        unsafe {
+            musha_lwip_stop();
+        }
         self.stopped = true;
         BDF.store(u32::MAX, Ordering::Relaxed);
         crate::debug(b"MUSHA: NET_QUIESCED DMA_DISABLED\n");

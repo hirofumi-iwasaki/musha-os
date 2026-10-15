@@ -15,7 +15,7 @@ static struct udp_pcb *echo;
 static u8_t queue[FRAMES][FRAME_BYTES];
 static u16_t lengths[FRAMES];
 static u32_t head,count,now,udp_received,tx_drops,rx_drops;
-static u8_t initialized;
+static u8_t initialized, core_initialized;
 u32_t sys_now(void) { return now; }
 static err_t output(struct netif *netif, struct pbuf *p) {
     (void)netif;
@@ -36,14 +36,48 @@ static void receive(void *arg,struct udp_pcb *pcb,struct pbuf *p,const ip_addr_t
     else rx_drops++;
     pbuf_free(p);
 }
+/* The core/timeouts are boot-owned and initialized exactly once. Endpoint and
+ * frame-queue lifetimes are scoped to a stopped NIC session, never DMA buffers. */
+void musha_lwip_stop(void) {
+    if (echo) {
+        udp_remove(echo);
+        echo = NULL;
+    }
+    if (initialized) {
+        netif_set_link_down(&nic);
+        netif_set_down(&nic); /* Releases ARP entries and queued pbuf references. */
+        netif_remove(&nic);
+    }
+    initialized = 0;
+    head = count = 0;
+    memset(lengths, 0, sizeof(lengths));
+    memset(queue, 0, sizeof(queue));
+}
 int musha_lwip_init(const u8_t *mac) {
-    if(initialized) return -1;
-    lwip_init();
-    ip4_addr_t ip,mask,gw;IP4_ADDR(&ip,10,0,2,15);IP4_ADDR(&mask,255,255,255,0);IP4_ADDR(&gw,10,0,2,2);
-    if(!netif_add(&nic,&ip,&mask,&gw,0,setup,ethernet_input)) return -1;
-    memcpy(nic.hwaddr,mac,6);netif_set_default(&nic);netif_set_link_up(&nic);netif_set_up(&nic);
-    echo=udp_new();if(!echo || udp_bind(echo,IP_ADDR_ANY,12345)!=ERR_OK) return -1;
-    udp_recv(echo,receive,0);initialized=1;return 0;
+    if (initialized || !mac) return -1;
+    if (!core_initialized) {
+        lwip_init();
+        core_initialized = 1;
+    }
+    memset(&nic, 0, sizeof(nic));
+    ip4_addr_t ip, mask, gw;
+    IP4_ADDR(&ip,10,0,2,15);
+    IP4_ADDR(&mask,255,255,255,0);
+    IP4_ADDR(&gw,10,0,2,2);
+    if (!netif_add(&nic,&ip,&mask,&gw,0,setup,ethernet_input)) return -1;
+    initialized = 1;
+    memcpy(nic.hwaddr,mac,6);
+    netif_set_default(&nic);
+    netif_set_link_up(&nic);
+    netif_set_up(&nic);
+    echo = udp_new();
+    if (!echo || udp_bind(echo,IP_ADDR_ANY,12345)!=ERR_OK) {
+        musha_lwip_stop();
+        return -1;
+    }
+    udp_received = tx_drops = rx_drops = 0;
+    udp_recv(echo,receive,0);
+    return 0;
 }
 void musha_lwip_poll(u32_t milliseconds) { now=milliseconds;sys_check_timeouts(); }
 int musha_lwip_input(const u8_t *bytes,u16_t length) {

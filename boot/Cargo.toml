@@ -106,6 +106,7 @@ ring3-lifecycle-kernel-fault = ["ring3-lifecycle-probe"]
 
 # Instrument the normal external-file path; no C1 payload or viewer probe dependency.
 external-elf-probe = ["qemu-debug"]
+app-recovery-stop-failure = ["external-elf-probe"]
 
 # QEMU-only malformed first Address Device context; exercise cleanup/continuation.
 usb-address-reject = ["qemu-debug"]

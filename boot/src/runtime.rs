@@ -50,6 +50,11 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
     // Framebuffer, cached file and arena have a single application owner.
     let mut ctx = unsafe { Context::new(arena, info.framebuffer) }?;
     let mut app = Diagnostic::new();
+    #[cfg(external_app)]
+    if crate::external::resumed() {
+        let (kind, detail) = crate::external::outcome();
+        app.viewer.returned(kind, detail);
+    }
     let mut initialized = false;
     let mut network = None;
     let mut steps = 0u64;
@@ -81,7 +86,12 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                                     crate::debug(b"MUSHA: DIAGNOSTIC_HOLD ELF_ABSENT\n");
                                     return Ok(true);
                                 }
-                                app.viewer.bootfile_absent();
+                                if crate::external::resumed() {
+                                    let (kind, detail) = crate::external::outcome();
+                                    app.viewer.returned(kind, detail);
+                                } else {
+                                    app.viewer.bootfile_absent();
+                                }
                                 launch(&mut app, &mut ctx, &mut time, &mut initialized)
                                     .map_err(|_| "APP INPUT ERROR")?;
                             }
@@ -97,6 +107,13 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     if let Err(error) = app.files(&mut ctx, files) {
                         input_error = Some(error);
                         return Err("APP INPUT ERROR");
+                    }
+                    #[cfg(external_app)]
+                    if let Some(id) = app.viewer.launch_request() {
+                        let now = time.now().map_err(|_| "APP INPUT ERROR")?;
+                        if crate::external::select(files, id, now) {
+                            app.viewer.launch_consumed();
+                        }
                     }
                     return Ok(app.exit_requested);
                 }

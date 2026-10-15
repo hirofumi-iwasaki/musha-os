@@ -42,10 +42,58 @@ impl Reader {
             started: None,
         }
     }
+    /// Skip automatic startup after a completed launch; selected launches may
+    /// explicitly start a new bounded read on the current service later.
+    pub const fn viewer() -> Self {
+        Self {
+            state: State::Absent,
+            ..Self::new()
+        }
+    }
+    /// Selected launch uses the same size/read/deadline machinery as AUTORUN.
+    /// The ID is revalidated against this exact service generation/catalog.
+    pub fn select(
+        &mut self,
+        files: &mut Files<'_>,
+        id: crate::stream::Id,
+        now: u64,
+    ) -> Result<(), Rejection> {
+        if self.state != State::Absent || self.handle.is_some() {
+            return Err(Rejection::Stream(Error::Invalid));
+        }
+        let mut cursor = files.list_begin().map_err(Rejection::Stream)?;
+        let mut bytes = None;
+        while let Some((candidate, entry)) =
+            files.list_next(&mut cursor).map_err(Rejection::Stream)?
+        {
+            if candidate == id {
+                bytes = Some(entry.bytes);
+                break;
+            }
+        }
+        let bytes = bytes.ok_or(Rejection::Stream(Error::Invalid))?;
+        if bytes < 64 || bytes > MAX_BYTES as u64 {
+            self.state = State::Rejected(Rejection::Size);
+            return Ok(());
+        }
+        let handle = files.open_id(id).map_err(Rejection::Stream)?;
+        self.expected = bytes as usize;
+        self.used = 0;
+        self.started = Some(now);
+        self.handle = Some(handle);
+        self.state = State::Reading;
+        Ok(())
+    }
+    pub fn reject(&mut self, reason: Rejection) {
+        self.state = State::Rejected(reason);
+    }
     /// A filesystem rejected the matching name before publishing its catalogue.
-    pub fn duplicate(&mut self) {
+    pub fn duplicate(&mut self) -> bool {
         if self.state == State::Searching {
             self.state = State::Rejected(Rejection::Duplicate);
+            true
+        } else {
+            false
         }
     }
     pub fn state(&self) -> State {

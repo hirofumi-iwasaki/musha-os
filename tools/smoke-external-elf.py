@@ -77,13 +77,16 @@ def fixture(path, efi, payload, fmt, declared=None, partition_type='basic-data')
             f.write(image)
 
 
-def screen_rows(path):
+def screen_rows(path, viewer=False):
     """Decode actual pixels with the checked-in original 5x7 font, not debug text."""
     import ast, re
     data=path.read_bytes(); header=re.match(rb'P6\s+(\d+)\s+(\d+)\s+255\s',data)
     assert header, 'Expected P6 screenshot'
     w,h=map(int,header.groups()); pixels=data[header.end():]; scale=max(1,min(4,(h+300)//600))
-    columns=max(1,min(80,w//(6*scale)-4)); visible_rows=max(1,min(24,h//(10*scale)-4))
+    if viewer:
+        scale=max(1,min(scale,w//(6*84),h//(10*32)))
+    columns=max(1,min(80,w//(6*scale)-4)); visible_rows=max(1,min(28 if viewer else 24,h//(10*scale)-4))
+    foreground=bytes([218,228,238]) if viewer else bytes([240]*3)
     font={}
     for key,values in re.findall(r"(b'(?:\\.|[^'])+'|\d+) => \[([\d, ]+)\]",(ROOT/'framebuffer/src/lib.rs').read_text()):
         c=ast.literal_eval(key);c=c[0] if isinstance(c,bytes) else c
@@ -98,7 +101,7 @@ def screen_rows(path):
                 v=0
                 for x in range(5):
                     at=(((20+row*10+y)*scale)*w+(12+col*6+x)*scale)*3
-                    v=(v<<1)|(pixels[at:at+3]==bytes([240]*3))
+                    v=(v<<1)|(pixels[at:at+3]==foreground)
                 bits.append(v)
             line+=font.get(tuple(bits),'?')
         rows.append(line)
@@ -119,6 +122,8 @@ def main():
     p.add_argument('--hub-depth',type=int,choices=range(1,6),help='USB2 hub chain for the keyboard (Hello timing regression)')
     p.add_argument('--efi',type=Path,help='Use an already built candidate; --normal supplies screen-only checks')
     p.add_argument('--resolution', help='Explicit GOP mode WIDTHxHEIGHT (EDID disabled)')
+    p.add_argument('--start-at',help='Resume the all-case sequence at this named case; earlier reports remain separate')
+    p.add_argument('--defer-absent',action='store_true',help='Defer absent reference comparison to a separate --case absent run')
     p.add_argument('--normal',action='store_true',help='Feature-free EFI, screen-only observation; select a hello/exit/fault/log/reject case')
     a=p.parse_args(); out=a.output.resolve();out.mkdir(parents=True,exist_ok=False)
     report={'scope':'local external ELF; no real USB or hardware claim','commands':[],'cases':[],'partition_type':a.partition_type,'boot_from_data':a.boot_from_data}
@@ -134,7 +139,7 @@ def main():
         flags=['--target=x86_64-unknown-none-elf','-isystem',ROOT/'sdk/sysroot/include','-ffreestanding','-fno-builtin','-fno-stack-protector','-fno-pic','-mno-red-zone','-march=x86-64','-mno-avx','-O2','-Wall','-Wextra','-Werror']
         for number,name in enumerate(['exit-42','fault-pf','fault-ud','log-long','log-utf8']):
             obj=out/(name+'.o');elf=out/(name+'.elf')
-            run(['clang',*flags,'-DEXTERNAL_CASE='+str(number),'-c',ROOT/'sdk/tests/external-c.c','-o',obj])
+            run(['clang',*flags,*(['-DEXTERNAL_OBSERVE_LOG'] if a.normal else []),'-DEXTERNAL_CASE='+str(number),'-c',ROOT/'sdk/tests/external-c.c','-o',obj])
             run([sysroot/'lib/rustlib'/host/'bin/rust-lld','-flavor','gnu','-static','--no-undefined','-T',ROOT/'sdk/linker/app.ld','-o',elf,*[built/(n+'.o') for n in ['crt0','libmusha','memory','note']],obj],linkenv)
             cases[name]=(elf.read_bytes(),'fat32','fault' if name.startswith('fault') else 'exit',42 if name=='exit-42' else 0)
         ph=struct.unpack_from('<Q',good,32)[0];headers=[ph+i*56 for i in range(struct.unpack_from('<H',good,56)[0])]
@@ -172,8 +177,15 @@ def main():
         if not a.normal:
             module('smoke-startup').fixture(out/'boot.img',efi,b'log=devices\n')
             boot_drive=f'if=ide,format=raw,snapshot=on,file={out/"boot.img"}'
+        if a.start_at and (a.case!='all' or a.start_at not in cases): raise ValueError('start-at requires an all-case member')
+        started=a.start_at is None
         for name,(payload,fmt,kind,detail) in cases.items():
+            if not started:
+                if name!=a.start_at:continue
+                started=True
             if a.case not in ('all',name): continue
+            if a.defer_absent and name=='absent':
+                report['deferred_cases']=['absent'];continue
             if a.case == 'all' and (kind == 'timing' or name.startswith('hotplug-')): continue
             hotplug=int(name.split('-')[1]) if name.startswith('hotplug-') else None
             if hotplug is not None and (a.normal or a.boot_from_data): raise ValueError('Hotplug requires debug EFI and IDE boot')
@@ -245,7 +257,7 @@ def main():
                                 response=json.loads(stream.readline())
                                 if 'error' in response: raise RuntimeError(response)
                                 if 'return' in response: return
-                        control('qmp_capabilities');removed=False;loading=False;attach_seen=None;added=False;hold_seen=None
+                        control('qmp_capabilities');removed=False;loading=False;attach_seen=None;added=False;hold_seen=None;observed_log=False
                         while time.monotonic()<end:
                             text=debug.read_text()
                             if hotplug is not None:
@@ -261,9 +273,17 @@ def main():
                                 if kind=='disconnect': control('device_del',{'id':'storage'});removed=True
                             if a.normal:
                                 control('screendump',{'filename':str(d/'screen.ppm')})
-                                shown='\n'.join(screen_rows(d/'screen.ppm'))
-                                if any(x in shown for x in ['AUTORUN.ELF exited:', 'AUTORUN.ELF faulted', 'AUTORUN.ELF rejected:']): break
-                            if text.endswith('\n') and any(x in text for x in ['EXTERNAL_APP_EXIT','EXCEPTION VECTOR=','EXTERNAL_ELF_REJECT','RING3_REJECT']): break
+                                shown='\n'.join(screen_rows(d/'screen.ppm', viewer=True))
+                                if name in ('log-long','log-utf8') and not observed_log:
+                                    log_rows=screen_rows(d/'screen.ppm')
+                                    log_screen='\n'.join(log_rows)
+                                    if ('Z'*20 in log_screen if name=='log-long' else 'END' in log_screen):
+                                        shutil.copyfile(d/'screen.ppm',d/'app-log.ppm')
+                                        (d/'app-log.txt').write_text(log_screen+'\n')
+                                        observed_log=True
+                                if ('ELF exited: status' in shown or 'ELF faulted: vector' in shown or 'ELF refused.' in shown): break
+                            elif text.endswith('\n') and 'APP_ARENA_SCRUBBED VIEWER_RESTART' in text and 'VIEWER_FRAME ' in text.split('APP_ARENA_SCRUBBED VIEWER_RESTART')[-1]:
+                                break
                             if proc.poll() is not None: raise RuntimeError((d/'qemu.log').read_text())
                             time.sleep(.02)
                         else: raise RuntimeError('Timeout '+text)
@@ -276,10 +296,11 @@ def main():
                         import re
                         dimensions=re.match(rb'P6\s+(\d+)\s+(\d+)',(d/'screen.ppm').read_bytes())
                         assert dimensions and tuple(map(int,dimensions.groups()))==(4096,2160)
-                    rows=screen_rows(d/'screen.ppm');screen='\n'.join(rows);(d/'screen.txt').write_text(screen+'\n')
+                    rows=screen_rows(d/'screen.ppm', viewer=True);screen='\n'.join(rows);(d/'screen.txt').write_text(screen+'\n')
                     if not a.normal and kind in ('exit','fault'):
                         handoff=text.index('EXTERNAL_ELF_DEVICES_STOPPED')
-                        assert text.index('EXTERNAL_ELF_READ_COMPLETE') < text.rindex('XHCI_QUIESCED') < handoff < text.index('RING3_ELF_ENTERING'),text
+                        assert text.index('EXTERNAL_ELF_READ_COMPLETE') < text.index('XHCI_QUIESCED',text.index('EXTERNAL_ELF_READ_COMPLETE')) < handoff < text.index('RING3_ELF_ENTERING'),text
+                        assert handoff < text.index('APP_RECOVERED') < text.index('APP_ARENA_SCRUBBED VIEWER_RESTART'),text
                         if a.diagnostic_timing:
                             assert 'MUSHA: TIMING TIME' in text and 'MUSHA: NET_READY' not in text,text
                         else:
@@ -289,31 +310,62 @@ def main():
                     if hotplug is not None:
                         assert added and attach_seen is not None
                         assert text.count('MUSHA: RESCAN 1/1 START')==1,text
-                        assert text.count('XHCI_RESET_OK')==(1 if kind=='no-medium' else 2),text
+                        assert text.count('XHCI_RESET_OK')==(1 if kind=='no-medium' else 4),text
                         rescan_text=text.split('MUSHA: RESCAN 1/1 START',1)[1].split('MUSHA: RESCAN 1/1 DONE',1)[0]
                         assert 'XHCI_RESET_OK' not in rescan_text,rescan_text
-                        if kind=='exit': assert 'Hello Musha-OS!' in screen,screen
+                        if kind=='exit': assert 'Hello Musha-OS!' in text and 'ELF exited: status 0' in screen,screen+text
                     if kind=='no-medium':
                         assert hold_seen is not None and hold_seen-attach_seen<5,text
                         assert 'DIAGNOSTIC_HOLD NO_MEDIUM' in text and 'RING3_ELF_ENTERING' not in text,text
                         assert 'MUSHA: RESCAN 1/1 DONE' in text,text
                     if kind=='exit':
-                        assert f'AUTORUN.ELF exited: status {detail}' in screen,screen
-                        if name.startswith('hello'): assert 'AUTORUN.ELF  (Ring 3)' in screen,screen
-                        if name.startswith('hello'): assert 'Hello Musha-OS!' in screen,screen
-                        if name=='log-long':
-                            # The 4096-byte log scrolls at the framebuffer's visible width.
-                            columns=len(rows[0]); remainder=4096 % columns
-                            assert rows[0]=='Z'*columns and rows[-3].rstrip()=='Z'*(remainder or columns),screen
-                        if name=='log-utf8': assert 'ASCII..... ......' in screen and 'END' in screen,screen
+                        assert f'ELF exited: status {detail}.' in screen,screen
+                        if not a.normal:
+                            assert 'RING3_ELF_EXIT_STATUS='+format(detail,'016X') in text,text
+                            if name.startswith('hello'): assert 'Hello Musha-OS!' in text,text
+                        if name in ('log-long','log-utf8'):
+                            if a.normal:
+                                assert observed_log, 'Application log was not observed before return'
+                                log_rows=(d/'app-log.txt').read_text().splitlines()
+                                log_screen='\n'.join(log_rows)
+                            else:
+                                log_screen=text
+                                log_rows=[]
+                            if name=='log-long':
+                                if a.normal:
+                                    columns=len(log_rows[0]);remainder=4096%columns
+                                    assert log_rows[0]=='Z'*columns and log_rows[-1].rstrip()=='Z'*(remainder or columns),log_screen
+                                    assert set(''.join(log_rows).strip()) <= set('Z '),log_screen
+                                else: assert 'Z'*4096 in text,text
+                            else:
+                                if a.normal:
+                                    assert 'ASCII..... ......' in log_screen and 'END' in log_screen,log_screen
+                                    assert '\x1b' not in log_screen and '\x01' not in log_screen,log_screen
+                                else: assert b'ASCII\t\r\x1b\x01\x7f \xe6\x97\xa5\xe6\x9c\xac\nEND\n' in debug.read_bytes(),text
                     elif kind=='fault':
                         vector=14 if name=='fault-pf' else 6
-                        assert 'AUTORUN.ELF faulted' in screen and f'VECTOR {vector:016X}' in screen and f'ERROR {(6 if vector==14 else 0):016X}' in screen and 'RIP ' in screen and 'RSP ' in screen,screen
-                        if not a.normal: assert 'RING3_FAULT_KERNEL_STACK_OK' in text,text
+                        assert f'ELF faulted: vector {vector}.' in screen,screen
+                        if not a.normal:
+                            assert 'RING3_FAULT_KERNEL_STACK_OK' in text and 'C3_APP_FAULT VECTOR='+format(vector,'016X') in text,text
+                            assert 'APP_RECOVERED KIND=0000000000000001 DETAIL='+format(vector,'016X') in text,text
                     elif kind in ('reject','disconnect'):
-                        assert 'AUTORUN.ELF rejected:' in screen and 'RING3_ELF_ENTERING' not in text,screen+text
-                        if kind=='reject': assert detail in screen,screen
-                        else: assert removed and 'XHCI_QUIESCED' in text and ('File read failed' in screen or 'Device session did not complete' in screen),screen+text
+                        assert 'RING3_ELF_ENTERING' not in text,screen+text
+                        if kind=='reject':
+                            assert 'ELF refused.' in screen,screen
+                            if not a.normal:
+                                if name.startswith('malformed-'):
+                                    assert 'RING3_REJECT ELF_FORMAT' in text,text
+                                elif name in ('elf-memory','cpu-reject'):
+                                    assert 'RING3_REJECT '+detail in text,text
+                                elif name in ('too-large','too-small','duplicate'):
+                                    assert 'EXTERNAL_ELF_READ_REJECTED' in text and 'LIVE_FILE_REQUEST' not in text,text
+                                elif name=='timeout':
+                                    import re
+                                    elapsed=int(re.search(r'EXTERNAL_ELF_ELAPSED_MS=([0-9A-F]+)',text).group(1),16)
+                                    assert elapsed>=5000 and 'LIVE_FILE_REQUEST' in text and 'EXTERNAL_ELF_READ_COMPLETE' not in text,text
+                                else: raise AssertionError('Missing refusal cause check '+name)
+                        else:
+                            assert removed and 'XHCI_QUIESCED' in text and 'APP_ARENA_SCRUBBED VIEWER_RESTART' in text,text
                     elif kind=='timing': assert 'EXTERNAL_ELF_ELAPSED_MS=' in text,text
                     if a.normal: assert text=='', 'Normal EFI emitted debug output'
                     assert before==hashlib.sha256(data.read_bytes()).hexdigest()

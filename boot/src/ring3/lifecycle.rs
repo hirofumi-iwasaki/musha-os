@@ -11,7 +11,23 @@ const MSRS: [u32; 7] = [
     0xc0000080, 0xc0000081, 0xc0000082, 0xc0000084, 0xc0000100, 0xc0000101, 0xc0000102,
 ];
 
+#[derive(Clone, Copy)]
+pub struct Outcome {
+    pub kind: u64,
+    pub detail: u64,
+}
+#[cfg(feature = "ring3-lifecycle-probe")]
 pub fn run(arena: &mut [u8], info: &crate::BootInfo) {
+    let _ = attempts(arena, info, 3, true);
+    crate::debug(b"MUSHA: C3_OS_RESUMED\n");
+}
+/// Only the guest frames are abandoned. The enclosing USB callback returns
+/// normally, so session cleanup/Drop can run before the caller scrubs the arena.
+#[cfg(external_app)]
+pub fn once(arena: &mut [u8], info: &crate::BootInfo) -> Outcome {
+    attempts(arena, info, 1, false)
+}
+fn attempts(arena: &mut [u8], info: &crate::BootInfo, count: u64, scrub_each: bool) -> Outcome {
     unsafe {
         let flags: u64;
         let cr0: u64;
@@ -33,7 +49,8 @@ pub fn run(arena: &mut [u8], info: &crate::BootInfo) {
         if snapshot.save().is_err() {
             crate::stop();
         }
-        for attempt in 0..3 {
+        let mut last = Outcome { kind: 2, detail: 0 };
+        for attempt in 0..count {
             super::SEEN_QUERY = false;
             DETAIL = 0;
             ACTIVE = true;
@@ -41,6 +58,22 @@ pub fn run(arena: &mut [u8], info: &crate::BootInfo) {
             // the application arena. finish never returns to the abandoned Rust frames.
             let outcome = invoke(arena.as_mut_ptr(), arena.len(), info);
             ACTIVE = false;
+            // The loan points into the enclosing live USB callback. Confirm DMA
+            // stop before restoring mappings, and never reuse on failure.
+            let stopped = super::io::detach();
+            #[cfg(feature = "app-recovery-stop-failure")]
+            let stopped = {
+                let _ = stopped;
+                false
+            };
+            if !stopped {
+                crate::debug(b"MUSHA: APP_RECOVERY_STOP_UNCONFIRMED QUARANTINED\n");
+                crate::stop();
+            }
+            last = Outcome {
+                kind: outcome,
+                detail: DETAIL,
+            };
             if snapshot.restore().is_err() {
                 crate::stop();
             }
@@ -55,8 +88,10 @@ pub fn run(arena: &mut [u8], info: &crate::BootInfo) {
             super::KERNEL_TOP = 0;
             super::USER_SP = 0;
             // Restore the kernel guard identity mapping before touching arena.
-            arena.fill(0);
-            if arena.iter().any(|v| *v != 0)
+            if scrub_each {
+                arena.fill(0);
+            }
+            if (scrub_each && arena.iter().any(|v| *v != 0))
                 || crate::memory::probe_vacant(super::abi::IMAGE_BASE as usize, PAGE).is_err()
                 || crate::memory::probe_vacant(super::abi::ARENA_BASE as usize, PAGE).is_err()
                 || crate::memory::probe_vacant(super::abi::START_BASE as usize, PAGE).is_err()
@@ -64,7 +99,11 @@ pub fn run(arena: &mut [u8], info: &crate::BootInfo) {
             {
                 crate::stop();
             }
-            crate::debug(b"MUSHA: C3_RECLAIMED ATTEMPT=");
+            crate::debug(if scrub_each {
+                b"MUSHA: C3_RECLAIMED ATTEMPT="
+            } else {
+                b"MUSHA: APP_CPU_RESTORED ATTEMPT="
+            });
             crate::debug(&crate::cpu::hex(attempt));
             crate::debug(b" OUTCOME=");
             crate::debug(&crate::cpu::hex(outcome));
@@ -72,7 +111,7 @@ pub fn run(arena: &mut [u8], info: &crate::BootInfo) {
             crate::debug(&crate::cpu::hex(DETAIL));
             crate::debug(b"\n");
         }
-        crate::debug(b"MUSHA: C3_OS_RESUMED\n");
+        last
     }
 }
 #[unsafe(naked)]

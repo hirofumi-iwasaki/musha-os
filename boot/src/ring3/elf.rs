@@ -212,7 +212,7 @@ pub fn log(pointer: u64, length: u64) -> (i32, u64) {
     (0, length)
 }
 
-#[cfg(feature = "ring3-lifecycle-probe")]
+#[cfg(any(feature = "ring3-lifecycle-probe", external_app))]
 pub unsafe fn clear() {
     unsafe {
         core::ptr::addr_of_mut!(LOADED).write(Loaded {

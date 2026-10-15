@@ -5,6 +5,8 @@ import argparse, hashlib, json
 from pathlib import Path
 import zipfile
 import re
+import posixpath
+from urllib.parse import unquote, urlsplit
 ROOT=Path(__file__).resolve().parents[1]
 
 def create(output, version, language='c', samples=None):
@@ -39,6 +41,20 @@ def create(output, version, language='c', samples=None):
             text = data.decode('utf-8')
             text = re.sub(r'\[r2 evidence\]\((?:\.\./docs/|docs/)?stage4-r2-0\.4\.0-progress\.md\)', 'development verification in the source checkout', text)
             text = re.sub(r'\[r2証拠\]\((?:\.\./docs/|docs/)?stage4-r2-0\.4\.0-progress\.md\)', 'source checkoutの開発検証', text)
+            text = re.sub(r'\[[^]\n]+\]\((?:\.\./docs/|docs/)?stage5-0\.4\.0-progress\.md\)', 'stage5 local verification in the source checkout', text)
+            # Standalone SDKs intentionally omit source-only contracts/history.
+            # Keep their reference and path visible without dangling local links.
+            def source_reference(match):
+                label, target = match.groups()
+                url = urlsplit(target)
+                if url.scheme or url.netloc or not url.path:
+                    return match.group(0)
+                destination = posixpath.normpath(posixpath.join(
+                    posixpath.dirname(name), unquote(url.path)))
+                if destination in payload:
+                    return match.group(0)
+                return label + ' (source checkout: `' + destination + '`)'
+            text = re.sub(r'\[([^]\n]+)\]\(([^\s)]+)\)', source_reference, text)
             payload[name] = text.encode('utf-8')
     sample_elfs = {}
     for (name, path) in sorted((samples or {}).items()):
