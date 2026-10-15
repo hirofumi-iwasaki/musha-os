@@ -42,10 +42,12 @@ mod app;
 #[cfg(external_app)]
 mod appconsole;
 mod bootlog;
+mod bluetooth;
 mod bootstate;
 mod cpu;
 mod diagnostics;
 mod settings;
+mod entropy;
 mod marker {
     include!(concat!(env!("OUT_DIR"), "/marker.rs"));
 }
@@ -473,6 +475,7 @@ pub extern "efiapi" fn efi_main(
         let loaded = &*(image_protocol as *const loaded_image::Protocol);
         let settings = settings::read(bs, system_table, loaded.device_handle);
         bootlog::configure(settings.config);
+        entropy::initialize(bs);
         let mut protocol = core::ptr::null_mut();
         let mut guid = gop::PROTOCOL_GUID;
         let status = ((*bs).locate_protocol)(&mut guid, core::ptr::null_mut(), &mut protocol);

@@ -58,6 +58,17 @@ mod tests {
 
 /// Validate a short Data Stage event independently from Status completion.
 pub fn short_residual(words: [u32; 4], data: usize, slot: u8, requested: u32) -> Option<u32> {
+    endpoint_residual(words, data, slot, 1, requested)
+}
+/// A short IN completion is valid only for the exact outstanding TRB/slot/DCI.
+/// The caller must retain its buffer and finish the TD/Status stage as applicable.
+pub fn endpoint_residual(
+    words: [u32; 4],
+    data: usize,
+    slot: u8,
+    endpoint: u8,
+    requested: u32,
+) -> Option<u32> {
     let remaining = words[2] & 0xffffff;
     if data % 16 != 0
         || requested == 0
@@ -67,7 +78,9 @@ pub fn short_residual(words: [u32; 4], data: usize, slot: u8, requested: u32) ->
         || words[2] >> 24 != 13
         || (words[3] >> 10) & 63 != 32
         || (words[3] >> 24) as u8 != slot
-        || (words[3] >> 16) & 31 != 1
+        || endpoint == 0
+        || endpoint > 31
+        || (words[3] >> 16) & 31 != endpoint as u32
         || words[3] & (4 | 0xe00000) != 0
     {
         return None;
@@ -91,5 +104,25 @@ mod short_tests {
         assert_eq!(short_residual(w, 0x1000, 2, 4), None);
         w[3] |= 4;
         assert_eq!(short_residual(w, 0x1000, 2, 18), None);
+    }
+}
+
+#[cfg(test)]
+mod interrupt_short_tests {
+    use super::*;
+    #[test]
+    fn short_interrupt_is_exact_identity_not_an_unrelated_completion() {
+        let w = [
+            0x2000,
+            0,
+            (13 << 24) | 251,
+            (32 << 10) | (3 << 16) | (2 << 24) | 1,
+        ];
+        assert_eq!(endpoint_residual(w, 0x2000, 2, 3, 257), Some(251));
+        assert_eq!(endpoint_residual(w, 0x2000, 2, 5, 257), None);
+        assert_eq!(endpoint_residual(w, 0x2000, 3, 3, 257), None);
+        assert_eq!(endpoint_residual(w, 0x2010, 2, 3, 257), None);
+        assert_eq!(endpoint_residual(w, 0x2000, 2, 3, 250), None);
+        assert_eq!(short_residual(w, 0x2000, 2, 257), None);
     }
 }

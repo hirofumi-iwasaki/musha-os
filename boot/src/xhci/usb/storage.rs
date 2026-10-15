@@ -85,7 +85,8 @@ impl Pipe {
                 Some(&mut host.mouse_saved),
                 None,
                 None,
-            )
+                    Some(&mut host.bt_mailbox),
+)
         };
         match result {
             Ok(_) => {
@@ -582,6 +583,7 @@ pub(super) fn probe(
         write_protected: false,
         write_checked: false,
         write_sense: false,
+        pairing_checked: false,
     })
 }
 
@@ -601,6 +603,7 @@ pub(super) struct Device {
     write_protected: bool,
     write_checked: bool,
     write_sense: bool,
+    pairing_checked: bool,
 }
 impl Device {
     pub(super) fn with_port(mut self, port: usize) -> Self {
@@ -1006,3 +1009,5 @@ fn settings_debug(args: core::fmt::Arguments<'_>) {
     }
     let _ = core::fmt::write(&mut Debug, args);
 }
+
+mod pairing;

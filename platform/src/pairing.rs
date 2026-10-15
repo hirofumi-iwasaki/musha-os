@@ -15,7 +15,7 @@ pub enum Error {
     Corrupt,
     Duplicate,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Bond {
     /// LE public (0) or random (1) identity address, HCI byte order.
     pub address_type: u8,
@@ -26,6 +26,16 @@ pub struct Bond {
     pub ediv: u16,
     pub random: [u8; 8],
     pub ltk: [u8; 16],
+}
+impl core::fmt::Debug for Bond {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Bond")
+            .field("address_type", &self.address_type)
+            .field("key_size", &self.key_size)
+            .field("flags", &self.flags)
+            .field("key_material", &"REDACTED")
+            .finish()
+    }
 }
 fn crc(bytes: &[u8]) -> u32 {
     let mut c = !0u32;
@@ -177,7 +187,34 @@ pub fn recognized(bytes: &[u8]) -> bool {
         random: [0; 8],
         ltk: [0; 16],
     }; MAX_BONDS];
-    decode_state(bytes, &mut bonds).is_ok()
+    let valid = decode_state(bytes, &mut bonds).is_ok();
+    clear_keys(&mut bonds);
+    valid
+}
+fn clear_keys(bonds: &mut [Bond]) {
+    for bond in bonds {
+        for byte in &mut bond.ltk {
+            unsafe {
+                core::ptr::write_volatile(byte, 0);
+            }
+        }
+    }
+}
+/// Read consumption while validating the complete record; temporary key copies
+/// are wiped before return. This does not authenticate an untrusted medium.
+pub fn consumed_config_hash(bytes: &[u8]) -> Result<Option<[u8; 32]>, Error> {
+    let mut bonds = [Bond {
+        address_type: 0,
+        address: [0; 6],
+        key_size: 0,
+        flags: 0,
+        ediv: 0,
+        random: [0; 8],
+        ltk: [0; 16],
+    }; MAX_BONDS];
+    let result = decode_state(bytes, &mut bonds).map(|(_, hash)| hash);
+    clear_keys(&mut bonds);
+    result
 }
 /// Only exact raw CONFIG bytes are compared. Re-saving identical content does not
 /// rearm pairing. Missing/malformed CONFIG never supplies a hash to this policy.
@@ -185,7 +222,8 @@ pub fn requested(pair: bool, raw: Option<[u8; 32]>, consumed: Option<[u8; 32]>) 
     pair && raw.is_some() && raw != consumed
 }
 /// Publish consumption only after pairing succeeds AND the record is durable.
-/// A failed save leaves the old state, so the request is retried next boot.
+/// A failed save leaves the old RAM state. A write/sync failure may already have
+/// changed disk bytes; the next boot must inspect the actual validated record.
 pub fn acknowledge(
     old: Option<[u8; 32]>,
     candidate: [u8; 32],

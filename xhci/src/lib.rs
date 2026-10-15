@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
 pub mod intel_ports;
+pub mod mailbox;
+pub mod lease;
 /// Address-only bump allocator. Hardware access is outside this safe layer.
 pub struct Pool {
     next: usize,

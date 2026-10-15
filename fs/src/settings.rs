@@ -1203,4 +1203,29 @@ mod writer_tests {
         );
         assert_eq!(d.writes, n);
     }
+    // Synthetic transcripts/nonces only; this module is never linked as runtime.
+    fn verified_pairing() -> musha_platform::bluetooth::legacy::VerifiedBond {
+        use musha_platform::bluetooth::{legacy::{Legacy,Association,Action,c1},Event};
+        let mut s=Legacy::new(1,0x40,0,Association::JustWorks,[1;16],0,[1;6],0,[2;6]).unwrap();
+        let response=[2,3,0,1,16,0,1];let request=s.request();s.receive(1,1,&response).unwrap();
+        let confirm=c1(&[0;16],&[2;16],&request,&response,0,0,&[1;6],&[2;6]);let mut p=[3;17];p[1..].copy_from_slice(&confirm);s.receive(1,2,&p).unwrap();
+        p[0]=4;p[1..].fill(2);assert!(matches!(s.receive(1,3,&p),Ok(Action::Encrypt(_))));
+        s.encryption(1,4,Event::parse(&[8,4,0,0x40,0,1]).unwrap()).unwrap();s.receive(1,5,&[6;17]).unwrap();
+        match s.receive(1,6,&[7;11]).unwrap(){Action::Bond(b)=>b,_=>panic!()}
+    }
+    #[test]
+    fn verified_smp_bond_connects_to_real_settings_writer_and_readback() {
+        let mut d=Memory::new();let root=d.sector(1056);let hash=musha_platform::config_hash::sha256(b"pair=on\r\n");
+        let result=verified_pairing().save(None,Some(hash),|record|d.run(record).map(|_|()).map_err(|_|musha_platform::bluetooth::Error::Invalid));
+        assert_eq!(result,Ok(Some(hash)));assert_eq!(d.sector(1056),root);
+        let p=preflight(66581,512,OWNED_NAME,4096,false,&mut |l,b|d.read(l,b)).unwrap();let mut record=[0;4096];
+        for (i,b) in record.chunks_mut(512).enumerate(){d.read(p.data_sector(i).unwrap(),b).unwrap();}
+        let mut out=[*verified_pairing().bond();8];let (n,consumed)=musha_platform::pairing::decode_state(&record,&mut out).unwrap();assert_eq!(n,1);assert_eq!(consumed,Some(hash));
+        assert!(!musha_platform::pairing::requested(true,Some(hash),consumed));
+        assert!(musha_platform::pairing::requested(true,Some(musha_platform::config_hash::sha256(b"pair=on\n#again\n")),consumed));
+        let before=d.writes;d.sync_fail=true;
+        assert_eq!(verified_pairing().save(Some(&record),Some([9;32]),|r|d.run(r).map(|_|()).map_err(|_|musha_platform::bluetooth::Error::Invalid)),Err(musha_platform::bluetooth::bonding::SaveError::PersistenceUnknown));
+        assert!(d.writes>before); // RAM not published; disk is explicitly uncertain.
+    }
+
 }

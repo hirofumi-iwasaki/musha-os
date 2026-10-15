@@ -9,3 +9,5 @@ publish = false
 musha-api = { path = "../api" }
 
 musha-framebuffer = { path = "../framebuffer" }
+
+musha-input = { path = "../input" }

@@ -11,6 +11,7 @@ struct State {
     busy: bool,
     disconnected: bool,
     modifiers: u16,
+    keys: musha_input::merge::Keys,
     stop_info: *const crate::BootInfo,
 }
 struct Shared(UnsafeCell<State>);
@@ -23,6 +24,7 @@ static STATE: Shared = Shared(UnsafeCell::new(State {
     busy: false,
     disconnected: false,
     modifiers: 0,
+    keys: musha_input::merge::Keys::new(),
     stop_info: core::ptr::null(),
 }));
 /// # Safety
@@ -46,12 +48,21 @@ pub unsafe fn attach<F: FnMut() -> Result<(), &'static str>>(
         s.stop_info = info;
         s.disconnected = false;
         s.modifiers = 0;
+        s.keys = musha_input::merge::Keys::new();
     }
 }
 pub fn time() -> (i32, u64) {
     crate::bootstate::epoch_now().map_or((abi::ERR_IO, 0), |ms| (0, ms))
 }
 pub fn poll() -> Result<(), i32> {
+    #[cfg(feature = "bluetooth-loan-restart-probe")]
+    if crate::bluetooth::loan_probe() {
+        shutdown();
+        unsafe {
+            (*STATE.0.get()).disconnected = true;
+        }
+        return Err(abi::ERR_DISCONNECTED);
+    }
     let call = unsafe {
         let s = &mut *STATE.0.get();
         if s.disconnected {
@@ -81,13 +92,37 @@ pub fn poll() -> Result<(), i32> {
             return Err(abi::ERR_DISCONNECTED);
         }
     }
+    #[cfg(feature = "bluetooth-gamepad-probe")]
+    crate::bluetooth::gamepad_probe();
+    let (_, keys, count) = crate::bluetooth::drain_keys().map_err(|_| abi::ERR_DISCONNECTED)?;
+    source_keys(1, &keys[..count]);
+    crate::bluetooth::drain_gamepad(|event| unsafe {
+        if let Some(q) = (*STATE.0.get()).queue.as_mut() {
+            q.push(event);
+        }
+    })
+    .map_err(|_| abi::ERR_DISCONNECTED)?;
     Ok(())
 }
 pub fn keys(events: &[(u8, bool)]) {
+    source_keys(0, events);
+}
+fn source_keys(source: usize, events: &[(u8, bool)]) {
+    if crate::bluetooth::captures_input() {
+        return;
+    }
+
     for &(code, down) in events {
         let now = crate::bootstate::epoch_now().unwrap_or(0);
         unsafe {
             let s = &mut *STATE.0.get();
+            let mut transition = None;
+            s.keys.key(source, code, down, |key, down| {
+                transition = Some((key, down))
+            });
+            let Some((code, down)) = transition else {
+                continue;
+            };
             if (0xe0..=0xe7).contains(&code) {
                 let mask = 1 << (code - 0xe0);
                 if down {

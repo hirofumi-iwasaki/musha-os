@@ -100,6 +100,13 @@ pub struct Viewer {
     ended: bool,
     keyboard_missing: bool,
     bootfile_absent: bool,
+    pairing_blocked: bool,
+    pairing_request: bool,
+    pairing_message: Option<&'static str>,
+    passkey: Option<musha_input::passkey::Entry>,
+    passkey_outcome: Option<musha_input::passkey::Outcome>,
+    passkey_generation: u64,
+    display_passkey: Option<u32>,
     returned: Option<(u64, u64)>,
     launch: Option<Id>,
     handle: Option<Handle>,
@@ -137,6 +144,13 @@ impl Viewer {
             ended: false,
             keyboard_missing: false,
             bootfile_absent: false,
+            pairing_blocked: false,
+            pairing_request: false,
+            pairing_message: None,
+            passkey: None,
+            passkey_outcome: None,
+            passkey_generation: 0,
+            display_passkey: None,
             returned: None,
             launch: None,
             handle: None,
@@ -156,6 +170,56 @@ impl Viewer {
     pub fn bootfile_absent(&mut self) {
         if !self.bootfile_absent {
             self.bootfile_absent = true;
+            self.repaint();
+        }
+    }
+    /// Runtime has no approved entropy/crypto/UI/transport service yet. This is
+    /// a visible refusal, never a successful pairing-mode transition.
+    pub fn begin_passkey_input(&mut self, generation: u64, now: u64) -> bool {
+        let Some(entry) = musha_input::passkey::Entry::new(generation, now) else {
+            return false;
+        };
+        self.passkey = Some(entry);
+        self.passkey_generation = generation;
+        self.passkey_outcome = None;
+        self.pairing_blocked = false;
+        self.repaint();
+        true
+    }
+    pub fn take_passkey(&mut self) -> Option<(u64, musha_input::passkey::Outcome)> {
+        self.passkey_outcome
+            .take()
+            .map(|v| (self.passkey_generation, v))
+    }
+    pub fn display_passkey(&mut self, value: u32) {
+        self.display_passkey = Some(value);
+        self.pairing_blocked = true;
+        self.repaint();
+    }
+    fn passkey_tick(&mut self, now: u64) {
+        if let Some(entry) = self.passkey.as_mut() {
+            if let Some(outcome) = entry.tick(self.passkey_generation, now) {
+                self.passkey = None;
+                self.passkey_outcome = Some(outcome);
+                self.pairing_blocked = true;
+                self.repaint();
+            }
+        }
+    }
+    pub fn take_pairing_request(&mut self) -> bool {
+        core::mem::replace(&mut self.pairing_request, false)
+    }
+    pub fn pairing_status(&mut self, message: &'static str) {
+        self.passkey = None;
+        self.passkey_outcome = None;
+        self.display_passkey = None;
+        self.pairing_message = Some(message);
+        self.pairing_blocked = true;
+        self.repaint();
+    }
+    pub fn pairing_unavailable(&mut self) {
+        if !self.pairing_blocked {
+            self.pairing_blocked = true;
             self.repaint();
         }
     }
@@ -218,6 +282,21 @@ impl Viewer {
     }
     /// HID usage, press transitions only. A held key does not create repeats here.
     pub fn key(&mut self, usage: u8, now: u64) {
+        if let Some(entry) = self.passkey.as_mut() {
+            let outcome = entry.key(self.passkey_generation, usage, true, now);
+            if let Some(outcome) = outcome {
+                self.passkey = None;
+                self.passkey_outcome = Some(outcome);
+            }
+            self.repaint();
+            return;
+        }
+
+        if usage == 0x13 {
+            self.pairing_request = true;
+            self.pairing_unavailable();
+            return;
+        } // P
         if usage == 0x14 {
             self.exit = true;
             self.closing = true;
@@ -313,6 +392,7 @@ impl Viewer {
     /// At most one catalog entry or one bounded read attempt per call, except the
     /// selected-name lookup (at most 128 in-memory entries, no disk access).
     pub fn service(&mut self, files: &mut Files<'_>, now: u64) {
+        self.passkey_tick(now);
         if self.ended {
             return;
         }
@@ -483,6 +563,26 @@ impl Viewer {
                 let start = (self.name_page * 72).min(self.name.len);
                 let _ = out.write_str(&self.name.as_str()[start..(start + 72).min(self.name.len)]);
             }
+            6 if self.display_passkey.is_some() => {
+                let _ = write!(
+                    out,
+                    "Bluetooth passkey: {:06}. Type on the Bluetooth keyboard.",
+                    self.display_passkey.unwrap()
+                );
+            }
+            6 if self.passkey.is_some() => {
+                let _ = write!(
+                    out,
+                    "Bluetooth passkey: {} digits entered. Enter confirms; Esc cancels.",
+                    self.passkey.as_ref().unwrap().digits()
+                );
+            }
+            6 if self.pairing_blocked => {
+                let _ = out
+                    .write_str(self.pairing_message.unwrap_or(
+                        "Bluetooth pairing unavailable: runtime service not connected.",
+                    ));
+            }
             6 if self.returned.is_some() => {
                 let _ = match self.returned.unwrap() {
                     (0, status) => write!(out, "ELF exited: status {}.", status as i32),
@@ -594,6 +694,7 @@ impl Viewer {
         out
     }
     pub fn render_step(&mut self, ctx: &mut Context<'_>) -> Result<bool, musha_api::Error> {
+        self.passkey_tick(ctx.now_ms());
         if !self.dirty {
             return Ok(false);
         }
@@ -944,5 +1045,15 @@ mod tests {
             }
             assert_eq!(&pixels[stride * h..], &[0xdeadbeef; 4]);
         }
+    }
+    #[test]
+    fn pairing_entry_is_a_visible_refusal_until_runtime_security_is_connected() {
+        let mut v = Viewer::new();
+        assert!(!v.line(6).as_str().contains("pairing"));
+        v.key(0x13, 0);
+        assert!(v.line(6).as_str().contains("pairing unavailable"));
+        v.pairing_unavailable();
+        assert!(v.line(6).as_str().contains("runtime service not connected"));
+        assert!(!v.exit);
     }
 }

@@ -55,6 +55,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         let (kind, detail) = crate::external::outcome();
         app.viewer.returned(kind, detail);
     }
+    crate::bluetooth::defer_boot_request();
     let mut initialized = false;
     let mut network = None;
     let mut steps = 0u64;
@@ -71,6 +72,8 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         // External slot 0 has priority; slot 1 is reserved for a future T2 adapter.
         let mut inputs = musha_input::sources::Sources::<2>::default();
         let mut external = None;
+        let mut merged = musha_input::merge::Keys::new();
+        let mut bt_generation = 0;
         let mut cycle = |event: crate::xhci::AppEvent<'_>| -> Result<bool, &'static str> {
             let events = match event {
                 crate::xhci::AppEvent::Files(files) => {
@@ -239,12 +242,35 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 for &(key, down) in events {
                     let source = external.ok_or(Error::Invalid)?;
                     inputs
-                        .key(source, key, down, |k, d| ctx.push_key(k, d))
+                        .key(source, key, down, |k, d| {
+                            merged.key(0, k, d, |k, d| ctx.push_key(k, d))
+                        })
                         .map_err(|_| Error::Invalid)?;
+                }
+                crate::bluetooth::drain_gamepad(|_| {}).map_err(|_| Error::Io)?;
+                let (generation, keys, count) =
+                    crate::bluetooth::drain_keys().map_err(|_| Error::Io)?;
+                if generation != bt_generation {
+                    merged.clear(1, |k, d| ctx.push_key(k, d));
+                    bt_generation = generation;
+                }
+                for &(key, down) in &keys[..count] {
+                    merged.key(1, key, down, |k, d| ctx.push_key(k, d));
                 }
                 let state = {
                     let _visible = musha_framebuffer::OutputGuard::allow();
-                    app.step(&mut ctx)?
+                    {
+                        let state = app.step(&mut ctx)?;
+                        crate::bluetooth::service(&mut app.viewer, before);
+                        if app.viewer.take_pairing_request() {
+                            app.viewer
+                                .pairing_status(match crate::bluetooth::request() {
+                                    Ok(()) => "Bluetooth pairing: discovering LE HID devices.",
+                                    Err(message) => message,
+                                });
+                        }
+                        state
+                    }
                 };
                 steps += 1;
                 if time.now().map_err(|_| Error::Io)? - before > 1 {
@@ -253,7 +279,9 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         crate::debug(b"MUSHA: APP_STEP_BUDGET_EXCEEDED\n");
                     }
                 }
-                Ok(app.exit_requested || state == Step::Complete)
+                Ok(app.exit_requested
+                    || state == Step::Complete
+                    || crate::bluetooth::wants_restart())
             })();
             match step {
                 Ok(stop) => Ok(stop),
@@ -266,6 +294,15 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         crate::bootlog::phase("USB host", "device discovery");
         let usb_result = crate::xhci::run_session(info, &mut cycle);
         drop(cycle);
+        crate::bluetooth::confirm_restart(!matches!(
+            usb_result,
+            Err("QUIESCE FAILED" | "BT LEASE QUARANTINED")
+        ));
+        if crate::bluetooth::wants_restart()
+            && matches!(usb_result, Err("QUIESCE FAILED" | "BT LEASE QUARANTINED"))
+        {
+            return Err(Error::Io);
+        }
         crate::bootstate::update(|r, _| {
             r.usb = if usb_result == Err("QUIESCE FAILED") {
                 musha_platform::readiness::Service::StopUnconfirmed
@@ -311,13 +348,16 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         if let Some(source) = external.take() {
             inputs
                 .disconnect(source, |k, d| {
-                    ctx.push_key(k, d);
-                    crate::debug(b"MUSHA: INPUT_DETACH_KEY_UP=");
-                    crate::debug(&crate::cpu::hex(k as u64));
-                    crate::debug(b"\n");
+                    merged.key(0, k, d, |k, d| ctx.push_key(k, d));
+                    if !crate::bluetooth::sensitive_input() {
+                        crate::debug(b"MUSHA: INPUT_DETACH_KEY_UP=");
+                        crate::debug(&crate::cpu::hex(k as u64));
+                        crate::debug(b"\n");
+                    }
                 })
                 .map_err(|_| Error::Invalid)?;
         }
+        merged.clear(1, |k, d| ctx.push_key(k, d));
         crate::debug(b"MUSHA: INPUT_SOURCE_DETACHED\n");
         let input_completed = had_keyboard && usb_result.is_ok();
         ctx.finish_file_discovery(usb_result.is_err());
@@ -346,6 +386,9 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
             crate::debug(b"MUSHA: RUNTIME_POLL_READY NO_INPUT\n");
         }
         // With no keyboard, progress continues for a bounded diagnostic window.
+        if crate::bluetooth::wants_restart() {
+            return Ok(());
+        }
         // Esc or completion of the debug keyboard window stops all services.
         let tail_started = time.now().map_err(|_| Error::Io)?;
         for _ in 0..100_000_000 {
@@ -374,7 +417,18 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
             }
             let state = {
                 let _visible = musha_framebuffer::OutputGuard::allow();
-                app.step(&mut ctx)?
+                {
+                    let state = app.step(&mut ctx)?;
+                    crate::bluetooth::service(&mut app.viewer, before);
+                    if app.viewer.take_pairing_request() {
+                        app.viewer
+                            .pairing_status(match crate::bluetooth::request() {
+                                Ok(()) => "Bluetooth pairing: discovering LE HID devices.",
+                                Err(message) => message,
+                            });
+                    }
+                    state
+                }
             };
             steps += 1;
             let expired = network

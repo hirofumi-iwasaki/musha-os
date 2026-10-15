@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(dead_code, unexpected_cfgs)]
 fn debug(_: &[u8]) {}
+mod bluetooth {
+    pub fn present() -> bool {
+        false
+    }
+}
 mod cpu {
     pub fn hex(_: u64) -> [u8; 16] {
         [b'0'; 16]

@@ -1,6 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 use musha_framebuffer::metrics as grid;
+pub(super) mod bluetooth;
 mod file;
 mod hub;
 mod storage;
@@ -210,11 +211,58 @@ fn control_read(
     if !(1..=8).contains(&slot) || bytes > 1024 || (bytes != 0 && request & 0x80 == 0) {
         return Err("TRANSFER RANGE");
     }
+    control_transfer(host, slot, ring, buffer, bytes, request, interface)
+}
+/// Data is copied into a controller-owned DMA buffer, never borrowed from the
+/// caller while DMA runs. On failure the outer Host still owns/quarantines it.
+fn control_write(
+    host: &mut Host<'_>,
+    slot: u8,
+    ring: usize,
+    buffer: usize,
+    data: &[u8],
+    request: u32,
+    interface: u16,
+) -> Result<(), &'static str> {
+    if !(1..=8).contains(&slot) || data.is_empty() || data.len() > 1024 || request & 0x80 != 0 {
+        return Err("TRANSFER RANGE");
+    }
+    for (i, byte) in data.iter().enumerate() {
+        unsafe {
+            (buffer as *mut u8).add(i).write_volatile(*byte);
+        }
+    }
+    let actual = control_transfer(
+        host,
+        slot,
+        ring,
+        buffer,
+        data.len() as u32,
+        request,
+        interface,
+    )?;
+    if actual != data.len() as u32 {
+        return Err("SHORT CONTROL WRITE");
+    }
+    Ok(())
+}
+fn control_transfer(
+    host: &mut Host<'_>,
+    slot: u8,
+    ring: usize,
+    buffer: usize,
+    bytes: u32,
+    request: u32,
+    interface: u16,
+) -> Result<u32, &'static str> {
+    let incoming = request & 0x80 != 0;
     crate::diagnostics::control_request(slot, request, interface, bytes);
     let plan = host.control_cursors[slot as usize].plan(bytes != 0);
     let status = plan.count - 1;
     unsafe {
-        core::ptr::write_bytes(buffer as *mut u8, 0, bytes as usize);
+        if incoming {
+            core::ptr::write_bytes(buffer as *mut u8, 0, bytes as usize);
+        }
         // One TD in flight. Publish the Link before Setup exposes this TD.
         if let Some(cycle) = plan.link_cycle {
             publish(
@@ -228,7 +276,10 @@ fn control_read(
                 0,
                 0,
                 0,
-                (4 << 10) | (1 << 5) | if bytes == 0 { 1 << 16 } else { 0 } | plan.cycles[status],
+                (4 << 10)
+                    | (1 << 5)
+                    | if bytes == 0 || !incoming { 1 << 16 } else { 0 }
+                    | plan.cycles[status],
             ],
         );
         if bytes != 0 {
@@ -238,7 +289,7 @@ fn control_read(
                     buffer as u32,
                     0,
                     bytes,
-                    (3 << 10) | (1 << 16) | (1 << 2) | plan.cycles[1],
+                    (3 << 10) | if incoming { 1 << 16 } else { 0 } | (1 << 2) | plan.cycles[1],
                 ],
             );
         }
@@ -248,11 +299,22 @@ fn control_read(
                 request,
                 (bytes << 16) | interface as u32,
                 8,
-                (2 << 10) | (1 << 6) | if bytes == 0 { 0 } else { 3 << 16 } | plan.cycles[0],
+                (2 << 10)
+                    | (1 << 6)
+                    | if bytes == 0 {
+                        0
+                    } else if incoming {
+                        3 << 16
+                    } else {
+                        2 << 16
+                    }
+                    | plan.cycles[0],
             ],
         );
     }
-    if !(cfg!(feature = "usb-descriptor-timeout") && request == 0x01000680 && bytes == 18) {
+    if !(cfg!(feature = "usb-descriptor-timeout") && request == 0x01000680 && bytes == 18)
+        && !(cfg!(feature = "usb-control-out-timeout") && bytes != 0 && !incoming)
+    {
         host.regs.write(host.doorbell + slot as usize * 4, 1)?;
     }
     let mut residual = None;
@@ -280,6 +342,7 @@ fn control_read(
             Some((ring + plan.indices[1] * 16, bytes))
         },
         Some(&mut residual),
+        Some(&mut host.bt_mailbox),
     )?;
     host.control_cursors[slot as usize] = plan.next;
     if plan.link_cycle.is_some() {
@@ -772,7 +835,14 @@ pub(super) fn enumerate(
             count += 1;
             continue;
         }
-        if let Configured::Storage(mut device) = configured {
+        if let Configured::Bluetooth(mut device) = configured {
+            if !discovery && host.bluetooth.is_none() {
+                device.ancestors = target.ancestors;
+                host.bluetooth = Some(device);
+                count += 1;
+                continue;
+            }
+        } else if let Configured::Storage(mut device) = configured {
             if !discovery
                 && active_storage.is_none()
                 && (device.prepared.is_some() || cfg!(feature = "live-storage-probe"))
@@ -826,6 +896,8 @@ pub(super) fn enumerate(
         if let Some(device) = active_storage.as_mut() {
             let mut session = device.prepared.take().map(file::Session::new).transpose()?;
             let mut poll = |tick: &mut super::Tick<'_>| {
+                bluetooth::poll(host, tick)?;
+                device.pairing_step(host)?;
                 if let Some(session) = session.as_mut() {
                     session.step(host, device, tick)
                 } else {
@@ -833,6 +905,24 @@ pub(super) fn enumerate(
                 }
             };
             tick(super::AppEvent::Retained(&mut poll))?;
+        }
+    }
+    if !discovery
+        && active_keyboard.is_none()
+        && active_mouse.is_none()
+        && active_storage.is_none()
+        && host.bluetooth.is_some()
+    {
+        let deadline = host
+            .clock
+            .now()?
+            .checked_add(30000)
+            .ok_or("CLOCK OVERFLOW")?;
+        while host.clock.now()? < deadline {
+            bluetooth::poll(host, tick)?;
+            if tick(super::AppEvent::Keys(&[]))? {
+                break;
+            }
         }
     }
     if let Some(keyboard) = active_keyboard {
@@ -904,6 +994,7 @@ struct Keyboard {
 enum Configured {
     Other,
     Storage(storage::Device),
+    Bluetooth(bluetooth::DeviceRef),
     Keyboard(Keyboard),
     Hub(musha_xhci::hub::Configuration),
 }
@@ -981,6 +1072,44 @@ fn configure(
         )
         .map(|device| Configured::Storage(device.with_port(port)));
     }
+    #[cfg(feature = "bluetooth-hci-probe")]
+    if let Ok(transport) = musha_platform::bluetooth::usb::select(&bytes[..length]) {
+        bluetooth::probe(
+            host,
+            pool,
+            slot,
+            input,
+            output,
+            stride,
+            control_ring,
+            buffer,
+            speed,
+            transport,
+            bytes[5],
+            descriptor[4] != 0xe0,
+        )?;
+        return Ok(Configured::Other);
+    }
+    if !host.discovery && host.bluetooth.is_none() {
+        if let Ok(transport) = musha_platform::bluetooth::usb::select(&bytes[..length]) {
+            return bluetooth::prepare(
+                host,
+                pool,
+                slot,
+                input,
+                output,
+                stride,
+                control_ring,
+                buffer,
+                speed,
+                transport,
+                bytes[5],
+                descriptor[4] != 0xe0,
+                port,
+            )
+            .map(Configured::Bluetooth);
+        }
+    }
     let keyboard = musha_xhci::keyboard::configuration(&bytes[..length], speed)?;
     let pointer = if keyboard.is_none() {
         musha_xhci::mouse::configuration(&bytes[..length], speed)?
@@ -1041,6 +1170,34 @@ fn configure(
         0x0b21,
         kbd.interface as u16,
     )?;
+    #[cfg(feature = "usb-control-probe")]
+    if !mouse {
+        // HID keyboard output report exercises a real OUT Data Stage and IN
+        // Status Stage without disk writes or requiring a Bluetooth radio.
+        control_write(
+            host,
+            slot,
+            control_ring,
+            buffer,
+            &[2],
+            if cfg!(feature = "usb-control-out-stall") {
+                0x0200ff21
+            } else {
+                0x02000921
+            },
+            kbd.interface as u16,
+        )?;
+        control_write(
+            host,
+            slot,
+            control_ring,
+            buffer,
+            &[0],
+            0x02000921,
+            kbd.interface as u16,
+        )?;
+        crate::debug(b"MUSHA: EP0_OUT_DATA_STATUS_OK\n");
+    }
     let mut layout = if mouse {
         Some(musha_xhci::mouse::Layout {
             bytes: 3,
@@ -1157,6 +1314,7 @@ fn run_keyboard(
     let mut check_at = host.clock.now()?;
     let mut mouse_state = PointerState::default();
     let mut poll = |tick: &mut super::Tick<'_>| -> Result<bool, &'static str> {
+        bluetooth::poll(host, tick)?;
         if host.regs.read(op + 0x400 + (port - 1) * 16)? & 1 == 0 {
             return Err("KEYBOARD DISCONNECTED");
         }
@@ -1221,6 +1379,7 @@ fn run_keyboard(
                 Some(&mut host.mouse_saved),
                 None,
                 None,
+                Some(&mut host.bt_mailbox),
             )
         };
         let mut transitions = [(0u8, false); 20];
@@ -1236,13 +1395,15 @@ fn run_keyboard(
                 if !state.update(data, |key, down| {
                     transitions[count] = (key, down);
                     count += 1;
-                    crate::debug(if down {
-                        b"MUSHA: HID_KEY_DOWN="
-                    } else {
-                        b"MUSHA: HID_KEY_UP="
-                    });
-                    crate::debug(&crate::cpu::hex(key as u64));
-                    crate::debug(b"\n");
+                    if !crate::bluetooth::sensitive_input() {
+                        crate::debug(if down {
+                            b"MUSHA: HID_KEY_DOWN="
+                        } else {
+                            b"MUSHA: HID_KEY_UP="
+                        });
+                        crate::debug(&crate::cpu::hex(key as u64));
+                        crate::debug(b"\n");
+                    }
                 }) {
                     crate::debug(b"MUSHA: HID_ROLLOVER\n");
                 }
@@ -1256,6 +1417,7 @@ fn run_keyboard(
             }
         }
         if let (Some(session), Some(device)) = (file_session.as_mut(), storage.as_deref_mut()) {
+            device.pairing_step(host)?;
             if session.step(host, device, tick)? {
                 return Ok(true);
             }
@@ -1310,6 +1472,7 @@ fn poll_mouse(
     state: &mut PointerState,
     tick: &mut super::Tick<'_>,
 ) -> Result<(), &'static str> {
+    bluetooth::poll(host, tick)?;
     let layout = mouse.mouse.ok_or("MOUSE FORMAT")?;
     let op = (host.regs.read(0)? & 255) as usize;
     if host.regs.read(op + 0x400 + (mouse.port - 1) * 16)? & 1 == 0 {
@@ -1387,6 +1550,7 @@ fn poll_mouse(
             None,
             None,
             None,
+            Some(&mut host.bt_mailbox),
         )
     };
     match result {
@@ -1428,6 +1592,7 @@ fn run_pointer(
     let mut poll = |tick: &mut super::Tick<'_>| {
         poll_mouse(host, mouse, &mut state, tick)?;
         if let (Some(session), Some(device)) = (files.as_mut(), storage.as_deref_mut()) {
+            device.pairing_step(host)?;
             if session.step(host, device, tick)? {
                 return Ok(true);
             }

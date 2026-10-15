@@ -162,9 +162,10 @@ fn execute(arena: &mut [u8], info: &crate::BootInfo) -> crate::ring3::lifecycle:
         };
         let result = crate::xhci::run_session(info, &mut bridge);
         drop(bridge);
-        if result == Err("QUIESCE FAILED") {
+        if matches!(result, Err("QUIESCE FAILED" | "BT LEASE QUARANTINED")) {
             crate::stop();
         }
+        crate::bluetooth::confirm_restart(true);
         // All session callbacks/references have returned and DMA is stopped.
         unsafe {
             crate::xhci::release_files_stopped();
@@ -179,7 +180,12 @@ fn execute(arena: &mut [u8], info: &crate::BootInfo) -> crate::ring3::lifecycle:
 /// Initial AUTORUN still wins once. Subsequent mounts enter the viewer, never
 /// automatically run it again. Selected IDs belong to each fresh file session.
 pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
-    while claimed() {
+    loop {
+        let bt_restart = crate::bluetooth::take_restart();
+        let had_claim = claimed();
+        if !had_claim && !bt_restart {
+            break;
+        }
         // runtime already returned its Context and confirmed device shutdown.
         unsafe {
             crate::xhci::release_files_stopped();
@@ -205,6 +211,9 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
             crate::debug(b"MUSHA: EXTERNAL_ELF_READ_REJECTED VIEWER\n");
             let _ = reason;
         }
+        // A Ring3 disconnect request may have arrived during execute. Its loan
+        // has now returned normally; consume it as part of this existing restart.
+        let _ = crate::bluetooth::take_restart();
         // No Context, file handle, input loan or active DMA can reference arena.
         arena.fill(0);
         if arena.iter().any(|&v| v != 0) {
@@ -212,7 +221,9 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
         }
         unsafe {
             let (reader, bytes) = &mut *STAGING.0.get();
-            RESUMED = true;
+            if had_claim {
+                RESUMED = true;
+            }
             *reader = Reader::viewer();
             bytes.fill(0);
         }

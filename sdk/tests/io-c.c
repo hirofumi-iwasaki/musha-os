@@ -53,6 +53,21 @@ int musha_main(const musha_start_info_v1 *start) {
     if(!overflow)return 23;
     put("R2 OVERFLOW OK\n");return 0;
 #endif
+#if IO_CASE == 8
+    put("R2 GAMEPAD READY\n");unsigned seen=0;
+    for(unsigned tries=0;tries<16;tries++) {
+        if(musha_input(&e)==0) {
+            if(e.device!=2)return 30;
+            if(e.kind==MUSHA_INPUT_GAMEPAD_BUTTON && e.code==0 && e.flags==1)seen|=1;
+            else if(e.kind==MUSHA_INPUT_GAMEPAD_BUTTON && e.code==0 && e.flags==0)seen|=2;
+            else if(e.kind==MUSHA_INPUT_GAMEPAD_AXIS && e.code==0 && e.value0==128)seen|=4;
+            else if(e.kind==MUSHA_INPUT_GAMEPAD_AXIS && e.code==0 && e.value0==64)seen|=8;
+            else return 31;
+        }
+        if(seen==15){put("R2 GAMEPAD OK\n");return 0;}
+        if(musha_wait(5,0,&reason))return 32;
+    }return 33;
+#endif
     while(musha_input(&e)==0) {}
     put("R2 INPUT READY\n");
     int q_down=0,mouse_down=0;

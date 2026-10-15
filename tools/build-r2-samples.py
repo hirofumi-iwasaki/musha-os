@@ -20,7 +20,7 @@ note = struct.pack('<III', 6, k['NOTE_SIZE'], k['NOTE_TYPE']) + b'MUSHA\x00\x00\
 (o / 'note2.S').write_text('.section .note.musha,"a",@note\n.balign 4\n.byte ' + ','.join(map(str, note)) + '\n')
 for (name, src) in [('note2', o / 'note2.S')]:
     subprocess.run(['clang', *flags, '-c', str(src), '-o', str(o / (name + '.o'))], check=True)
-for (case, name) in [(0, 'io-c'), (1, 'denied'), (2, 'fault'), (3, 'overflow'), (4, 'removed'), (5, 'time-only'), (6, 'wait-only'), (7, 'mouse-only')]:
+for (case, name) in [(0, 'io-c'), (1, 'denied'), (2, 'fault'), (3, 'overflow'), (4, 'removed'), (5, 'time-only'), (6, 'wait-only'), (7, 'mouse-only'), (8, 'gamepad')]:
     subprocess.run(['clang', *flags, '-DIO_CASE=' + str(case), '-c', str(r / 'sdk/tests/io-c.c'), '-o', str(o / (name + '.o'))], check=True)
     note_object = o / 'note2.o'
     if case in (1, 5, 6):

@@ -12,6 +12,8 @@ Stage5 implements [viewer lifecycle and full local regression](stage5-0.4.0-prog
 
 ### Main sequence
 
+Stage6 has [partial normal-runtime integration](stage6-0.4.0-progress.md): HCI/ACL/SC/GATT/owned-save paths compile; same-function host transcripts and representative QEMU pass. UEFI entropy has no weak fallback; passkey UI is fixture-tested. Stored SC reconnect and bounded multiple-report keyboard/gamepad decoding are now connected in source and same-function host/software fixtures. Actual Bluetooth execution, wider descriptors/reference compatibility and hardware acceptance remain open; current full-regression evidence is in the checkpoint. This is not stage6 completion.
+
 | Stage | Work/dependencies | Definition of done and added host/QEMU coverage | Required hardware |
 |---|---|---|---|
 | 1 | Goals11/1/2/3: distribution contract, root layout, README marker, stateless updater; four user documents in DOCS. Packaging contract precedes consumers. | Image/drive ZIP/updater generate EFI/DOCS/empty SETTINGS/README, AUTORUN user-owned. Represent empty directories explicitly without managing SETTINGS contents. Retire DIAGNOSE, MUSHA.TXT, both install JSON names and on-drive manifest, move licenses/third_party to DOCS. Build-derived ASCII README length/hash replaces fixed marker. Package-only hashes/previous hashes/obsolete paths protect modified files. Update distribution/prepare-release/draft-release/compare-candidates/package-sdk, image/fixture builders, workflow, tests and templates. Workflow locally generates exFAT fixture; no candidate tar dependency. Same commit: byte-identical assets. Docs-only successor: member-by-member EFI/QEMU image/C and Rust sample ELF equality. README generator/template/VERSION changes are runtime changes. Owner addition2026-10-15: embedded image documents/licenses are outside docs-only and need renewed acceptance; image-external docs qualify only with full runtime equality. Host directory/virtual-image migration, modified-file rejection and SETTINGS preservation; QEMU FAT32/exFAT README checks, absent/corrupt markers and new normal QEMU asset. | NUC5/Ryzen marker read checks. Published-v0.3.0 formatter gate can run independently. |
@@ -54,6 +56,8 @@ The original documents/VERSION baseline was committed with owner approval. The o
 工程5は[viewer lifecycle実装と全ローカル回帰](stage5-0.4.0-progress.md)が完了。選択FAT32/exFAT ELF、停止/復元/消去/再開とLAN反復echoが合格。実機受入・BCE/Bluetooth接続は残件です。
 
 ### 主工程
+
+工程6は[通常runtimeへの部分統合](stage6-0.4.0-progress.md)へ進み、HCI/ACL/SC/GATT/所有save経路build、同じ関数のhost transcriptと代表QEMUが合格。UEFI乱数に弱いfallbackはなくpasskey UIはfixture確認済み。保存SC鍵再接続と上限付き複数reportのkeyboard/gamepadをソース・同じ関数のhost/software fixtureへ接続した。実BT装置、広いdescriptor/対象互換、実機受入は残件。今回の全回帰証拠はcheckpointを参照し、工程6完了とはしません。
 
 | 工程 | 作業・依存 | 完了定義と追加host/QEMU検証 | 必要な実機 |
 |---|---|---|---|

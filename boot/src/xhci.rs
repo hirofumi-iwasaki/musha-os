@@ -638,6 +638,7 @@ fn event(
         None,
         None,
         None,
+        None,
     )
 }
 fn event_dispatch(
@@ -660,6 +661,7 @@ fn event_dispatch(
     mut mouse_saved: Option<&mut Option<[u32; 4]>>,
     short: Option<(usize, u32)>,
     mut residual: Option<&mut Option<u32>>,
+    mut extra: Option<&mut musha_xhci::mailbox::Mailbox>,
 ) -> Result<[u32; 4], &'static str> {
     let limit = if cfg!(feature = "xhci-command-timeout")
         || (transfer != 0 && cfg!(feature = "usb-descriptor-timeout"))
@@ -741,10 +743,11 @@ fn event_dispatch(
                 32 => {
                     if let (Some((data, requested)), Some(residual)) =
                         (short, residual.as_deref_mut())
-                        && let Some(remaining) = musha_xhci::control::short_residual(
+                        && let Some(remaining) = musha_xhci::control::endpoint_residual(
                             words,
                             data,
                             expected_slot,
+                            transfer,
                             requested,
                         )
                     {
@@ -752,7 +755,7 @@ fn event_dispatch(
                             return Err("DUPLICATE SHORT EVENT");
                         }
                         *residual = Some(remaining);
-                        false
+                        transfer > 1
                     } else if transfer == 0
                         || !musha_xhci::endpoint_completion(
                             words,
@@ -761,14 +764,14 @@ fn event_dispatch(
                             transfer,
                         )
                     {
-                        let stored = saved.as_deref_mut().is_some_and(|saved| {
-                            musha_xhci::defer_completion(words, deferred, saved)
-                        }) || bulk_saved
-                            .as_deref_mut()
-                            .is_some_and(|saved| musha_xhci::defer_completion(words, bulk, saved))
-                            || mouse_saved.as_deref_mut().is_some_and(|saved| {
+                        let stored =
+                            saved.as_deref_mut().is_some_and(|saved| {
+                                musha_xhci::defer_completion(words, deferred, saved)
+                            }) || bulk_saved.as_deref_mut().is_some_and(|saved| {
+                                musha_xhci::defer_completion(words, bulk, saved)
+                            }) || mouse_saved.as_deref_mut().is_some_and(|saved| {
                                 musha_xhci::defer_completion(words, mouse, saved)
-                            });
+                            }) || extra.as_deref_mut().is_some_and(|m| m.save(words));
                         if !stored {
                             crate::diagnostics::transfer_failure(
                                 words,
@@ -943,6 +946,17 @@ fn command_probe(
         crate::debug(b"MUSHA: XHCI_NOOP_OK COUNT=");
         crate::debug(&crate::cpu::hex(COMMANDS as u64));
         crate::debug(b" COMMAND_WRAP_OK EVENT_WRAP_OK\n");
+        crate::debug(b"MUSHA: BT_CPU_STATE_BYTES/INLINE_OPTION/LEASE/HOST=");
+        for n in [
+            core::mem::size_of::<usb::bluetooth::Device>(),
+            core::mem::size_of::<Option<usb::bluetooth::Device>>(),
+            core::mem::size_of::<Option<usb::bluetooth::DeviceRef>>(),
+            core::mem::size_of::<Host>(),
+        ] {
+            crate::debug(&crate::cpu::hex(n as u64));
+            crate::debug(b" ");
+        }
+        crate::debug(b"\n");
         let mut host = Host {
             bdf: controller.bdf(),
             routed,
@@ -969,6 +983,8 @@ fn command_probe(
             mouse_saved: None,
             bulk_pending: None,
             bulk_saved: None,
+            bt_mailbox: musha_xhci::mailbox::Mailbox::new(),
+            bluetooth: None,
         };
         let (keyboard, pointer) = usb::enumerate(&mut host, &mut pool, dcbaa, discovery, tick)?;
         Ok(Probe {
@@ -1004,6 +1020,9 @@ fn command_probe(
     }
     crate::diagnostics::usb_stage("STOPPED DMA DISABLED");
     crate::debug(b"MUSHA: XHCI_QUIESCED DMA_DISABLED\n");
+    if !unsafe { usb::bluetooth::release_stopped(controller.bdf()) } {
+        return Err("BT LEASE QUARANTINED");
+    }
     result
 }
 
@@ -1033,6 +1052,8 @@ struct Host<'a> {
     mouse_saved: Option<[u32; 4]>,
     bulk_pending: Option<(usize, u8, u8)>,
     bulk_saved: Option<[u32; 4]>,
+    bt_mailbox: musha_xhci::mailbox::Mailbox,
+    bluetooth: Option<usb::bluetooth::DeviceRef>,
 }
 impl Host<'_> {
     fn command(
@@ -1090,6 +1111,7 @@ impl Host<'_> {
             Some(&mut self.mouse_saved),
             None,
             None,
+            Some(&mut self.bt_mailbox),
         );
         if result.is_ok() || result == Err("COMMAND REJECTED") {
             self.producer.advance();

@@ -7,4 +7,4 @@ publish = false
 
 [dev-dependencies]
 musha-api = { path = "../api" }
-musha-platform = { path = "../platform" }
+musha-platform = { path = "../platform", features = ["bluetooth-legacy"] }

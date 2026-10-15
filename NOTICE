@@ -2686,3 +2686,9 @@ INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
+
+Bluetooth LE cryptographic dependencies
+Fixed registry sources and selected MIT/BSD-3-Clause notices are recorded in
+third_party/bluetooth-crypto-licenses/UPSTREAM.json and COPYING. Retain COPYING
+with binary/image distributions. Cargo.lock pins source checksums. No driver or
+cryptographic implementation source is vendored or relicensed here.

@@ -336,6 +336,16 @@ impl Layout {
         Ok(out)
     }
     /// Exact input length, including an ID byte when present.
+    pub fn has_keys(&self, id: u8) -> bool {
+        self.reports[..self.report_count]
+            .iter()
+            .position(|r| r.id == id)
+            .is_some_and(|r| {
+                self.fields[..self.field_count]
+                    .iter()
+                    .any(|f| f.report == r)
+            })
+    }
     pub fn report_bytes(&self, id: u8) -> Option<usize> {
         self.reports[..self.report_count]
             .iter()

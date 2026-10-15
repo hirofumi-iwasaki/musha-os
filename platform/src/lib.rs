@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
 pub mod acpi_read;
+pub mod bluetooth;
 pub mod config;
 pub mod config_hash;
 pub mod controllers;

@@ -34,6 +34,9 @@ pub fn configure(config: Config) {
     }
     musha_framebuffer::set_output_enabled(config.log == LogLevel::Devices);
 }
+pub fn pair_requested() -> bool {
+    unsafe { (*STATE.0.get()).config.pair }
+}
 pub fn devices() -> bool {
     unsafe { (*STATE.0.get()).config.log == LogLevel::Devices }
 }
@@ -151,10 +154,12 @@ pub fn ready(application: bool) {
     }
     phase(
         "Bluetooth",
-        if pair {
-            "not implemented; pair=on retained"
+        if crate::bluetooth::present() {
+            "LE service configured; hardware unverified"
+        } else if pair {
+            "USB HCI adapter unavailable; pair request retained"
         } else {
-            "not implemented in this stage"
+            "USB HCI adapter unavailable"
         },
     );
     phase(

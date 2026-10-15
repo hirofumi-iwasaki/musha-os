@@ -9,7 +9,7 @@ p.add_argument('--elf', type=Path, required=True)
 p.add_argument('--output', type=Path, required=True)
 p.add_argument('--firmware-dir', type=Path, required=True)
 p.add_argument('--qemu', default='qemu-system-x86_64')
-p.add_argument('--expect', choices=['normal', 'denied', 'fault', 'overflow', 'removed'], default='normal')
+p.add_argument('--expect', choices=['normal', 'denied', 'fault', 'overflow', 'removed', 'gamepad', 'bt-removed'], default='normal')
 p.add_argument('--mouse-only', action='store_true')
 p.add_argument('--mouse', action='store_true')
 p.add_argument('--tablet', action='store_true')
@@ -20,7 +20,7 @@ report = {'scope': 'QEMU r2 real syscalls, no physical USB acceptance', 'passed'
 try:
     env = dict(os.environ, CARGO_TARGET_DIR=str(out / 'target'), MUSHA_RING3_CASE='normal')
     with (out / 'build.log').open('w') as log:
-        subprocess.run(['cargo', 'build', '--locked', '--release', '--target', 'x86_64-unknown-uefi', '-p', 'musha-boot', '--features', 'external-elf-probe'], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(['cargo', 'build', '--locked', '--release', '--target', 'x86_64-unknown-uefi', '-p', 'musha-boot', '--features', 'bluetooth-gamepad-probe' if a.expect=='gamepad' else 'bluetooth-loan-restart-probe' if a.expect=='bt-removed' else 'external-elf-probe'], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
     efi = out / 'target/x86_64-unknown-uefi/release/musha-boot.efi'
     spec = importlib.util.spec_from_file_location('external', ROOT / 'tools/smoke-external-elf.py')
     external = importlib.util.module_from_spec(spec)
@@ -68,14 +68,20 @@ try:
                 call('qmp_capabilities')
                 while time.monotonic() < end:
                     text = debug.read_text() if debug.exists() else ''
-                    if {'normal': 'R2 INPUT READY', 'removed': 'R2 INPUT READY', 'overflow': 'R2 OVERFLOW READY', 'denied': 'R2 PERMISSIONS OK', 'fault': 'R2 FAULT READY'}[a.expect] in text:
+                    if {'bt-removed':'R2 INPUT READY','gamepad':'R2 GAMEPAD READY','normal': 'R2 INPUT READY', 'removed': 'R2 INPUT READY', 'overflow': 'R2 OVERFLOW READY', 'denied': 'R2 PERMISSIONS OK', 'fault': 'R2 FAULT READY'}[a.expect] in text:
                         break
                     if 'EXTERNAL_APP_EXIT' in text or 'EXCEPTION VECTOR=' in text:
                         raise RuntimeError(text)
                     time.sleep(0.05)
                 else:
                     raise RuntimeError('No input-ready: ' + text)
-                if a.expect == 'normal':
+                if a.expect=='gamepad':
+                    while time.monotonic()<end:
+                        text=debug.read_text()
+                        if 'APP_INPUT_STOPPED DMA_DISABLED' in text:break
+                        time.sleep(.05)
+                    assert 'R2 GAMEPAD OK' in text and 'BT_GAMEPAD_SOFTWARE_FIXTURE_OK' in text and 'APP_INPUT_STOPPED DMA_DISABLED' in text,text
+                elif a.expect == 'normal':
                     if a.tablet:
                         call('input-send-event', {'events': [{'type': 'abs', 'data': {'axis': 'x', 'value': 10000}}, {'type': 'abs', 'data': {'axis': 'y', 'value': 20000}}]})
                     if a.mouse:
@@ -111,7 +117,7 @@ try:
                                 call('input-send-event', {'events': [{'type': 'key', 'data': {'down': down, 'key': {'type': 'qcode', 'data': 'a'}}}]})
                                 time.sleep(0.006)
                     end = time.monotonic() + 10
-                    terminal = 'EXTERNAL_APP_EXIT' if a.expect == 'denied' else 'APP_INPUT_STOPPED DMA_DISABLED'
+                    terminal = 'EXTERNAL_APP_EXIT' if a.expect in ('denied', 'bt-removed') else 'APP_INPUT_STOPPED DMA_DISABLED'
                     while time.monotonic() < end:
                         text = debug.read_text()
                         if terminal in text:
@@ -124,8 +130,9 @@ try:
                         assert 'C3_APP_FAULT VECTOR=0000000000000006' in text and 'RING3_FAULT_KERNEL_STACK_OK' in text, text
                     elif a.expect == 'overflow':
                         assert 'R2 OVERFLOW OK' in text, text
-                    elif a.expect == 'removed':
+                    elif a.expect in ('removed','bt-removed'):
                         assert 'R2 DISCONNECTED OK' in text, text
+                        if a.expect=='bt-removed':assert 'BT_RESTART_RING3_SOFTWARE_FIXTURE' in text,text
                 end = time.monotonic()+60
                 while time.monotonic()<end:
                     text = debug.read_text()

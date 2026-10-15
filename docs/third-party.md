@@ -50,3 +50,9 @@ release bundles also carry COPYING and UPSTREAM. No Linux driver code is include
 BCEのwire形式と模擬レジスター／時刻通知の順序は上記FreeBSD固定版を参考にBSD-2-Clauseで実装した。
 元のCソースは参照用でcompileしない。通信・所有権モデルもまだbootへ接続していない。
 入力処理の共通化`musha-input`は既存の自作Apache-2.0コードを移動したもの。
+
+## v0.4.0 Bluetooth crypto / 暗号依存
+
+Normal boot enables pinned AES/CMAC/P-256/subtle/zeroize. The [individual ledger](bluetooth-crypto-dependencies.md) records28 UEFI dependencies, selected original MIT/BSD-3-Clause terms, source/lock hashes and audit limits. Distribution DOCS includes retained COPYING/UPSTREAM.json/SHA256SUMS; retain these with binaries. No implementation source is vendored and the new SMP/runtime is not audited.
+
+通常bootで固定版AES/CMAC/P-256/subtle/zeroizeを有効化。[個別台帳](bluetooth-crypto-dependencies.md)にUEFI28依存、採用原MIT/BSD-3-Clause、source/lock hashと監査範囲を記録。配布DOCSのCOPYING/UPSTREAM.json/SHA256SUMSをbinaryとともに保持します。実装sourceはvendorせず、新SMP/runtimeが監査済みとは主張しません。

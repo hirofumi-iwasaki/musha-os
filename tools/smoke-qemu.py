@@ -9,7 +9,7 @@ parser.add_argument('--output',type=pathlib.Path,help='Directory for local smoke
 parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--keyboard-usb-version',type=int,choices=[1,2],default=2)
-parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt'],default='normal')
+parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'],default='normal')
 parser.add_argument('--no-keyboard-input',action='store_true')
 parser.add_argument('--expect-t2-diagnostics',action='store_true',help='Require read-only T2-D1 evidence on the QEMU machine (no BCE device)')
 parser.add_argument('--keyboard-exit',action='store_true')
@@ -140,7 +140,7 @@ with (out/'qemu.log').open('w') as err:
    stream=sock.makefile('rwb');stream.readline()
    command('qmp_capabilities')
   deadline=time.monotonic()+45
-  marker={'fat-corrupt':'MUSHA: XHCI_FAILED FAT32 READ','storage-timeout':'MUSHA: XHCI_FAILED TRANSFER TIMEOUT','usb-descriptor-timeout':'MUSHA: XHCI_FAILED TRANSFER TIMEOUT', 'xhci-command-timeout':'MUSHA: XHCI_FAILED COMMAND TIMEOUT', 'xhci-timeout':'MUSHA: XHCI_FAILED TIMEOUT', 'normal':'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK',
+  marker={'control-out-timeout':'MUSHA: XHCI_FAILED TRANSFER TIMEOUT','control-out-stall':'MUSHA: XHCI_FAILED BAD TRANSFER','fat-corrupt':'MUSHA: XHCI_FAILED FAT32 READ','storage-timeout':'MUSHA: XHCI_FAILED TRANSFER TIMEOUT','usb-descriptor-timeout':'MUSHA: XHCI_FAILED TRANSFER TIMEOUT', 'xhci-command-timeout':'MUSHA: XHCI_FAILED COMMAND TIMEOUT', 'xhci-timeout':'MUSHA: XHCI_FAILED TIMEOUT', 'normal':'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK',
    'ud':'MUSHA: EXCEPTION VECTOR=0000000000000006 ERROR=0000000000000000',
    'df':'MUSHA: EXCEPTION VECTOR=0000000000000008 ERROR=0000000000000000',
    'guard':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000002',
@@ -176,7 +176,7 @@ with (out/'qemu.log').open('w') as err:
     escape_sent=True
    if marker in text and text.endswith('\n'):
     if args.case=='normal':
-     if args.control_ring_probe and ('MUSHA: EP0_SHORT_OK BYTES=18 STATUS_COMPLETE' not in text or 'MUSHA: EP0_RING_WRAP_OK' not in text):raise RuntimeError('EP0 ring/short probe missing: '+text)
+     if args.control_ring_probe and ('MUSHA: EP0_SHORT_OK BYTES=18 STATUS_COMPLETE' not in text or 'MUSHA: EP0_RING_WRAP_OK' not in text or 'MUSHA: EP0_OUT_DATA_STATUS_OK' not in text):raise RuntimeError('EP0 ring/short probe missing: '+text)
      if args.expect_t2_diagnostics:
       for expected in ['MUSHA: T2-D1 READ ONLY / NO MMIO / NO DMA', 'MUSHA: T2 SMBIOS OK', 'MUSHA: T2 BCE COUNT 0 OMIT 0', 'MUSHA: T2_DIAGNOSTICS_COMPLETE']:
        if expected+'\n' not in text:raise RuntimeError('T2 diagnostic missing: '+expected+'\n'+text)
@@ -212,17 +212,17 @@ with (out/'qemu.log').open('w') as err:
      if 'CLASS=00000000000C0330' not in text or ('ID=00000000'+('10D3' if args.nic=='e1000e' else '100E')+'8086 CLASS=0000000000020000') not in text:
       raise RuntimeError('Expected xHCI and Intel 82574 missing: '+text)
      if 'MUSHA: PCI_ENUMERATION_OK' not in text:raise RuntimeError('PCI enumeration incomplete')
-    if args.case not in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt']:
+    if args.case not in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt']:
      import re
      match=re.search(r'RIP=([0-9A-F]{16}) CR2=([0-9A-F]{16})',text)
      if not match or (args.case!='nx' and int(match.group(1),16)==0):raise RuntimeError('Invalid exception frame: '+text)
      if args.case=='pf' and int(match.group(2),16)!=0:raise RuntimeError('Unexpected CR2')
      if args.case in ['ro','nx','guard'] and int(match.group(2),16)==0:raise RuntimeError('Missing fault address')
-    if args.case in ['xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt'] and 'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK' not in text:
+    if args.case in ['xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'] and 'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK' not in text:
      time.sleep(0.1);continue
-    if args.case in ['xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt'] and 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('DMA cleanup missing: '+text)
+    if args.case in ['xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'] and 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('DMA cleanup missing: '+text)
     if args.case=='storage-timeout' and 'MUSHA: STORAGE_CAPACITY BLOCKS=' not in text:raise RuntimeError('Read timeout was not reached')
-    if args.case in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','storage-timeout','fat-corrupt']:
+    if args.case in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt']:
      required=['MUSHA: DIAG STATE SESSION COMPLETE','MUSHA: DIAG XHCI PCI 1B36:000D']
      if args.case=='normal':
       required+=['MUSHA: DIAG USB STEP STOPPED DMA DISABLED','MUSHA: DIAG USB C','0627:0001',
@@ -245,7 +245,7 @@ with (out/'qemu.log').open('w') as err:
       if args.usb_image:required+=[f'MUSHA: DIAG FILE README.TXT BYTES {len(boot_payload):08X}',f'MUSHA: DIAG FILE HASH {fnv(boot_payload):016X}']
      else:
       required+=['MUSHA: DIAG FAIL AT USB STEP','MUSHA: DIAG USB ERROR']
-      stages={'xhci-timeout':'HALT','xhci-command-timeout':'RINGS / COMMANDS','usb-descriptor-timeout':'DEVICE DESCRIPTOR','storage-timeout':'STORAGE SECTOR READ','fat-corrupt':'FAT32 FILE READ'}
+      stages={'control-out-timeout':'CONFIGURATION','control-out-stall':'CONFIGURATION','xhci-timeout':'HALT','xhci-command-timeout':'RINGS / COMMANDS','usb-descriptor-timeout':'DEVICE DESCRIPTOR','storage-timeout':'STORAGE SECTOR READ','fat-corrupt':'FAT32 FILE READ'}
       required+=['MUSHA: DIAG FAIL AT USB STEP '+stages[args.case]]
      for expected in required:
       if expected not in text:raise RuntimeError('Hardware diagnostic missing: '+expected+'\n'+text)

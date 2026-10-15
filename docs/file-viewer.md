@@ -2,7 +2,7 @@
 
 ## English
 
-Status: v0.4.0 stage5 local checkpoint. The viewer remains read-only and root-only. AUTORUN.ELF runs automatically once at boot. Normal exit0/nonzero, recoverable user fault or invalid ELF returns to a fresh viewer after device stop, mapping rollback and arena scrub. Enter on a selected .ELF requests execution through the same bounded reader/ELF/NOTE checks; other files open for reading. Full local FAT32/exFAT/QEMU regression passes; physical acceptance remains open; see [stage5 checkpoint](stage5-0.4.0-progress.md). P pairing is still stage6 work. DOCS is read on the host because subdirectory browsing is not supported. README.TXT remains the normal root document.
+Status: v0.4.0 stage5 local checkpoint. The viewer remains read-only and root-only. AUTORUN.ELF runs automatically once at boot. Normal exit0/nonzero, recoverable user fault or invalid ELF returns to a fresh viewer after device stop, mapping rollback and arena scrub. Enter on a selected .ELF requests execution through the same bounded reader/ELF/NOTE checks; other files open for reading. Full local FAT32/exFAT/QEMU regression passes; physical acceptance remains open; see [stage5 checkpoint](stage5-0.4.0-progress.md). P requests the partial LE service; missing adapter/secure entropy visibly refuses it. A validated keyboard map and durable owned record are required before notifications become input; actual Bluetooth/reference-device execution is unverified. Six-digit entry uses the existing keyboard consumer, Enter/Esc/30s timeout and no entered-digit display; see [stage6 limits](stage6-0.4.0-progress.md). DOCS is read on the host because subdirectory browsing is not supported. README.TXT remains the normal root document.
 
 The viewer lists root files from the first available FAT32/exFAT medium; selection constraints follow [stream file API](stream-file-api.md). An external USB Boot Keyboard is currently required; internal T2 input is later work.
 
@@ -29,7 +29,7 @@ Development rerun: build musha-boot with file-viewer-probe, generate a new boot 
 
 ## 日本語
 
-状態：v0.4.0工程5のローカル到達点。root読出し専用viewerを保持。起動時AUTORUN.ELFを1回自動実行し、exit0/非0・回復可能なuser fault・ELF拒否後は機器停止/CPU mapping復元/arena消去後に新しいviewerへ戻ります。現在のEnterは選択.ELFを同じ上限付きreader/ELF/NOTE検査で起動し、他のファイルは読出し表示します。FAT32/exFAT/QEMUの全ローカル回帰が合格し、実機受入は未確認です。[工程5記録](stage5-0.4.0-progress.md)を参照。Pペアリングは工程6で未接続。DOCSはhostで読みsubdirectory閲覧は未対応。通常root文書はREADME.TXTです。下記の日付付きv0.2.0操作表・結果は歴史記録として保持し、現在のELF Enter仕様と区別します。
+状態：v0.4.0工程5のローカル到達点。root読出し専用viewerを保持。起動時AUTORUN.ELFを1回自動実行し、exit0/非0・回復可能なuser fault・ELF拒否後は機器停止・mapping rollback・arena scrub後に新しいviewerへ復帰する。選択した.ELFのEnterは同じ上限付きreader/ELF/NOTE検証で実行し、他のfileは読出す。FAT32/exFATの全ローカルQEMU回帰は合格し、実機受入は残件。[工程5checkpoint](stage5-0.4.0-progress.md)参照。Pは部分実装のLE serviceを要求し、adapter/安全な乱数不足は可視拒否。map検証と所有recordのdurable保存前は通知を入力へ通さず、実BT/対象機は未確認。6桁入力は既存keyboard consumerを捕捉しEnter/Esc/30秒期限に対応、入力数字は表示しません。[工程6の制限](stage6-0.4.0-progress.md)参照。DOCSはhostで読みsubdirectory閲覧は未対応。通常root文書はREADME.TXTです。下記の日付付きv0.2.0操作表・結果は歴史記録として保持し、現在のELF Enter仕様と区別します。
 
 # ファイル一覧・内容表示（工程6）
 

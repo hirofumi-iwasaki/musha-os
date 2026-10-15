@@ -5,9 +5,19 @@ edition = "2024"
 license = "Apache-2.0"
 publish = false
 
+[dependencies]
+p256 = { version = "=0.13.2", default-features = false, features = ["ecdh", "arithmetic"], optional = true }
+cmac = { version = "=0.7.2", default-features = false, optional = true }
+musha-input = { path = "../input", optional = true }
+aes = { version = "=0.8.4", default-features = false, features = ["zeroize"], optional = true }
+subtle = { version = "=2.6.1", default-features = false, optional = true }
+zeroize = { version = "=1.8.2", default-features = false, optional = true }
+
 [dev-dependencies]
 musha-framebuffer = { path = "../framebuffer" }
 
 [features]
+bluetooth-security = ["bluetooth-legacy", "dep:p256", "dep:cmac"]
+bluetooth-legacy = ["dep:aes", "dep:subtle", "dep:zeroize", "dep:musha-input"]
 diagnostics-off = []
 diagnostics-detail = []

@@ -11,7 +11,7 @@ musha-framebuffer = { path = "../framebuffer" }
 
 musha-memory = { path = "../memory" }
 
-musha-platform = { path = "../platform" }
+musha-platform = { path = "../platform", features = ["bluetooth-security"] }
 
 musha-api = { path = "../api" }
 musha-input = { path = "../input" }
@@ -63,6 +63,14 @@ i218-phy-probe = []
 
 # Opt-in QEMU EP0 wrap/short-response validation; excluded from normal images.
 usb-control-probe = ["qemu-debug"]
+usb-control-out-timeout = ["usb-control-probe"]
+usb-control-out-stall = ["usb-control-probe"]
+# Explicit development transport probe only; resets a matching USB HCI device.
+bluetooth-hci-probe = ["qemu-debug"]
+bluetooth-passkey-probe = ["qemu-debug", "file-viewer-probe"]
+bluetooth-gamepad-probe = ["external-elf-probe"]
+bluetooth-restart-probe = ["file-viewer-probe"]
+bluetooth-loan-restart-probe = ["external-elf-probe"]
 
 # Read-only PCI/SMBIOS evidence; no T2 MMIO, DMA or firmware commands.
 t2-diagnostics = []

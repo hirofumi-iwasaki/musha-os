@@ -160,13 +160,15 @@ impl Application for Diagnostic {
             crate::debug(b"\n");
         }
         while let Some(event) = ctx.next_key() {
-            crate::debug(if event.pressed {
-                b"MUSHA: APP_KEY_DOWN="
-            } else {
-                b"MUSHA: APP_KEY_UP="
-            });
-            crate::debug(&crate::cpu::hex(event.usage as u64));
-            crate::debug(b"\n");
+            if !crate::bluetooth::sensitive_input() {
+                crate::debug(if event.pressed {
+                    b"MUSHA: APP_KEY_DOWN="
+                } else {
+                    b"MUSHA: APP_KEY_UP="
+                });
+                crate::debug(&crate::cpu::hex(event.usage as u64));
+                crate::debug(b"\n");
+            }
             #[cfg(feature = "file-app-close")]
             if event.pressed && event.usage == 4 {
                 self.stream.request_close();
