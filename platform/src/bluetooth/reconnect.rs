@@ -59,6 +59,12 @@ impl Store {
             .iter()
             .any(|b| Self::acceptable(b) && b.address_type == kind && &b.address == address)
     }
+    /// Reconnect can use directed advertising with empty AD data. Only the
+    /// stored public/static identity and connectable event type authorize it.
+    /// Encryption and ATT binding must still validate before delivering input.
+    pub fn connectable(&self, event_type: u8, kind: u8, address: &[u8; 6]) -> bool {
+        matches!(event_type, 0 | 1) && self.matches(kind, address)
+    }
     pub fn begin(
         &self,
         generation: u64,

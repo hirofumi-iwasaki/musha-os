@@ -78,7 +78,12 @@ impl Device {
             1 => self.send_command(host, now, 0x0c01, &[0x90, 0xe0, 4, 0, 0, 0, 0, 0x20]),
             2 => self.send_command(host, now, 0x2001, &[0x13, 0, 0, 0, 0, 0, 0, 0]),
             3 => self.send_command(host, now, 0x1009, &[]),
-            4 => self.send_command(host, now, 0x2002, &[]),
+            4 => self.send_command(
+                host,
+                now,
+                if self.shared_capacity { 0x1005 } else { 0x2002 },
+                &[],
+            ),
             5 => self.send_command(host, now, 0x200c, &[0, 0]),
             6 => {
                 let mut p = [0; 25];
@@ -112,16 +117,18 @@ impl Device {
         event: Event<'_>,
     ) -> Result<(), &'static str> {
         match event.code {
-            0x10 => return Err("BT HARDWARE ERROR"),
-            5 => {
-                let p = event.parameters;
-                if p.len() != 4 || p[0] != 0 || u16::from_le_bytes([p[1], p[2]]) != self.handle {
-                    return Err("BT DISCONNECT IDENTITY");
-                }
-                if self.subscribed {
+            0x10 | 5 => {
+                let loss = bt::lifecycle::loss(event, self.handle)
+                    .map_err(|_| "BT LOSS IDENTITY")?
+                    .ok_or("BT LOSS STATE")?;
+                if loss == bt::lifecycle::Loss::Hardware || self.subscribed {
                     crate::bluetooth::restart_after_stop(false);
                 }
-                return Err("BT CONNECTION LOST");
+                return Err(if loss == bt::lifecycle::Loss::Hardware {
+                    "BT HARDWARE ERROR"
+                } else {
+                    "BT CONNECTION LOST"
+                });
             }
             0x0e | 0x0f => {
                 let (credits, op, result) = if event.code == 0x0e {
@@ -160,14 +167,17 @@ impl Device {
                         return Err("BT ADDRESS");
                     }
                     self.own.copy_from_slice(&result[1..]);
-                } else if op == 0x2002 {
-                    if result.len() != 4 {
-                        return Err("BT ACL CAPACITY");
-                    }
-                    self.packet_bytes = u16::from_le_bytes([result[1], result[2]]);
-                    self.packets = result[3] as u16;
-                    if !(27..=1024).contains(&self.packet_bytes) || self.packets == 0 {
-                        return Err("BT SHARED ACL UNSUPPORTED");
+                } else if matches!(op, 0x2002 | 0x1005) {
+                    match bt::acl::capacity(op, result).map_err(|_| "BT ACL CAPACITY")? {
+                        None if op == 0x2002 => {
+                            self.shared_capacity = true;
+                            return Ok(()); // stay at phase4, issue Read Buffer Size.
+                        }
+                        Some((bytes, packets)) => {
+                            self.packet_bytes = bytes;
+                            self.packets = packets;
+                        }
+                        _ => return Err("BT SHARED ACL CAPACITY"),
                     }
                 } else if result.len() != 1 {
                     return Err("BT COMMAND LENGTH");
@@ -398,41 +408,58 @@ impl Device {
             if n > 1028 {
                 return Err("BT ACL RX SIZE");
             }
-            let mut packet = [0; 1028];
-            for (i, b) in packet[..n].iter_mut().enumerate() {
+            let mut incoming = [0; 1028];
+            for (i, b) in incoming[..n].iter_mut().enumerate() {
                 *b = unsafe { (self.acl_in.buffer as *const u8).add(i).read_volatile() };
             }
-            let mut sdu = [0; 1024];
-            let mut channel = 0;
-            let mut length = 0;
-            self.reassembly
-                .as_mut()
-                .ok_or("BT RX STATE")?
-                .receive(self.generation, now, &packet[..n], |c, data| {
-                    channel = c;
-                    length = data.len();
-                    sdu[..length].copy_from_slice(data)
-                })
-                .map_err(|_| "BT ACL REASSEMBLY")?;
-            if length != 0 {
-                if channel == 6 {
-                    let action = self
-                        .security
-                        .as_mut()
-                        .ok_or("BT UNEXPECTED SMP")?
-                        .receive(
-                            self.generation,
-                            now,
-                            &sdu[..length],
-                            &mut crate::entropy::BootRandom,
-                        )
-                        .map_err(|_| "BT SC AUTHENTICATION")?;
-                    self.action(host, now, action)?;
-                } else if channel == 4 {
-                    self.att(now, &sdu[..length])?;
+            let mut input = &incoming[..n];
+            while !input.is_empty() {
+                let Some(packet) = self
+                    .acl_stream
+                    .next(self.generation, now, &mut input)
+                    .map_err(|_| "BT ACL STREAM")?
+                else {
+                    break;
+                };
+
+                let mut sdu = [0; 1024];
+                let mut channel = 0;
+                let mut length = 0;
+                self.reassembly
+                    .as_mut()
+                    .ok_or("BT RX STATE")?
+                    .receive(self.generation, now, packet, |c, data| {
+                        channel = c;
+                        length = data.len();
+                        sdu[..length].copy_from_slice(data)
+                    })
+                    .map_err(|_| "BT ACL REASSEMBLY")?;
+                self.acl_stream.release();
+                if length != 0 {
+                    if channel == 6 {
+                        let action = self
+                            .security
+                            .as_mut()
+                            .ok_or("BT UNEXPECTED SMP")?
+                            .receive(
+                                self.generation,
+                                now,
+                                &sdu[..length],
+                                &mut crate::entropy::BootRandom,
+                            )
+                            .map_err(|_| "BT SC AUTHENTICATION")?;
+                        self.action(host, now, action)?;
+                    } else if channel == 4 {
+                        self.att(now, &sdu[..length])?;
+                    }
+                }
+                for b in sdu.iter_mut() {
+                    unsafe {
+                        core::ptr::write_volatile(b, 0);
+                    }
                 }
             }
-            for b in packet.iter_mut().chain(sdu.iter_mut()) {
+            for b in &mut incoming {
                 unsafe {
                     core::ptr::write_volatile(b, 0);
                 }
@@ -448,7 +475,16 @@ impl Device {
         match action {
             bt::hogp::DiscoveryAction::Send(p, n) => self.queue(4, &p[..n], now)?,
             bt::hogp::DiscoveryAction::Ready(keyboard) => {
-                if !keyboard.supports(self.method == bt::sc::Method::JustWorks) {
+                if self.reused {
+                    self.method = if keyboard
+                        .single_kind()
+                        .map_err(|_| "BT DEVICE KIND AMBIGUOUS")?
+                    {
+                        bt::sc::Method::JustWorks
+                    } else {
+                        bt::sc::Method::DisplayPasskey
+                    };
+                } else if !keyboard.supports(self.method == bt::sc::Method::JustWorks) {
                     return Err("BT DEVICE KIND MISMATCH");
                 }
                 self.cccd = keyboard.cccd(0).ok_or("BT CCCD MISSING")?;

@@ -173,6 +173,15 @@ impl Reports {
     pub fn cccd(&self, index: usize) -> Option<u16> {
         self.bindings.get(index)?.as_ref().map(|b| b.cccd)
     }
+    /// Determine the reference device kind only from the authenticated GATT map.
+    /// Mixed/empty classes remain outside the normal reference-device path.
+    pub fn single_kind(&self) -> Result<bool, Error> {
+        match (self.supports(false), self.supports(true)) {
+            (true, false) => Ok(false),
+            (false, true) => Ok(true),
+            _ => Err(Error::Unsupported),
+        }
+    }
     pub fn supports(&self, pad: bool) -> bool {
         self.bindings[..self.count]
             .iter()

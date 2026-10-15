@@ -9,7 +9,7 @@ p.add_argument('--elf', type=Path, required=True)
 p.add_argument('--output', type=Path, required=True)
 p.add_argument('--firmware-dir', type=Path, required=True)
 p.add_argument('--qemu', default='qemu-system-x86_64')
-p.add_argument('--expect', choices=['normal', 'denied', 'fault', 'overflow', 'removed', 'gamepad', 'bt-removed'], default='normal')
+p.add_argument('--expect', choices=['normal', 'denied', 'fault', 'overflow', 'removed', 'gamepad', 'bt-removed', 'live-input'], default='normal')
 p.add_argument('--mouse-only', action='store_true')
 p.add_argument('--mouse', action='store_true')
 p.add_argument('--tablet', action='store_true')
@@ -20,7 +20,7 @@ report = {'scope': 'QEMU r2 real syscalls, no physical USB acceptance', 'passed'
 try:
     env = dict(os.environ, CARGO_TARGET_DIR=str(out / 'target'), MUSHA_RING3_CASE='normal')
     with (out / 'build.log').open('w') as log:
-        subprocess.run(['cargo', 'build', '--locked', '--release', '--target', 'x86_64-unknown-uefi', '-p', 'musha-boot', '--features', 'bluetooth-gamepad-probe' if a.expect=='gamepad' else 'bluetooth-loan-restart-probe' if a.expect=='bt-removed' else 'external-elf-probe'], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(['cargo', 'build', '--locked', '--release', '--target', 'x86_64-unknown-uefi', '-p', 'musha-boot', '--features', 'bluetooth-gamepad-probe' if a.expect in ('gamepad','live-input') else 'bluetooth-loan-restart-probe' if a.expect=='bt-removed' else 'external-elf-probe'], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
     efi = out / 'target/x86_64-unknown-uefi/release/musha-boot.efi'
     spec = importlib.util.spec_from_file_location('external', ROOT / 'tools/smoke-external-elf.py')
     external = importlib.util.module_from_spec(spec)
@@ -68,14 +68,27 @@ try:
                 call('qmp_capabilities')
                 while time.monotonic() < end:
                     text = debug.read_text() if debug.exists() else ''
-                    if {'bt-removed':'R2 INPUT READY','gamepad':'R2 GAMEPAD READY','normal': 'R2 INPUT READY', 'removed': 'R2 INPUT READY', 'overflow': 'R2 OVERFLOW READY', 'denied': 'R2 PERMISSIONS OK', 'fault': 'R2 FAULT READY'}[a.expect] in text:
+                    if {'live-input':'LIVE INPUT READY','bt-removed':'R2 INPUT READY','gamepad':'R2 GAMEPAD READY','normal': 'R2 INPUT READY', 'removed': 'R2 INPUT READY', 'overflow': 'R2 OVERFLOW READY', 'denied': 'R2 PERMISSIONS OK', 'fault': 'R2 FAULT READY'}[a.expect] in text:
                         break
                     if 'EXTERNAL_APP_EXIT' in text or 'EXCEPTION VECTOR=' in text:
                         raise RuntimeError(text)
                     time.sleep(0.05)
                 else:
                     raise RuntimeError('No input-ready: ' + text)
-                if a.expect=='gamepad':
+                if a.expect=='live-input':
+                    call('send-key', {'keys':[{'type':'qcode','data':'a'}], 'hold-time':100})
+                    time.sleep(.5)
+                    call('send-key', {'keys':[{'type':'qcode','data':'q'}], 'hold-time':100})
+                    until=time.monotonic()+15
+                    while time.monotonic()<until:
+                        text=debug.read_text()
+                        if 'APP_INPUT_STOPPED DMA_DISABLED' in text:break
+                        time.sleep(.05)
+                    assert 'LIVE INPUT EXIT' in text and 'APP_INPUT_STOPPED DMA_DISABLED' in text,text
+                    for line in ['LIVE kind=0001','LIVE kind=0003 dev=00000002','LIVE kind=0004 dev=00000002']:
+                        assert line in text,text
+                    assert 'BT_GAMEPAD_SOFTWARE_FIXTURE_OK' in text,text
+                elif a.expect=='gamepad':
                     while time.monotonic()<end:
                         text=debug.read_text()
                         if 'APP_INPUT_STOPPED DMA_DISABLED' in text:break

@@ -354,6 +354,9 @@ pub fn stored_any() -> bool {
 pub fn stored_matches(kind: u8, address: &[u8; 6]) -> bool {
     unsafe { (&*STORE.0.get()).matches(kind, address) }
 }
+pub fn stored_connectable(event_type: u8, kind: u8, address: &[u8; 6]) -> bool {
+    unsafe { (&*STORE.0.get()).connectable(event_type, kind, address) }
+}
 pub fn reconnect(
     generation: u64,
     handle: u16,

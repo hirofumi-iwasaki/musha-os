@@ -56,6 +56,24 @@ Final current local regression: **371 host tests, 52 Python tests and 296 QEMU c
 
 Owner subsequently approved one local stage6 commit. This records the validated partial implementation, not Bluetooth hardware acceptance; push remains unapproved.
 
+### USB framing, shared buffers and cold reconnect (current local increment)
+
+Normal runtime now uses the same bounded `stream::Stream` tested on the host to assemble HCI Event and ACL packets across USB completions and dispatch coalesced packets. Event257/ACL1028-byte CPU buffers retain no DMA pointer; partial packets have a one-second deadline, generation/clock/length checks and poisoned failure state. Completed buffers and production partial-buffer drops are zeroized. These CPU buffers belong to the existing single Device lease; controller halt/BME-off and stopped-owner confirmation still precede DMA/lease reuse. No outer Ring3/file/Host lifetime is bypassed.
+
+LE Read Buffer Size returning zero packet count now requests standard HCI Read Buffer Size and uses the returned shared ACL pool under the existing single-LE-connection credit accounting. This is prescribed by [Bluetooth Core5.4 HCI sections4.1.1/7.4.5/7.8.2](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html). It does not enable Classic links, SCO, firmware downloads or unbounded buffering. Invalid status/length/capacity fails closed.
+
+On cold boot, the existing storage reader loads a recognized SC record; `stored_any` starts a reconnect session without P or new pairing entropy. The first scan command is HCI Reset on every new generation, including a stopped restart. Previously stored peers required HID UUID/Appearance in every advertisement; that incorrectly blocked directed advertisements with empty AD data. Stored reconnect now requires connectable advertising and an exact saved public/static address **and address type**, with no AD class requirement. Unknown peers, RPA/NRPA and unresolved identity types are rejected. Connection-complete peer identity, handle/generation, key-command issuance and successful encryption must validate before authenticated GATT/HOGP binding. Only then is a single keyboard/gamepad kind selected from the validated map; mixed/unknown classes fail closed. First-time pairing retains its reference-device advertisement filter. Saved key/CONFIG consumption format and durable-save boundary are unchanged.
+
+A valid hardware-error event now requests the existing stop-confirmed restart, as subscribed-link disconnect already did. Malformed/wrong-handle disconnects do not authorize restart. Reset is sent when an authorized pairing/reconnect session begins, not merely because an idle dongle is present. Restart is bounded by the existing eight-request budget. A USB removal, unsupported device, exhausted budget or failed stop is not silently recovered; unconfirmed halt/BME-off retains quarantine. Reboot/adapter behavior remains unverified on hardware.
+
+The [published Xbox BLE descriptor facts](https://github.com/atar-axis/xpadneo/blob/master/docs/descriptors/xbxs.md) motivated an independently authored synthetic field fixture: four unsigned16 stick axes, two10-bit triggers, hat and15 buttons. Consumer Record/Share is recognized **only** as a one-bit absolute0/1 field and deliberately not delivered, because inventing a gamepad code would alias existing Button32. Other Consumer usages/field shapes remain rejected. Existing Button1..32→code0..31 semantics and the public ABI/schema are unchanged. Host tests also pass the known Share omission through authenticated `Reports` binding/notification. Neither xpadneo driver code nor its descriptor dump was copied. Its [license policy](https://github.com/atar-axis/xpadneo/blob/master/LICENSE.md) distinguishes GPL-2.0-only kernel code and generally GPL-3.0-or-later non-driver content; this is factual reference only, no adopted dependency/source.
+
+The new `sdk/examples/input-monitor/main.c` observes real r2 records without fixture ordering/count assumptions, displays bounded hexadecimal event fields and exits on Q/Esc or after five minutes. Existing SDK/checker output remains `hello-c.elf`; the example README gives the exact build command. Local QEMU uses real keyboard syscalls plus explicitly synthetic gamepad injection, never a claimed real Bluetooth controller. Host412 tests (security feature enabled), including framing7, the new Realtek core4, Xbox input2 and directed-reconnect coverage, passed; the HOGP reconnect suite was additionally rechecked. Final QEMU commands/results and EFI hashes are under `out/remaining-040`.
+
+Final local increment validation: **13/13 QEMU configurations passed**, including overlap with the earlier live-monitor trial; P/config2, passkey submit/cancel/timeout3, viewer restart1, live monitor1, r2 mouse1, r2 loan restart1, r1 LAN three-launch1, DHCP77 cooperative1, normal pixel1 and OUT stall1. The initial r1 diagnostic-feature mismatch is retained separately: app exit/scrub succeeded but its trace lacked VIEWER_FRAME; the same strict three-launch/LAN test passed with the existing viewer probe feature. Full historical QEMU matrix and all real-device tests were not repeated. Normal EFI SHA256 is recorded in `out/remaining-040/verification.json`.
+
+Remaining hardware gates: MM-BTUD46 exact USB/revision/firmware behavior and Xbox1914 actual Report Map/firmware, pairing/save/reboot/reconnect on both reference machines. IRK/RPA resolution, multiple simultaneous peers, optional BLE mouse and Share delivery remain unsupported. BLE keyboard is implemented/host-tested but not procured or hardware-verified for v0.4.0. Magic Keyboard A3118 is Classic, deferred to v0.5.0. No real radio success or stage6 hardware completion is claimed.
+
 ## 日本語
 
 今回の続きでは保存SC鍵再接続と複数report/gamepadをソースおよびhost/software fixtureへ接続した。Bluetooth装置経路と対象互換は未検証。以下の旧checkpointは前回証拠として保持し、変更は今回の続きの節を参照する。
@@ -110,3 +128,21 @@ host transcriptはruntimeと同じStore/Pending/Discovery/Reports/decoder関数�
 今回の最終ローカル回帰は**host371、Python52、QEMU296 case/configが合格**（suite間重複込み、前回checkpoint・再試験を加算しない）。SDK展開再現/4 ELF一致、仮想partition更新2経路、lwIP1000回も合格。内訳、解決した観測器競合1件、制限、通常EFIhash、owner/source manifestは`out/stage6-regression/results.md`と`verification.json`を参照。Bluetooth装置経路や工程6全体の完了を示さない。
 
 所有者はその後、検証済みの工程6部分実装を1個のローカルcommitへ記録することを承認しました。実Bluetooth受入の完了は示さず、pushは未承認です。
+
+### USB framing・shared buffer・cold再接続（今回のローカル実装）
+
+通常runtimeにhostと同じ `stream::Stream` を接続し、USB completionをまたぐHCI Event/ACLの組立てと結合packetの順次処理を実装。CPU bufferはEvent257/ACL1028byte、DMA pointerを保持せず、部分packetは1秒期限・世代/時計/長さ検査と失敗後poisonを持ちます。完了bufferと本番の部分buffer解放時はzeroize。既存Device単一leaseへ所有させ、DMA/lease再利用前のcontroller halt/BME-off・stopped owner確認を維持し、Ring3/file/Host寿命を飛び越えません。
+
+LE Read Buffer Sizeのpacket数0では標準HCI Read Buffer Sizeへ進み、同じ単一LE接続creditでshared ACL poolを使用します。上記Bluetooth Core5.4の規定に基づき、Classic link/SCO/firmware転送/無制限bufferを有効にする変更ではありません。status/長さ/容量不正は拒否します。
+
+cold bootでは既存storage readerが認識済みSC recordを読み、`stored_any` がPや新pairing乱数無しに再接続を開始。停止確認後の再開を含め、新世代scanの最初はHCI Resetです。以前は保存peerにも毎回HID UUID/Appearance広告を要求し、空ADのdirected広告を拒否していました。保存再接続はconnectable広告と保存public/static address・種別の厳密一致で開始し、AD classを要求しません。unknown peer/RPA/NRPA/未解決identity種別は拒否。接続完了peer identity、handle/世代、鍵command発行と暗号化成功を確認して初めて認証済みGATT/HOGP bindingへ進み、そのmapから単一keyboard/gamepad種別を決めます。混在/不明classは拒否し、初回pairingの基準機器広告filterは保持。保存鍵/CONFIG消費形式とdurable-save境界は不変です。
+
+正常形式のhardware-error eventでも、従来の接続済みlink切断と同じ停止確認後restartを要求します。不正/別handle切断では再開を承認しません。Resetは認可されたpair/reconnect session開始時に送り、idle dongleの存在だけでは送りません。既存restart上限8回を維持。USB取外し/未対応機器/上限超過/停止失敗を黙って回復せず、halt/BME-off未確認ではquarantineを保持します。実adapter/reboot動作は未確認です。
+
+上記xpadneoの公開descriptor情報を事実参照し、独自synthetic fixtureでunsigned16 stick4軸、10bit trigger2個、hat、15buttonを検査。Consumer Record/Shareだけはabsolute0/1の1bit fieldとして認識して**未配信**にします。新codeを捏造すると既存Button32とaliasするためです。他のConsumer usage/field形状は拒否し、Button1..32→code0..31と公開ABI/schemaは変えません。Share無視を認証済みReports binding/notificationまでhost確認しました。xpadneo driver code/descriptor dumpはコピーしていません。同license方針はkernel codeをGPL-2.0-only、非driverを原則GPL-3.0-or-laterと分けており、今回は事実参照だけでsource/依存を採用しません。
+
+新 `sdk/examples/input-monitor/main.c` は固定fixture件数/順序無しでr2入力を観測し、有界16進field表示、Q/Escまたは5分で終了。既存checker出力名 `hello-c.elf` と正確なbuild commandはexample READMEに記載。QEMUは実keyboard syscallと明示的software gamepad注入であり、実BT成功ではありません。security付きhost412件（framing7、Realtek core4、Xbox input2、directed再接続を含む）が合格、HOGP reconnect suiteも追加再確認しました。最終QEMU command/result/EFI hashは `out/remaining-040` に保存します。
+
+今回の最終ローカル検証は **QEMU13/13構成合格**。先行monitor試行と重複し、P/config2、passkey submit/cancel/timeout3、viewer再開1、live monitor1、r2 mouse1、r2 loan再開1、r1 LAN3連続1、DHCP77協調1、通常pixel1、OUT stall1です。初回r1は診断featureの取り違えで、exit/scrub成功後のVIEWER_FRAME trace不足でした。既存viewer probe featureへ修正し、厳密な3連続/LAN条件で再試験合格。過去の全QEMU matrixと実機試験は今回再実施していません。通常EFI SHA256は `out/remaining-040/verification.json` に記録します。
+
+実機gateはMM-BTUD46のUSB/revision/firmware挙動、Xbox1914実Report Map/firmware、両機種でのpair/save/reboot/reconnectです。IRK/RPA解決、複数peer同時、任意BLE mouse、Share配信は未対応。BLE keyboardは実装/host検証済みですがv0.4.0では調達/実機検証しません。Magic Keyboard A3118はClassicでv0.5.0へ延期。実電波成功や工程6実機完了は主張しません。

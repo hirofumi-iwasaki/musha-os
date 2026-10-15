@@ -274,6 +274,8 @@ pub(in crate::xhci) struct Device {
     event: Pipe,
     acl_in: Pipe,
     acl_out: Pipe,
+    event_stream: musha_platform::bluetooth::stream::Stream<257>,
+    acl_stream: musha_platform::bluetooth::stream::Stream<1028>,
     scan: musha_platform::bluetooth::scan::Scan,
     generation: u64,
     started: Option<u64>,
@@ -285,6 +287,7 @@ pub(in crate::xhci) struct Device {
     peer: [u8; 6],
     peer_type: u8,
     method: musha_platform::bluetooth::sc::Method,
+    shared_capacity: bool,
     packet_bytes: u16,
     packets: u16,
     handle: u16,
@@ -442,6 +445,8 @@ pub(super) fn prepare(
             event,
             acl_in,
             acl_out,
+            event_stream: musha_platform::bluetooth::stream::Stream::new(generation, false),
+            acl_stream: musha_platform::bluetooth::stream::Stream::new(generation, true),
             scan: musha_platform::bluetooth::scan::Scan::new(generation),
             generation,
             started: None,
@@ -453,6 +458,7 @@ pub(super) fn prepare(
             peer: [0; 6],
             peer_type: 0,
             method: musha_platform::bluetooth::sc::Method::DisplayPasskey,
+            shared_capacity: false,
             packet_bytes: 0,
             packets: 0,
             handle: 0,
@@ -482,8 +488,74 @@ pub(super) fn prepare(
     Ok(DeviceRef(device))
 }
 impl Device {
+    fn hci_event(
+        &mut self,
+        host: &mut Host<'_>,
+        now: u64,
+        bytes: &[u8],
+    ) -> Result<(), &'static str> {
+        if self.phase == 0 {
+            self.scan
+                .event(self.generation, host.clock.now()?, bytes)
+                .map_err(|_| "BT EVENT STATE")?;
+        }
+        let event =
+            musha_platform::bluetooth::Event::parse(bytes).map_err(|_| "BT EVENT FORMAT")?;
+        if self.phase == 0 && event.code == 0x3e && event.parameters.first() == Some(&2) {
+            musha_platform::bluetooth::advertisements(event, |advert| {
+                self.advertisements = self.advertisements.saturating_add(1);
+                if self.phase == 0 && matches!(advert.event_type, 0 | 1) {
+                    if !self.pairing {
+                        if crate::bluetooth::stored_connectable(
+                            advert.event_type,
+                            advert.address_type,
+                            &advert.address,
+                        ) {
+                            self.peer = advert.address;
+                            self.peer_type = advert.address_type;
+                            self.phase = 1;
+                        }
+                        return;
+                    }
+                    let mut appearance = None;
+                    let mut hid = false;
+                    if musha_platform::bluetooth::ad_fields(advert.data, |field| {
+                        if field.kind == 0x19 && field.value.len() == 2 {
+                            appearance = Some(u16::from_le_bytes(field.value.try_into().unwrap()));
+                        }
+                        if matches!(field.kind, 2 | 3) && field.value.len() % 2 == 0 {
+                            hid = field.value.chunks_exact(2).any(|b| b == [0x12, 0x18]);
+                        }
+                    })
+                    .is_ok()
+                        && hid
+                    {
+                        self.method = match appearance {
+                            Some(0x3c1) => musha_platform::bluetooth::sc::Method::DisplayPasskey,
+                            Some(0x3c4) => musha_platform::bluetooth::sc::Method::JustWorks,
+                            _ => return,
+                        };
+                        self.peer = advert.address;
+                        self.peer_type = advert.address_type;
+                        self.phase = 1;
+                    }
+                }
+            })
+            .map_err(|_| "BT ADVERTISING")?;
+            crate::debug(b"MUSHA: BT_LE_ADVERTISING_VALIDATED\n");
+        } else if self.phase != 0 {
+            self.handle_event(host, now, event)?;
+        }
+        Ok(())
+    }
     fn poll(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
         let now = host.clock.now()?;
+        self.event_stream
+            .check(self.generation, now)
+            .map_err(|_| "BT EVENT STREAM TIMEOUT")?;
+        self.acl_stream
+            .check(self.generation, now)
+            .map_err(|_| "BT ACL STREAM TIMEOUT")?;
         if self.subscribed && crate::bluetooth::take_request() {
             crate::bluetooth::restart_after_stop(true);
             return Err("BT REPAIR REQUEST");
@@ -560,56 +632,20 @@ impl Device {
             for (i, b) in bytes[..n].iter_mut().enumerate() {
                 *b = unsafe { (self.event.buffer as *const u8).add(i).read_volatile() };
             }
-            if self.phase == 0 {
-                self.scan
-                    .event(self.generation, host.clock.now()?, &bytes[..n])
-                    .map_err(|_| "BT EVENT STATE")?;
-            }
-            let event = musha_platform::bluetooth::Event::parse(&bytes[..n])
-                .map_err(|_| "BT EVENT FORMAT")?;
-            if self.phase == 0 && event.code == 0x3e && event.parameters.first() == Some(&2) {
-                musha_platform::bluetooth::advertisements(event, |advert| {
-                    self.advertisements = self.advertisements.saturating_add(1);
-                    if self.phase == 0 && matches!(advert.event_type, 0 | 1) {
-                        let mut appearance = None;
-                        let mut hid = false;
-                        if musha_platform::bluetooth::ad_fields(advert.data, |field| {
-                            if field.kind == 0x19 && field.value.len() == 2 {
-                                appearance =
-                                    Some(u16::from_le_bytes(field.value.try_into().unwrap()));
-                            }
-                            if matches!(field.kind, 2 | 3) && field.value.len() % 2 == 0 {
-                                hid = field.value.chunks_exact(2).any(|b| b == [0x12, 0x18]);
-                            }
-                        })
-                        .is_ok()
-                            && hid
-                        {
-                            self.method = match appearance {
-                                Some(0x3c1) => {
-                                    musha_platform::bluetooth::sc::Method::DisplayPasskey
-                                }
-                                Some(0x3c4) => musha_platform::bluetooth::sc::Method::JustWorks,
-                                _ => return,
-                            };
-                            if !self.pairing
-                                && !crate::bluetooth::stored_matches(
-                                    advert.address_type,
-                                    &advert.address,
-                                )
-                            {
-                                return;
-                            }
-                            self.peer = advert.address;
-                            self.peer_type = advert.address_type;
-                            self.phase = 1;
-                        }
-                    }
-                })
-                .map_err(|_| "BT ADVERTISING")?;
-                crate::debug(b"MUSHA: BT_LE_ADVERTISING_VALIDATED\n");
-            } else if self.phase != 0 {
-                self.handle_event(host, now, event)?;
+            let mut input = &bytes[..n];
+            while !input.is_empty() {
+                let mut packet = [0; 257];
+                let Some(frame) = self
+                    .event_stream
+                    .next(self.generation, now, &mut input)
+                    .map_err(|_| "BT EVENT STREAM")?
+                else {
+                    break;
+                };
+                let length = frame.len();
+                packet[..length].copy_from_slice(frame);
+                self.event_stream.release();
+                self.hci_event(host, now, &packet[..length])?;
             }
         }
         if self.phase >= 8 {

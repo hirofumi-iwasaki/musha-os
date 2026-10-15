@@ -168,3 +168,16 @@ impl Credits {
         Ok(())
     }
 }
+/// Decode HCI return parameters, including status. LE zero packet count requests
+/// the standard Read Buffer Size fallback for a dual-mode shared ACL pool.
+/// BR/EDR links remain unsupported; the single LE connection owns these credits.
+pub fn capacity(opcode:u16, result:&[u8])->Result<Option<(u16,u16)>,Error>{
+    let expected=match opcode{0x2002=>4,0x1005=>8,_=>return Err(Error::Unsupported)};
+    if result.len()!=expected{return Err(Error::Length);}
+    if result[0]!=0{return Err(Error::Controller(result[0]));}
+    let bytes=u16::from_le_bytes([result[1],result[2]]);
+    let packets=if opcode==0x2002{result[3]as u16}else{u16::from_le_bytes([result[4],result[5]])};
+    if opcode==0x2002 && packets==0{return Ok(None);}
+    if !(27..=1024).contains(&bytes)||packets==0{return Err(Error::Invalid);}
+    Ok(Some((bytes,packets)))
+}

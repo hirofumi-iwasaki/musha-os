@@ -3,6 +3,7 @@
 #![no_std]
 //! Pure validation for the dedicated legacy 82574 descriptor layout.
 pub mod i218;
+pub mod realtek;
 pub const DMA_BYTES: usize = 65536;
 pub const RX_COUNT: usize = 16;
 pub const TX_COUNT: usize = 8;

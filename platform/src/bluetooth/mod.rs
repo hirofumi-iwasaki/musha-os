@@ -22,6 +22,8 @@ pub mod hogp;
 pub mod legacy;
 pub mod scan;
 pub mod usb;
+pub mod stream;
+pub mod lifecycle;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {

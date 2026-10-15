@@ -27,6 +27,8 @@ Checked2026-10-15 against the official upstream moving revisions `freebsd/freebs
 
 A future FreeBSD-derived port must retain the individual copyright, complete conditions/disclaimer and satisfy the advertising acknowledgement when applicable; adding NOTICE alone is not a claim of full compliance. Existing e1000 BSD-3-Clause terms do not cover re files. Linux GPL code/header implementations are not incorporated into Apache-2.0 files. Any future derivative or firmware redistribution needs its own reviewed provenance/license decision; reference links do not grant a different license. A source adoption must record UPSTREAM, exact commit, COPYING, SHA256SUMS and distribution notices, following repository practice. This change adds no new third-party dependency or firmware.
 
+Current independent Realtek host prototype: [progress](realtek-0.4.0-progress.md). Runtime admission remains closed; [normal enablement](lan-default-enablement-0.4.0.md) is an owner-review proposal only. No Realtek PHY/OCP/frame adapter is claimed complete.
+
 ### Current I218 local slice
 
 The [reset/transport/DHCP checkpoint](i218-network-0.4.0-progress.md) adds optional `i218-network` reset, software ULP, flash-read validation, link and DMA sequencing. Normal82574 now uses DHCP without a fixed-IP fallback. Host/QEMU evidence does not verify physical I218; software LCD/OEM configuration is rejected. No Realtek implementation is included.
@@ -57,6 +59,8 @@ The [reset/transport/DHCP checkpoint](i218-network-0.4.0-progress.md) adds optio
 | Linux r8169_firmware.h | SPDX GPL-2.0-only、firmware interface参照 |
 
 将来FreeBSD由来の移植を行う場合は個別著作権・全条件・免責を保持し、適用時に広告謝辞も満たす必要があります。NOTICE追加だけで全条件充足とはしません。既存e1000のBSD-3-Clauseはre fileを覆いません。Linux GPLのコード/header実装はApache-2.0 fileへ取り込みません。派生物やfirmware再配布は別途、来歴・license判断が必要で、参照リンクが別licenseを許す意味ではありません。採用時は既存運用どおりUPSTREAM・厳密commit・COPYING・SHA256SUMS・配布noticeを記録します。今回は新依存・firmwareの追加なしです。
+
+Realtek独自host prototypeは[進捗](realtek-0.4.0-progress.md)を参照。runtime admissionは閉じ、[通常有効化](lan-default-enablement-0.4.0.md)は所有者review用の提案のみ。PHY/OCP/frame adapter完了は主張しません。
 
 ### 現在のI218ローカル縦断
 
