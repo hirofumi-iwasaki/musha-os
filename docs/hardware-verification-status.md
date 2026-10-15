@@ -164,3 +164,38 @@ Before Realtek driver work, the owner captures the same machine's PCI Hardware I
 目標13はNUC5 I218-Vに加えRyzen Realtek LANも必須。Ryzen Ethernetの正確なPCI vendor:device／subsystem／revisionとboard manufacturer／product／revisionは**未特定**。保持する `out/ryzen-*` JSON/text/log計6件、Ryzen実機結果、2026-10-13来歴には明示IDが無い。動画の見た目、CPU／xHCI一覧からchipを推定しない。特定状況の追記であり、LAN試験や過去受入の変更ではない。
 
 Realtek着手前に所有者が同一機体のPCI Hardware Idsとboardを[Windows/Linux読取り専用手順](ryzen-realtek-identification.md)で採取し、日時・証拠・識別値をこの新節へ追記する。現行通常devices表示は未対応PCI vendor全件の一覧ではない。今後必要な実機証拠はRyzenのlink／DHCP／OS UDP echoで、NUC5 I218-Vと別に検証する。この追記で新しい実機試験は行っていない。
+
+
+## 2026-10-15 Owner configuration update / 所有者構成情報の追記
+
+### English
+
+This supplements the earlier identification prerequisite without changing its historical evidence. The owner now identifies the Ryzen board and components below. These are owner-provided configuration details, not fresh PCI measurements or new acceptance results.
+
+| Component | Owner-provided configuration | Measurement boundary |
+|---|---|---|
+| Board / CPU | ASUS TUF GAMING X570-PLUS, X570, AM4, ATX / Ryzen7 5800X | Board revision not measured |
+| RAM / GPU | DDR4-3200 32GiB ×4 =128GiB / Radeon RX7900XTX24GB | No new driver acceptance |
+| Storage | WD Black SN7702TB | Native NVMe support not established |
+| Ethernet | ASUS L8200A, RTL8111H-class Gigabit; expected PCI10EC:8168 | Actual vendor/device/subsystem/revision still to capture; no link/DHCP/echo success |
+| USB host / rear ports | AMD xHCI1022:149C; Gen1 Type-A ×4, Gen2 Type-A ×2 / Type-C ×1 | Owner report; PCI revision and controller-to-port mapping unmeasured |
+| Audio | Realtek S1200A | Out of scope |
+| Planned NUC11 | NUC11TNKi3; I225-LM; Thunderbolt4 ×2; AX201 | Not acquired/verified; exact PCI/USB IDs unknown; integrated Bluetooth outside reference path |
+
+[Identification procedure](ryzen-realtek-identification.md), [device matrix](device-support.md) and [LAN plan](lan-plan-0.4.0.md) distinguish expected identifiers from measured hardware. The current diagnostic update adds PCI revision and non-Intel Ethernet identification; its QEMU result is not Ryzen hardware evidence. Capture the Ryzen LAN and xHCI vendor:device:revision before driver-specific work.
+
+### 日本語
+
+先の特定前提節の過去証拠を変更せず補足します。所有者からRyzen boardと構成情報が届きました。以下は所有者申告で、新しいPCI実測や受入成功ではありません。
+
+| 部品 | 所有者申告の構成 | 実測との境界 |
+|---|---|---|
+| Board / CPU | ASUS TUF GAMING X570-PLUS、X570、AM4、ATX / Ryzen7 5800X | Board revision未実測 |
+| RAM / GPU | DDR4-3200 32GiB ×4 =128GiB / Radeon RX7900XTX24GB | 新しいdriver受入なし |
+| Storage | WD Black SN7702TB | native NVMe対応の証拠ではない |
+| Ethernet | ASUS L8200A、RTL8111H系Gigabit、見込みPCI10EC:8168 | 実vendor/device/subsystem/revision採取待ち、link/DHCP/echo成功なし |
+| USB host / 背面port | AMD xHCI1022:149C、Gen1 Type-A ×4、Gen2 Type-A ×2 / Type-C ×1 | 所有者情報、PCI revisionとcontroller/port対応未実測 |
+| Audio | Realtek S1200A | 対象外 |
+| 予定NUC11 | NUC11TNKi3、I225-LM、Thunderbolt4 ×2、AX201 | 入手・検証前、正確なPCI/USB ID未確認、内蔵Bluetoothは基準経路外 |
+
+[特定手順](ryzen-realtek-identification.md)、[機器表](device-support.md)、[LAN計画](lan-plan-0.4.0.md)で見込みIDと実測を分けます。今回の診断変更はPCI revisionと非Intel Ethernetの識別を追加しますが、QEMU結果はRyzen実機証拠ではありません。driver固有作業前にRyzen LAN/xHCIのvendor:device:revisionを採取してください。

@@ -2,7 +2,7 @@
 
 ## English
 
-The approved commits through `ce25a16a989c2e99ed5150c8b5992b41f1e8318b` were pushed normally to `origin/release/0.4.0`. This document accompanies the owner-authorized stage3 implementation commit. Local verification is complete; release and hardware acceptance remain open.
+The approved stage3 commit `b745e47bc7e663057d0b969c2902146a5b6ff30f` was pushed normally to `origin/release/0.4.0`. This document accompanies the owner-authorized stage3 implementation commit. Local verification is complete; release and hardware acceptance remain open.
 
 ### Owner decisions and scope coordination
 
@@ -10,7 +10,7 @@ The owner confirmed fixed directory size4096, a chain of ceil(4096/cluster bytes
 
 After successful pairing, stage6 will save the exact raw CONFIG SHA-256 in the OS-owned pairing record. `pair=on` with the same consumed hash is suppressed; any content change rearms it. Saving identical content again does not rearm it. Pairing failure or failed durable save leaves the request unconsumed. SHA-256 makes accidental/adversarial content collisions impractical; it is not proof of file origin. CRC32 is accidental-corruption detection, not authentication.
 
-At this checkpoint the owner has not yet edited scope goals4/5/12 to incorporate these additions. The previous scope wording permits general SETTINGS writes and says CONFIG is cleared after pairing; those statements are superseded by the additional owner decision. The concurrently owned scope file was preserved. [Work plan](work-plan-0.4.0.md) and [configuration guide](startup-configuration.md) reflect the decision.
+The owner supplied a scope update for goals4/5/12 and the reference machines. It incorporates OS-owned records, read-only CONFIG and consumed-content hashes. That owner-authored diff is preserved and approved for a separate scope commit. “Size and chain match” means the minimum ceil(4096/cluster bytes) chain, not equal byte counts: an8KiB cluster has4096 bytes of zero slack. See [SETTINGS files](settings.md) for durable consumption and identical-content saves. [Work plan](work-plan-0.4.0.md) and [configuration guide](startup-configuration.md) reflect the decision.
 
 ### Implemented
 
@@ -58,7 +58,7 @@ Remaining gates are physical USB/NUC5/Ryzen write–cold-reboot–readback and m
 
 ## 日本語
 
-承認済み `ce25a16a989c2e99ed5150c8b5992b41f1e8318b` までを `origin/release/0.4.0` へ通常pushした。本書は所有者承認済みの工程3実装commitに伴う記録。ローカル検証は完了し、公開・実機受入は未完。
+承認済み工程3 commit `b745e47bc7e663057d0b969c2902146a5b6ff30f` を `origin/release/0.4.0` へ通常pushした。本書は所有者承認済みの工程3実装commitに伴う記録。ローカル検証は完了し、公開・実機受入は未完。
 
 ### 所有者判断とscope調整
 
@@ -66,7 +66,7 @@ directory size4096固定、ceil(4096/cluster bytes)のchain、内部有効長、
 
 工程6でpair成功後、正確なraw CONFIGのSHA-256をOS所有pairing recordへ保存する。同じ消費済みhashの `pair=on` は抑止し、内容変更で再有効にする。同一内容を保存し直すだけでは再有効にならない。pair失敗・永続化失敗は未消費のまま。SHA-256は偶発的・意図的衝突を現実的に困難にするが、出自認証ではない。CRC32も偶発破損検出であり改ざん認証ではない。
 
-この区切りではscope目標4/5/12の所有者改訂はまだない。旧scopeの一般的SETTINGS書込みとpair後CONFIG消去は追加判断で置換される。同時編集対象のscopeは保持した。[作業計画](work-plan-0.4.0.md)と[設定文書](startup-configuration.md)は新判断へ整合した。
+所有者は目標4/5/12と基準機器のscope改訂を配置済み。OS所有record・CONFIG読取り専用・消費済み内容hashを反映した所有者差分をそのまま保持し、別scope commitで記録する承認を得た。「sizeとchainの一致」はceil(4096/cluster bytes)の最小chainを意味し、bytes同値ではない。8KiB clusterには4096bytesのゼロslackがある。永続保存後の消費と同一内容再保存は[SETTINGS文書](settings.md)を参照。[作業計画](work-plan-0.4.0.md)と[設定文書](startup-configuration.md)は新判断へ整合した。
 
 ### 実装
 

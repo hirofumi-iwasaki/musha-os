@@ -4,7 +4,7 @@
 
 Status: owner-approved plan aligned to scope decisions, 2026-10-15. The [17-goal scope](release-scope-0.4.0.md) is authoritative; ✔ decisions are not proposals. Stage1 is committed as `35545a6`; stage2 CONFIG/log/display/normal timing is committed as `f2d3f30`, with [full local regression](stage2-full-regression-0.4.0.md) and [earlier checks](stage2-0.4.0-results.md). Stage3 local implementation and [full regression evidence](stage3-0.4.0-progress.md) accompany this owner-authorized implementation commit. Physical and formal release gates remain open. See [code review](scope-review-0.4.0.md) and [formatted-media procedure](formatted-media-boot-verification.md). Published assets/tags and historical hardware records stay unchanged. Reference devices and approved keys are the scope's reference-device table.
 
-Owner addition2026-10-15 below supersedes the old CONFIG-clearing wording. Scope goals4/5/12 are awaiting the owner’s matching edit; this implementation does not edit that concurrently owned file. The owner authorized the stage3 implementation commit after local verification; no further push is authorized.
+Owner addition2026-10-15 below supersedes the old CONFIG-clearing wording. The owner supplied the matching scope edit and approved recording it separately from documentation and diagnostic code. Stage3 is committed/pushed as `b745e47`; the following scope/documentation/diagnostic commits are approved locally, with no further push authorized. See [SETTINGS](settings.md), [device matrix](device-support.md) and [LAN plan](lan-plan-0.4.0.md).
 
 ### Main sequence
 
@@ -37,13 +37,13 @@ Final v0.4.0 acceptance uses exact candidate EFI at devices: NUC5/Ryzen cold3, R
 
 Adopt VERSION=0.4.0 in this owner-approved baseline; internal crate versions unchanged. The scope assigns the first implementation commit this version; the owner approved recording that version in this preparatory baseline. The preparatory version check used existing guards only; later local implementation builds/regressions have separate evidence, and no formal candidate has been generated here. README generator/template/VERSION are outside docs-only provenance.
 
-The original documents/VERSION baseline was committed with owner approval. The owner approved pushing through ce25a16 and now the stage3 implementation commit after local verification; later commits require owner approval. No further push/tag/Release/USB operations are authorized here. Later hardware erase/format/update, CI dispatch/draft attachment/publication follow explicit owner authorization, after concrete candidate/review evidence. Published v0.2/v0.3 assets and historical records remain intact.
+The original documents/VERSION baseline was committed with owner approval. The owner approved the stage3 implementation commit after local verification and its push through b745e47; later commits require owner approval. No further push/tag/Release/USB operations are authorized here. Later hardware erase/format/update, CI dispatch/draft attachment/publication follow explicit owner authorization, after concrete candidate/review evidence. Published v0.2/v0.3 assets and historical records remain intact.
 
 ## 日本語
 
 状態：所有者決定に合わせた承認済み計画、2026-10-15。[17目標の範囲](release-scope-0.4.0.md)を正とし、✔は提案ではなく決定です。工程1は `35545a6` でcommit済み。工程2 CONFIG/log/display/通常timingは `f2d3f30` でcommit済み。[全ローカル回帰](stage2-full-regression-0.4.0.md)と[先行検証](stage2-0.4.0-results.md)に記録し、実機・正式公開gateは未完です。[コード照合](scope-review-0.4.0.md)と[フォーマット媒体手順](formatted-media-boot-verification.md)を参照。公開配布物・タグと過去実機記録は保持。機器とキーは範囲末尾の基準機器表に従います。
 
-所有者追加判断2026-10-15は旧CONFIG消去記述を置換する。scope目標4/5/12は所有者による対応改訂待ちのため、同時編集対象を変更しない。工程3はローカル検証後の実装commitを所有者承認済み。[全回帰記録](stage3-0.4.0-progress.md)を添付し、追加pushは未承認。
+所有者追加判断2026-10-15は旧CONFIG消去記述を置換する。scope目標4/5/12の所有者改訂を保持し、文書・診断コードと別commitで記録する承認を得た。工程3は `b745e47` でcommit/push済み。後続のscope・文書・診断commitはローカル承認済みで、追加pushは未承認。[全回帰記録](stage3-0.4.0-progress.md)、[SETTINGS](settings.md)、[機器表](device-support.md)、[LAN計画](lan-plan-0.4.0.md)を参照。
 
 ### 主工程
 
@@ -76,4 +76,4 @@ v0.4.0最終受入は正確な候補EFI/devices、NUC5/Ryzen冷間3、dongle付�
 
 今回は所有者承認済みの準備baselineでVERSION=0.4.0を採用し、内部crate版保持。範囲は最初の実装commitでの昇版を定め、所有者はこの準備baselineへの先行記録を承認しました。準備時の軽量版検証はguardのみ。その後のローカル実装build/回帰は別証拠で、正式候補生成は行っていません。README生成器/template/VERSIONはdocs-only外。
 
-元の文書/VERSION baselineは所有者承認でcommit済み。ce25a16までのpushと、ローカル検証後の工程3実装commitは所有者承認済み。以後のcommitは所有者承認後、追加push/tag/Release/USB操作は禁止。後の実機消去/format/update、CI dispatch/draft添付/公開も具体的候補・証拠のレビュー後に所有者承認に従います。公開済v0.2/v0.3と過去記録は保持します。
+元の文書/VERSION baselineは所有者承認でcommit済み。ローカル検証後の工程3実装commitとb745e47までのpushは所有者承認済み。以後のcommitは所有者承認後、追加push/tag/Release/USB操作は禁止。後の実機消去/format/update、CI dispatch/draft添付/公開も具体的候補・証拠のレビュー後に所有者承認に従います。公開済v0.2/v0.3と過去記録は保持します。

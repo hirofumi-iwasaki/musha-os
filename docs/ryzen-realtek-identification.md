@@ -6,6 +6,8 @@ Status: identification required before goal13 Realtek driver work. Owner scope r
 
 The owner performs the following read-only capture on the same Ryzen machine. Do not change firmware settings, drivers, partitions or USB contents. Record the date and which physical Ethernet socket is connected. Keep USB Ethernet adapters separate from the motherboard PCI NIC.
 
+Owner update2026-10-15: ASUS TUF GAMING X570-PLUS and ASUS L8200A/RTL8111H-class were reported;10EC:8168 is expected, not measured. See the appended [hardware configuration](hardware-verification-status.md). The new devices diagnostic records the first Ethernet PCI ID/revision regardless of vendor; all Ethernet observations enter its bounded journal. xHCI ID/revision is also shown. Multiple NICs, omitted journal entries or missing subsystem IDs still require the OS capture below.
+
 ### Windows
 
 1. Open Device Manager → Network adapters → the physical wired adapter → Properties → Details → Hardware Ids. Copy every PCI ID line, including `VEN_10EC`, `DEV_....`, `SUBSYS_........` and `REV_..`; also record adapter name and Device instance path/location. A display name containing Realtek alone is insufficient. If multiple adapters exist, identify the motherboard socket and record each separately.
@@ -36,13 +38,15 @@ Select the PCI **Ethernet class0200** entry, not a Realtek card reader/audio dev
 | Motherboard manufacturer / product / revision | UNKNOWN |
 | Capture date / OS / exact socket / evidence path | NOT CAPTURED |
 
-After review, append the explicit identifiers and evidence path to a new Ryzen section of [hardware verification status](hardware-verification-status.md). Match the device-specific programming reference before implementation. Current normal devices diagnostics do not enumerate every unsupported PCI vendor into the visible panel; no Realtek line does not prove no Realtek hardware. A subsequent read-only PCI diagnostic can cross-check the host capture. I218-V and Realtek need separate driver initialization and physical link/DHCP/OS-echo evidence; QEMU82574 proves neither physical controller.
+After review, append the explicit identifiers and evidence path to a new Ryzen section of [hardware verification status](hardware-verification-status.md). Match the device-specific programming reference before implementation. Earlier normal devices diagnostics selected only Intel Ethernet. The current read-only inventory adds the first Ethernet of any vendor and bounded journal observations; missing/omitted rows still do not prove hardware absence. Cross-check subsystem IDs and multiple NICs with the host capture. I218-V and Realtek need separate driver initialization and physical link/DHCP/OS-echo evidence; QEMU82574 proves neither physical controller.
 
 ## 日本語
 
 状態：目標13 Realtek driver着手前の特定待ち。所有者scopeはRyzen機のRealtek Ethernetを必須とするが、保持metadataから正確なPCI deviceとmotherboardは**未特定**。`out/ryzen-*` 配下のJSON/text/log計6件、Ryzen実機結果、`docs/hardware-evidence/2026-10-13/ryzen7/provenance.json` を確認した。起動・動画・来歴の観測はあるがNIC型番の根拠ではない。動画の見た目、CPU名、xHCI数からchip/boardを推定しない。
 
 所有者が同じRyzen機で以下を読取り専用採取する。firmware設定、driver、partition、USB内容は変更しない。日時と接続する物理Ethernet端子を記録し、USB Ethernet adapterをmotherboard PCI NICと分ける。
+
+所有者追記2026-10-15：ASUS TUF GAMING X570-PLUS、ASUS L8200A/RTL8111H系の申告あり。10EC:8168は見込みで未実測。[実機構成追記](hardware-verification-status.md)参照。新devices診断はvendorを限定せず先頭EthernetのPCI ID/revisionを表示し、全Ethernet観測を上限付きjournalへ記録します。xHCI ID/revisionも表示します。複数NIC、journal省略、subsystem ID不足は以下のOS採取で補います。
 
 ### Windows
 
@@ -74,4 +78,4 @@ Realtek card reader／audioではなくPCI **Ethernet class0200** を選ぶ。�
 | motherboard manufacturer／product／revision | 未特定 |
 | 日時／OS／物理端子／証拠path | 未採取 |
 
-レビュー後、[実機確認状況](hardware-verification-status.md)の新Ryzen節へ明示IDと証拠pathを追記し、device固有の資料と照合して実装する。現行通常devices表示は未対応PCI vendor全部を表示するものではなく、Realtek行が無いことは機器不存在の証明ではない。後の読取り専用PCI診断でhost採取値を相互確認する。I218-VとRealtekは別初期化と実機link／DHCP／OS echo証拠が必要で、QEMU82574合格をどちらの実機対応にも読み替えない。
+レビュー後、[実機確認状況](hardware-verification-status.md)の新Ryzen節へ明示IDと証拠pathを追記し、device固有の資料と照合して実装する。以前の通常devicesはIntel Ethernetだけを選んでいた。今回の読取り専用一覧は全vendorの先頭Ethernetと上限付きjournalを追加するが、行の欠落・省略は機器不存在を証明しない。subsystem IDと複数NICはhost採取で相互確認する。I218-VとRealtekは別初期化と実機link／DHCP／OS echo証拠が必要で、QEMU82574合格をどちらの実機対応にも読み替えない。
