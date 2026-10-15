@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Bounded experimental-r1 ELF loader plan. No allocation, mapping or file casts.
+//! Bounded experimental-r1/r2 ELF loader plan. No allocation, mapping or file casts.
 use crate::{Error, PAGE};
 #[allow(dead_code)]
 #[path = "../../sdk/rust/musha-sys/src/generated.rs"]
@@ -22,6 +22,7 @@ impl Segment {
 }
 #[derive(Debug)]
 pub struct Plan {
+    pub revision: u32,
     pub entry: usize,
     pub segments: [Segment; 32],
     pub count: usize,
@@ -68,6 +69,7 @@ impl Plan {
         }
         part(b, ph, num * 56)?;
         let mut plan = Self {
+            revision: 0,
             entry: size(b, 24)?,
             segments: [Segment::default(); 32],
             count: 0,
@@ -135,12 +137,26 @@ impl Plan {
                     }
                     let d = part(data, 20, 64)?;
                     if u32at(d, 0)? as u64 != abi::NOTE_SIZE
-                        || u32at(d, 4)? as u64 != abi::CANDIDATE_REVISION
+                        || !matches!(
+                            (u32at(d, 4)? as u64, u16at(d, 10)? as u64),
+                            (abi::CANDIDATE_REVISION, abi::ABI_MINOR)
+                                | (abi::R2_REVISION, abi::R2_MINOR)
+                        )
                         || u16at(d, 8)? as u64 != abi::ABI_MAJOR
-                        || u16at(d, 10)? as u64 != abi::ABI_MINOR
                         || u32at(d, 12)? as u64 != abi::CPU_PROFILE
-                        || u64at(d, 16)? != abi::FEATURE_BASE
-                        || u64at(d, 24)? & !abi::PERMISSION_LOG != 0
+                        || u64at(d, 16)?
+                            != if u32at(d, 4)? == 2 {
+                                abi::FEATURE_BASE | abi::FEATURE_INPUT
+                            } else {
+                                abi::FEATURE_BASE
+                            }
+                        || u64at(d, 24)?
+                            & !(if u32at(d, 4)? == 2 {
+                                15
+                            } else {
+                                abi::PERMISSION_LOG
+                            })
+                            != 0
                         || u64at(d, 48)? != 0
                         || u64at(d, 56)? != 0
                     {
@@ -158,6 +174,7 @@ impl Plan {
                     {
                         return Err(Error::Invalid);
                     }
+                    plan.revision = u32at(d, 4)?;
                     notes += 1;
                 }
                 _ => return Err(Error::Unsupported),
@@ -245,6 +262,26 @@ mod tests {
     }
     fn put(b: &mut [u8], o: usize, v: u64, n: usize) {
         b[o..o + n].copy_from_slice(&v.to_le_bytes()[..n]);
+    }
+    #[test]
+    fn r2_permissions_do_not_expand_r1() {
+        let mut r2 = fixture();
+        put(&mut r2, 0x2000 + 24, 2, 4);
+        put(&mut r2, 0x2000 + 30, 2, 2);
+        put(&mut r2, 0x2000 + 36, 3, 8);
+        for permissions in [0, 1, 2, 4, 8, 15] {
+            put(&mut r2, 0x2000 + 44, permissions, 8);
+            let p = Plan::parse(&r2).unwrap();
+            assert_eq!((p.revision, p.permissions), (2, permissions));
+        }
+        put(&mut r2, 0x2000 + 44, 16, 8);
+        assert!(Plan::parse(&r2).is_err());
+        let mut r1 = fixture();
+        put(&mut r1, 0x2000 + 44, 2, 8);
+        assert!(Plan::parse(&r1).is_err());
+        put(&mut r2, 0x2000 + 44, 1, 8);
+        put(&mut r2, 0x2000 + 30, 1, 2);
+        assert!(Plan::parse(&r2).is_err());
     }
     #[test]
     fn loads_and_zeroes_bss() {

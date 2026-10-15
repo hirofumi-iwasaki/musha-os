@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! C2: immutable embedded ELF, permanent owned backing, one-shot execution.
+//! Bounded ELF mappings, permanent owned backing and permission-checked alias copies.
 use super::{abi, failed};
 use musha_memory::{PAGE, elf::Plan, user::offset};
 #[cfg(feature = "ring3-elf-probe")]
@@ -10,12 +10,14 @@ struct Mapping {
     pa: usize,
     bytes: usize,
     executable_bytes: usize,
+    writable: bool,
 }
 const EMPTY: Mapping = Mapping {
     va: 0,
     pa: 0,
     bytes: 0,
     executable_bytes: 0,
+    writable: false,
 };
 struct Loaded {
     maps: [Mapping; 35],
@@ -23,6 +25,7 @@ struct Loaded {
     stack: usize,
     stack_bytes: usize,
     permissions: u64,
+    revision: u32,
 }
 static mut LOADED: Loaded = Loaded {
     maps: [EMPTY; 35],
@@ -30,6 +33,7 @@ static mut LOADED: Loaded = Loaded {
     stack: 0,
     stack_bytes: 0,
     permissions: 0,
+    revision: 0,
 };
 pub unsafe fn load(arena: &mut [u8]) -> usize {
     #[cfg(feature = "ring3-elf-probe")]
@@ -71,6 +75,7 @@ pub unsafe fn load(arena: &mut [u8]) -> usize {
         stack,
         stack_bytes: plan.stack_bytes,
         permissions: plan.permissions,
+        revision: plan.revision,
     };
     for i in 0..plan.count {
         let s = plan.segments[i];
@@ -91,6 +96,7 @@ pub unsafe fn load(arena: &mut [u8]) -> usize {
             pa: pa + cursor,
             bytes,
             executable_bytes: 0,
+            writable: s.flags == 6,
         };
         // Return RIP is restricted to the file-backed portion, not BSS/padding.
         if s.flags == 5 {
@@ -112,7 +118,11 @@ pub unsafe fn load(arena: &mut [u8]) -> usize {
             let info = abi::MushaStartInfoV1 {
                 struct_size: abi::START_SIZE as u32,
                 abi_major: abi::ABI_MAJOR as u16,
-                abi_minor: abi::ABI_MINOR as u16,
+                abi_minor: if plan.revision == 2 {
+                    abi::R2_MINOR as u16
+                } else {
+                    abi::ABI_MINOR as u16
+                },
                 arena_base: abi::ARENA_BASE,
                 arena_bytes: plan.arena_bytes as u64,
                 stack_base: stack as u64,
@@ -131,6 +141,7 @@ pub unsafe fn load(arena: &mut [u8]) -> usize {
             pa: pa + cursor,
             bytes,
             executable_bytes: 0,
+            writable: write,
         };
         state.count += 1;
         cursor += bytes;
@@ -210,6 +221,56 @@ pub unsafe fn clear() {
             stack: 0,
             stack_bytes: 0,
             permissions: 0,
+            revision: 0,
         });
     }
+}
+
+pub fn permitted(permission: u64) -> bool {
+    let s = unsafe { &*core::ptr::addr_of!(LOADED) };
+    s.revision == 2 && s.permissions & permission == permission
+}
+pub fn features() -> u64 {
+    abi::FEATURE_BASE
+        | if unsafe { (*core::ptr::addr_of!(LOADED)).revision } == 2 {
+            abi::FEATURE_INPUT
+        } else {
+            0
+        }
+}
+pub fn input(pointer: u64, capacity: u64) -> (i32, u64) {
+    if !permitted(abi::PERMISSION_INPUT) {
+        return (abi::ERR_DENIED, 0);
+    }
+    if capacity < abi::INPUT_SIZE {
+        return (abi::ERR_LIMIT, 0);
+    }
+    let s = unsafe { &*core::ptr::addr_of!(LOADED) };
+    let mut addresses = [0usize; 48];
+    for (i, address) in addresses.iter_mut().enumerate() {
+        let Some(at) = pointer.checked_add(i as u64) else {
+            return (abi::ERR_INVALID, 0);
+        };
+        let Some(alias) = s.maps[..s.count]
+            .iter()
+            .filter(|m| m.writable)
+            .find_map(|m| offset(at, 1, m.va as u64, m.bytes as u64).map(|n| m.pa + n))
+        else {
+            return (abi::ERR_INVALID, 0);
+        };
+        *address = alias;
+    }
+    // Validate the whole writable range before polling/removing an event.
+    if let Err(error) = super::io::poll() {
+        return (error, 0);
+    }
+    let Some(event) = super::io::next() else {
+        return (abi::ERR_AGAIN, 0);
+    };
+    for (address, byte) in addresses.into_iter().zip(event.encode()) {
+        unsafe {
+            (address as *mut u8).write(byte);
+        }
+    }
+    (0, abi::INPUT_SIZE)
 }

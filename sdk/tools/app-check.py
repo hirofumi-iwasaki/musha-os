@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Host-only candidate-r1 ELF validator. Kernel must repeat all checks in stage C."""
+"""Host-only experimental-r1/r2 ELF validator. Kernel must repeat all checks in stage C."""
 import json,struct,pathlib,sys
 K=json.loads((pathlib.Path(__file__).resolve().parents[1]/'abi/experimental.json').read_text())['constants']
 def check(b):
@@ -41,9 +41,9 @@ def check(b):
     notes.append(struct.unpack_from('<IIHHIQQQQQQ',b,desc));pos=end
  require(len(notes)==1,'exactly one Musha note')
  size,rev,major,minor,cpu,features,permissions,arena,stack,flags,reserved=notes[0]
- require((size,rev,major,minor,cpu)==(64,K['CANDIDATE_REVISION'],K['ABI_MAJOR'],K['ABI_MINOR'],K['CPU_PROFILE']),'note version/cpu')
- require(features==K['FEATURE_BASE'] and permissions&~K['PERMISSION_LOG']==0 and flags==0 and reserved==0,'features/permissions/reserved')
+ require(size==64 and (rev,minor) in [(K['CANDIDATE_REVISION'],K['ABI_MINOR']),(K['R2_REVISION'],K['R2_MINOR'])] and major==K['ABI_MAJOR'] and cpu==K['CPU_PROFILE'],'note version/cpu')
+ require(features==(K['FEATURE_BASE'] | (K['FEATURE_INPUT'] if rev==2 else 0)) and permissions&~(15 if rev==2 else K['PERMISSION_LOG'])==0 and flags==0 and reserved==0,'features/permissions/reserved')
  require(4096<=arena<=K['ARENA_LIMIT'] and arena%4096==0 and 4096<=stack<=K['STACK_LIMIT'] and stack%4096==0,'requested RAM/stack')
  require(any(a<=entry<z for a,z in executable),'entry not file-backed executable')
- return {'profile':'experimental-r1','entry':entry,'loads':len(ranges),'arena':arena,'stack':stack,'guest_execution':False}
+ return {'profile':'experimental-r'+str(rev),'entry':entry,'loads':len(ranges),'arena':arena,'stack':stack,'guest_execution':False}
 if __name__=='__main__':print(json.dumps(check(pathlib.Path(sys.argv[1]).read_bytes()),indent=2))

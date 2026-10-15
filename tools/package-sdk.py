@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Deterministic standalone C SDK sources. No Rust guest or host execution."""
+"""Deterministic separate C/Rust development SDK sources; no guest execution."""
 import argparse, hashlib, json
 from pathlib import Path
 import zipfile
+import re
 ROOT=Path(__file__).resolve().parents[1]
 
 def create(output, version, language='c', samples=None):
@@ -17,11 +18,11 @@ def create(output, version, language='c', samples=None):
         if not p.is_file():
             continue
         rel = p.relative_to(ROOT / 'sdk')
-        if rel.parts[0] not in ('README.md', 'CMakeLists.txt', 'abi', 'cmake', 'examples', 'linker', 'src', 'sysroot', 'tests', 'tools', 'rust', 'targets'):
+        if rel.parts[0] not in ('README.md', 'CMakeLists.txt', 'rust-toolchain.toml', 'abi', 'cmake', 'examples', 'linker', 'src', 'sysroot', 'tests', 'tools', 'rust', 'targets'):
             continue
-        if '__pycache__' in rel.parts:
+        if '__pycache__' in rel.parts or 'target' in rel.parts:
             continue
-        if language == 'c' and any((x in ('rust', 'targets', 'hello-rust') for x in rel.parts)):
+        if language == 'c' and (rel.name in ('build-rust.py', 'rust-toolchain.toml') or any((x in ('rust', 'targets', 'hello-rust') for x in rel.parts))):
             continue
         if p.suffix == '.pyc' or (language == 'c' and p.suffix == '.rs'):
             continue
@@ -32,6 +33,13 @@ def create(output, version, language='c', samples=None):
     for name in ('application-abi.md', 'sdk.md', 'sdk-guide.md', 'external-app.md', 'file-viewer.md', 'distribution-usage.md', 'formatted-media-boot-verification.md', 'distribution-usage-through-0.3.0.md'):
         payload['docs/' + name] = (ROOT / 'docs' / name).read_bytes()
     payload['README.md'] = payload['README.md'].replace(b'(../docs/', b'(docs/')
+    # Development execution logs stay in the source checkout, not SDK archives.
+    for name, data in list(payload.items()):
+        if name.endswith('.md'):
+            text = data.decode('utf-8')
+            text = re.sub(r'\[r2 evidence\]\((?:\.\./docs/|docs/)?stage4-r2-0\.4\.0-progress\.md\)', 'development verification in the source checkout', text)
+            text = re.sub(r'\[r2証拠\]\((?:\.\./docs/|docs/)?stage4-r2-0\.4\.0-progress\.md\)', 'source checkoutの開発検証', text)
+            payload[name] = text.encode('utf-8')
     sample_elfs = {}
     for (name, path) in sorted((samples or {}).items()):
         if name not in ('hello.elf', 'start-record.elf'):
@@ -45,13 +53,14 @@ def create(output, version, language='c', samples=None):
         payload['samples/' + name] = data
         sample_elfs['samples/' + name] = {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
     if language == 'rust':
-        payload['DEVELOPMENT-STATUS.TXT'] = b'Rust SDK source scaffold only. Runnable Rust guest/core build awaits stage 4.\n'
+        payload['DEVELOPMENT-STATUS.TXT'] = b'Rust r1/r2 custom-core samples and r2 TIME/WAIT/INPUT are locally verified. This is a development SDK; physical stage4 acceptance and formal release qualification remain incomplete.\n'
     manifest = {
         'version': version,
         'language': language.upper(),
         'executable_sdk': language == 'c',
         'sample_elfs': sample_elfs,
-        'abi': 'experimental candidate r1',
+        'abi': 'experimental candidates r1/r2; r1 default',
+        'development_guest_build': True,
         'public_compatibility_fixed': False,
         'rust_included': language == 'rust',
         'files': {n: {'bytes': len(b), 'sha256': hashlib.sha256(b).hexdigest()} for (n, b) in sorted(payload.items())},

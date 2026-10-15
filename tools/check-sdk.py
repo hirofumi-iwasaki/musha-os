@@ -3,7 +3,8 @@
 """Compile-only SDK and host conformance; never execute a candidate syscall."""
 import hashlib,argparse,importlib.util,json,os,pathlib,shutil,struct,subprocess,tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
-p=argparse.ArgumentParser();p.add_argument('--sdk',type=pathlib.Path,default=ROOT if (ROOT/'abi').is_dir() else ROOT/'sdk');p.add_argument('--output',type=pathlib.Path,default=ROOT/'out/sdk-check');p.add_argument('--c-only',action='store_true');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--sdk',type=pathlib.Path,default=ROOT if (ROOT/'abi').is_dir() else ROOT/'sdk');p.add_argument('--output',type=pathlib.Path,default=ROOT/'out/sdk-check');p.add_argument('--c-only',action='store_true');p.add_argument('--abi-revision',type=int,choices=[1,2],default=1);p.add_argument('--source',type=pathlib.Path,help='C source instead of Hello');p.add_argument('--permissions',type=lambda v:int(v,0));p.add_argument('--rust-guest',action='store_true',help='Rebuild custom-target core and validate runnable Rust r1 ELFs; no guest execution');a=p.parse_args()
+if a.c_only and a.rust_guest:p.error('--rust-guest cannot be combined with --c-only')
 sdk=a.sdk.resolve();out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
 commands=[]
 def run(args,**kw):
@@ -22,10 +23,11 @@ if pathlib.Path(lld).name == 'rust-lld':
  os.environ['DYLD_LIBRARY_PATH']=str(pathlib.Path(lld).resolve().parents[3])
 versions['lld']=run([lld,'-flavor','gnu','--version']).strip()
 run(['python3',sdk/'tools/generate.py','--check']+(['--c-only'] if a.c_only else []))
-flags=['--target=x86_64-unknown-none-elf','--sysroot='+str(sdk/'sysroot'),'-isystem',str(sdk/'sysroot/include'),'-std=c11','-ffreestanding','-fno-builtin','-fno-stack-protector','-fno-pic','-mno-red-zone','-march=x86-64','-mno-avx','-Wall','-Wextra','-Werror','-O2']
+flags=['--target=x86_64-unknown-none-elf','--sysroot='+str(sdk/'sysroot'),'-isystem',str(sdk/'sysroot/include'),'-I',str(sdk/'src'),'-std=c11','-ffreestanding','-fno-builtin','-fno-stack-protector','-fno-pic','-mno-red-zone','-march=x86-64','-mno-avx','-Wall','-Wextra','-Werror','-O2']
 objects=[]
+selected_source=a.source.resolve() if a.source else sdk/'examples/hello-c/main.c'
 for name,source in [('layout','tests/layout.c'),('wrapper','tests/wrapper.c'),('fp','tests/fp.c'),('crt0','src/crt0.S'),('libmusha','src/libmusha.c'),('memory','src/memory.c'),('main','examples/hello-c/main.c')]:
- obj=out/(name+'.o');run([clang,*flags,'-c',sdk/source,'-o',obj]);objects.append(obj)
+ obj=out/(name+'.o');run([clang,*flags,'-c',(selected_source if name=='main' else sdk/source),'-o',obj]);objects.append(obj)
  require=obj.read_bytes();assert require[:7]==b'\x7fELF\x02\x01\x01' and struct.unpack_from('<HH',require,16)==(1,62)
 run([clang,*flags,'-S',sdk/'tests/wrapper.c','-o',out/'wrapper.s'])
 asm=(out/'wrapper.s').read_text();assert 'syscall' in asm and '%rcx, %r10' in asm and '"+d"(c)' in (sdk/'src/syscall.h').read_text()
@@ -34,7 +36,9 @@ run([clang,*flags,'-S','-emit-llvm',sdk/'tests/fp.c','-o',out/'fp-c.ll'])
 # Native layout test is separate from the ELF x64 assertions above.
 run([clang,'-std=c11','-I',sdk/'sysroot/include',sdk/'tests/layout.c','-o',out/'layout-host']);run([out/'layout-host'])
 k=json.loads((sdk/'abi/experimental.json').read_text())['constants']
-desc=struct.pack('<IIHHIQQQQQQ',64,k['CANDIDATE_REVISION'],k['ABI_MAJOR'],k['ABI_MINOR'],k['CPU_PROFILE'],1,1,1048576,65536,0,0)
+permissions=(15 if a.abi_revision==2 else 1) if a.permissions is None else a.permissions
+if permissions<0 or permissions & ~(15 if a.abi_revision==2 else 1):p.error('unsupported permission bits for NOTE revision')
+desc=struct.pack('<IIHHIQQQQQQ',64,a.abi_revision,k['ABI_MAJOR'],k['R2_MINOR'] if a.abi_revision==2 else k['ABI_MINOR'],k['CPU_PROFILE'],3 if a.abi_revision==2 else 1,permissions,1048576,65536,0,0)
 note=struct.pack('<III',6,64,k['NOTE_TYPE'])+b'MUSHA\0\0\0'+desc
 (out/'note.S').write_text('.section .note.musha,"a",@note\n.balign 4\n.byte '+','.join(map(str,note))+'\n')
 run([clang,*flags,'-c',out/'note.S','-o',out/'note.o'])
@@ -53,7 +57,7 @@ for i in range(num):
  if t==1:loads.append(q)
  if t==4:
   mutate(q,'I',0);off=struct.unpack_from('<Q',b,q+8)[0]
-  for offset,fmt,val in [(20,'I',63),(24,'I',99),(28,'H',3),(32,'I',99),(36,'Q',8),(44,'Q',8),(52,'Q',0),(60,'Q',0),(68,'Q',1),(76,'Q',1)]:mutate(off+offset,fmt,val)
+  for offset,fmt,val in [(20,'I',63),(24,'I',99),(28,'H',3),(32,'I',99),(36,'Q',8),(44,'Q',16 if a.abi_revision==2 else 8),(52,'Q',0),(60,'Q',0),(68,'Q',1),(76,'Q',1)]:mutate(off+offset,fmt,val)
 q=loads[0]
 for t in [2,3,7]:mutate(q,'I',t)
 mutate(q+4,'I',7);mutate(q+48,'Q',3);mutate(q+40,'Q',0);mutate(q+8,'Q',len(b));mutate(q+16,'Q',0x70000000)
@@ -86,5 +90,7 @@ if not a.c_only:
   (out/(name+'.json')).write_text(spec)
   if name=='builtin-none': assert json.loads(spec).get('rustc-abi')=='softfloat'
   else: assert json.loads(spec).get('rustc-abi')!='softfloat'
-report={'versions':versions,'commands':commands,'elf':elf,'negative_elf_cases':len(mutations),'c_x64_layout':'start and NOTE: all offsets, size 64, alignment 8','hello_sha256':hashlib.sha256(b).hexdigest(),'c_only':a.c_only,'rust_x64_layout':'not included' if a.c_only else 'UEFI target compile only; not ELF SDK','guest_execution':False,'public_compatibility_fixed':False,'rust_custom_core_built':False}
+if a.rust_guest:
+ run(['python3',sdk/'tools/build-rust.py','--output',out/'rust-guest'])
+report={'versions':versions,'commands':commands,'elf':elf,'negative_elf_cases':len(mutations),'c_x64_layout':'start and NOTE: all offsets, size 64, alignment 8','hello_sha256':hashlib.sha256(b).hexdigest(),'c_only':a.c_only,'abi_revision':a.abi_revision,'requested_permissions':permissions,'rust_x64_layout':'not included' if a.c_only else ('custom SSE2 ELF core rebuilt and samples validated; not guest execution' if a.rust_guest else 'UEFI target compile only; not ELF SDK'),'guest_execution':False,'public_compatibility_fixed':False,'rust_custom_core_built':a.rust_guest}
 (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps({k:v for k,v in report.items() if k!='commands'},indent=2))

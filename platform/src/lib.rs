@@ -450,3 +450,5 @@ mod bar_tests {
 pub mod pci_recovery;
 
 pub mod t2_diagnostics;
+
+pub mod user_io;

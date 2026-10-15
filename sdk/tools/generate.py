@@ -8,12 +8,13 @@ r=['// Generated experimental definitions; no public ABI guarantee.']
 for k,v in s['constants'].items():
  c.append(f'#define MUSHA_{k} ({v})')
  r.append(f'pub const {k}: {"i32" if v<0 else "u64"} = {v};')
-for cn,rn,key in [('musha_start_info_v1','MushaStartInfoV1','start_fields'),('musha_note_v1','MushaNoteV1','note_fields')]:
+for cn,rn,key in [('musha_start_info_v1','MushaStartInfoV1','start_fields'),('musha_note_v1','MushaNoteV1','note_fields'),('musha_input_event','MushaInputEvent','input_fields')]:
+ size=48 if key=='input_fields' else 64
  c.append(f'typedef struct {cn} {{');r.extend(['#[repr(C)]','#[derive(Clone, Copy, Debug, Default)]',f'pub struct {rn} {{'])
  for n,t,o in s[key]:
-  c.append(f'    uint{t[1:]}_t {n};');r.append(f'    pub {n}: {t},')
- c.extend([f'}} {cn};',f'_Static_assert(sizeof({cn})==64,"size");',f'_Static_assert(_Alignof({cn})==8,"alignment");'])
- r.extend(['}','const _: () = {',f'    assert!(core::mem::size_of::<{rn}>() == 64);',f'    assert!(core::mem::align_of::<{rn}>() == 8);'])
+  c.append(f'    {("uint" if t[0]=="u" else "int")}{t[1:]}_t {n};');r.append(f'    pub {n}: {t},')
+ c.extend([f'}} {cn};',f'_Static_assert(sizeof({cn})=={size},"size");',f'_Static_assert(_Alignof({cn})==8,"alignment");'])
+ r.extend(['}','const _: () = {',f'    assert!(core::mem::size_of::<{rn}>() == {size});',f'    assert!(core::mem::align_of::<{rn}>() == 8);'])
  for n,t,o in s[key]:
   c.append(f'_Static_assert(offsetof({cn},{n})=={o},"{n}");');r.append(f'    assert!(core::mem::offset_of!({rn}, {n}) == {o});')
  r.append('};')

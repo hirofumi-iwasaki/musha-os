@@ -109,6 +109,47 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
             crate::bootlog::ready(true);
             crate::appconsole::start(info.framebuffer, b"AUTORUN.ELF  (Ring 3)\n");
             crate::debug(b"MUSHA: EXTERNAL_ELF_DEVICES_STOPPED\n");
+            let plan = musha_memory::elf::Plan::parse(image()).unwrap();
+            if plan.revision == 2
+                && plan.permissions & musha_memory::elf::abi::PERMISSION_INPUT != 0
+            {
+                let mut bridge = |event: crate::xhci::AppEvent<'_>| {
+                    if let crate::xhci::AppEvent::InputPoll(poll) = event {
+                        let mut input = || {
+                            let mut collect = |event: crate::xhci::AppEvent<'_>| {
+                                match event {
+                                    crate::xhci::AppEvent::Keys(keys) => {
+                                        crate::ring3::io::keys(keys)
+                                    }
+                                    crate::xhci::AppEvent::Pointer(values, buttons) => {
+                                        crate::ring3::io::pointer(values, buttons)
+                                    }
+                                    _ => (),
+                                }
+                                Ok(false)
+                            };
+                            poll(&mut collect).and_then(|done| {
+                                if done {
+                                    Err("INPUT SESSION ENDED")
+                                } else {
+                                    Ok(())
+                                }
+                            })
+                        };
+                        // The old runtime Context is gone. This stack and the Host
+                        // remain live forever; stop() quiesces before halting.
+                        unsafe {
+                            crate::ring3::io::attach(&mut input, info);
+                        }
+                        crate::debug(b"MUSHA: APP_INPUT_LIVE\n");
+                        crate::ring3::run(arena, info);
+                    }
+                    Ok(false)
+                };
+                let _ = crate::xhci::run_session(info, &mut bridge);
+                drop(bridge);
+                crate::debug(b"MUSHA: APP_INPUT_UNAVAILABLE\n");
+            }
             crate::ring3::run(arena, info);
         }
         State::Rejected(reason) => reject(

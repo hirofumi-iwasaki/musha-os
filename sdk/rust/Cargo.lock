@@ -10,5 +10,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "musha-samples"
+version = "0.0.1"
+dependencies = [
+ "musha",
+ "musha-sys",
+]
+
+[[package]]
 name = "musha-sys"
 version = "0.0.1"

@@ -100,6 +100,8 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     }
                     return Ok(app.exit_requested);
                 }
+                crate::xhci::AppEvent::Pointer(_, _) => return Ok(false),
+                crate::xhci::AppEvent::InputPoll(_) => return Ok(false),
                 crate::xhci::AppEvent::Retained(_) => return Err("UNHANDLED STORAGE LOOP"),
                 crate::xhci::AppEvent::File(bytes) => {
                     ctx.install_boot_file(bytes).map_err(|_| "APP FILE CACHE")?;

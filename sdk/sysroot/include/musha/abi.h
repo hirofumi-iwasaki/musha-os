@@ -37,6 +37,25 @@
 #define MUSHA_STACK_LIMIT (1048576)
 #define MUSHA_START_BASE (536870912)
 #define MUSHA_MAX_SEGMENTS (32)
+#define MUSHA_R2_REVISION (2)
+#define MUSHA_R2_MINOR (2)
+#define MUSHA_SYS_TIME (259)
+#define MUSHA_SYS_WAIT (260)
+#define MUSHA_SYS_INPUT (261)
+#define MUSHA_FEATURE_INPUT (2)
+#define MUSHA_PERMISSION_TIME (2)
+#define MUSHA_PERMISSION_WAIT (4)
+#define MUSHA_PERMISSION_INPUT (8)
+#define MUSHA_INPUT_SIZE (48)
+#define MUSHA_INPUT_KEY (1)
+#define MUSHA_INPUT_MOUSE (2)
+#define MUSHA_INPUT_GAMEPAD_BUTTON (3)
+#define MUSHA_INPUT_GAMEPAD_AXIS (4)
+#define MUSHA_INPUT_OVERFLOW (5)
+#define MUSHA_WAIT_INPUT (1)
+#define MUSHA_WAKE_TIMEOUT (0)
+#define MUSHA_WAKE_INPUT (1)
+#define MUSHA_MAX_WAIT_MS (60000)
 typedef struct musha_start_info_v1 {
     uint32_t struct_size;
     uint16_t abi_major;
@@ -89,4 +108,32 @@ _Static_assert(offsetof(musha_note_v1,arena_bytes)==32,"arena_bytes");
 _Static_assert(offsetof(musha_note_v1,stack_bytes)==40,"stack_bytes");
 _Static_assert(offsetof(musha_note_v1,flags)==48,"flags");
 _Static_assert(offsetof(musha_note_v1,reserved)==56,"reserved");
+typedef struct musha_input_event {
+    uint16_t struct_size;
+    uint16_t kind;
+    uint32_t flags;
+    uint64_t timestamp_ms;
+    uint32_t device;
+    uint16_t code;
+    uint16_t modifiers;
+    int32_t value0;
+    int32_t value1;
+    int32_t value2;
+    uint32_t buttons;
+    uint64_t reserved;
+} musha_input_event;
+_Static_assert(sizeof(musha_input_event)==48,"size");
+_Static_assert(_Alignof(musha_input_event)==8,"alignment");
+_Static_assert(offsetof(musha_input_event,struct_size)==0,"struct_size");
+_Static_assert(offsetof(musha_input_event,kind)==2,"kind");
+_Static_assert(offsetof(musha_input_event,flags)==4,"flags");
+_Static_assert(offsetof(musha_input_event,timestamp_ms)==8,"timestamp_ms");
+_Static_assert(offsetof(musha_input_event,device)==16,"device");
+_Static_assert(offsetof(musha_input_event,code)==20,"code");
+_Static_assert(offsetof(musha_input_event,modifiers)==22,"modifiers");
+_Static_assert(offsetof(musha_input_event,value0)==24,"value0");
+_Static_assert(offsetof(musha_input_event,value1)==28,"value1");
+_Static_assert(offsetof(musha_input_event,value2)==32,"value2");
+_Static_assert(offsetof(musha_input_event,buttons)==36,"buttons");
+_Static_assert(offsetof(musha_input_event,reserved)==40,"reserved");
 #endif

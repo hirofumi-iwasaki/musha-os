@@ -33,6 +33,25 @@ pub const STACK_TOP: u64 = 1879048192;
 pub const STACK_LIMIT: u64 = 1048576;
 pub const START_BASE: u64 = 536870912;
 pub const MAX_SEGMENTS: u64 = 32;
+pub const R2_REVISION: u64 = 2;
+pub const R2_MINOR: u64 = 2;
+pub const SYS_TIME: u64 = 259;
+pub const SYS_WAIT: u64 = 260;
+pub const SYS_INPUT: u64 = 261;
+pub const FEATURE_INPUT: u64 = 2;
+pub const PERMISSION_TIME: u64 = 2;
+pub const PERMISSION_WAIT: u64 = 4;
+pub const PERMISSION_INPUT: u64 = 8;
+pub const INPUT_SIZE: u64 = 48;
+pub const INPUT_KEY: u64 = 1;
+pub const INPUT_MOUSE: u64 = 2;
+pub const INPUT_GAMEPAD_BUTTON: u64 = 3;
+pub const INPUT_GAMEPAD_AXIS: u64 = 4;
+pub const INPUT_OVERFLOW: u64 = 5;
+pub const WAIT_INPUT: u64 = 1;
+pub const WAKE_TIMEOUT: u64 = 0;
+pub const WAKE_INPUT: u64 = 1;
+pub const MAX_WAIT_MS: u64 = 60000;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MushaStartInfoV1 {
@@ -92,4 +111,36 @@ const _: () = {
     assert!(core::mem::offset_of!(MushaNoteV1, stack_bytes) == 40);
     assert!(core::mem::offset_of!(MushaNoteV1, flags) == 48);
     assert!(core::mem::offset_of!(MushaNoteV1, reserved) == 56);
+};
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MushaInputEvent {
+    pub struct_size: u16,
+    pub kind: u16,
+    pub flags: u32,
+    pub timestamp_ms: u64,
+    pub device: u32,
+    pub code: u16,
+    pub modifiers: u16,
+    pub value0: i32,
+    pub value1: i32,
+    pub value2: i32,
+    pub buttons: u32,
+    pub reserved: u64,
+}
+const _: () = {
+    assert!(core::mem::size_of::<MushaInputEvent>() == 48);
+    assert!(core::mem::align_of::<MushaInputEvent>() == 8);
+    assert!(core::mem::offset_of!(MushaInputEvent, struct_size) == 0);
+    assert!(core::mem::offset_of!(MushaInputEvent, kind) == 2);
+    assert!(core::mem::offset_of!(MushaInputEvent, flags) == 4);
+    assert!(core::mem::offset_of!(MushaInputEvent, timestamp_ms) == 8);
+    assert!(core::mem::offset_of!(MushaInputEvent, device) == 16);
+    assert!(core::mem::offset_of!(MushaInputEvent, code) == 20);
+    assert!(core::mem::offset_of!(MushaInputEvent, modifiers) == 22);
+    assert!(core::mem::offset_of!(MushaInputEvent, value0) == 24);
+    assert!(core::mem::offset_of!(MushaInputEvent, value1) == 28);
+    assert!(core::mem::offset_of!(MushaInputEvent, value2) == 32);
+    assert!(core::mem::offset_of!(MushaInputEvent, buttons) == 36);
+    assert!(core::mem::offset_of!(MushaInputEvent, reserved) == 40);
 };

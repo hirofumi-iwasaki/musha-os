@@ -371,3 +371,5 @@ mod deferred_tests {
 }
 
 pub mod superspeed;
+
+pub mod mouse;

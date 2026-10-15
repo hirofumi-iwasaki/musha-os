@@ -1,0 +1,31 @@
+[package]
+name = "musha-samples"
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+[dependencies]
+musha = { path = "../musha" }
+musha-sys = { path = "../musha-sys" }
+[[bin]]
+name = "hello-rust"
+path = "src/hello.rs"
+test = false
+bench = false
+[[bin]]
+name = "start-record-rust"
+path = "src/start-record.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "io-rust"
+path = "src/io.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "fp-rust"
+path = "src/fp.rs"
+test = false
+bench = false

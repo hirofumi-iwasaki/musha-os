@@ -272,6 +272,8 @@ fn control_read(
         Some(&mut host.keyboard_saved),
         host.bulk_pending,
         Some(&mut host.bulk_saved),
+        host.mouse_pending,
+        Some(&mut host.mouse_saved),
         if bytes == 0 {
             None
         } else {
@@ -403,7 +405,7 @@ pub(super) fn enumerate(
     dcbaa: usize,
     discovery: bool,
     tick: &mut dyn FnMut(super::AppEvent<'_>) -> Result<bool, &'static str>,
-) -> Result<bool, &'static str> {
+) -> Result<(bool, bool), &'static str> {
     let protocols = protocols(host.regs, host.ports)?;
     let stride = if host.regs.read(0x10)? & 4 != 0 {
         64
@@ -473,6 +475,7 @@ pub(super) fn enumerate(
     let enum_time = crate::timing::Span::new(host.bdf, "ENUMERATE");
     let mut count = 0u64;
     let mut active_keyboard = None;
+    let mut active_mouse = None;
     let mut active_storage = None;
     let mut targets = [None; 32];
     let mut tail = 0;
@@ -782,7 +785,12 @@ pub(super) fn enumerate(
             }
         } else if let Configured::Keyboard(mut keyboard) = configured {
             keyboard.ancestors = target.ancestors;
-            if active_keyboard.is_none() {
+            if keyboard.mouse.is_some() && active_mouse.is_none() {
+                active_mouse = Some(keyboard);
+                count += 1;
+                continue;
+            }
+            if keyboard.mouse.is_none() && active_keyboard.is_none() {
                 active_keyboard = Some(keyboard);
                 count += 1;
                 continue;
@@ -810,10 +818,11 @@ pub(super) fn enumerate(
     crate::debug(&crate::cpu::hex(count));
     crate::debug(b"\nMUSHA: USB_DISCOVERY_DONE\n");
     let found_keyboard = active_keyboard.is_some();
+    let found_mouse = active_mouse.is_some();
     if !discovery && !found_keyboard && active_storage.is_none() {
         tick(super::AppEvent::Ready(found_keyboard))?;
     }
-    if !discovery && !found_keyboard {
+    if !discovery && !found_keyboard && active_mouse.is_none() {
         if let Some(device) = active_storage.as_mut() {
             let mut session = device.prepared.take().map(file::Session::new).transpose()?;
             let mut poll = |tick: &mut super::Tick<'_>| {
@@ -830,7 +839,13 @@ pub(super) fn enumerate(
         let slot = keyboard.slot;
         crate::diagnostics::usb_stage("KEYBOARD POLLING");
         if !discovery {
-            run_keyboard(host, keyboard, active_storage.as_mut(), tick)?;
+            run_keyboard(
+                host,
+                keyboard,
+                active_mouse.as_ref(),
+                active_storage.as_mut(),
+                tick,
+            )?;
         }
         host.command(0, (10 << 10) | ((slot as u32) << 24), slot)?;
         if host
@@ -843,6 +858,17 @@ pub(super) fn enumerate(
         unsafe {
             dma_u64(dcbaa + slot as usize * 8, 0);
             core::arch::asm!("mfence", options(nostack));
+        }
+    }
+    if let Some(mouse) = active_mouse {
+        if !discovery && !found_keyboard {
+            run_pointer(host, &mouse, active_storage.as_mut(), tick)?;
+        }
+        host.command(0, (10 << 10) | ((mouse.slot as u32) << 24), mouse.slot)?;
+        host.mouse_pending = None;
+        host.mouse_saved = None;
+        unsafe {
+            dma_u64(dcbaa + mouse.slot as usize * 8, 0);
         }
     }
     if let Some(mut device) = active_storage {
@@ -863,7 +889,7 @@ pub(super) fn enumerate(
             core::arch::asm!("mfence", options(nostack));
         }
     }
-    Ok(found_keyboard)
+    Ok((found_keyboard, found_mouse))
 }
 
 struct Keyboard {
@@ -873,6 +899,7 @@ struct Keyboard {
     ring: usize,
     report: usize,
     port: usize,
+    mouse: Option<musha_xhci::mouse::Layout>,
 }
 enum Configured {
     Other,
@@ -954,11 +981,24 @@ fn configure(
         )
         .map(|device| Configured::Storage(device.with_port(port)));
     }
-    let Some(kbd) = musha_xhci::keyboard::configuration(&bytes[..length], speed)? else {
+    let keyboard = musha_xhci::keyboard::configuration(&bytes[..length], speed)?;
+    let pointer = if keyboard.is_none() {
+        musha_xhci::mouse::configuration(&bytes[..length], speed)?
+    } else {
+        None
+    };
+    let Some(kbd) = keyboard.or(pointer) else {
         return Ok(Configured::Other);
     };
-    crate::diagnostics::usb_kind("BOOT KEYBOARD MATCH / CHECK INPUT");
-    crate::diagnostics::supported_device(true);
+    let mouse = pointer.is_some();
+    crate::diagnostics::usb_kind(if mouse {
+        "BOOT MOUSE MATCH / CHECK RELATIVE"
+    } else {
+        "BOOT KEYBOARD MATCH / CHECK INPUT"
+    });
+    if !mouse {
+        crate::diagnostics::supported_device(true);
+    }
     let endpoint = kbd.endpoint * 2 + 1;
     let ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
     let report = pool.allocate(64, 64).ok_or("DMA FULL")?;
@@ -977,7 +1017,8 @@ fn configure(
         dma_word(ep, (kbd.interval as u32) << 16);
         dma_word(ep + 4, (3 << 1) | (7 << 3) | ((kbd.packet as u32) << 16));
         dma_word(ep + 8, ring as u32 | 1);
-        dma_word(ep + 16, 8 | (8 << 16));
+        let payload = if mouse { 4 } else { 8 };
+        dma_word(ep + 16, payload | (payload << 16));
         publish(ring + (TRBS - 1) * 16, [ring as u32, 0, 0, (6 << 10) | 3]);
         core::arch::asm!("mfence", options(nostack));
     }
@@ -1000,7 +1041,64 @@ fn configure(
         0x0b21,
         kbd.interface as u16,
     )?;
+    let mut layout = if mouse {
+        Some(musha_xhci::mouse::Layout {
+            bytes: 3,
+            wheel: false,
+            buttons: 3,
+        })
+    } else {
+        None
+    };
+    if mouse {
+        let mut at = 9;
+        let mut selected = false;
+        let mut report_length = 0usize;
+        while at < length {
+            let n = bytes[at] as usize;
+            if bytes[at + 1] == 4 {
+                selected = bytes[at + 2] == kbd.interface;
+            }
+            if selected && bytes[at + 1] == 0x21 {
+                report_length = u16::from_le_bytes([bytes[at + 7], bytes[at + 8]]) as usize;
+            }
+            at += n;
+        }
+        if (1..=256).contains(&report_length) {
+            let got = control_read(
+                host,
+                slot,
+                control_ring,
+                buffer,
+                report_length as u32,
+                0x22000681,
+                kbd.interface as u16,
+            )?;
+            let mut descriptor = [0; 256];
+            for (i, byte) in descriptor[..got as usize].iter_mut().enumerate() {
+                *byte = unsafe { (buffer as *const u8).add(i).read_volatile() };
+            }
+            if let Some(parsed) = musha_xhci::mouse::layout(&descriptor[..got as usize]) {
+                control(
+                    host,
+                    slot,
+                    control_ring,
+                    buffer,
+                    0,
+                    0x00010b21,
+                    kbd.interface as u16,
+                )?;
+                layout = Some(parsed);
+            }
+        }
+        crate::debug(b"MUSHA: MOUSE_RELATIVE_LAYOUT BYTES/WHEEL=");
+        let l = layout.unwrap();
+        crate::debug(&crate::cpu::hex(l.bytes as u64));
+        crate::debug(&crate::cpu::hex(l.wheel as u64));
+        crate::debug(b"\n");
+    }
     Ok(Configured::Keyboard(Keyboard {
+        mouse: layout,
         ancestors: [None; 5],
         slot,
         endpoint,
@@ -1012,6 +1110,7 @@ fn configure(
 fn run_keyboard(
     host: &mut Host<'_>,
     keyboard: Keyboard,
+    mouse: Option<&Keyboard>,
     mut storage: Option<&mut storage::Device>,
     tick: &mut dyn FnMut(super::AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
@@ -1022,6 +1121,7 @@ fn run_keyboard(
         ring,
         report,
         port,
+        mouse: _,
     } = keyboard;
     crate::debug(
         b"MUSHA: HID_READY
@@ -1055,12 +1155,13 @@ fn run_keyboard(
     let mut pending = false;
     let mut reports = 0;
     let mut check_at = host.clock.now()?;
-    loop {
+    let mut mouse_state = PointerState::default();
+    let mut poll = |tick: &mut super::Tick<'_>| -> Result<bool, &'static str> {
         if host.regs.read(op + 0x400 + (port - 1) * 16)? & 1 == 0 {
             return Err("KEYBOARD DISCONNECTED");
         }
         if host.clock.now()? >= deadline {
-            break;
+            return Ok(true);
         }
         if host.clock.now()? >= check_at {
             for (hub, port) in ancestors.iter().flatten().copied() {
@@ -1116,6 +1217,8 @@ fn run_keyboard(
                 None,
                 host.bulk_pending,
                 Some(&mut host.bulk_saved),
+                host.mouse_pending,
+                Some(&mut host.mouse_saved),
                 None,
                 None,
             )
@@ -1154,7 +1257,7 @@ fn run_keyboard(
         }
         if let (Some(session), Some(device)) = (file_session.as_mut(), storage.as_deref_mut()) {
             if session.step(host, device, tick)? {
-                break;
+                return Ok(true);
             }
         }
         if cfg!(feature = "live-storage-probe") && !cfg!(feature = "live-file-probe") {
@@ -1162,17 +1265,175 @@ fn run_keyboard(
                 device.probe_step(host)?;
             }
         }
+        if let Some(mouse) = mouse {
+            poll_mouse(host, mouse, &mut mouse_state, tick)?;
+        }
         // Hardware poll never waits for a key. Each iteration also advances the
         // application, including while the device NAKs an outstanding transfer.
         if tick(super::AppEvent::Keys(&transitions[..count]))? {
-            break;
+            return Ok(true);
         }
-    }
+        Ok(false)
+    };
+    tick(super::AppEvent::InputPoll(&mut poll))?;
+    while !poll(tick)? {}
+    drop(poll);
     crate::debug(b"MUSHA: HID_DIAGNOSTIC_OK REPORTS=");
     crate::debug(&crate::cpu::hex(reports));
     crate::debug(
         b"
 ",
     );
+    Ok(())
+}
+
+struct PointerState {
+    producer: musha_xhci::Cursor,
+    pending: bool,
+    buttons: u32,
+    check_at: u64,
+}
+impl Default for PointerState {
+    fn default() -> Self {
+        Self {
+            producer: musha_xhci::Cursor::new(TRBS - 1).unwrap(),
+            pending: false,
+            buttons: 0,
+            check_at: 0,
+        }
+    }
+}
+fn poll_mouse(
+    host: &mut Host<'_>,
+    mouse: &Keyboard,
+    state: &mut PointerState,
+    tick: &mut super::Tick<'_>,
+) -> Result<(), &'static str> {
+    let layout = mouse.mouse.ok_or("MOUSE FORMAT")?;
+    let op = (host.regs.read(0)? & 255) as usize;
+    if host.regs.read(op + 0x400 + (mouse.port - 1) * 16)? & 1 == 0 {
+        return Err("MOUSE DISCONNECTED");
+    }
+    if host.clock.now()? >= state.check_at {
+        for (hub, port) in mouse.ancestors.iter().flatten().copied() {
+            let status = hub::status(host, hub, port)?;
+            if status.overcurrent()
+                || !status.connected()
+                || status.ready_speed().is_none()
+                || status.connection_changed()
+                || status.configuration_error()
+            {
+                return Err("MOUSE DISCONNECTED");
+            }
+        }
+        state.check_at = host.clock.now()?.checked_add(100).ok_or("CLOCK OVERFLOW")?;
+    }
+    if !state.pending {
+        unsafe {
+            core::ptr::write_bytes(mouse.report as *mut u8, 0, 64);
+            if state.producer.index == TRBS - 2 {
+                publish(
+                    mouse.ring + (TRBS - 1) * 16,
+                    [
+                        mouse.ring as u32,
+                        0,
+                        0,
+                        (6 << 10) | 2 | state.producer.cycle,
+                    ],
+                );
+            }
+            publish(
+                mouse.ring + state.producer.index * 16,
+                [
+                    mouse.report as u32,
+                    0,
+                    layout.bytes as u32,
+                    (1 << 10) | (1 << 5) | state.producer.cycle,
+                ],
+            );
+        }
+        host.regs.write(
+            host.doorbell + mouse.slot as usize * 4,
+            mouse.endpoint as u32,
+        )?;
+        host.mouse_pending = Some((
+            mouse.ring + state.producer.index * 16,
+            mouse.slot,
+            mouse.endpoint,
+        ));
+        state.pending = true;
+    }
+    let result = if let Some(words) = host.mouse_saved.take() {
+        Ok(words)
+    } else {
+        super::event_dispatch(
+            host.regs,
+            host.clock,
+            host.events,
+            host.consumer,
+            host.runtime,
+            host.ac64,
+            mouse.ring + state.producer.index * 16,
+            host.ports,
+            mouse.slot,
+            mouse.endpoint,
+            0,
+            host.keyboard_pending,
+            Some(&mut host.keyboard_saved),
+            host.bulk_pending,
+            Some(&mut host.bulk_saved),
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+    match result {
+        Err("EVENT PENDING") => {}
+        Err(error) => return Err(error),
+        Ok(_) => {
+            let mut bytes = [0; 4];
+            for (i, byte) in bytes[..layout.bytes].iter_mut().enumerate() {
+                *byte = unsafe { (mouse.report as *const u8).add(i).read_volatile() };
+            }
+            let (values, buttons) =
+                musha_xhci::mouse::decode(layout, &bytes[..layout.bytes]).ok_or("MOUSE REPORT")?;
+            host.mouse_pending = None;
+            state.pending = false;
+            state.producer.advance();
+            if values != [0; 3] || buttons != state.buttons {
+                tick(super::AppEvent::Pointer(values, buttons))?;
+            }
+            state.buttons = buttons;
+        }
+    }
+    Ok(())
+}
+
+fn run_pointer(
+    host: &mut Host<'_>,
+    mouse: &Keyboard,
+    mut storage: Option<&mut storage::Device>,
+    tick: &mut super::Tick<'_>,
+) -> Result<(), &'static str> {
+    let mut files = storage
+        .as_deref_mut()
+        .and_then(|d| d.prepared.take())
+        .map(file::Session::new)
+        .transpose()?;
+    let mut state = PointerState::default();
+    tick(super::AppEvent::Ready(false))?; // Mouse is never reported as a keyboard.
+    crate::debug(b"MUSHA: HID_MOUSE_READY NO_KEYBOARD\n");
+    let mut poll = |tick: &mut super::Tick<'_>| {
+        poll_mouse(host, mouse, &mut state, tick)?;
+        if let (Some(session), Some(device)) = (files.as_mut(), storage.as_deref_mut()) {
+            if session.step(host, device, tick)? {
+                return Ok(true);
+            }
+        }
+        tick(super::AppEvent::Keys(&[]))
+    };
+    tick(super::AppEvent::InputPoll(&mut poll))?;
+    while !poll(tick)? {}
     Ok(())
 }

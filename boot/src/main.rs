@@ -129,6 +129,8 @@ fn panic(_info: &PanicInfo) -> ! {
     stop()
 }
 fn stop() -> ! {
+    #[cfg(elf_app)]
+    ring3::io::shutdown();
     loop {
         // SAFETY: runs only on the boot CPU at firmware/kernel privilege.
         unsafe {

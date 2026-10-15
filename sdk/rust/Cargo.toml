@@ -1,5 +1,6 @@
 [workspace]
-members=["musha-sys","musha"]
+members=["musha-sys","musha","samples"]
+default-members=["musha-sys","musha"]
 resolver="2"
 [profile.dev]
 panic="abort"

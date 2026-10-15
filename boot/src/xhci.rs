@@ -293,6 +293,8 @@ fn reset(info: &BootInfo, c: pci::Controller) -> Result<(bool, u64), &'static st
 pub(crate) type Tick<'a> = dyn for<'e> FnMut(AppEvent<'e>) -> Result<bool, &'static str> + 'a;
 pub(crate) enum AppEvent<'a> {
     Ready(bool),
+    Pointer([i32; 3], u32),
+    InputPoll(&'a mut dyn FnMut(&mut Tick<'_>) -> Result<bool, &'static str>),
     Files(&'a mut musha_api::stream::Files<'static>),
     Retained(&'a mut dyn FnMut(&mut Tick<'_>) -> Result<bool, &'static str>),
     Keys(&'a [(u8, bool)]),
@@ -303,6 +305,7 @@ pub(crate) enum AppEvent<'a> {
 struct Probe {
     attempted: bool,
     keyboard: bool,
+    pointer: bool,
     storage: usize,
     readable_storage: usize,
 }
@@ -404,6 +407,7 @@ pub(crate) fn run_session(
             return Err("NOT FOUND");
         }
         let mut keyboard = None;
+        let mut pointer = None;
         let mut storage = None;
         let mut readable_storage = None;
         let mut success = false;
@@ -425,6 +429,9 @@ pub(crate) fn run_session(
                     success = true;
                     attempted |= report.attempted;
                     safe_empty[index] = !report.attempted;
+                    if report.pointer && pointer.is_none() {
+                        pointer = Some(index);
+                    }
                     if report.storage > 0 && storage.is_none() {
                         storage = Some(index);
                     }
@@ -448,7 +455,7 @@ pub(crate) fn run_session(
         // All first-pass hosts are halted with BME=0. Only untouched-slot
         // controllers may reinitialize rings without HCRST; PP is preserved.
         if musha_xhci::superspeed::rescan_allowed(
-            keyboard.is_some(),
+            keyboard.is_some() || pointer.is_some(),
             readable_storage.is_some(),
             attempted,
             0,
@@ -541,8 +548,8 @@ pub(crate) fn run_session(
             crate::debug(&crate::cpu::hex(controllers[k].bdf() as u64));
             crate::debug(b"\n");
         }
-        if let Some(index) = readable_storage.or(keyboard).or(storage) {
-            live_probe(info, index, keyboard, tick).map(|_| ())
+        if let Some(index) = readable_storage.or(keyboard).or(pointer).or(storage) {
+            live_probe(info, index, keyboard.or(pointer), tick).map(|_| ())
         } else {
             tick(AppEvent::Ready(false))?;
             if success { Ok(()) } else { Err(last_error) }
@@ -629,6 +636,8 @@ fn event(
         None,
         None,
         None,
+        None,
+        None,
     )
 }
 fn event_dispatch(
@@ -647,6 +656,8 @@ fn event_dispatch(
     mut saved: Option<&mut Option<[u32; 4]>>,
     bulk: Option<(usize, u8, u8)>,
     mut bulk_saved: Option<&mut Option<[u32; 4]>>,
+    mouse: Option<(usize, u8, u8)>,
+    mut mouse_saved: Option<&mut Option<[u32; 4]>>,
     short: Option<(usize, u32)>,
     mut residual: Option<&mut Option<u32>>,
 ) -> Result<[u32; 4], &'static str> {
@@ -754,7 +765,10 @@ fn event_dispatch(
                             musha_xhci::defer_completion(words, deferred, saved)
                         }) || bulk_saved
                             .as_deref_mut()
-                            .is_some_and(|saved| musha_xhci::defer_completion(words, bulk, saved));
+                            .is_some_and(|saved| musha_xhci::defer_completion(words, bulk, saved))
+                            || mouse_saved.as_deref_mut().is_some_and(|saved| {
+                                musha_xhci::defer_completion(words, mouse, saved)
+                            });
                         if !stored {
                             crate::diagnostics::transfer_failure(
                                 words,
@@ -951,13 +965,16 @@ fn command_probe(
             control_cursors: [musha_xhci::control::Cursor::NEW; 9],
             keyboard_pending: None,
             keyboard_saved: None,
+            mouse_pending: None,
+            mouse_saved: None,
             bulk_pending: None,
             bulk_saved: None,
         };
-        let keyboard = usb::enumerate(&mut host, &mut pool, dcbaa, discovery, tick)?;
+        let (keyboard, pointer) = usb::enumerate(&mut host, &mut pool, dcbaa, discovery, tick)?;
         Ok(Probe {
             attempted: host.attempted,
             keyboard,
+            pointer,
             storage: host.storage_matches,
             readable_storage: host.readable_storage,
         })
@@ -1012,6 +1029,8 @@ struct Host<'a> {
     control_cursors: [musha_xhci::control::Cursor; 9],
     keyboard_pending: Option<(usize, u8, u8)>,
     keyboard_saved: Option<[u32; 4]>,
+    mouse_pending: Option<(usize, u8, u8)>,
+    mouse_saved: Option<[u32; 4]>,
     bulk_pending: Option<(usize, u8, u8)>,
     bulk_saved: Option<[u32; 4]>,
 }
@@ -1067,6 +1086,8 @@ impl Host<'_> {
             Some(&mut self.keyboard_saved),
             self.bulk_pending,
             Some(&mut self.bulk_saved),
+            self.mouse_pending,
+            Some(&mut self.mouse_saved),
             None,
             None,
         );
@@ -1098,4 +1119,31 @@ fn clear_line(fb: musha_framebuffer::Framebuffer, row: usize) {
             }
         }
     }
+}
+
+/// Terminal application shutdown. Only the input loan publishes this hook;
+/// all controllers were acquired by run_session before the loan. No reuse follows.
+pub(crate) fn quiesce_app(info: &BootInfo) -> bool {
+    let mut ok = true;
+    for c in &info.xhcis.entries[..info.xhcis.count] {
+        let bme = unsafe { pci::read(c.bus, c.device, c.function, 4) } & 4 != 0;
+        if !bme {
+            continue;
+        }
+        let regs = Registers {
+            base: c.base,
+            bytes: c.bytes,
+        };
+        let halted = (|| {
+            let op = (regs.read(0)? & 255) as usize;
+            regs.write(op, regs.read(op)? & !0xd)?;
+            let mut time = acpi::Time::new(info.timer)?;
+            wait(&regs, &mut time, op + 4, 1, 1, 100)
+        })();
+        unsafe {
+            pci::disable_dma(*c);
+        }
+        ok &= halted.is_ok() && unsafe { pci::read(c.bus, c.device, c.function, 4) } & 4 == 0;
+    }
+    ok
 }

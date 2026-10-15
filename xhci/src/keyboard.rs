@@ -11,6 +11,14 @@ pub struct Keyboard {
     pub interval: u8,
 }
 pub fn configuration(b: &[u8], speed: Speed) -> Result<Option<Keyboard>, &'static str> {
+    configuration_for(b, speed, 1, 8)
+}
+pub(crate) fn configuration_for(
+    b: &[u8],
+    speed: Speed,
+    protocol: u8,
+    minimum: u16,
+) -> Result<Option<Keyboard>, &'static str> {
     if b.len() < 9
         || b.len() > 1024
         || b[0] != 9
@@ -45,7 +53,7 @@ pub fn configuration(b: &[u8], speed: Speed) -> Result<Option<Keyboard>, &'stati
                     return Err("INTERFACE LENGTH");
                 }
                 interface_endpoint = false;
-                active = if d[3] == 0 && d[5..8] == [3, 1, 1] {
+                active = if d[3] == 0 && d[5..8] == [3, 1, protocol] {
                     Some(d[2])
                 } else {
                     None
@@ -88,7 +96,7 @@ pub fn configuration(b: &[u8], speed: Speed) -> Result<Option<Keyboard>, &'stati
                         Speed::Full => 64,
                         _ => 1024,
                     };
-                    if packet < 8 || packet > max {
+                    if packet < minimum || packet > max {
                         return Err("KEYBOARD PACKET");
                     }
                     interface_endpoint = true;

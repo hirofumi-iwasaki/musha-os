@@ -9,6 +9,8 @@ use musha_memory::PAGE;
 mod abi;
 #[cfg(elf_app)]
 mod elf;
+#[cfg(elf_app)]
+pub(crate) mod io;
 #[cfg(feature = "ring3-lifecycle-probe")]
 pub mod lifecycle;
 #[cfg(c1_probe)]
@@ -235,7 +237,14 @@ extern "win64" fn dispatch(frame: &mut Frame) {
                     #[cfg(elf_app)]
                     crate::debug(b"MUSHA: RING3_ELF_RUNNING\n");
                 }
-                (0, abi::FEATURE_BASE)
+                #[cfg(elf_app)]
+                {
+                    (0, elf::features())
+                }
+                #[cfg(c1_probe)]
+                {
+                    (0, abi::FEATURE_BASE)
+                }
             }
             #[cfg(elf_app)]
             abi::SYS_LOG => elf::log(frame.rdi, frame.rsi),
@@ -269,6 +278,24 @@ extern "win64" fn dispatch(frame: &mut Frame) {
                     } else {
                         (abi::ERR_INVALID, 0)
                     }
+                }
+            }
+            #[cfg(elf_app)]
+            abi::SYS_TIME | abi::SYS_WAIT | abi::SYS_INPUT => {
+                if frame.rdx != 0 || frame.r10 != 0 || frame.r8 != 0 || frame.r9 != 0 {
+                    (abi::ERR_INVALID, 0)
+                } else if frame.rax == abi::SYS_TIME {
+                    if !elf::permitted(abi::PERMISSION_TIME) {
+                        (abi::ERR_DENIED, 0)
+                    } else if frame.rdi != 0 || frame.rsi != 0 {
+                        (abi::ERR_INVALID, 0)
+                    } else {
+                        io::time()
+                    }
+                } else if frame.rax == abi::SYS_WAIT {
+                    io::wait(frame.rdi, frame.rsi)
+                } else {
+                    elf::input(frame.rdi, frame.rsi)
                 }
             }
             abi::SYS_EXIT => {

@@ -2,7 +2,20 @@
 
 ## English
 
-Stage1 v0.4.0 development: this C/r1 behavior is retained; Rust execution/r2 and viewer launch/return remain later work. The drive now has DOCS and empty SETTINGS and README is the startup marker. See [distribution usage](distribution-usage.md).
+### Stage4 r2 runtime checkpoint —2026-10-15
+
+Experimental r2 now connects real TIME/WAIT/INPUT and relative USB boot mouse to C and Rust guests. r1 values/NOTE acceptance and the default C build remain supported. No public ABI compatibility is frozen. See the [r2 evidence](stage4-r2-0.4.0-progress.md) and [ABI ledger](application-abi.md); full regression and real NUC5/Ryzen acceptance remain open.
+
+C: `musha_time(&ms)`, `musha_wait(timeout_ms, flags, &reason)`, `musha_input(&event)`. Rust guest wrappers: `time()`, `wait(timeout_ms, input)`, `input()` return owned values. TIME permission2 returns monotonic sampled PM-epoch boot milliseconds; WAIT permission4 supports0–60000ms, flags0 or WAIT_INPUT1 (also requires INPUT permission8), returns0 timeout/poll or1 pending input. INPUT copies one48-byte LE record, returns ERR_AGAIN when empty; insufficient capacity is ERR_LIMIT, invalid/unwritable ranges ERR_INVALID, missing permissions ERR_DENIED. Errors return zero RDX and leave the queue/output unchanged. Reserved syscall arguments/record bytes must be zero. Timestamp precision depends on cooperative sampling; long unsampled intervals beyond a PM counter wrap cannot be reconstructed.
+
+Only r2 with INPUT permission reopens USB after the old runtime releases its arena borrow. Hosts/rings remain on the OS stack, callbacks are synchronous and never escape the non-returning guest path. WAIT polls a bounded USB step; halt/BME-off runs on exit/fault/reject and poll failure. Failed stop quarantines permanent memory; no viewer return/reuse is added. USB hub/control work may delay a deadline by one bounded poll (control requests have finite1s deadlines); WAIT is not a hard-real-time deadline. Stalled-clock watchdog counts consecutive nonadvancing samples, not all healthy iterations.
+
+Keyboard down/up includes HID usage/modifiers. Mouse-only sessions work without a keyboard. Relative X/Y/buttons use boot format; wheel is enabled only for the validated signed8 relative descriptor subset, otherwise boot mode supplies wheel0. Absolute usb-tablet is not converted. The current live keyboard/mouse Host (or mouse-only Host) is serviced; simultaneous mouse input on a separate third controller is not integrated. Overflow preserves64 older FIFO records then reports a saturated dropped count; consumers must reset held-state assumptions because lost clicks/motion are not reconstructed. Viewer mouse UI is excluded, gamepad production/Bluetooth is stage6, viewer return stage5.
+
+Build standalone C r2 with `python3 tools/check-sdk.py --c-only --abi-revision 2 --source tests/io-c.c --output build` (NOTE permissions default15; --permissions can restrict them). Rust: `python3 tools/build-rust.py --r2 --output build`. These use generated NOTE/types and the existing ELF checker. Rust uses pinned1.99.0/rust-src, custom static SSE2/no-red-zone target and rebuilt core/compiler_builtins; Bootstrap enables build-std/JSON target only. Never execute guest ELFs on the host. Separate SDK archives remain development-qualified; the Rust release gate stays closed pending remaining stage4/full acceptance.
+
+
+Stage1 v0.4.0 development: this C/r1 behavior is retained; Rust r1/r2 execution is covered above; viewer launch/return remains stage5. The drive now has DOCS and empty SETTINGS and README is the startup marker. See [distribution usage](distribution-usage.md).
 
 This guide is for people who want to write their own program, not only build the sample. Tool commands are in the [SDK reference](sdk.md); how the OS loads and runs the file is in [running an application](external-app.md); the exact numbers are in the [ABI ledger](application-abi.md). The ABI is **experimental candidate r1** and may change in a later version.
 
@@ -105,11 +118,24 @@ Validated on 2026-10-14 by temporarily replacing the actual sample, running `che
 
 ### 8. Not available in 0.3.0
 
-Rust programs (the Rust files in the repository are compile-only checks), input, files, timers, drawing commands, networking, returning to the viewer without reboot, more than one program per boot, and any ABI stability promise.
+r2 input, files, timers, drawing commands, networking, returning to the viewer without reboot, more than one program per boot, and any ABI stability promise.
 
 ## 日本語
 
-v0.4.0工程1：以下のC/r1動作を保持し、Rust実行/r2・viewer起動/復帰は後工程。媒体はDOCS/空SETTINGS/README起動markerへ変更。[配布利用](distribution-usage.md)参照。
+### 工程4 r2実接続到達点 —2026-10-15
+
+実験r2のTIME/WAIT/INPUTと相対USB boot mouseをC/Rust guestへ実接続しました。r1番号/NOTE受入と既定C buildは保持し、公開互換性は固定しません。[r2証拠](stage4-r2-0.4.0-progress.md)と[ABI台帳](application-abi.md)参照。全回帰・NUC5/Ryzen実機受入は未完です。
+
+Cはmusha_time(&ms)、musha_wait(timeout_ms,flags,&reason)、musha_input(&event)。Rust guestのtime()/wait(timeout_ms,input)/input()は所有値を返します。TIME権限2で単調なsample済みPM起動epoch ms、WAIT権限4で0–60000ms、flags0またはWAIT_INPUT1（入力権限8も必要）、結果0はtimeout/poll、1はpending入力です。INPUTは48byte LE record1個をコピー。空ERR_AGAIN、容量不足ERR_LIMIT、異常/非書込み範囲ERR_INVALID、権限無しERR_DENIED。エラー時RDX0でqueue/outputを変更しません。予約引数/record bytesはゼロ。時刻精度は協調sampleに依存し、PM counter周回より長くsampleしない経過時間は復元できません。
+
+r2かつINPUT権限の場合だけ、旧runtimeのarena借用終了後にUSBを再開します。Host/ringはOS stack上に保持し、同期callbackを非復帰guest経路の外へ持ち出しません。WAITは上限付きUSB1stepをpollし、exit/fault/reject/poll失敗時にhalt/BME停止。停止未確認でも永続メモリを隔離し、viewer復帰や再利用は追加しません。hub/control処理により期限が上限付き1poll分（control各1秒期限）遅れることがあり、hard realtime保証ではありません。clock watchdogは全反復数でなく時刻非進行の連続sample数を数えます。
+
+keyboard down/upはHID usage/modifier付き。keyboard無しmouse単独sessionも動作します。相対XY/buttonはboot形式、wheelは検証したsigned8相対descriptor部分形式だけ有効で、それ以外のboot modeはwheel0。絶対usb-tabletは変換しません。現live keyboard/mouse Hostまたはmouse単独Hostを処理し、別の第3controllerの同時mouse収集は未統合。overflowは古い64件を保持後、飽和drop数を通知します。失われたclick/移動は復元できないためconsumerは保持状態の前提をリセットします。viewer mouse UIは対象外、gamepad producer/Bluetoothは工程6、viewer復帰は工程5です。
+
+単独C r2 buildは `python3 tools/check-sdk.py --c-only --abi-revision 2 --source tests/io-c.c --output build`（NOTE権限は既定15、--permissionsで制限）。Rustは `python3 tools/build-rust.py --r2 --output build`。生成NOTE/型と既存ELF checkerを使います。Rustは固定1.99.0/rust-src、専用static SSE2/red-zone無しtarget、再構築core/compiler_builtinsで、Bootstrapはbuild-std/JSON target用だけ。guest ELFをhost実行しません。SDK archiveは分離した開発版で、Rust公開gateは工程4残件/全受入まで閉じています。
+
+
+v0.4.0工程1：以下のC/r1動作を保持し、Rust r1/r2実行は上記工程4に到達、viewer起動/復帰は工程5。媒体はDOCS/空SETTINGS/README起動markerへ変更。[配布利用](distribution-usage.md)参照。
 
 本書はサンプルをビルドするだけでなく、自分のプログラムを書きたい人向けの案内です。ツールのコマンドは[SDK リファレンス](sdk.md)、OS がファイルを読み込んで実行する手順は[アプリの実行](external-app.md)、正確な数値は[ABI 台帳](application-abi.md)にあります。ABI は**実験候補 r1** で、後続の版で変わる可能性があります。
 
@@ -212,4 +238,4 @@ int musha_main(const musha_start_info_v1 *info) {
 
 ### 8. 0.3.0 で使えないもの
 
-Rust のプログラム（リポジトリの Rust ファイルはコンパイル検査専用）、入力、ファイル、タイマー、描画命令、通信、再起動なしでのビューアー復帰、1 起動に 2 つ以上のプログラム、ABI の安定性の保証。
+r2入力、ファイル、タイマー、描画命令、通信、再起動なしでのビューアー復帰、1 起動に 2 つ以上のプログラム、ABI の安定性の保証。

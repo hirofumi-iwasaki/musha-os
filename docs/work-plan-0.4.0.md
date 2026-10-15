@@ -6,6 +6,8 @@ Status: owner-approved plan aligned to scope decisions, 2026-10-15. The [17-goal
 
 Owner addition2026-10-15 below supersedes the old CONFIG-clearing wording. The owner supplied the matching scope edit and approved recording it separately from documentation and diagnostic code. Stage3 is committed/pushed as `b745e47`; the following scope/documentation/diagnostic commits are approved locally, with no further push authorized. See [SETTINGS](settings.md), [device matrix](device-support.md) and [LAN plan](lan-plan-0.4.0.md).
 
+Stage4 has a [first Rust checkpoint](stage4-0.4.0-progress.md) and [implemented local r2 I/O/mouse checkpoint](stage4-r2-0.4.0-progress.md). [Full local regression](stage4-local-verification-0.4.0.md) passes; separate third-controller input collection and hardware acceptance remain open.
+
 ### Main sequence
 
 | Stage | Work/dependencies | Definition of done and added host/QEMU coverage | Required hardware |
@@ -44,6 +46,8 @@ The original documents/VERSION baseline was committed with owner approval. The o
 状態：所有者決定に合わせた承認済み計画、2026-10-15。[17目標の範囲](release-scope-0.4.0.md)を正とし、✔は提案ではなく決定です。工程1は `35545a6` でcommit済み。工程2 CONFIG/log/display/通常timingは `f2d3f30` でcommit済み。[全ローカル回帰](stage2-full-regression-0.4.0.md)と[先行検証](stage2-0.4.0-results.md)に記録し、実機・正式公開gateは未完です。[コード照合](scope-review-0.4.0.md)と[フォーマット媒体手順](formatted-media-boot-verification.md)を参照。公開配布物・タグと過去実機記録は保持。機器とキーは範囲末尾の基準機器表に従います。
 
 所有者追加判断2026-10-15は旧CONFIG消去記述を置換する。scope目標4/5/12の所有者改訂を保持し、文書・診断コードと別commitで記録する承認を得た。工程3は `b745e47` でcommit/push済み。後続のscope・文書・診断commitはローカル承認済みで、追加pushは未承認。[全回帰記録](stage3-0.4.0-progress.md)、[SETTINGS](settings.md)、[機器表](device-support.md)、[LAN計画](lan-plan-0.4.0.md)を参照。
+
+工程4は[初回Rust到達点](stage4-0.4.0-progress.md)から[r2 I/O・mouse実接続](stage4-r2-0.4.0-progress.md)へ進みました。[全ローカル回帰](stage4-local-verification-0.4.0.md)は合格し、別の第3controller入力収集・実機受入は未完です。
 
 ### 主工程
 

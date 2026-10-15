@@ -81,6 +81,8 @@ impl Pipe {
                 Some(&mut host.keyboard_saved),
                 None,
                 None,
+                host.mouse_pending,
+                Some(&mut host.mouse_saved),
                 None,
                 None,
             )
