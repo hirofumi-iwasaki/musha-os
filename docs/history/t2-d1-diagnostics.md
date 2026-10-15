@@ -37,7 +37,7 @@ QEMU専用debug/fault featureは実機ファイルへ含めない。
 既存FAT32 USBへのコピー用は`musha-os-fat32-files.zip`。
 USB更新時には既存EFIを別の場所へ退避し、ZIPの内容をUSBルートに配置する。
 既定64MiBの`musha-os.img`はQEMU用で、32GBの専用USBへraw書込みしない。
-詳しくは[USBビルド手順](test-usb-build.md)。このビルド処理は物理USBを書き換えない。
+詳しくは[USBビルド手順](../test-usb-build.md)。このビルド処理は物理USBを書き換えない。
 
 ## Hardware capture / 実機で取得するもの
 

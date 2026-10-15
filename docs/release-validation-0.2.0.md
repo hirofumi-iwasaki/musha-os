@@ -14,7 +14,7 @@ Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new ca
 rc1の実USB配置後、MacBook Pro 2018でビューアー起動とFAT32認識を確認（IMG_7583.HEIC）。
 USBキーボード未接続のためファイル操作は未確認。セッション終了時の0 filesは一覧消去後の表示で、媒体が空とは判定しません。
 キーボード未検出の専用案内を追加し、viewer 7試験と通常UEFIビルドが成功しました。
-以前の配布統合時の224ホスト試験・14グループの回帰結果は[配布検証記録](distribution-validation.md)を参照。
+以前の配布統合時の224ホスト試験・14グループの回帰結果は[配布検証記録](history/distribution-validation.md)を参照。
 実機操作・exFAT・最終EFI再試験・新配備ツールの実USB検証を残した開発版公開です。
 以下の「未公開」「USB未更新」は各検証時点の履歴です。公開時の範囲は[公開ノート](release-notes-0.2.0.md)を参照。
 

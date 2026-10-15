@@ -12,7 +12,7 @@ the width, below boot status. Diagnostic page timing is unchanged.
 The viewer preserves 80 columns and 28 rows by reducing scale when needed;
 its cell proportions, line pitch and margins use the same metrics.
 GOP maximum-mode selection is unchanged. Historical photographs are not edited.
-See [hardware diagnostics](hardware-diagnostics.md).
+See [hardware diagnostics](../hardware-diagnostics.md).
 
 ## 日本語
 
@@ -24,4 +24,4 @@ See [hardware diagnostics](hardware-diagnostics.md).
 全幅を使います。診断ページの切替周期は変更しません。
 ビューアーは80列・28行を守るため必要に応じ倍率を抑え、セル比率・行間・余白は
 共通メトリクスを使います。GOP最大モード選択は不変で、過去の写真は変更しません。
-[ハードウェア診断](hardware-diagnostics.md)を参照してください。
+[ハードウェア診断](../hardware-diagnostics.md)を参照してください。

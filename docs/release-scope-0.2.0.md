@@ -69,8 +69,8 @@ exFATとファイル表示の必須目標を優先する。実機確認待ちや
 ホスト上の模擬応答・合成HID・単体試験だけで「内蔵キーボード対応済み」とはしない。
 
 未達の場合は通常起動経路で有効化せず、公開資料に未対応と記載する。
-次の実機作業は [T2-D1の情報採取](t2-d1-diagnostics.md)。通信・descriptor採取はその後の段階とする。
-[調査資料](macbook-t2-keyboard-0.2.0-research.md)、[登録モデルとメモリー測定](bce-registration-memory.md)を引き継ぐ。
+次の実機作業は [T2-D1の情報採取](history/t2-d1-diagnostics.md)。通信・descriptor採取はその後の段階とする。
+[調査資料](history/macbook-t2-keyboard-0.2.0-research.md)、[登録モデルとメモリー測定](history/bce-registration-memory.md)を引き継ぐ。
 
 ## 今回の必須範囲から外すもの
 

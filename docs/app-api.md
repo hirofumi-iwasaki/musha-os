@@ -1,5 +1,7 @@
 # Initial Rust application API contract
 
+Status: current
+
 ## English
 
 Internal Rust API 5. For the external ABI, see [application-abi.md](application-abi.md).
@@ -65,7 +67,7 @@ consumer state; each phase emits modifiers first. Recovery timestamps use curren
 context time. Drain until None. Intermediate taps, text and original timing are
 not recoverable. `lost_key_events()` counts coalesced events cumulatively with
 saturation; applications can cancel history-dependent operations when it changes.
-See [recovery and validation](input-prehardware-validation.md).
+See [recovery and validation](history/input-prehardware-validation.md).
 `push_key()`, `set_input_active()`, and `advance()` are for the statically linked runtime.
 The diagnostic application can access `input_active()` and `screen_size()`.
 The runtime validates reports before enqueuing events; the application consumes them on the next step.
@@ -137,7 +139,7 @@ FIFO読出し後に解放→押下の順（それぞれ修飾キー優先）で�
 復元イベントは現在のcontext時刻を用いる。Noneまで読み出すこと。
 途中で失われたタップ・文字・元の時刻は復元できない。
 `lost_key_events()` は集約した件数を飽和加算し、アプリは変化を検出して
-入力履歴に依存する操作を取り消せる。[復元契約と検証](input-prehardware-validation.md)を参照。
+入力履歴に依存する操作を取り消せる。[復元契約と検証](history/input-prehardware-validation.md)を参照。
 `push_key()`、`set_input_active()`、`advance()` は静的リンクランタイム用。
 `input_active()` と `screen_size()` は診断アプリから参照できる。
 ランタイムは報告を検査してからイベントを入れ、次のstepでアプリが消費する。

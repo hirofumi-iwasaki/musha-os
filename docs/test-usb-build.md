@@ -1,5 +1,18 @@
 # USB build entry points / USBビルドの入口
 
+Status: current
+
+## English
+
+Use tools/prepare-release.py through [distribution usage](distribution-usage.md) for formal release/preview artifacts under [distribution policy](release-distribution-policy.md). tools/build-usb.py is the separate development/T2 diagnostic entry point; by default it produces files only, without an image or image hashing.
+
+Build-only examples: `python3 tools/build-usb.py --output-dir out/test-usb`; add `--with-image` only for a QEMU image; use `--t2-diagnostics --output-dir out/t2-diagnostics` for read-only T2-D1 evidence. Output must be new; builds use a separate temporary target directory. Size arguments require --with-image and concern virtual-image checks only. These commands do not update physical USB.
+
+Use [current viewer guide](file-viewer.md) rather than historical H19 screens. T2 internal input is unimplemented; [T2-D1](history/t2-d1-diagnostics.md) is an independent diagnostic. The older Japanese version references below describe their recorded stage.
+
+## 日本語
+
+
 正式配布・次版プレビューは[配布手順](distribution-usage.md)の
 `tools/prepare-release.py`を使用してください。[配布方針](release-distribution-policy.md)に従い、
 初回用小型イメージとmanifest付き更新ZIPを同一通常EFIから生成します。
@@ -22,4 +35,4 @@ python3 tools/build-usb.py --output-dir out/t2-diagnostics --t2-diagnostics
 
 通常v0.2.0は[ファイルビューア](file-viewer.md)です。↑↓・Enter・Page Up/Down・Esc・Qで操作します。
 旧H19の診断画面とは区別してください。
-T2内蔵入力は未実装で、[T2-D1情報採取](t2-d1-diagnostics.md)は独立した調査です。
+T2内蔵入力は未実装で、[T2-D1情報採取](history/t2-d1-diagnostics.md)は独立した調査です。

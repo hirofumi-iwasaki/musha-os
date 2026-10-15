@@ -98,11 +98,11 @@ IMG_7494ではKEYBOARD READY、USB READ OK、FAT32 READ OK、APP FILE READ OKを
 
 H13: IMG_7470/7472/7473/7474。H14: IMG_7476〜IMG_7484。H15: IMG_7485〜IMG_7493。H16: IMG_7495〜IMG_7503。起動・表示は継続しているが、USB入力・ストレージは未成功。
 
-H16のIMG_7502は、復旧候補7D00の資源検査でpeer segment 0、01:00.0、BAR2がDESCRIPTOR TYPEで拒否されたことを示す。rawの先頭wordからUEFI記述の種別はI/Oと読み取れるが、config側はmemoryとして扱われていた。真の資源重複や不一致の原因はまだ確定していない。機種固有例外で拒否を回避せず、H17で全BAR値・取得前後・PCIIOとCF8/CFCの照合を追加した。[H17設計と実装記録](pci-h17-bar-consistency-inspection-plan.md)。
+H16のIMG_7502は、復旧候補7D00の資源検査でpeer segment 0、01:00.0、BAR2がDESCRIPTOR TYPEで拒否されたことを示す。rawの先頭wordからUEFI記述の種別はI/Oと読み取れるが、config側はmemoryとして扱われていた。真の資源重複や不一致の原因はまだ確定していない。機種固有例外で拒否を回避せず、H17で全BAR値・取得前後・PCIIOとCF8/CFCの照合を追加した。[H17設計と実装記録](history/pci-h17-bar-consistency-inspection-plan.md)。
 
 ### MacBook Pro H17（2026-10-10受領）
 
-IMG_7504〜IMG_7515で全11ページを確認（9/11は2枚）。起動、runtime/arena/timer、診断セッション完了を確認。USB NO KBD/STORAGEは継続。詳細は[H17結果記録](pci-h17-hardware-results.md)を参照。
+IMG_7504〜IMG_7515で全11ページを確認（9/11は2枚）。起動、runtime/arena/timer、診断セッション完了を確認。USB NO KBD/STORAGEは継続。詳細は[H17結果記録](history/pci-h17-hardware-results.md)を参照。
 
 peer 01:00.0のBAR0とBAR2は64bitメモリーBAR、BAR1とBAR3は上位32bit。BAR4はI/O base 0x3000。GetBarAttributesに2を渡した結果はI/O base 0x3000、length 0x100であり、設定領域のBAR4と対応する。BEFORE/AFTER/REPEATは一致し、CF8/CFCの10項目も一致。共通処理が設定領域スロット番号とUEFI資源番号を混同していることが拒否の原因と判断した。修正後に別の安全条件で拒否される可能性があり、MacのUSB復旧成功は未確認。実際の資源重複はこの結果から確定できない。
 
@@ -125,15 +125,15 @@ H17のplatform単体検査22件、通常UEFIビルド、H17 qemu-debug版の単�
 
 ## 前回媒体 H18（2026-10-10）
 
-共通BAR番号対応を修正し、platform 23件と単一・複数USBコントローラーのQEMU回帰検査が成功。通常版成果物を作成。H18のMac実機全11ページを受領。起動・診断完了を確認したがUSBは未成功。専用SanDiskの旧H17を保存してH18通常版へ更新。読み取り専用再マウント後の全byte一致、GPT/FAT32検査、MUSHA.TXT保持、安全な取り外しを確認。EFI 295,936byte、SHA-256 `34e3a982244e14cca2976b3353170d7501f539b113cd6b8b4bce9501fe3adac4`。完了記録: `out/physical-usb-h18-minimal-20261010/verification.json`。H17は前回媒体の記録。[設計・検証記録](pci-h18-bar-index-plan.md)。
+共通BAR番号対応を修正し、platform 23件と単一・複数USBコントローラーのQEMU回帰検査が成功。通常版成果物を作成。H18のMac実機全11ページを受領。起動・診断完了を確認したがUSBは未成功。専用SanDiskの旧H17を保存してH18通常版へ更新。読み取り専用再マウント後の全byte一致、GPT/FAT32検査、MUSHA.TXT保持、安全な取り外しを確認。EFI 295,936byte、SHA-256 `34e3a982244e14cca2976b3353170d7501f539b113cd6b8b4bce9501fe3adac4`。完了記録: `out/physical-usb-h18-minimal-20261010/verification.json`。H17は前回媒体の記録。[設計・検証記録](history/pci-h18-bar-index-plan.md)。
 
 ## Mac H18実機結果
 
-IMG_7516〜IMG_7526の全11ページを確認。旧01:00.0の種別拒否を通過し、00:1f.5 / BAR0のBAR BASE MISMATCHへ進んだ。設定値0xFE010000に対し記述基底は0x81617000、長さ0x1000。取得前後・追加読取りとCF8/CFCは一致し、原因の詳細は未確定。USB復旧は拒否を維持し未成功。[詳細と次の検査設計](pci-h18-hardware-results.md)。
+IMG_7516〜IMG_7526の全11ページを確認。旧01:00.0の種別拒否を通過し、00:1f.5 / BAR0のBAR BASE MISMATCHへ進んだ。設定値0xFE010000に対し記述基底は0x81617000、長さ0x1000。取得前後・追加読取りとCF8/CFCは一致し、原因の詳細は未確定。USB復旧は拒否を維持し未成功。[詳細と次の検査設計](history/pci-h18-hardware-results.md)。
 
 ## H19実装・回帰検証（2026-10-10）
 
-H18の直接の拒否原因は、USB以外の00:1f.5（8086:A324、Intel SPI制御器）の設定BARとUEFI記述の不一致。根本の不一致発生理由は未確定。復旧後のUSBストレージ読出しは後述のH19実機で成功。利用者がリスクを理解して明示承認した後、両範囲の非重複・設定照合・復旧直前再確認を条件とするH19を実装した。platform全27テスト、UEFI通常版ビルド、単一・複数xHCIでのQEMU入力・GPT/FAT32読出し回帰試験に成功。H19実機のストレージ読出しと外付けLenovo入力・Esc終了が成功。[詳細](pci-h19-peer-resource-plan.md)。
+H18の直接の拒否原因は、USB以外の00:1f.5（8086:A324、Intel SPI制御器）の設定BARとUEFI記述の不一致。根本の不一致発生理由は未確定。復旧後のUSBストレージ読出しは後述のH19実機で成功。利用者がリスクを理解して明示承認した後、両範囲の非重複・設定照合・復旧直前再確認を条件とするH19を実装した。platform全27テスト、UEFI通常版ビルド、単一・複数xHCIでのQEMU入力・GPT/FAT32読出し回帰試験に成功。H19実機のストレージ読出しと外付けLenovo入力・Esc終了が成功。[詳細](history/pci-h19-peer-resource-plan.md)。
 
 ## H19専用USB更新完了（2026-10-10）
 
@@ -141,7 +141,7 @@ H18の直接の拒否原因は、USB以外の00:1f.5（8086:A324、Intel SPI制�
 
 ## MacBook Pro 2018 H19初回実機結果（外付け未接続）
 
-IMG_7527〜IMG_7536の全10ページを確認。PCI RECOVERED 7D00、SanDisk 0781:55A9のSuperSpeed列挙、USB READ OK、FAT32 READ OK、APP FILE READ OKを確認。MUSHA.TXTは16 byte、ハッシュ9A42A948C590F507。C2はK0 S1、C1は起動担当外のため復旧せずMEMORY DISABLED、C0はK0 S0。USB読出しを阻んでいた条件への対処は実機で有効と確認できたが、キーボード入力と反復安定性は未確認。[H19実機詳細](pci-h19-hardware-results.md)。
+IMG_7527〜IMG_7536の全10ページを確認。PCI RECOVERED 7D00、SanDisk 0781:55A9のSuperSpeed列挙、USB READ OK、FAT32 READ OK、APP FILE READ OKを確認。MUSHA.TXTは16 byte、ハッシュ9A42A948C590F507。C2はK0 S1、C1は起動担当外のため復旧せずMEMORY DISABLED、C0はK0 S0。USB読出しを阻んでいた条件への対処は実機で有効と確認できたが、キーボード入力と反復安定性は未確認。[H19実機詳細](history/pci-h19-hardware-results.md)。
 
 利用者追加回答: H19実行時は本体キーボードのみで、Lenovo等の外付けキーボードは未接続。今回のK0は外付けUSBキーボードの動作不良の証拠ではない。内蔵キーボード対応は別の確認事項。
 
@@ -149,7 +149,7 @@ IMG_7527〜IMG_7536の全10ページを確認。PCI RECOVERED 7D00、SanDisk 078
 
 IMG_7540〜IMG_7552の13枚で全12診断ページを確認。利用者がLenovoキーボードのA、Shift+A、Esc動作を報告。C0/00A0/root02に17EF:6009を認識しINPUT DONE K1 S0、KEY CODE 29、APP COMPLETEを表示。C2/7D00/root03のSanDiskでは、PCI復旧、USB/FAT32/MUSHA.TXT 16 byteのアプリ読出しが今回も成功。異なるコントローラーのストレージと外付け入力を同一セッションで使用し終了まで確認した。
 
-この構成でのUSB読出し・外付け入力の復旧目標は達成。C1/0700のMEMORY DISABLEDは復旧対象外の制御器の状態で、上記成功を否定しない。全ポート対応や内蔵キーボード対応、反復・長時間安定性まで確認済みとは記載しない。[証拠・接続経路・残件](pci-h19-hardware-results.md)。
+この構成でのUSB読出し・外付け入力の復旧目標は達成。C1/0700のMEMORY DISABLEDは復旧対象外の制御器の状態で、上記成功を否定しない。全ポート対応や内蔵キーボード対応、反復・長時間安定性まで確認済みとは記載しない。[証拠・接続経路・残件](history/pci-h19-hardware-results.md)。
 
 ## 2026-10-15 Ryzen Realtek identification prerequisite / Realtek特定の前提
 

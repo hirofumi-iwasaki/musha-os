@@ -1,5 +1,7 @@
 # ACPI handoff and time source
 
+Status: current
+
 ## English
 
 ### Boot contract

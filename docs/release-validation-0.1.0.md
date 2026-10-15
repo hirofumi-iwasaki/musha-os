@@ -25,7 +25,7 @@ Physical H19 EFI: 302080 bytes, SHA-256
 The MacBook Pro 2018 user reported A, Shift+A and Esc working on Lenovo 17EF:6009.
 Photographs IMG_7540–IMG_7552 show input on C0, SanDisk 0781:55A9 reads on C2,
 MUSHA.TXT length 16, hash `9A42A948C590F507`, and session completion.
-See [H19 hardware evidence](pci-h19-hardware-results.md).
+See [H19 hardware evidence](history/pci-h19-hardware-results.md).
 This does not claim that a newly timestamped release file was independently booted on hardware.
 
 ## Publication gates and durable evidence

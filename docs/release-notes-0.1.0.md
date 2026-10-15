@@ -18,7 +18,7 @@ runtime, with C lwIP and minimal assembly. The diagnostic application is statica
 
 Physical evidence: SanDisk 0781:55A9, Lenovo 17EF:6009, A / Shift+A / Esc, and
 16-byte MUSHA.TXT with hash 9A42A948C590F507. See [validation](release-validation-0.1.0.md)
-and [H19 results](pci-h19-hardware-results.md). Ryzen H4 results are historical,
+and [H19 results](history/pci-h19-hardware-results.md). Ryzen H4 results are historical,
 not a claim of H19 revalidation. [Final scope](release-scope-0.1.0.md) replaces the original full NUC acceptance plan.
 
 Known limits: Mac internal keyboard not validated; one selected keyboard only;

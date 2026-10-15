@@ -58,7 +58,7 @@ git diff --check
 回帰run.shは前工程の14グループの実行スクリプトを新しいログ先へ複製したもの。
 リポジトリの恒久的な実行定義はrelease-candidate.ymlを参照。
 正式候補はcleanな固定commitで--allow-dirtyを外す。
-初回仮想像・通常更新の具体コマンドは[配備手順](distribution-usage.md)を参照。
+初回仮想像・通常更新の具体コマンドは[配備手順](../distribution-usage.md)を参照。
 この作業中に実デバイス用コマンドやdraft-release.pyの実APIを呼んでいない。
 
 ## 試験結果

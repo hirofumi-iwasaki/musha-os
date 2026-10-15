@@ -1,5 +1,7 @@
 # Page tables, reserved regions, and RAM arena
 
+Status: current
+
 ## English
 
 Implemented on 2026-10-08. Targets the BSP at ring 0, with interrupts disabled and four-level paging.

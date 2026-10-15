@@ -1,0 +1,288 @@
+{
+  "status": "18 moved; 9 protected README-reference moves held",
+  "moves": [
+    {
+      "old": "docs/pci-h14-recovery-plan.md",
+      "new": "docs/history/pci-h14-recovery-plan.md",
+      "original_sha256": "73e20c3763ba66abf75e30057fd8ccdfa2bab6216ce686bc59bb8a41d9074ab2",
+      "new_sha256": "73e20c3763ba66abf75e30057fd8ccdfa2bab6216ce686bc59bb8a41d9074ab2",
+      "link_replacements": [],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/distribution-validation.md",
+      "new": "docs/history/distribution-validation.md",
+      "original_sha256": "7c8b89609f7694ce0f41ecd6a6b0e19fc037611c3dc89be3c4e9ba124f1aae95",
+      "new_sha256": "c7e87d1897615e50597c26938940e87879482a12b20ae810ca154f957070dde6",
+      "link_replacements": [
+        [
+          "distribution-usage.md",
+          "../distribution-usage.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/t2-host-model.md",
+      "new": "docs/history/t2-host-model.md",
+      "original_sha256": "36989e61a1e467f336dc31960cd16194f435b4c0a887a5a13f056cfe4008497c",
+      "new_sha256": "36989e61a1e467f336dc31960cd16194f435b4c0a887a5a13f056cfe4008497c",
+      "link_replacements": [
+        [
+          "bce-registration-memory.md",
+          "bce-registration-memory.md"
+        ],
+        [
+          "hid-bce-prehardware.md",
+          "hid-bce-prehardware.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/pci-h18-bar-index-plan.md",
+      "new": "docs/history/pci-h18-bar-index-plan.md",
+      "original_sha256": "eb90a29bf593e57b7d816b911c49f8a77b0deca75fc16f80fd8026bb53aa385e",
+      "new_sha256": "eb90a29bf593e57b7d816b911c49f8a77b0deca75fc16f80fd8026bb53aa385e",
+      "link_replacements": [
+        [
+          "pci-h18-hardware-results.md",
+          "pci-h18-hardware-results.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/mi68-display.md",
+      "new": "docs/history/mi68-display.md",
+      "original_sha256": "3160cfe88e54c3fffda3c619bad3ea70da2c32960f27ceee61bcfe6a50a91f4d",
+      "new_sha256": "b99b39c1ad41a1c9cfabc7e42b4e992a101815317e72be77912e463cb3944e83",
+      "link_replacements": [
+        [
+          "hardware-diagnostics.md",
+          "../hardware-diagnostics.md"
+        ],
+        [
+          "hardware-diagnostics.md",
+          "../hardware-diagnostics.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/pci-h19-peer-resource-plan.md",
+      "new": "docs/history/pci-h19-peer-resource-plan.md",
+      "original_sha256": "f30ac93340f774ab1af5c518f348e74a41434cc66d5943d8bfce95b5cec7b072",
+      "new_sha256": "f30ac93340f774ab1af5c518f348e74a41434cc66d5943d8bfce95b5cec7b072",
+      "link_replacements": [
+        [
+          "pci-h19-hardware-results.md",
+          "pci-h19-hardware-results.md"
+        ],
+        [
+          "pci-h19-hardware-results.md",
+          "pci-h19-hardware-results.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/macbook-t2-keyboard-0.2.0-research.md",
+      "new": "docs/history/macbook-t2-keyboard-0.2.0-research.md",
+      "original_sha256": "ca5b4edccafde2ecc84e693194f5506c28197b55226c2b52e7ea0d241d2a5d42",
+      "new_sha256": "6d2d951cbca5a4b67d85b06fd854acb8f9597a8e11104eab38712f2f763a5ddc",
+      "link_replacements": [
+        [
+          "release-scope-0.2.0.md",
+          "../release-scope-0.2.0.md"
+        ],
+        [
+          "t2-d1-diagnostics.md",
+          "t2-d1-diagnostics.md"
+        ],
+        [
+          "t2-host-model.md",
+          "t2-host-model.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/t2-d1-diagnostics.md",
+      "new": "docs/history/t2-d1-diagnostics.md",
+      "original_sha256": "13240c43e33802c2158fec011734175dea96ed38dea7542fa5b329f3295c3f92",
+      "new_sha256": "93beb44f82c1ea97a2d153e9f32d25a3c1f0ca50e846903df026881f7a9c62f9",
+      "link_replacements": [
+        [
+          "macbook-t2-keyboard-0.2.0-research.md",
+          "macbook-t2-keyboard-0.2.0-research.md"
+        ],
+        [
+          "test-usb-build.md",
+          "../test-usb-build.md"
+        ],
+        [
+          "input-prehardware-validation.md",
+          "input-prehardware-validation.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/pci-h16-resource-parser-plan.md",
+      "new": "docs/history/pci-h16-resource-parser-plan.md",
+      "original_sha256": "29a4de6f2993e2a1bd34a042575bbb2b751a78067cc484c1a38311f1ad127672",
+      "new_sha256": "29a4de6f2993e2a1bd34a042575bbb2b751a78067cc484c1a38311f1ad127672",
+      "link_replacements": [],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/pci-h19-hardware-results.md",
+      "new": "docs/history/pci-h19-hardware-results.md",
+      "original_sha256": "9266f38911ef794825225b3da829a521e5a9c93ecd82434b58096813da5dc1df",
+      "new_sha256": "9266f38911ef794825225b3da829a521e5a9c93ecd82434b58096813da5dc1df",
+      "link_replacements": [],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/pci-h18-hardware-results.md",
+      "new": "docs/history/pci-h18-hardware-results.md",
+      "original_sha256": "a533b4e74a8b765db520c1b96b64ae60bd1c18ef112eed70bbe464208c9d3c58",
+      "new_sha256": "a533b4e74a8b765db520c1b96b64ae60bd1c18ef112eed70bbe464208c9d3c58",
+      "link_replacements": [
+        [
+          "pci-h19-peer-resource-plan.md",
+          "pci-h19-peer-resource-plan.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/pci-h17-bar-consistency-inspection-plan.md",
+      "new": "docs/history/pci-h17-bar-consistency-inspection-plan.md",
+      "original_sha256": "c7a6dc1800b26a4833da89cf9cc5163a0a40be640b6efde160eff064c2a24014",
+      "new_sha256": "c7a6dc1800b26a4833da89cf9cc5163a0a40be640b6efde160eff064c2a24014",
+      "link_replacements": [
+        [
+          "pci-h16-resource-parser-plan.md",
+          "pci-h16-resource-parser-plan.md"
+        ],
+        [
+          "pci-h14-recovery-plan.md",
+          "pci-h14-recovery-plan.md"
+        ],
+        [
+          "pci-h17-hardware-results.md",
+          "pci-h17-hardware-results.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/pci-h15-resource-evidence-plan.md",
+      "new": "docs/history/pci-h15-resource-evidence-plan.md",
+      "original_sha256": "3e902d2df04a07727330ceb9a2d6045fc051882727f38725d5361f2b92984e1e",
+      "new_sha256": "3e902d2df04a07727330ceb9a2d6045fc051882727f38725d5361f2b92984e1e",
+      "link_replacements": [],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/bce-registration-memory.md",
+      "new": "docs/history/bce-registration-memory.md",
+      "original_sha256": "c1312bd217a3b63aafc987d58a62d6f7ba00b6f09cd882a957b43a257f284307",
+      "new_sha256": "c1312bd217a3b63aafc987d58a62d6f7ba00b6f09cd882a957b43a257f284307",
+      "link_replacements": [
+        [
+          "t2-d1-diagnostics.md",
+          "t2-d1-diagnostics.md"
+        ],
+        [
+          "input-prehardware-validation.md",
+          "input-prehardware-validation.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/mac-usb-next-steps.md",
+      "new": "docs/history/mac-usb-next-steps.md",
+      "original_sha256": "f1a7489dfd088e9b42c56769896b6fd66ee8c404c0b9389cce43e336f5be1af9",
+      "new_sha256": "f1a7489dfd088e9b42c56769896b6fd66ee8c404c0b9389cce43e336f5be1af9",
+      "link_replacements": [],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/input-prehardware-validation.md",
+      "new": "docs/history/input-prehardware-validation.md",
+      "original_sha256": "2368fa736120fe889f3c2759e202970e177de9ee26a3be1c69478e828202dc9d",
+      "new_sha256": "2368fa736120fe889f3c2759e202970e177de9ee26a3be1c69478e828202dc9d",
+      "link_replacements": [
+        [
+          "t2-d1-diagnostics.md",
+          "t2-d1-diagnostics.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/pci-h17-hardware-results.md",
+      "new": "docs/history/pci-h17-hardware-results.md",
+      "original_sha256": "fed373ab499d6132a84893c86040c6452cde362d57c7b39c682752d94db1111e",
+      "new_sha256": "fed373ab499d6132a84893c86040c6452cde362d57c7b39c682752d94db1111e",
+      "link_replacements": [],
+      "prose_equal_ignoring_markdown_destinations": true
+    },
+    {
+      "old": "docs/hid-bce-prehardware.md",
+      "new": "docs/history/hid-bce-prehardware.md",
+      "original_sha256": "c27bd2f0c6857b8a0ca930106b3e841268b854e06c5212f498e0f3a67ac49e63",
+      "new_sha256": "c27bd2f0c6857b8a0ca930106b3e841268b854e06c5212f498e0f3a67ac49e63",
+      "link_replacements": [
+        [
+          "input-prehardware-validation.md",
+          "input-prehardware-validation.md"
+        ],
+        [
+          "bce-registration-memory.md",
+          "bce-registration-memory.md"
+        ]
+      ],
+      "prose_equal_ignoring_markdown_destinations": true
+    }
+  ],
+  "updated_references": [
+    "docs/hardware-verification-status.md",
+    "docs/mac-storage-t2-stages-0.4.0.md",
+    "docs/release-validation-0.2.0.md",
+    "docs/release-notes-0.1.0.md",
+    "docs/README.md",
+    "docs/pci.md",
+    "docs/test-usb-build.md",
+    "docs/release-validation-0.1.0.md",
+    "docs/app-api.md",
+    "docs/device-support.md",
+    "docs/release-scope-0.2.0.md"
+  ],
+  "protected_sha256": {
+    "README.md": "a6855b328f5c7ec5611f308d92f746a93c3158b814f2071cd987f7935d1368da",
+    "docs/release-scope-0.4.0.md": "80f931a53c898b3e41dd899908794559c15ac40de0e359eed909e8a95bef8a61",
+    "docs/release-scope-0.5.0.md": "7e5c37e7d492ae5b15fc9c8d0b40561c5a4693715852759b43982731b11feeb2",
+    "docs/no-shell-policy.md": "296eb82befb74f041b002db632c5bb4574fc1aae581aeb49ced0c237a172a03f",
+    "docs/scenario-games-godot.md": "c315aaf365011903e644d747fde146127096c756ead755baba7495dc59365672",
+    "docs/lan-plan-0.4.0.md": "7f6e0e5cabccca5a9234899119787b72d1bb428552cfca482c15480c14774bde",
+    "docs/stage6-0.4.0-progress.md": "85efe4bac4f8824073d8a9882cb02d22fd868555bdbfc924865f20d4db0dddc2",
+    "docs/third-party.md": "28da3d4369324ef9f6fe6e083ee14efd63e967bd24735eaeffa5485f34fc49fb",
+    "docs/i218-network-0.4.0-progress.md": "a2e140a1118fd9e681b9ab69c204bb11d2852b296e5d98268c844fd9498fde67"
+  },
+  "held": [
+    "docs/ryzen-h4-hardware-results.md",
+    "docs/mac-memory-diagnostics.md",
+    "docs/usb-h3-diagnostics-plan.md",
+    "docs/acpi-timer-diagnostics-plan.md",
+    "docs/mi68-preparation-results.md",
+    "docs/mi68-release-preparation.md",
+    "docs/pre-hardware-work-plan.md",
+    "docs/usb-controller-diagnosis.md",
+    "docs/usb-multi-controller-hub-plan.md"
+  ]
+}

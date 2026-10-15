@@ -1,5 +1,7 @@
 # SETTINGS files / 設定ファイル
 
+Status: current
+
 ## English
 
 This describes the current v0.4.0 development implementation, not completed physical or Bluetooth acceptance. See [startup configuration](startup-configuration.md), [stage3 evidence](stage3-0.4.0-progress.md) and [work plan](work-plan-0.4.0.md).

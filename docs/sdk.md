@@ -1,5 +1,7 @@
 # C SDK for Musha-OS 0.3.0 candidates
 
+Status: current
+
 ## English
 
 ### Stage4 r2 runtime checkpoint —2026-10-15

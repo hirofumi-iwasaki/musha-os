@@ -1,5 +1,18 @@
 # macOS USB installation and updates / macOSのUSB配備
 
+Status: current
+
+## English
+
+The verified historical route places EFI/BOOT/BOOTX64.EFI on an existing Musha-OS FAT32 volume. H19 file replacement/read-back evidence is not acceptance of the newer updater or every candidate. See [hardware evidence](hardware-verification-status.md).
+
+For the next-version tools follow [usage and recovery](distribution-usage.md) and [distribution policy](release-distribution-policy.md). Identify the external physical device/model/capacity/connection with diskutil on every connection; never reuse an old disk number. Inspect the updater dry-run, volume UUID and file changes before any separately authorized apply. Updates use changed files, host backup, temporary placement, synchronization and verification; no full-capacity image/hash scan or reformat-on-failure. Reconnect and dry-run to verify all payload is skipped.
+
+Initial physical-device writing is not supplied; the 64MiB image is a virtual recovery/development artifact, not a raw install onto a large USB. UEFI x64/GOP/supported xHCI/external keyboard and firmware permitting unsigned EFI are required. Current viewer operations and version-specific acceptance are described in [viewer](file-viewer.md) and the evidence records. This documentation pass performs no physical USB operation.
+
+## 日本語
+
+
 ## Current verified route / 現在の確認済み経路
 
 既存のMusha-OS FAT32ボリュームへEFI/BOOT/BOOTX64.EFIを配置する経路を維持します。

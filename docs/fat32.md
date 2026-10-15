@@ -1,5 +1,7 @@
 # Initial read-only FAT32 implementation
 
+Status: current
+
 ## English
 
 ### Supported formats

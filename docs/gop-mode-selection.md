@@ -1,5 +1,7 @@
 # GOP mode selection / GOP モード選択
 
+Status: current
+
 ## English
 
 Before framebuffer capture, memory-map acquisition, and `ExitBootServices`, the
