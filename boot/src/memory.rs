@@ -291,11 +291,12 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             }
         }
         crate::diagnostics::set(10, format_args!("MEM CHECK MMIO"));
-        let mut mmio = [None; crate::pci::MAX_CONTROLLERS + 2];
+        let mut mmio = [None; crate::pci::MAX_CONTROLLERS + 3];
         for (index, controller) in info.xhcis.entries[..info.xhcis.count]
             .iter()
             .chain(core::iter::once(&info.nic))
             .chain(core::iter::once(&info.nic_flash))
+            .chain(core::iter::once(&info.realtek_diag.controller))
             .enumerate()
         {
             if controller.bytes == 0 {
@@ -308,6 +309,7 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
                     index, controller.base, controller.bytes
                 ),
             );
+            let optional = index == info.xhcis.count + 2;
             let range = Range::new(controller.base, controller.bytes)?;
             if range.start % PAGE != 0
                 || range.end % PAGE != 0
@@ -315,13 +317,24 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
                 || reserved.iter().any(|r| r.overlaps(range))
                 || mmio.iter().flatten().any(|r: &Range| r.overlaps(range))
             {
+                if optional {
+                    continue;
+                }
                 return Err(Error::Overlap);
             }
+            let mut valid = true;
             for i in 0..map.count() {
                 let region = map.region(i)?;
                 if range.overlaps(region.range) && !matches!(region.kind, 0 | 11 | 12) {
+                    if optional {
+                        valid = false;
+                        break;
+                    }
                     return Err(Error::Overlap);
                 }
+            }
+            if !valid {
+                continue;
             }
             mmio[index] = Some(range);
         }
@@ -407,8 +420,11 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         tables.map(reserved[7], true, false, tables.uc)?;
         tables.map(reserved[8], true, false, tables.uc)?;
         tables.map(arena, true, false, tables.wb)?;
+        let realtek_mapped = mmio[info.xhcis.count + 2].is_some();
         for range in mmio.into_iter().flatten() {
-            tables.map(range, true, false, tables.uc)?;
+            let diagnostic_readonly =
+                realtek_mapped && range.start == info.realtek_diag.controller.base;
+            tables.map(range, !diagnostic_readonly, false, tables.uc)?;
         }
         // No global mappings survive from firmware. Preserve MTRR and PAT values.
         let efer = rdmsr(0xc0000080);
@@ -427,6 +443,9 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         crate::diagnostics::set(10, format_args!("MEM CHECK ACTIVE CR3"));
         if active != tables.base {
             return Err(Error::Invalid);
+        }
+        if realtek_mapped {
+            crate::pci::realtek::mapped();
         }
         {
             core::ptr::addr_of_mut!(PROBE_TABLES).write(Some(tables));

@@ -97,11 +97,22 @@ struct NetworkRegisters<'a> {
     c: pci::Controller,
     flash: pci::Controller,
     region: Option<i218::flash::Region>,
+    budget: i218::budget::Budget,
     time: &'a mut acpi::Time,
 }
 #[cfg(feature = "i218-network")]
 impl NetworkRegisters<'_> {
-    fn pointer(&self, c: pci::Controller, offset: usize, width: usize) -> Result<*mut u8, Error> {
+    fn check(&mut self, us: u32) -> Result<(), Error> {
+        let now = self.time.now().map_err(|_| Error::Clock)?;
+        self.budget.check(now, us)
+    }
+    fn pointer(
+        &mut self,
+        c: pci::Controller,
+        offset: usize,
+        width: usize,
+    ) -> Result<*mut u8, Error> {
+        self.check(0)?;
         if c.base == 0
             || c.base % 4096 != 0
             || offset % width != 0
@@ -131,7 +142,9 @@ impl Io for NetworkRegisters<'_> {
         Ok(())
     }
     fn delay_us(&mut self, us: u32) -> Result<(), Error> {
-        self.time.delay_us(us).map_err(|_| Error::Clock)
+        self.check(us)?;
+        self.time.delay_us(us).map_err(|_| Error::Clock)?;
+        self.check(0)
     }
 }
 #[cfg(feature = "i218-network")]
@@ -185,9 +198,11 @@ impl i218::flash::Io for NetworkRegisters<'_> {
 #[cfg(feature = "i218-network")]
 impl i218::reset::Io for NetworkRegisters<'_> {
     fn pci_id(&mut self) -> Result<u32, Error> {
+        self.check(0)?;
         Ok(unsafe { pci::read(self.c.bus, self.c.device, self.c.function, 0) })
     }
     fn bus_master(&mut self) -> Result<bool, Error> {
+        self.check(0)?;
         Ok(unsafe { pci::read(self.c.bus, self.c.device, self.c.function, 4) } & 4 != 0)
     }
     fn raw_write(&mut self, r: usize, v: u32) -> Result<(), Error> {
@@ -224,9 +239,14 @@ pub(super) fn initialize(
         c,
         flash,
         region: None,
+        budget: i218::budget::Budget::new(time.now()?),
         time,
     };
-    match i218::reset::initialize(&mut io) {
+    let reset = i218::reset::initialize(&mut io);
+    if io.budget.expired() {
+        return Err("I218 INIT BUDGET 5S");
+    }
+    match reset {
         Ok(()) => {}
         Err(i218::reset::Error::ResetUnconfirmed) => {
             crate::debug(b"MUSHA: I218_RESET_UNCONFIRMED DMA_DISABLED QUARANTINED\n");
@@ -235,5 +255,9 @@ pub(super) fn initialize(
         Err(e) => return Err(e.label()),
     }
     crate::debug(b"MUSHA: I218_RESET_OK DMA_DISABLED\n");
-    i218::link::initialize(&mut io).map_err(Error::label)
+    let result = i218::link::initialize(&mut io);
+    if io.budget.expired() {
+        return Err("I218 INIT BUDGET 5S");
+    }
+    result.map_err(Error::label)
 }

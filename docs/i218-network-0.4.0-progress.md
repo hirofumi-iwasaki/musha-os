@@ -34,6 +34,15 @@ The reset/PHY/register adaptation follows the pinned FreeBSD Intel reference at 
 
 DHCP and ACD are adopted from the already pinned lwIP commit `77dcd25a72509eb83f72b033d219b1d40cd8eb95` (STABLE-2_2_1). Their individual original BSD-3-Clause headers are preserved in the source, `COPYING-DHCP` and NOTICE; UPSTREAM/SHA256SUMS and distribution license inclusion are updated. No new Rust dependency or GPL driver code is introduced.
 
+
+### Round3 aggregate initialization budget (2026-10-15)
+
+The opt-in `i218-network` adapter shares one5-second PM-clock budget over every nested MAC/PHY/flash access and delay. It checks requested delays against remaining time, latches expiry, and checks again before DMA activation after ring preparation. Normal selection remains82574 only. This is a sampled deadline, not preemptive execution or a measured physical five-second guarantee. DHCP remains asynchronous with its existing30-second no-address limit.
+
+Before initialization PCI BME-off must read back successfully. Budget expiry before DMA admission permanently quarantines the NIC; BME is disabled and verified again using PCI configuration only, with no uncertain-reset MMIO cleanup. Dedicated `BootInfo.net_dma_base` pages remain reserved by memory initialization, outside the application arena; the process-wide quarantine rejects subsequent LAN sessions, so stage5 arena scrub/restart cannot reuse them. Failed PCI readback/BME-off confirmation halts safely; non-budget reset uncertainty retains the existing halt. No stop/drain proof is invented. Devices observations include backend/PCI, link/initialization duration, DHCP address/lease duration or failure; phases includes the concrete error.
+
+Local evidence: `out/round3/lan-verification.json`, source hashes and logs. All50 net host cases passed (three new deadline/resource cases); two QEMU configurations passed: I218-feature/diagnostic EFI on existing82574 with DHCP and three app returns, and normal strict viewer pixel comparison. Cases overlap existing suites. Physical I218/Realtek, an actual I218 timeout, and full QEMU matrix were not run. Realtek diagnostic admission is separately described in [identification](ryzen-realtek-identification.md). No new dependency or upstream source was adopted.
+
 ## 日本語
 
 全ローカル回帰を完了した開発到達点であり、実機受入ではありません。通常版は引き続きQEMU82574を有効にし、I218-V通信は `i218-network` 指定時のみです。`i218-phy-probe` と `i218-power-probe` は別の診断です。QEMUはI218-Vを提供しないため、同feature付きQEMUの成功は共有経路の回帰でありI218 register動作の証明ではありません。NUC5実機reset/link/通信、OEM設定、Realtekは未確認です。
@@ -65,3 +74,11 @@ server不在では実30秒期限、NIC DMA停止、その後のDownのapp受領�
 reset/PHY/register移植は固定FreeBSD Intel参照commit `833d39bd2e38421a14ea489a956261a0fa993fbc` に基づき、`e1000_ich8lan.c` SHA256は `b0b78404c057911ed0cfc698df3e5a62f498b2855f300276975446860eee5329` です。派生Rust moduleはIntel BSD-3-Clause全文headerを保持し、参照原典とhash台帳は変更していません。BAR1選択は同revisionの `sys/dev/e1000/if_em.c` / `if_em.h` で事実確認し、当該file自体はrepoへコピーしていません。 同revisionの参照 `if_em.c` SHA256は `a79d6160c83ef359dfd241893efc0246d74db69db03a225cd535e25b2a2694c5`、`if_em.h` は `c2f76d658823e0beffe3e92de293be8c42778413579ac72829dbb6a1c11eac95` です。
 
 DHCP/ACDは既存固定lwIP commit `77dcd25a72509eb83f72b033d219b1d40cd8eb95`（STABLE-2_2_1）から採用しました。各原典のBSD-3-Clause headerをsource・`COPYING-DHCP`・NOTICEへ保持し、UPSTREAM/SHA256SUMSと配布license inclusionを更新しています。Rust依存追加やGPL driver codeの導入はありません。
+
+### Round3初期化全体budget（2026-10-15）
+
+任意`i218-network` adapterはMAC/PHY/flashの各アクセス・待機へPM clock5秒budgetを共有し、要求delayの残時間検査・期限超過保持・ring準備後DMA有効化前の再検査を行います。通常選択は82574のみ。これは時刻sampleによる期限検査で、強制中断や実機で測定した5秒保証ではありません。DHCPは既存の非同期address無し30秒上限を維持します。
+
+初期化前のPCI BMEoff読戻しが必須です。DMA入場前budget超過時はNICを永久隔離し、PCI設定だけでBMEを無効化・再確認。不確かなreset後のMMIO cleanupを避けます。`BootInfo.net_dma_base`専用pageはmemory初期化で予約済みでapp arena外。process全体の隔離で後続LAN sessionを拒否するため、工程5arena scrub/再起動で再利用しません。PCI読戻し/BMEoff未確認は安全halt、budget以外のreset不確定も従来haltを維持。停止/drain成功を捏造しません。devicesにbackend/PCI・link/init所要・DHCP address/lease所要又は失敗、phasesに具体的errorを表示します。
+
+証拠は`out/round3/lan-verification.json`とsource hash/log。net host50件（新規deadline/資源3件）とQEMU2構成合格：I218feature/診断EFIで既存82574 DHCP＋app復帰3回、通常版の厳密viewer pixel比較。既存suiteとの重複あり。実I218/Realtek、実I218 timeout、QEMU全回帰は未実施。Realtek診断は[識別手順](ryzen-realtek-identification.md)参照。新依存・上流source採用なし。

@@ -39,10 +39,11 @@
 //! are deliberately not exposed by this bounded probe foundation.
 //! Rust adaptation copyright 2026 Hirofumi Iwasaki; BSD-3-Clause.
 
-pub mod power;
+pub mod budget;
 pub mod flash;
-pub mod reset;
 pub mod link;
+pub mod power;
+pub mod reset;
 
 pub const MDIC: usize = 0x20;
 pub const EXTCNF_CTRL: usize = 0xf00;
@@ -72,6 +73,7 @@ pub fn classify(id: u32) -> Option<Device> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Resource,
+    InitBudget,
     Nvm,
     NvmTimeout,
     LinkTimeout,
@@ -99,6 +101,7 @@ impl Error {
             Self::InvalidMac => "I218 MAC INVALID",
             Self::Nvm => "I218 NVM INVALID",
             Self::NvmTimeout => "I218 NVM TIMEOUT",
+            Self::InitBudget => "I218 INIT BUDGET 5S",
             Self::Resource => "I218 RESOURCE",
             Self::Clock => "I218 CLOCK",
             Self::SemaphoreBusy => "I218 PHY BUSY",

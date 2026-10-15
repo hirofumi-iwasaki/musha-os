@@ -11,6 +11,7 @@ use core::{
 };
 use musha_net::{BUFFER_BYTES, DMA_BYTES, RX_BUFFERS, RX_COUNT, TX_BUFFERS, TX_COUNT, TX_RING};
 static BDF: AtomicU32 = AtomicU32::new(u32::MAX);
+static I218_QUARANTINED: AtomicU32 = AtomicU32::new(0);
 static USB_BDF: AtomicU32 = AtomicU32::new(u32::MAX);
 unsafe extern "C" {
     fn musha_lwip_init(mac: *const u8) -> i32;
@@ -113,6 +114,7 @@ impl Nic {
         bme_off
     }
     fn initialize(&self, t: &mut acpi::Time) -> Result<(), &'static str> {
+        let init_start = t.now()?;
         let mac = if self.pch {
             #[cfg(feature = "i218-network")]
             {
@@ -183,6 +185,9 @@ impl Nic {
         for i in 0..128 {
             self.write(0x5200 + i * 4, 0);
         }
+        if self.pch && t.now()?.saturating_sub(init_start) >= 5000 {
+            return Err("I218 INIT BUDGET 5S");
+        }
         unsafe {
             asm!("mfence", options(nostack));
             pci::enable_dma(self.c);
@@ -227,6 +232,9 @@ impl Session {
         time: &mut acpi::Time,
     ) -> Result<Option<Self>, &'static str> {
         crate::diagnostics::net_stage("RESOURCE / INITIALIZE");
+        if I218_QUARANTINED.load(Ordering::Relaxed) != 0 {
+            return Err("I218 QUARANTINED");
+        }
         let c = info.nic;
         if c.base == 0 {
             crate::diagnostics::net_stage("DRIVER UNSUPPORTED / ABSENT");
@@ -263,6 +271,21 @@ impl Session {
         unsafe {
             pci::disable_dma(c);
         }
+        let command = unsafe { pci::read(c.bus, c.device, c.function, 4) };
+        if command == u32::MAX || command & 4 != 0 {
+            crate::diagnostics::net_failure("INIT BME DISABLE UNCONFIRMED");
+            crate::stop();
+        }
+        let init_start = time.now()?;
+        crate::diagnostics::observation(format_args!(
+            "LAN BACKEND {} PCI {:08X}",
+            if unsafe { pci::read(c.bus, c.device, c.function, 0) } == 0x15a38086 {
+                "I218"
+            } else {
+                "82574"
+            },
+            unsafe { pci::read(c.bus, c.device, c.function, 0) }
+        ));
         let mut session = Self {
             nic: Nic {
                 c,
@@ -284,9 +307,35 @@ impl Session {
             dhcp_state: 0,
         };
         if let Err(error) = session.nic.initialize(time) {
+            if error == "I218 INIT BUDGET 5S" {
+                // No DMA was enabled: reset/PHY did not reach ring admission.
+                // Avoid all MMIO after an ambiguous reset; this dedicated DMA
+                // allocation remains reserved and no future LAN session may use it.
+                I218_QUARANTINED.store(1, Ordering::Relaxed);
+                unsafe {
+                    pci::disable_dma(c);
+                }
+                let command = unsafe { pci::read(c.bus, c.device, c.function, 4) };
+                if command == u32::MAX || command & 4 != 0 {
+                    crate::diagnostics::net_failure("I218 BUDGET BME UNCONFIRMED");
+                    crate::stop();
+                }
+                session.stopped = true;
+                BDF.store(u32::MAX, Ordering::Relaxed);
+                crate::debug(b"MUSHA: I218_INIT_BUDGET DMA_DISABLED QUARANTINED BOOT_CONTINUES\n");
+            }
+            crate::diagnostics::observation(format_args!(
+                "LAN INIT FAILED {} MS {}",
+                error,
+                time.now()?.saturating_sub(init_start)
+            ));
             crate::diagnostics::net_failure(error);
             return Err(error);
         }
+        crate::diagnostics::observation(format_args!(
+            "LAN LINK UP INIT MS {} DHCP PENDING",
+            time.now()?.saturating_sub(init_start)
+        ));
         crate::diagnostics::net_stage("POLLING");
         session.started = time.now()?;
         Ok(Some(session))
@@ -329,6 +378,14 @@ impl Session {
         if unsafe { musha_lwip_address(address.as_mut_ptr()) } != 0 {
             if address != self.address {
                 self.address = address;
+                crate::diagnostics::observation(format_args!(
+                    "LAN DHCP {}.{}.{}.{} LEASE MS {}",
+                    address[0],
+                    address[1],
+                    address[2],
+                    address[3],
+                    now.saturating_sub(self.started)
+                ));
                 crate::debug(b"MUSHA: NET_READY IP=");
                 for (i, n) in address.into_iter().enumerate() {
                     if i != 0 {
@@ -495,6 +552,7 @@ impl Drop for Session {
     }
 }
 pub(crate) fn failed(error: &str) {
+    crate::bootlog::phase("LAN", error);
     crate::diagnostics::net_failure(error);
     crate::debug(b"MUSHA: NET_FAILED ");
     crate::debug(error.as_bytes());

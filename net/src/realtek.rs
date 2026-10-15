@@ -247,3 +247,49 @@ mod tests {
         }
     }
 }
+
+/// Read-only diagnostic address. UC mapping and stable firmware BAR evidence
+/// must be supplied by the boot memory validator, never inferred from PCI ID.
+pub fn tx_config_address(
+    pci: u32,
+    command: u32,
+    mapped_uc: bool,
+    base: usize,
+    bytes: usize,
+) -> Option<usize> {
+    if pci != 0x816810ec
+        || command == u32::MAX
+        || command & 2 == 0
+        || !mapped_uc
+        || base < 0x100000
+        || base % 4096 != 0
+        || bytes < 4096
+        || bytes % 4096 != 0
+    {
+        return None;
+    }
+    base.checked_add(bytes)?;
+    base.checked_add(0x40)
+}
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    #[test]
+    fn read_only_address_requires_all_evidence() {
+        assert_eq!(
+            tx_config_address(0x816810ec, 2, true, 0xf0000000, 4096),
+            Some(0xf0000040)
+        );
+        for (id, cmd, uc, base, len) in [
+            (0x813910ec, 2, true, 0xf0000000, 4096),
+            (0x816810ec, u32::MAX, true, 0xf0000000, 4096),
+            (0x816810ec, 0, true, 0xf0000000, 4096),
+            (0x816810ec, 2, false, 0xf0000000, 4096),
+            (0x816810ec, 2, true, 0xf0000001, 4096),
+            (0x816810ec, 2, true, 0xf0000000, 64),
+            (0x816810ec, 2, true, usize::MAX - 4095, 4096),
+        ] {
+            assert_eq!(tx_config_address(id, cmd, uc, base, len), None);
+        }
+    }
+}

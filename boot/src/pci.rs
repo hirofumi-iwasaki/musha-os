@@ -1447,3 +1447,6 @@ pub(crate) unsafe fn nic_flash(bs: *mut r_efi::efi::BootServices, nic: Controlle
         result
     }
 }
+
+#[path = "pci/realtek.rs"]
+pub(crate) mod realtek;

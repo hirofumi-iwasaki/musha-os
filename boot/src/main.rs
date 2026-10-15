@@ -121,6 +121,7 @@ struct BootInfo {
     pci_resource_safe: [pci::ResourceEvidence; pci::MAX_CONTROLLERS],
     nic: pci::Controller,
     nic_flash: pci::Controller,
+    realtek_diag: pci::realtek::Snapshot,
     net_dma_base: usize,
     net_dma_bytes: usize,
     dma_base: usize,
@@ -341,6 +342,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         );
     }
     pci::diagnose(info.framebuffer, info.xhci);
+    pci::realtek::display(info.realtek_diag);
     #[cfg(feature = "display-grid-probe")]
     {
         diagnostics::flush();
@@ -532,6 +534,7 @@ pub extern "efiapi" fn efi_main(
         let pci_resource_safe = pci::resource_safety(bs, &xhcis);
         let xhci = xhcis.entries[0];
         let nic = pci::discover(bs, true);
+        let realtek_diag = pci::realtek::discover(bs);
         #[cfg(feature = "i218-network")]
         let nic_flash = pci::nic_flash(bs, nic);
         #[cfg(not(feature = "i218-network"))]
@@ -597,6 +600,7 @@ pub extern "efiapi" fn efi_main(
                 pci_resource_safe,
                 nic,
                 nic_flash,
+                realtek_diag,
                 net_dma_base: net_dma as usize,
                 net_dma_bytes: 16 * 4096,
                 dma_base: dma as usize,

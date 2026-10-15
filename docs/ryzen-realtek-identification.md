@@ -1,6 +1,23 @@
 # Ryzen Ethernet identification / Ryzen Ethernetの特定
 
+Status: current (read-only diagnostic procedure; physical capture pending).
+
 ## English
+
+### Development EFI read-only capture (2026-10-15)
+
+Use an owner-approved development EFI with `t2-diagnostics` and `log=devices` (F8/8 can force devices). This is a local build feature, not a claim that the NIC works. Record EFI SHA256, CONFIG, board, cold interval (power off at least10 seconds) and AC state. The normal build does not perform this capture. Copying EFI to physical USB and running it remain owner operations.
+
+On the devices inventory/journal pages photograph `RTL BDF`, PCI10EC:8168 revision, subsystem vendor:device, PCI command, BAR0/BAR2 type/base/length/raw and `RTL TXCONFIG40`. A zero length means firmware resource evidence was unavailable, not a measured zero-sized BAR. The diagnostic reads PCI configuration only; it never probes BAR sizes, changes command/BME, enables decode, initializes PHY/OCP or writes NIC MMIO. Its only NIC register access is one volatile32-bit TxConfig read at offset0x40, guarded across subsequent display calls.
+
+Firmware PCI I/O resource descriptors must agree with the live memory BAR. The entire page-aligned region must pass the existing memory-map checks (physical bounds, no RAM/runtime/reserved/other-MMIO overlap), then be mapped UC/read-only/NX in the OS tables. PCI identity, BARs and memory decode are rechecked before reading. Missing evidence produces `RTL TXCONFIG SKIP RESOURCE/UC/DECODE` and no read. UC is a page-table choice with existing PAT/MTRRs preserved; it is not inferred from the PCI ID. Unsupported or nonmatching PCI devices receive no NIC register access. Diagnostic PCI discovery is limited to the first matching segment-zero function.
+
+Linux is unnecessary for this path. `lspci -xxx` dumps PCI configuration space; it does not obtain the TxConfig MMIO register value. Do not substitute a configuration offset0x40 value. Do not guess addresses or use arbitrary register-write tools. If the safe path skips, retain all screenshots and the reason for resource review.
+
+Supply the raw capture, exact motherboard/NIC identification, EFI hash and BDF/revision/subsystem/BAR evidence for MAC-version selection. Only then review the corresponding PHY/OCP/firmware requirements and implement reset/link, rings/frame adapter, existing lwIP DHCP/UDP and stage5 stop/restart. Host negative tests and QEMU82574 regression precede an opt-in Ryzen physical trial. PCI revision plus TxConfig is identification evidence, not permission to perform an unreviewed register sequence. The current Realtek host prototype has no runtime transport; normal LAN defaults remain unchanged pending physical acceptance.
+
+
+### Retained host identification routes
 
 Status: identification required before goal13 Realtek driver work. Owner scope requires the Ryzen machine's Realtek Ethernet controller, but the exact PCI device and motherboard are **not identified** from the retained metadata. Reviewed: six JSON/text/log files under `out/ryzen-*`, the Ryzen hardware results, and `docs/hardware-evidence/2026-10-13/ryzen7/provenance.json`. They establish boot/video/provenance observations, not a NIC model. No chip or board is inferred from video appearance, CPU name or xHCI count.
 
@@ -42,6 +59,20 @@ After review, append the explicit identifiers and evidence path to a new Ryzen s
 
 ## 日本語
 
+### 開発EFIの読取り専用採取（2026-10-15）
+
+所有者承認対象の開発EFIを`t2-diagnostics`・`log=devices`で使用します（F8/8でもdevices強制可）。これはローカルbuild機能でNIC動作の証明ではありません。EFI SHA256、CONFIG、board、電源断10秒以上の冷間条件とAC状態を記録。通常版は本採取を行いません。実USBへのcopy・実行は所有者操作です。
+
+devices inventory/journalで`RTL BDF`、PCI10EC:8168 revision、subsystem vendor:device、PCI command、BAR0/BAR2の種別/base/長さ/raw、`RTL TXCONFIG40`を撮影。長さ0はfirmware資源根拠が得られなかった意味で、実測サイズ0ではありません。診断はPCI設定を読み取るだけで、BARサイズprobe、command/BME変更、decode有効化、PHY/OCP初期化、NIC MMIO書込みを行いません。唯一のNIC registerアクセスはoffset0x40のvolatile32-bit読取り1回で、表示再呼出しでも増えません。
+
+firmware PCI I/O資源descriptorとlive memory BARの一致が必要です。ページ整列した全領域を既存memory-map検査（物理範囲、RAM/runtime/予約領域/別MMIOとの非重複）へ通し、OS page tableでUC・読取り専用・NXへmapします。読取り前にPCI識別・BAR・memory decodeを再照合。未確定なら`RTL TXCONFIG SKIP RESOURCE/UC/DECODE`とし読みません。UCは既存PAT/MTRRを保持するpage table属性で、PCI IDからの推測ではありません。不一致deviceのNIC registerには触れず、segment0の最初の一致functionだけを採取します。
+
+Linuxは不要です。`lspci -xxx`はPCI設定空間のdumpでTxConfig MMIO値は得られず、設定offset0x40の値を代用できません。アドレス推測・任意register書込みtoolは使いません。skip時は理由と全写真を資源review用に保持します。
+
+raw採取値、正確なboard/NIC、EFI hash、BDF/revision/subsystem/BAR根拠を揃えMAC版を選定。その後に対応PHY/OCP/firmware要件、reset/link、ring/frame adapter、既存lwIP DHCP/UDP、工程5停止/再起動を実装します。host負例とQEMU82574回帰後にRyzen任意feature実機試験へ進みます。PCI revisionとTxConfigは識別根拠で未review書込み手順の許可ではありません。現Realtekはhost prototypeでruntime通信未接続、通常LAN既定は実機合格まで維持します。
+
+### 保持するhost識別手順
+
 状態：目標13 Realtek driver着手前の特定待ち。所有者scopeはRyzen機のRealtek Ethernetを必須とするが、保持metadataから正確なPCI deviceとmotherboardは**未特定**。`out/ryzen-*` 配下のJSON/text/log計6件、Ryzen実機結果、`docs/hardware-evidence/2026-10-13/ryzen7/provenance.json` を確認した。起動・動画・来歴の観測はあるがNIC型番の根拠ではない。動画の見た目、CPU名、xHCI数からchip/boardを推定しない。
 
 所有者が同じRyzen機で以下を読取り専用採取する。firmware設定、driver、partition、USB内容は変更しない。日時と接続する物理Ethernet端子を記録し、USB Ethernet adapterをmotherboard PCI NICと分ける。
@@ -79,3 +110,5 @@ Realtek card reader／audioではなくPCI **Ethernet class0200** を選ぶ。�
 | 日時／OS／物理端子／証拠path | 未採取 |
 
 レビュー後、[実機確認状況](hardware-verification-status.md)の新Ryzen節へ明示IDと証拠pathを追記し、device固有の資料と照合して実装する。以前の通常devicesはIntel Ethernetだけを選んでいた。今回の読取り専用一覧は全vendorの先頭Ethernetと上限付きjournalを追加するが、行の欠落・省略は機器不存在を証明しない。subsystem IDと複数NICはhost採取で相互確認する。I218-VとRealtekは別初期化と実機link／DHCP／OS echo証拠が必要で、QEMU82574合格をどちらの実機対応にも読み替えない。
+
+Development EFI identity / 開発EFIの識別: [three diagnostic artifacts and original provenance](hardware-acceptance-0.4.0.md#development-efi). Select the purpose-specific artifact and record CONFIG; these are not normal-candidate acceptance. / 用途別artifactとCONFIGを識別し、通常候補受入とは区別してください。
