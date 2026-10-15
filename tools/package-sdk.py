@@ -73,7 +73,8 @@ def create(output, version, language='c', samples=None):
     manifest = {
         'version': version,
         'language': language.upper(),
-        'executable_sdk': language == 'c',
+        'executable_sdk': language == 'c' or {'samples/hello.elf', 'samples/start-record.elf'} <= set(sample_elfs),
+        'qualification': 'development source and validated guest ELFs; physical/release acceptance separate',
         'sample_elfs': sample_elfs,
         'abi': 'experimental candidates r1/r2; r1 default',
         'development_guest_build': True,

@@ -141,6 +141,47 @@ def validate_efi(efi, original, version, tag, commit, dirty):
     if digest(efi) != original['payload']['EFI/BOOT/BOOTX64.EFI']['sha256']:
         raise ValueError('EFI hash mismatch')
 
+def parse_sdk_samples(entries):
+    """Read-only explicit ELF inputs; each role is unique and bounded."""
+    import stat
+    result = {'c': {}, 'rust': {}}
+    for entry in entries:
+        try:
+            role, filename = entry.split('=', 1)
+            language, name = role.split(':', 1)
+        except ValueError:
+            raise ValueError('SDK sample must be LANGUAGE:NAME=PATH') from None
+        if language not in result or name not in ('hello.elf', 'start-record.elf'):
+            raise ValueError('Unknown SDK sample role')
+        if name in result[language]:
+            raise ValueError('Duplicate SDK sample role')
+        path = Path(filename)
+        if not filename or path.is_symlink() or not stat.S_ISREG(path.stat().st_mode):
+            raise ValueError('SDK sample must be a regular non-symlink file')
+        if not 64 <= path.stat().st_size <= 16 * 1024 * 1024:
+            raise ValueError('SDK sample size outside ELF limit')
+        result[language][name] = path.resolve()
+    if entries and (not result['c'].get('hello.elf') or
+                    set(result['rust']) != {'hello.elf', 'start-record.elf'}):
+        raise ValueError('Explicit SDK samples require C Hello and both Rust roles')
+    return result if entries else None
+
+
+def build_sdk_samples(output):
+    """Build actual pinned C/Rust guest ELFs; no guest runs or device writes."""
+    output = Path(output)
+    c = output / 'c'
+    rust = output / 'rust'
+    subprocess.run(['python3', str(ROOT / 'tools/check-sdk.py'), '--c-only',
+                    '--sdk', str(ROOT / 'sdk'), '--output', str(c)],
+                   cwd=ROOT, check=True)
+    subprocess.run(['python3', str(ROOT / 'sdk/tools/build-rust.py'),
+                    '--output', str(rust)], cwd=ROOT, check=True)
+    return {'c': {'hello.elf': c / 'hello-c.elf'},
+            'rust': {'hello.elf': rust / 'hello-rust.elf',
+                     'start-record.elf': rust / 'start-record-rust.elf'}}
+
+
 def main():
     # An isolated target directory cannot reuse a fault/debug build from out/esp.
     parser = argparse.ArgumentParser(description=__doc__)
@@ -150,6 +191,8 @@ def main():
         default=ROOT / 'dist/candidate',
     )
     parser.add_argument('--version', default=(ROOT / 'VERSION').read_text().strip())
+    parser.add_argument('--sdk-sample', action='append', default=[],
+                        help='Explicit LANGUAGE:NAME=ELF; repeat for C Hello and Rust Hello/start-record. Default rebuilds pinned samples.')
     parser.add_argument('--tag', help='Existing vVERSION tag, must resolve to HEAD')
     parser.add_argument(
         '--efi',
@@ -201,6 +244,10 @@ def main():
         parser.error('Release packaging requires an existing tag')
     if args.release and args.allow_dirty:
         parser.error('Release packaging requires a clean commit')
+    try:
+        explicit_samples = parse_sdk_samples(args.sdk_sample)
+    except (ValueError, OSError) as error:
+        parser.error(str(error))
     if args.output.exists() or args.output.is_symlink():
         parser.error('Output must be new')
     dirty = command(
@@ -226,15 +273,13 @@ def main():
             ),
             dirty,
         )
-        print(stage(
-            args.output,
-            args.efi,
-            original,
-            release=args.release,
-            version=args.version,
-            previous_packages=args.previous_package,
-            docs_complete=args.docs_complete,
-        ))
+        with tempfile.TemporaryDirectory(prefix='musha-sdk-build-') as sdk_tmp:
+            samples = explicit_samples or build_sdk_samples(Path(sdk_tmp))
+            print(stage(
+                args.output, args.efi, original, release=args.release,
+                version=args.version, previous_packages=args.previous_package,
+                docs_complete=args.docs_complete, sdk_samples=samples,
+            ))
         return
     if os.environ.get('RUSTFLAGS') or os.environ.get('CARGO_ENCODED_RUSTFLAGS'):
         parser.error('Custom Rust flags are not allowed')
@@ -271,6 +316,7 @@ def main():
             check=True,
         )
         efi = Path(tmp) / 'x86_64-unknown-uefi/release/musha-boot.efi'
+        samples = explicit_samples or build_sdk_samples(Path(tmp) / 'sdk-samples')
         print('Candidate staged:', stage(
             args.output,
             efi,
@@ -279,6 +325,7 @@ def main():
             version=args.version,
             previous_packages=args.previous_package,
             docs_complete=args.docs_complete,
+            sdk_samples=samples,
         ))
     print('No device write, tag creation or publication performed.')
 

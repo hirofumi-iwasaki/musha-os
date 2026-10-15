@@ -90,7 +90,9 @@ jobs:
           python3 tools/test-distribution.py
           python3 tools/test-candidate-comparison.py
       - name: Experimental SDK compile and conformance (no guest execution)
-        run: python3 tools/check-sdk.py
+        run: |
+          python3 tools/check-sdk.py --c-only --output out/ci/sdk-c
+          python3 sdk/tools/build-rust.py --output out/ci/sdk-rust
       - name: HID mutation and state properties
         timeout-minutes: 2
         run: |
@@ -211,7 +213,10 @@ jobs:
         run: |
           args=()
           if [ -n "$RELEASE_TAG" ]; then args+=(--tag "$RELEASE_TAG"); fi
-          python3 tools/prepare-release.py --output dist/candidate "${args[@]}"
+          python3 tools/prepare-release.py --output dist/candidate "${args[@]}" \
+            --sdk-sample c:hello.elf=out/ci/sdk-c/hello-c.elf \
+            --sdk-sample rust:hello.elf=out/ci/sdk-rust/hello-rust.elf \
+            --sdk-sample rust:start-record.elf=out/ci/sdk-rust/start-record-rust.elf
       - name: Unpack QEMU asset and generate local exFAT fixture
         run: |
           gzip -dc "dist/candidate/musha-os-$(cat VERSION)-x64-qemu.img.gz" > out/ci/normal.img
