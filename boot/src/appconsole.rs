@@ -16,7 +16,16 @@ static STATE: Shared = Shared(UnsafeCell::new(State {
     console: Console::new(),
     fb: None,
 }));
+/// Bind the console model without touching pixels, including before rejected loads.
+pub fn prepare(fb: Framebuffer) {
+    unsafe {
+        let s = &mut *STATE.0.get();
+        s.fb = Some(fb);
+        s.console = Console::for_framebuffer(fb);
+    }
+}
 pub fn start(fb: Framebuffer, text: &[u8]) {
+    let _visible = musha_framebuffer::OutputGuard::allow();
     unsafe {
         for y in 0..fb.height {
             for x in 0..fb.width {
@@ -29,8 +38,10 @@ pub fn start(fb: Framebuffer, text: &[u8]) {
         s.console.append(text);
         s.console.render(fb);
     }
+    crate::bootlog::overlay();
 }
 pub fn append(bytes: &[u8]) {
+    let _visible = musha_framebuffer::OutputGuard::allow();
     unsafe {
         let s = &mut *STATE.0.get();
         s.console.append(bytes);
@@ -38,6 +49,7 @@ pub fn append(bytes: &[u8]) {
             s.console.render(fb);
         }
     }
+    crate::bootlog::overlay();
 }
 pub fn message(args: fmt::Arguments<'_>) {
     struct Text {
@@ -60,6 +72,10 @@ pub fn message(args: fmt::Arguments<'_>) {
     append(&text.bytes[..text.used]);
 }
 pub fn rejected(reason: &[u8]) {
+    crate::bootlog::failure(
+        "APPLICATION",
+        core::str::from_utf8(reason).unwrap_or("rejected"),
+    );
     message(format_args!(
         "\nAUTORUN.ELF rejected: {}\n",
         core::str::from_utf8(reason).unwrap_or("Unknown reason")
@@ -68,6 +84,7 @@ pub fn rejected(reason: &[u8]) {
 }
 /// Never borrows STATE: even a fault during drawing can use the fatal display.
 pub unsafe fn fault(fb: Framebuffer, vector: u64, error: u64, rip: u64, rsp: u64) {
+    let _visible = musha_framebuffer::OutputGuard::allow();
     let mut c = Console::for_framebuffer(fb);
     c.append(b"AUTORUN.ELF faulted\n");
     for (label, value) in [

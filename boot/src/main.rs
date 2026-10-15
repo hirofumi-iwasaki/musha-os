@@ -41,9 +41,11 @@ mod acpi;
 mod app;
 #[cfg(external_app)]
 mod appconsole;
+mod bootlog;
 mod bootstate;
 mod cpu;
 mod diagnostics;
+mod settings;
 mod marker {
     include!(concat!(env!("OUT_DIR"), "/marker.rs"));
 }
@@ -197,7 +199,11 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     if info.magic != 0x4d55534841424f4f || info.version != 1 {
         stop();
     }
+    bootlog::phase("ExitBootServices", "complete");
+    bootlog::phase("Runtime", "paging and arena initialization");
     diagnostics::start(info.framebuffer);
+    #[cfg(external_app)]
+    appconsole::prepare(info.framebuffer);
     diagnostics::set(
         40,
         format_args!(
@@ -275,10 +281,12 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         }
     };
     unsafe {
-        for y in 0..info.framebuffer.height {
-            for x in 0..info.framebuffer.width {
-                info.framebuffer
-                    .pixel(x, y, info.framebuffer.color(12, 20, 32));
+        if bootlog::devices() {
+            for y in 0..info.framebuffer.height {
+                for x in 0..info.framebuffer.width {
+                    info.framebuffer
+                        .pixel(x, y, info.framebuffer.color(12, 20, 32));
+                }
             }
         }
         boot_heading(info.framebuffer, "runtime");
@@ -304,6 +312,12 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         diagnostics::snapshot();
         debug(b"MUSHA: BOOT_FAILED REQUIRED_CLOCK\n");
         bootstate::update(|r, _| r.phase = musha_platform::readiness::Phase::BootFailed);
+        stop();
+    }
+    bootlog::phase("Timer", "PM clock available");
+    #[cfg(feature = "startup-failure-probe")]
+    {
+        bootlog::failure("REQUIRED CLOCK", "forced test failure");
         stop();
     }
     #[cfg(feature = "ring3-lifecycle-probe")]
@@ -445,6 +459,18 @@ pub extern "efiapi" fn efi_main(
         if bs.is_null() {
             return efi::Status::UNSUPPORTED;
         }
+        let mut image_protocol = core::ptr::null_mut();
+        let mut image_guid = loaded_image::PROTOCOL_GUID;
+        let status = ((*bs).handle_protocol)(image, &mut image_guid, &mut image_protocol);
+        if status.is_error() {
+            return status;
+        }
+        if image_protocol.is_null() {
+            return efi::Status::UNSUPPORTED;
+        }
+        let loaded = &*(image_protocol as *const loaded_image::Protocol);
+        let settings = settings::read(bs, system_table, loaded.device_handle);
+        bootlog::configure(settings.config);
         let mut protocol = core::ptr::null_mut();
         let mut guid = gop::PROTOCOL_GUID;
         let status = ((*bs).locate_protocol)(&mut guid, core::ptr::null_mut(), &mut protocol);
@@ -454,7 +480,8 @@ pub extern "efiapi" fn efi_main(
         if protocol.is_null() {
             return efi::Status::UNSUPPORTED;
         }
-        graphics::select(protocol as *mut gop::Protocol, bs);
+        let fallback =
+            graphics::select(protocol as *mut gop::Protocol, bs, settings.config.display);
         // SetMode may replace Mode.Info and the framebuffer; capture only afterward.
         let mode = (*(protocol as *const gop::Protocol)).mode;
         if mode.is_null()
@@ -476,17 +503,13 @@ pub extern "efiapi" fn efi_main(
         if !fb.valid() || fb.width < 320 || fb.height < 356 {
             return efi::Status::UNSUPPORTED;
         }
+        #[cfg(feature = "startup-config-probe")]
+        {
+            debug(b"MUSHA: CONFIG FRAMEBUFFER CAPTURED\n");
+            ((*bs).stall)(1_000_000);
+        }
+        bootlog::initialize(fb, settings, fallback);
         boot_heading(fb, "starting...");
-        let mut image_protocol = core::ptr::null_mut();
-        let mut image_guid = loaded_image::PROTOCOL_GUID;
-        let status = ((*bs).handle_protocol)(image, &mut image_guid, &mut image_protocol);
-        if status.is_error() {
-            return status;
-        }
-        if image_protocol.is_null() {
-            return efi::Status::UNSUPPORTED;
-        }
-        let loaded = &*(image_protocol as *const loaded_image::Protocol);
         let image_base = loaded.image_base as usize;
         let image_bytes = loaded.image_size as usize;
         // CPU-owned zero-fill staging counts toward LoadedImage.ImageSize.

@@ -322,7 +322,7 @@ with (out/'qemu.log').open('w') as err:
     for byte in payload:digest=((digest^byte)*0x100000001b3)&0xffffffffffffffff
     assert f'LIVE_FILE_ENTRY_OK INDEX={index:016X} BYTES={len(payload):016X} HASH={digest:016X}' in text
     assert 'LIVE_FILE_NAME '+''.join(f'{ord(c):016X}' for c in name) in text
-    chunk=7 if index==0 else 512
+    chunk=384 if index==0 else 512
     requests+=(len(payload)+chunk-1)//chunk
    assert text.count('LIVE_FILE_ENTRY_OK')==len(payloads)
    assert text[begin:done].count('LIVE_FILE_REQUEST') == requests + int(a.file_close), 'missing split requests'

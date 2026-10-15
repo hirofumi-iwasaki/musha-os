@@ -235,6 +235,7 @@ pub(crate) fn hex(value: u64) -> [u8; 16] {
     bytes
 }
 extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
+    let _visible = musha_framebuffer::OutputGuard::allow();
     #[cfg(feature = "ring3-lifecycle-probe")]
     unsafe {
         crate::ring3::lifecycle::fault(

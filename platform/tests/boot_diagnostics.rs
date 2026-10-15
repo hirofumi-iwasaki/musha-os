@@ -27,7 +27,13 @@ mod diagnostics;
 #[path = "../../boot/src/timing.rs"]
 mod timing;
 
+mod bootlog {
+    pub fn failure(_: &str, _: &str) {}
+}
 mod bootstate {
+    pub fn report() -> musha_platform::readiness::Report {
+        musha_platform::readiness::Report::NEW
+    }
     pub fn epoch_now() -> Option<u64> {
         Some(0)
     }

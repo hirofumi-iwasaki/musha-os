@@ -104,6 +104,18 @@ pub fn hide(hidden: bool) {
 }
 /// Explicit BSP safe point. Record updates and view selection never touch devices.
 pub fn flush() {
+    flush_reserved(0);
+}
+
+/// Explicit devices-level startup capture; preserve hidden state and leave footer space.
+pub fn startup_snapshot() {
+    let hidden = unsafe { (*PANEL.0.get()).hidden };
+    hide(false);
+    flush_reserved(4);
+    hide(hidden);
+}
+
+fn flush_reserved(reserved: usize) {
     unsafe {
         let p = &mut *PANEL.0.get();
         if p.hidden || cfg!(feature = "diagnostics-off") {
@@ -115,7 +127,7 @@ pub fn flush() {
         let line_height = m.line_pitch;
         let x = m.x(m.panel_column);
         let columns = m.columns.saturating_sub(m.panel_column + 2).clamp(1, 64);
-        let capacity = m.rows.saturating_sub(m.panel_row + 2).min(42);
+        let capacity = m.rows.saturating_sub(m.panel_row + 2 + reserved).min(42);
         let mut display = [Line::EMPTY; 42];
         let mut row = 0;
         for l in p.page.as_ref().unwrap_or(&p.lines) {
@@ -175,6 +187,7 @@ pub fn net_stage(s: &str) {
 }
 /// Bounded failure summary independent of optional detail retention.
 pub fn failure(stage: &str, error: &str) {
+    crate::bootlog::failure(stage, error);
     update(|p| {
         p.first_failure
             .get_or_insert(line(format_args!("{}", stage)));
@@ -704,5 +717,9 @@ mod tests {
         assert_eq!(held[1].as_str(), "DIAGNOSTIC HOLD (no retry) cycle 2");
         assert_eq!(held[2].as_str(), first_evidence.as_str());
         crate::timing::hold_cycle(0);
+        hide(true);
+        startup_snapshot();
+        assert!(unsafe { (*PANEL.0.get()).hidden });
+        assert_eq!(&pixels[320 * 356..], &[0xdeadbeef; 16]);
     }
 }

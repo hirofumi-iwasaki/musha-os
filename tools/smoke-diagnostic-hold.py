@@ -24,13 +24,15 @@ try:
     external=importlib.util.module_from_spec(spec);spec.loader.exec_module(external)
     for case,storage,keyboard in [('no-medium',False,True),('elf-absent',True,True),('no-devices',False,False)]:
         d=out/case;d.mkdir();esp=d/'esp/EFI/BOOT';esp.mkdir(parents=True);shutil.copyfile(efi,esp/'BOOTX64.EFI')
+        external.module('smoke-startup').fixture(d/'boot.img',efi,b'log=devices\n')
         shutil.copyfile(a.firmware_dir/'edk2-i386-vars.fd',d/'vars.fd')
         qmp=ROOT/'out'/('dh-'+hashlib.sha256(str(d).encode()).hexdigest()[:10]+'.sock');assert not qmp.exists()
         debug=d/'debug.log'
-        cmd=[a.qemu,'-machine','q35,accel=tcg','-cpu','qemu64,+syscall,+nx','-m','256M','-drive',f'if=pflash,format=raw,readonly=on,file={a.firmware_dir/"edk2-x86_64-code.fd"}','-drive',f'if=pflash,format=raw,file={d/"vars.fd"}','-drive',f'if=ide,format=raw,file=fat:rw:{d/"esp"}','-device','qemu-xhci,id=x','-qmp',f'unix:{qmp},server=on,wait=off','-vga','std','-display','none','-debugcon',f'file:{debug}','-no-reboot']
+        cmd=[a.qemu,'-machine','q35,accel=tcg','-cpu','qemu64,+syscall,+nx','-m','256M','-drive',f'if=pflash,format=raw,readonly=on,file={a.firmware_dir/"edk2-x86_64-code.fd"}','-drive',f'if=pflash,format=raw,file={d/"vars.fd"}','-drive',f'if=ide,format=raw,snapshot=on,file={d/"boot.img"}','-device','qemu-xhci,id=x','-qmp',f'unix:{qmp},server=on,wait=off','-vga','std','-display','none','-debugcon',f'file:{debug}','-no-reboot']
         if keyboard:cmd+=['-device','usb-kbd,bus=x.0']
         if storage:
             data=d/'data.img';external.fixture(data,efi,None,'fat32')
+            external.module('smoke-startup').configure_fixture(data,b'log=devices\n')
             cmd+=['-drive',f'if=none,id=data,format=raw,readonly=on,file={data}','-device','usb-storage,drive=data,bus=x.0']
         (d/'command.json').write_text(json.dumps(cmd,indent=2))
         with (d/'qemu.log').open('w') as log:

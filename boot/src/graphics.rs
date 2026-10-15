@@ -66,16 +66,28 @@ impl Modes for Firmware {
     }
 }
 /// Firmware owns valid protocol and Boot Services tables; current mode is initialized.
-pub unsafe fn select(protocol: *mut gop::Protocol, bs: *mut efi::BootServices) {
+pub unsafe fn select(
+    protocol: *mut gop::Protocol,
+    bs: *mut efi::BootServices,
+    wanted: musha_platform::config::Display,
+) -> bool {
     if unsafe { (*protocol).mode.is_null() } {
-        return;
+        return true;
     }
     let mut modes = Firmware { protocol, bs };
     let before = modes.current();
     #[cfg(not(feature = "display-grid-probe"))]
-    musha_framebuffer::mode::select(&mut modes);
+    let fallback = match wanted {
+        musha_platform::config::Display::Max => {
+            musha_framebuffer::mode::select(&mut modes);
+            false
+        }
+        musha_platform::config::Display::Exact(w, h) => {
+            musha_framebuffer::mode::select_requested(&mut modes, w, h)
+        }
+    };
     #[cfg(feature = "display-grid-probe")]
-    {
+    let fallback = {
         let wanted = option_env!("MUSHA_TEST_GOP").unwrap_or("1024x768");
         let (w, h) = wanted.split_once('x').unwrap();
         let w: u32 = w.parse().unwrap();
@@ -89,10 +101,13 @@ pub unsafe fn select(protocol: *mut gop::Protocol, bs: *mut efi::BootServices) {
                 break;
             }
         }
-    }
+        let _ = wanted;
+        false
+    };
     crate::debug(b"MUSHA: GOP MODE BEFORE/AFTER ");
     crate::debug(&crate::cpu::hex(before as u64));
     crate::debug(b" ");
     crate::debug(&crate::cpu::hex(modes.current() as u64));
     crate::debug(b"\n");
+    fallback
 }

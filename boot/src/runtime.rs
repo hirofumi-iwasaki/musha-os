@@ -40,6 +40,8 @@ fn launch(
         r.entering(t);
     });
     crate::debug(b"MUSHA: APP_ENTERING\n");
+    crate::bootlog::ready(!VIEWER);
+    let _visible = musha_framebuffer::OutputGuard::allow();
     app.init(ctx)?;
     *initialized = true;
     Ok(())
@@ -91,6 +93,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     if !initialized {
                         return Err("APP INPUT ERROR");
                     }
+                    let _visible = musha_framebuffer::OutputGuard::allow();
                     if let Err(error) = app.files(&mut ctx, files) {
                         input_error = Some(error);
                         return Err("APP INPUT ERROR");
@@ -136,6 +139,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                                 .map_err(|_| "INPUT SOURCE CONNECT")?,
                         );
                     }
+                    crate::bootlog::keyboard(input);
                     ctx.set_input_active(inputs.active().is_some());
                     had_keyboard = input;
                     match crate::net::Session::start(info, &mut time) {
@@ -151,6 +155,14 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         }
                         Err(error) => crate::net::failed(error),
                     }
+                    crate::bootlog::phase(
+                        "LAN",
+                        if network.is_some() {
+                            "driver active; hardware link not certified"
+                        } else {
+                            "driver unavailable in current configuration"
+                        },
+                    );
                     if !cfg!(external_app)
                         || crate::bootstate::report().files
                             != musha_platform::readiness::Service::Live
@@ -211,7 +223,10 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         .key(source, key, down, |k, d| ctx.push_key(k, d))
                         .map_err(|_| Error::Invalid)?;
                 }
-                let state = app.step(&mut ctx)?;
+                let state = {
+                    let _visible = musha_framebuffer::OutputGuard::allow();
+                    app.step(&mut ctx)?
+                };
                 steps += 1;
                 if time.now().map_err(|_| Error::Io)? - before > 1 {
                     over_budget += 1;
@@ -229,6 +244,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 }
             }
         };
+        crate::bootlog::phase("USB host", "device discovery");
         let usb_result = crate::xhci::run_session(info, &mut cycle);
         drop(cycle);
         crate::bootstate::update(|r, _| {
@@ -337,7 +353,10 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     app.request_file_recheck();
                 }
             }
-            let state = app.step(&mut ctx)?;
+            let state = {
+                let _visible = musha_framebuffer::OutputGuard::allow();
+                app.step(&mut ctx)?
+            };
             steps += 1;
             let expired = network
                 .as_ref()

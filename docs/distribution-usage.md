@@ -6,7 +6,7 @@ Status: v0.4.0 stage1 development contract. Published v0.3.0 downloads and hardw
 
 ### Drive and assets
 
-The drive root is EFI/, DOCS/, empty SETTINGS/ and README.TXT; AUTORUN.ELF belongs to the user. DOCS contains LICENSE, NOTICE, third_party and sdk-guide.md, external-app.md, file-viewer.md, distribution-usage.md. README is ASCII/CRLF, under4 KiB and at most72 columns; its exact length/FNV hash are generated at build time. exFAT remains read-only data media; boot CONFIG support is FAT32-only and is not implemented in stage1.
+The drive root is EFI/, DOCS/, empty SETTINGS/ and README.TXT; AUTORUN.ELF belongs to the user. DOCS contains LICENSE, NOTICE, third_party and sdk-guide.md, external-app.md, file-viewer.md, distribution-usage.md. README is ASCII/CRLF, under4 KiB and at most72 columns; its exact length/FNV hash are generated at build time. exFAT remains read-only data media; boot CONFIG support is FAT32-only; see [startup configuration](https://github.com/hirofumi-iwasaki/musha-os/blob/release/0.4.0/docs/startup-configuration.md) for the stage2 development implementation.
 
 Future release names (no v prefix): musha-os-<ver>-x64.zip, musha-os-<ver>-x64-qemu.img.gz, musha-os-<ver>-c-sdk.zip and musha-os-<ver>-rust-sdk.zip, plus SHA256SUMS/build-manifest.json. docs.zip is allowed only after documentation stage2/goal17. QEMU image is64 MiB GPT/FAT32, for QEMU only. No deployment ZIP or candidate tar is published. Rust archive currently contains a clearly marked source scaffold, not a runnable Rust SDK; draft attachment is blocked until both SDK implementation/sample gates pass.
 
@@ -40,7 +40,7 @@ Historical deployment instructions are preserved in [usage through v0.3.0](distr
 
 ### 媒体と配布物
 
-rootはEFI/・DOCS/・空SETTINGS/・README.TXT、AUTORUN.ELFは利用者管理。DOCSはLICENSE/NOTICE/third_partyとsdk-guide/external-app/file-viewer/distribution-usage各md。READMEはASCII/CRLF、4 KiB未満/72桁以下で長さ/FNVをビルド生成。exFATは読出しデータ媒体、CONFIG起動経路はFAT32限定で工程1未実装。
+rootはEFI/・DOCS/・空SETTINGS/・README.TXT、AUTORUN.ELFは利用者管理。DOCSはLICENSE/NOTICE/third_partyとsdk-guide/external-app/file-viewer/distribution-usage各md。READMEはASCII/CRLF、4 KiB未満/72桁以下で長さ/FNVをビルド生成。exFATは読出しデータ媒体、CONFIG起動経路はFAT32限定。工程2開発実装は[起動設定](https://github.com/hirofumi-iwasaki/musha-os/blob/release/0.4.0/docs/startup-configuration.md)を参照。
 
 将来配布名はv無しのmusha-os-<ver>-x64.zip、-x64-qemu.img.gz、-c-sdk.zip、-rust-sdk.zipとSHA256SUMS/build-manifest.json。docs.zipは文書第2段/目標17後のみ。QEMU像は64 MiB GPT/FAT32の仮想用途のみ。deployment ZIP/candidate tarは公開しません。Rustは現状source scaffoldを明記し、実行SDKではありません。両SDK実装/サンプル条件が満たされるまでdraft添付を拒否します。
 

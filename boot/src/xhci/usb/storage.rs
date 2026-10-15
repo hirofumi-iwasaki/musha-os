@@ -468,6 +468,7 @@ pub(super) fn probe(
                     39,
                     format_args!("FILE HASH {:016X}", storage::hash(&file[..bytes])),
                 );
+                crate::bootlog::media_ready(exfat);
                 tick(super::super::AppEvent::File(&file[..bytes]))?;
                 if exfat {
                     crate::debug(b"MUSHA: EXFAT_FILE_OK BYTES=");

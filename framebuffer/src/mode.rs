@@ -41,6 +41,33 @@ pub fn select(modes: &mut impl Modes) {
         }
     }
 }
+/// Explicit supported startup mode; unavailable/failed requests fall back to max.
+/// Return true when fallback was necessary. The current mode wins duplicate matches.
+pub fn select_requested(modes: &mut impl Modes, width: u32, height: u32) -> bool {
+    if width < 320 || height < 356 {
+        select(modes);
+        return true;
+    }
+    let current = modes.current();
+    let mut candidate = None;
+    for index in 0..modes.count() {
+        if modes
+            .query(index)
+            .is_some_and(|i| i.width == width && i.height == height && i.area().is_some())
+        {
+            if candidate.is_none() || index == current {
+                candidate = Some(index);
+            }
+        }
+    }
+    if let Some(index) = candidate {
+        if index == current || modes.set(index) {
+            return false;
+        }
+    }
+    select(modes);
+    true
+}
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -155,5 +182,34 @@ mod tests {
         let mut m = mock(std::vec![info(65536, 65536, 0), info(100000, 100000, 1)]);
         select(&mut m);
         assert_eq!(m.current, 1);
+    }
+    #[test]
+    fn explicit_mode_available_missing_invalid_and_set_failure() {
+        let mut m = mock(std::vec![
+            info(800, 600, 0),
+            info(1024, 768, 1),
+            info(2048, 2048, 1)
+        ]);
+        assert!(!select_requested(&mut m, 1024, 768));
+        assert_eq!(m.current, 1);
+        assert!(select_requested(&mut m, 1234, 567));
+        assert_eq!(m.current, 2);
+        assert!(select_requested(&mut m, 100, 100));
+        assert_eq!(m.current, 2);
+        m.fail = true;
+        assert!(select_requested(&mut m, 800, 600));
+        assert_eq!(m.current, 2);
+    }
+    #[test]
+    fn explicit_current_and_invalid_formats() {
+        let mut m = mock(std::vec![
+            info(800, 600, 0),
+            info(800, 600, 1),
+            info(1200, 900, 3)
+        ]);
+        assert!(!select_requested(&mut m, 800, 600));
+        assert!(m.sets.is_empty());
+        assert!(select_requested(&mut m, 1200, 900));
+        assert_eq!(m.current, 0);
     }
 }

@@ -4,6 +4,8 @@
 
 Copy this document into a new result file for each configuration. Default values are UNKNOWN / NOT RUN. Fill observations without converting unknown or unsupported features into passes. Do not change the template itself to record a particular machine.
 
+For new v0.4.0 acceptance records, use `log=devices` (or firmware F8 / digit8 override), record CONFIG bytes and the override, and photograph the PM-epoch summary. This requirement does not change older records. See [startup configuration](startup-configuration.md).
+
 | Field | Observation |
 |---|---|
 | Date / operator / record ID | UNKNOWN |
@@ -17,6 +19,8 @@ Copy this document into a new result file for each configuration. Default values
 | Ethernet controller PCI ID / cable / peer | UNKNOWN |
 | Git branch / full commit / working tree changes | UNKNOWN |
 | Build type / enabled features / toolchain | UNKNOWN |
+| CONFIG contents / log level / F8 or digit8 override / requested and actual GOP | UNKNOWN |
+| PM-epoch core / ready / current ms / timing record count (devices) | UNKNOWN |
 | BOOTX64.EFI size / SHA-256 | UNKNOWN |
 | Complete USB image size / SHA-256 / GPT backup location | UNKNOWN |
 | Image creation command / physical USB preparation method | UNKNOWN |
@@ -24,13 +28,13 @@ Copy this document into a new result file for each configuration. Default values
 
 | Check | Result (NOT RUN / PASS / FAIL / UNSUPPORTED) | Exact observation |
 |---|---|---|
-| UEFI boot / `Musha-OS <VERSION> starting...` / runtime / CORE READY | NOT RUN | UNKNOWN |
+| devices startup / `Musha-OS ready.` / required phase results | NOT RUN | UNKNOWN |
 | CPU tables / paging / arena size | NOT RUN | UNKNOWN |
 | Timer / PCI IDs / BDF | NOT RUN | UNKNOWN |
 | xHCI ownership / reset / command rings | NOT RUN | UNKNOWN |
 | USB port / VID:PID / speed / descriptor count | NOT RUN | UNKNOWN |
 | Storage blocks / sector bytes / total capacity | NOT RUN | UNKNOWN |
-| DIAGNOSE.TXT length / FNV-1a / APP FILE READ OK | NOT RUN | UNKNOWN |
+| README.TXT build length / FNV-1a / startup marker result | NOT RUN | UNKNOWN |
 | Keyboard A / Shift+A press and release / displayed key code | NOT RUN | UNKNOWN |
 | Idle input with ongoing application work | NOT RUN | UNKNOWN |
 | Esc / APP COMPLETE / USB stop status | NOT RUN | UNKNOWN |
@@ -48,6 +52,8 @@ Failure details: UNKNOWN. Reproduction steps and recovery: UNKNOWN. Final result
 
 構成ごとに本書を別の結果ファイルへコピーする。初期値はUNKNOWN（不明）／NOT RUN（未実施）。不明や未対応を合格に読み替えず、観測結果を記入する。個体の結果をこの様式原本へ直接記入しない。
 
+v0.4.0 の新規受入記録は `log=devices`（または firmware F8／数字8）で採取し、CONFIG の内容・override と PM-epoch 要約の写真を残す。過去の記録を変更する要件ではない。[起動設定](startup-configuration.md)を参照。
+
 | 項目 | 観測内容 |
 |---|---|
 | 日時／試験者／記録ID | 不明 |
@@ -61,6 +67,8 @@ Failure details: UNKNOWN. Reproduction steps and recovery: UNKNOWN. Final result
 | Ethernet PCI ID／ケーブル／通信相手 | 不明 |
 | Git branch／完全commit／未commit変更 | 不明 |
 | build種別／feature／toolchain | 不明 |
+| CONFIG内容／log／F8または8／要求と実際のGOP | 不明 |
+| devices PM-epoch core／ready／現在ms／timing件数 | 不明 |
 | BOOTX64.EFIサイズ／SHA-256 | 不明 |
 | USB image全体サイズ／SHA-256／GPT副header位置 | 不明 |
 | image生成コマンド／実物USBの準備方法 | 不明 |
@@ -68,13 +76,13 @@ Failure details: UNKNOWN. Reproduction steps and recovery: UNKNOWN. Final result
 
 | 確認 | 結果（未実施／合格／失敗／未対応） | 正確な観測内容 |
 |---|---|---|
-| UEFI起動／`Musha-OS <VERSION> starting...`／runtime／CORE READY | 未実施 | 不明 |
+| devices起動／`Musha-OS ready.`／必須段階の結果 | 未実施 | 不明 |
 | CPU tables／paging／arena容量 | 未実施 | 不明 |
 | timer／PCI ID／BDF | 未実施 | 不明 |
 | xHCI ownership／reset／command rings | 未実施 | 不明 |
 | USB port／VID:PID／速度／descriptor数 | 未実施 | 不明 |
 | storage block数／sector byte／総容量 | 未実施 | 不明 |
-| DIAGNOSE.TXT長さ／FNV-1a／APP FILE READ OK | 未実施 | 不明 |
+| README.TXTビルド長さ／FNV-1a／起動マーカー結果 | 未実施 | 不明 |
 | A／Shift+Aの押下・解放／key code | 未実施 | 不明 |
 | 無入力中のアプリ処理継続 | 未実施 | 不明 |
 | Esc／APP COMPLETE／USB停止状態 | 未実施 | 不明 |

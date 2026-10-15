@@ -3,6 +3,23 @@
 #![no_std]
 
 pub mod metrics;
+use core::sync::atomic::{AtomicBool, Ordering};
+static OUTPUT_ENABLED: AtomicBool = AtomicBool::new(true);
+/// BSP startup policy. Dimensions and address validation are never changed.
+pub fn set_output_enabled(enabled: bool) {
+    OUTPUT_ENABLED.store(enabled, Ordering::Relaxed);
+}
+pub struct OutputGuard(bool);
+impl OutputGuard {
+    pub fn allow() -> Self {
+        Self(OUTPUT_ENABLED.swap(true, Ordering::Relaxed))
+    }
+}
+impl Drop for OutputGuard {
+    fn drop(&mut self) {
+        OUTPUT_ENABLED.store(self.0, Ordering::Relaxed);
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -45,6 +62,9 @@ impl Framebuffer {
     /// base must refer to writable, identity-mapped GOP memory of bytes length.
     /// The caller exclusively controls drawing and keeps the mapping alive.
     pub unsafe fn pixel(&self, x: usize, y: usize, color: u32) {
+        if !OUTPUT_ENABLED.load(Ordering::Relaxed) {
+            return;
+        }
         if let Some(offset) = self.offset(x, y) {
             // SAFETY: caller guarantees a mapped framebuffer; checked offset
             // and 4-byte alignment keep this volatile store inside its bounds.

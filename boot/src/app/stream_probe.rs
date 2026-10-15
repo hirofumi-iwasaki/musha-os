@@ -100,7 +100,8 @@ impl Scan {
         }
         let handle = self.handle.unwrap();
         let mut data = [0; 512];
-        let n = if self.index == 0 { 7 } else { 512 };
+        // Keep partial reads and sector transitions bounded for the generated README.
+        let n = if self.index == 0 { 384 } else { 512 };
         match files.read(handle, &mut data[..n]) {
             Err(Error::Again) => {}
             Err(e) => return Err(e),

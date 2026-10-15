@@ -156,15 +156,22 @@ def main():
         if a.case!='all' and a.case not in cases: raise ValueError('Unknown case '+a.case)
         if a.normal and a.case != 'all' and cases[a.case][2] in ('timing','disconnect'):
             raise ValueError('This observation requires the debug candidate')
+        features=[] if a.normal else ['external-elf-probe']
+        if not a.normal and (a.diagnostic_timing or a.case=='hotplug-5000'):
+            features.append('diagnostics-detail')
         env=dict(os.environ,CARGO_TARGET_DIR=str(out/'target'),MUSHA_RING3_CASE='normal')
         if a.efi:
             efi=a.efi.resolve()
         else:
-            (out/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot']+([] if a.normal else ['--features','external-elf-probe']),env))
+            (out/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot']+([] if a.normal else ['--features',','.join(features)]),env))
             efi=out/'target/x86_64-unknown-uefi/release/musha-boot.efi'
-        report['features']=[] if a.normal else ['external-elf-probe']
+        report['features']=features
         report['efi_sha256']=hashlib.sha256(efi.read_bytes()).hexdigest()
         esp=out/'esp/EFI/BOOT';esp.mkdir(parents=True);shutil.copyfile(efi,esp/'BOOTX64.EFI')
+        boot_drive=f'if=ide,format=raw,file=fat:rw:{out/"esp"}'
+        if not a.normal:
+            module('smoke-startup').fixture(out/'boot.img',efi,b'log=devices\n')
+            boot_drive=f'if=ide,format=raw,snapshot=on,file={out/"boot.img"}'
         for name,(payload,fmt,kind,detail) in cases.items():
             if a.case not in ('all',name): continue
             if a.case == 'all' and (kind == 'timing' or name.startswith('hotplug-')): continue
@@ -184,6 +191,8 @@ def main():
                 (d/'pixels.log').write_text(run(['python3','tools/smoke-normal-viewer.py','--firmware-dir',a.firmware_dir,'--qemu',a.qemu,'--boot-image',data,'--data-image',data,'--bootfile-absent','--reference',reference,'--output',d/'pixels'] + (['--resolution',a.resolution] if a.resolution else [])))
                 report['cases'].append({'case':name,'passed':True,'normal_efi_sha256':hashlib.sha256(normal.read_bytes()).hexdigest(),'reference':str(reference),'pixels':str(d/'pixels/result.json')});print('PASS external ELF '+name,flush=True);continue
             fixture(data,efi,payload,fmt,16777217 if name=='too-large' else None, partition_type=a.partition_type)
+            if not a.normal and fmt=='fat32':
+                module('smoke-startup').configure_fixture(data,b'log=devices\n')
             if name=='duplicate':
                 with data.open('r+b') as f:
                     f.seek(2048*512);boot=f.read(512);root=(2048+32+2*struct.unpack_from('<I',boot,36)[0])*512
@@ -198,14 +207,14 @@ def main():
             cmd=[a.qemu,'-machine','q35,accel=tcg','-cpu',('qemu64,-syscall,+nx' if name=='cpu-reject' else 'qemu64,+syscall,+nx'),'-m','256M',
                  '-drive',f'if=pflash,format=raw,readonly=on,file={a.firmware_dir/"edk2-x86_64-code.fd"}',
                  '-drive',f'if=pflash,format=raw,file={d/"vars.fd"}',
-                 '-drive',f'if=ide,format=raw,file=fat:rw:{out/"esp"}',
+                 '-drive',boot_drive,
                  '-drive',f'if=none,id=data,format=raw,readonly=on,file={data}',
                  '-device','qemu-xhci,id=x','-device','usb-storage,id=storage,drive=data,bus=x.0,port=1',
                  '-qmp',f'unix:{qmp},server=on,wait=off','-netdev','user,id=n','-device','e1000e,netdev=n',
                  '-vga','std','-display','none','-monitor','none','-serial','none',
                  '-debugcon',f'file:{debug}','-global','isa-debugcon.iobase=0xe9','-no-reboot']
             if a.boot_from_data and fmt == 'fat32':
-                at=cmd.index(f'if=ide,format=raw,file=fat:rw:{out/"esp"}')
+                at=cmd.index(boot_drive)
                 del cmd[at-1:at+1]
             if hotplug is not None:
                 at=cmd.index('usb-storage,id=storage,drive=data,bus=x.0,port=1');del cmd[at-1:at+1]

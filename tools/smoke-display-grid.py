@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """Capture a display-grid-probe stage held by MUSHA_GRID_HOLD; local QEMU only."""
-import argparse,ast,json,re,shutil,socket,subprocess,time,hashlib
+import argparse,ast,json,re,shutil,socket,subprocess,time,hashlib,importlib.util
 from pathlib import Path
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--efi',required=True,type=Path);p.add_argument('--resolution',required=True);p.add_argument('--stage',choices=['starting','diagnostics'],required=True);p.add_argument('--output',required=True,type=Path);a=p.parse_args()
 root=Path(__file__).resolve().parents[1];o=a.output.resolve();o.mkdir(parents=True,exist_ok=False)
 w,h=map(int,a.resolution.split('x'));scale=max(1,min(4,(h+300)//600));fw=Path('/opt/homebrew/share/qemu')
 (o/'esp/EFI/BOOT').mkdir(parents=True);shutil.copyfile(a.efi,o/'esp/EFI/BOOT/BOOTX64.EFI');shutil.copyfile(fw/'edk2-i386-vars.fd',o/'vars.fd')
+spec=importlib.util.spec_from_file_location('startup_fixture',root/'tools/smoke-startup.py')
+startup=importlib.util.module_from_spec(spec);spec.loader.exec_module(startup)
+startup.fixture(o/'boot.img',a.efi,b'log=devices\n')
 qmp=root/'out'/('grid-'+hashlib.sha256(str(o).encode()).hexdigest()[:10]+'.sock')
-cmd=['qemu-system-x86_64','-machine','q35,accel=tcg','-m','256M','-drive',f'if=pflash,format=raw,readonly=on,file={fw/"edk2-x86_64-code.fd"}','-drive',f'if=pflash,format=raw,file={o/"vars.fd"}','-drive',f'if=ide,format=raw,file=fat:rw:{o/"esp"}','-device','qemu-xhci','-vga','std','-global',f'VGA.xres={w}','-global',f'VGA.yres={h}','-global','VGA.vgamem_mb=64','-display','none','-qmp',f'unix:{qmp},server=on,wait=off','-no-reboot']
+cmd=['qemu-system-x86_64','-machine','q35,accel=tcg','-m','256M','-drive',f'if=pflash,format=raw,readonly=on,file={fw/"edk2-x86_64-code.fd"}','-drive',f'if=pflash,format=raw,file={o/"vars.fd"}','-drive',f'if=ide,format=raw,snapshot=on,file={o/"boot.img"}','-device','qemu-xhci','-vga','std','-global',f'VGA.xres={w}','-global',f'VGA.yres={h}','-global','VGA.vgamem_mb=64','-display','none','-qmp',f'unix:{qmp},server=on,wait=off','-no-reboot']
 font={}
 for key,values in re.findall(r"(b'(?:\\.|[^'])+'|\d+) => \[([\d, ]+)\]",(root/'framebuffer/src/lib.rs').read_text()):
  c=ast.literal_eval(key);font[tuple(map(int,values.split(',')))]=chr(c[0] if isinstance(c,bytes) else c)

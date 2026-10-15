@@ -26,6 +26,9 @@ musha-viewer = { path = "../viewer" }
 
 [features]
 qemu-debug = []
+# Development-only configuration observation; never a distribution feature.
+startup-config-probe = ["qemu-debug", "file-viewer-probe"]
+startup-failure-probe = []
 # Screenshot-only exact GOP selection; never used in a distribution build.
 display-grid-probe = []
 fault-ud = ["qemu-debug"]

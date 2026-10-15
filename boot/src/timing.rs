@@ -1,17 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Diagnostic-only PM-epoch timings. BSP only; no controller writes.
-#[cfg(feature = "diagnostics-detail")]
+//! Normal-build PM-epoch timings. BSP only; no controller writes.
 use core::cell::UnsafeCell;
-#[cfg(feature = "diagnostics-detail")]
 use musha_platform::diagnostics::Line;
-#[cfg(feature = "diagnostics-detail")]
 struct Records(UnsafeCell<([Line; 256], usize)>);
-#[cfg(feature = "diagnostics-detail")]
 unsafe impl Sync for Records {} // BSP, interrupts disabled, no reentrant callbacks.
-#[cfg(feature = "diagnostics-detail")]
 static RECORDS: Records = Records(UnsafeCell::new(([Line::EMPTY; 256], 0)));
 pub fn record(args: core::fmt::Arguments<'_>) {
-    #[cfg(feature = "diagnostics-detail")]
     {
         use core::fmt::Write;
         let mut line = Line::EMPTY;
@@ -32,45 +26,26 @@ pub fn record(args: core::fmt::Arguments<'_>) {
             }
         }
     }
-    #[cfg(not(feature = "diagnostics-detail"))]
-    let _ = args;
 }
 pub fn count() -> usize {
-    #[cfg(feature = "diagnostics-detail")]
     return unsafe { (*RECORDS.0.get()).1 };
-    #[cfg(not(feature = "diagnostics-detail"))]
-    0
 }
 pub fn row(index: usize) -> musha_platform::diagnostics::Line {
-    #[cfg(feature = "diagnostics-detail")]
     return unsafe { (*RECORDS.0.get()).0[index] };
-    #[cfg(not(feature = "diagnostics-detail"))]
-    {
-        let _ = index;
-        musha_platform::diagnostics::Line::EMPTY
-    }
 }
 pub struct Span {
-    #[cfg(feature = "diagnostics-detail")]
     data: (u16, &'static str, Option<u64>, bool),
 }
 impl Span {
     pub fn new(bdf: u16, stage: &'static str) -> Self {
-        #[cfg(feature = "diagnostics-detail")]
         return Self {
             data: (bdf, stage, crate::bootstate::epoch_now(), false),
         };
-        #[cfg(not(feature = "diagnostics-detail"))]
-        {
-            let _ = (bdf, stage);
-            Self {}
-        }
     }
     pub fn finish(mut self, result: &'static str) {
         self.emit(result);
     }
     fn emit(&mut self, result: &'static str) {
-        #[cfg(feature = "diagnostics-detail")]
         {
             let (bdf, stage, start, done) = &mut self.data;
             if *done {
@@ -86,8 +61,6 @@ impl Span {
                 result
             ));
         }
-        #[cfg(not(feature = "diagnostics-detail"))]
-        let _ = result;
     }
 }
 impl Drop for Span {
@@ -116,4 +89,32 @@ pub fn display_state() -> (usize, usize, usize) {
         RESCAN.load(Ordering::Relaxed),
         CYCLE.load(Ordering::Relaxed),
     )
+}
+
+/// Compact devices-level summary, using the same PM epoch as stage spans.
+pub fn summary(fb: musha_framebuffer::Framebuffer, y: usize, scale: usize) {
+    use core::fmt::Write;
+    let r = crate::bootstate::report();
+    let mut line = Line::EMPTY;
+    let _ = write!(
+        line,
+        "PM ms core={} ready={} now={} records={}",
+        Milliseconds(r.core_ms),
+        Milliseconds(r.ready_ms),
+        Milliseconds(crate::bootstate::epoch_now()),
+        count()
+    );
+    unsafe {
+        fb.text_scaled(line.as_str(), 8, y, fb.color(180, 200, 220), scale);
+    }
+}
+
+struct Milliseconds(Option<u64>);
+impl core::fmt::Display for Milliseconds {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self.0 {
+            Some(n) => write!(f, "{}", n),
+            None => f.write_str("NA"),
+        }
+    }
 }

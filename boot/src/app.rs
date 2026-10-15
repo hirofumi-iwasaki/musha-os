@@ -137,6 +137,7 @@ impl Application for Diagnostic {
             self.file_done = true;
         }
         if VIEWER && self.viewer.render_step(ctx)? {
+            crate::bootlog::overlay();
             crate::bootstate::frame();
             crate::debug(b"MUSHA: VIEWER_FRAME ");
             crate::debug(match self.viewer.view() {

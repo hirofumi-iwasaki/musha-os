@@ -41,7 +41,9 @@ pub fn step(
     }
     let state = reader.step(files, bytes, now);
     if before == State::Searching && reader.claimed() {
-        crate::appconsole::start(fb, b"Loading AUTORUN.ELF ...\n");
+        if crate::bootlog::devices() {
+            crate::appconsole::start(fb, b"Loading AUTORUN.ELF ...\n");
+        }
         crate::bootstate::update(|r, t| {
             r.ready(true, t);
         });
@@ -104,6 +106,7 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
             if musha_memory::elf::Plan::parse(image()).is_err() {
                 reject(info, "Invalid ELF or ABI NOTE");
             }
+            crate::bootlog::ready(true);
             crate::appconsole::start(info.framebuffer, b"AUTORUN.ELF  (Ring 3)\n");
             crate::debug(b"MUSHA: EXTERNAL_ELF_DEVICES_STOPPED\n");
             crate::ring3::run(arena, info);
@@ -149,7 +152,9 @@ pub fn duplicate_catalog(name: &[u16; 12], fb: musha_framebuffer::Framebuffer) {
         unsafe {
             (&mut *STAGING.0.get()).0.duplicate();
         }
-        crate::appconsole::start(fb, b"Loading AUTORUN.ELF ...\n");
+        if crate::bootlog::devices() {
+            crate::appconsole::start(fb, b"Loading AUTORUN.ELF ...\n");
+        }
         crate::bootstate::update(|r, t| {
             r.ready(true, t);
         });

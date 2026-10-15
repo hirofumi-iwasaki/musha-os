@@ -11,6 +11,7 @@ p.add_argument('--boot-image',required=True,type=pathlib.Path)
 p.add_argument('--data-image',required=True,type=pathlib.Path)
 p.add_argument('--format',choices=['exfat','fat32'],default='exfat')
 p.add_argument('--split-controller',action='store_true')
+p.add_argument('--resolution',help='Explicit QEMU VGA mode WIDTHxHEIGHT for pixel references')
 p.add_argument('--apple-double-files',action='store_true',help='macOS fixture has one ._ metadata file after each test file')
 p.add_argument('--case',choices=['normal','cancel','disconnect','timeout','no-medium'],default='normal')
 p.add_argument('--output',type=pathlib.Path)
@@ -29,6 +30,8 @@ cmd=[a.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev','user,id=n','-devic
 '-device','qemu-xhci,id=usbhost','-device','usb-storage,id=storage,drive=data,bus=usbhost.0,port=1']
 if a.split_controller:cmd+=['-device','qemu-xhci,id=inputhost']
 cmd+=['-device','usb-kbd,id=keyboard,bus='+('inputhost.0' if a.split_controller else 'usbhost.0'),'-vga','std','-display','none','-debugcon',f'file:{log}','-global','isa-debugcon.iobase=0xe9','-qmp',f'unix:{qmp},server=on,wait=off','-no-reboot']
+if a.resolution:
+ w,h=map(int,a.resolution.split('x'));cmd+=['-global',f'VGA.xres={w}','-global',f'VGA.yres={h}','-global','VGA.vgamem_mb=64']
 with (out/'qemu.log').open('w') as err:
  proc=subprocess.Popen(cmd,stdout=err,stderr=err)
  try:
