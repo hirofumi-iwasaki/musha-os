@@ -138,3 +138,9 @@ ACPIのマッピング、実機でのPAT / MTRR適合性、arenaの全byte試験
 
 参照: [Intel SDM](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html)、
 [UEFIメモリマップ](https://uefi.org/specs/UEFI/2.10/07_Services_Boot_Services.html)
+
+## Memory-attribute interpretation / memory属性の解釈
+
+English: The current loader_coverage path requires complete bounded aligned LoaderData ownership, rejecting Runtime. Arena candidates are Conventional WB-capable non-runtime ranges after reserved-region subtraction. RP/RO/XP capability bits alone do not reject either owned region; the installed page tables enforce RW/NX and the chosen cache policy. Keep allocation, overlap, Runtime, image section and guard checks; this is not acceptance of firmware/reserved memory or expanded DMA cache capabilities. H7 observations, exact attributes and test counts remain in [history](history/memory-attribute-policy.md).
+
+日本語：loader_coverageは整列/範囲/全被覆LoaderDataとRuntime拒否を要求。arenaは予約除去後のConventional/WB/non-runtime。RP/RO/XP能力のみでは所有領域を拒否せず、自前page tableでRW/NX/cacheを決定。割当/重複/Runtime/PE/guardを維持しfirmware/予約領域受入やDMA cache条件拡大にしません。H7観測・属性値・試験数は[履歴](history/memory-attribute-policy.md)保持。

@@ -1,5 +1,7 @@
 # USB startup timing capture
 
+Status: current
+
 ## English
 
 Historical captures retain their original filename, MUSHA.ELF. From the renamed candidate onward, use AUTORUN.ELF.

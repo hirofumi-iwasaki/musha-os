@@ -1,5 +1,7 @@
 # First stage of xHCI initialization
 
+Status: current
+
 ## English
 
 Target the first xHCI controller found in segment 0.

@@ -1,5 +1,7 @@
 # Shared GPT/FAT32 USB image
 
+Status: current
+
 ## English
 
 Development change, 2026-10-13: new images use one FAT32 **Microsoft Basic Data**

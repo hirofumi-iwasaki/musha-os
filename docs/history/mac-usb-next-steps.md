@@ -1,5 +1,7 @@
 # Mac USB diagnostics and built-in keyboard plan (H12)
 
+Status: record (2026-10-15)
+
 H10実機ではメモリー初期化・PMタイマー・アプリ完了に到達した。C0はキーボード／ストレージ検出数0、C1/C2はPCI memory decoding無効で停止。内蔵キーボードの接続方式は画面だけでは確定できない。
 
 ## 今回の実装

@@ -1,5 +1,7 @@
 # NUC5 diagnostic capture / 診断採取
 
+Status: record (2026-10-14)
+
 ## English
 
 Historical captures retain their original filename, MUSHA.ELF. From the renamed candidate onward, use AUTORUN.ELF.

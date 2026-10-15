@@ -155,3 +155,10 @@ Status: record (dates and stage-specific counts remain in each original document
 - [xhci](xhci.md)
 
 Cleanup proposal / 整理承認用一覧: [stage2 review](docs-cleanup-stage2-review.md).
+
+## Stage2 consolidation / 第2段統合
+
+- [exFAT current contract](exfat.md) / 現行exFAT契約。
+- [Cleanup evidence](cleanup-round3-verification.json) / metadata・原文保存証拠。
+
+- [Round3 cleanup status](docs-cleanup-round3.md) / 第3回の完了範囲と留保。

@@ -1,5 +1,7 @@
 # xHCI DMA and command / event rings
 
+Status: current
+
 ## English
 
 ### Dedicated region

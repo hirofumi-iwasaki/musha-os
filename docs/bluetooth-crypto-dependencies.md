@@ -1,5 +1,7 @@
 # Bluetooth crypto dependency ledger
 
+Status: current
+
 ## English
 
 Normal boot enables internal bluetooth-security. RustCrypto AES/CMAC/P-256, subtle and zeroize are pinned; no primitive is invented. This is not certification or an audit of the new SMP/runtime. See [stage6 checkpoint](stage6-0.4.0-progress.md).

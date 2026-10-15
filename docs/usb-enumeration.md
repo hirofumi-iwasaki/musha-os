@@ -1,5 +1,7 @@
 # USB enumeration diagnostics
 
+Status: current
+
 ## English
 
 ### Scope

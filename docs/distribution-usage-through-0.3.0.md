@@ -1,5 +1,7 @@
 # 配布・配備手順 / Distribution and deployment
 
+Status: record (2026-10-15)
+
 ## v0.3.0 candidate root files / 候補のルートファイル
 
 English: `README.TXT` is generated from VERSION (ASCII, CRLF, at most 72

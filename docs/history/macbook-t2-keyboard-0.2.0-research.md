@@ -1,5 +1,7 @@
 # MacBook Pro 2018 internal keyboard: v0.2.0 investigation
 
+Status: record (2026-10-15)
+
 調査日: 2026-10-10。対象ブランチ: `release/0.2.0`（v0.1.0のmainから開始）。
 状態: ソース調査と実装方針。T2ドライバーはまだ実装・実機検証していない。
 

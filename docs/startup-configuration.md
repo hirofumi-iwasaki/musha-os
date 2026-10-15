@@ -1,5 +1,7 @@
 # Startup configuration / 起動設定
 
+Status: current
+
 ## English
 
 The v0.4.0 development implementation reads `/SETTINGS/CONFIG.TXT` on the FAT32 boot device through LoadedImage → BlockIO geometry validation → SimpleFileSystem, before GOP selection or the first OS display. Other attached data volumes do not supply CONFIG. exFAT is read-only data media. File, directory and volume handles are closed before GOP and final memory-map acquisition; only copied settings survive ExitBootServices. No firmware call is added between the final map and ExitBootServices.

@@ -1,5 +1,7 @@
 # ACPI timer discovery diagnostics / ACPIタイマー検出診断
 
+Status: record (2026-10-10)
+
 ## English
 
 H7 IMG_7448 confirms memory initialization passed; APP FAILED follows missing PM timer before USB work. Discovery currently returns None for every error, including table mapping/type/RP policy, checksums, root layout, absent/duplicate FADT and unsupported timer fields. Do not infer PM timer absence from None.

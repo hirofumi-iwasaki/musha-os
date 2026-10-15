@@ -1,5 +1,7 @@
 # T2-D1: read-only MacBook Pro evidence
 
+Status: record (2026-10-15)
+
 ## Purpose / 目的
 
 v0.2.0内蔵キーボード対応の最初の診断ビルド。T2ドライバーはまだ開始しない。

@@ -1,5 +1,7 @@
 # Boot readiness integration — document version 3.0
 
+Status: current
+
 ## English
 
 This active integration supersedes policy 2.0. The complete owner-supplied [policy 3.0, including section 12](reference/boot-api-sdk-v3/docs/boot-readiness-policy.md), [implementation request](reference/boot-api-sdk-v3/handoff/implementation-prompt.md), reviews and SHA256SUMS are preserved unchanged. All supplied checksums were verified. Document version is independent of OS, internal API and external ABI versions. The original remains the normative direction; implementation status below takes precedence over any assumption that a proposed feature already exists.

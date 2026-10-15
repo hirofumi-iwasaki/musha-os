@@ -1,5 +1,7 @@
 # Hardware test record template / 実機試験記録様式
 
+Status: current
+
 ## English
 
 Copy this document into a new result file for each configuration. Default values are UNKNOWN / NOT RUN. Fill observations without converting unknown or unsupported features into passes. Do not change the template itself to record a particular machine.

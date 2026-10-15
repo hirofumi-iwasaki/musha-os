@@ -1,5 +1,7 @@
 # Application return and reclamation prototype — C3
 
+Status: current
+
 ## English
 
 Opt-in `ring3-lifecycle-probe` extends [C2](ring3-elf.md) with three sequential launches of the same embedded ELF, reclamation after each launch and continuation into the existing PCI/cooperative application path. No default build, published binary or public ABI changes. Values remain candidate r1.

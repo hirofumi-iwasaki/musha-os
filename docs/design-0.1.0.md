@@ -1,5 +1,7 @@
 # Musha-OS 0.1.0 architecture design
 
+Status: record (2026-10-10)
+
 ## English
 
 Established: 2026-10-07. Updated: 2026-10-08. Status: Basic design adopted; detailed design ongoing.

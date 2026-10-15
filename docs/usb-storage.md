@@ -1,5 +1,7 @@
 # USB storage read diagnostics
 
+Status: current
+
 ## English
 
 ### Supported scope

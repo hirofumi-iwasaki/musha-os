@@ -1,5 +1,7 @@
 # v0.3.0 hardware observations
 
+Status: record (2026-10-14)
+
 ## Owner-approved NUC5 acceptance revision (2026-10-14)
 
 The owner replaces the per-run diagnostic pairing requirement with **one existing

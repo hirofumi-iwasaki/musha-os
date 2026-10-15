@@ -1,5 +1,7 @@
 # Running an external C application (development preview)
 
+Status: current
+
 ## English
 
 ### Stage4 r2 runtime checkpoint —2026-10-15

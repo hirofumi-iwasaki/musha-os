@@ -1,5 +1,7 @@
 # Stage2 local development results / 工程2 ローカル開発結果
 
+Status: current
+
 ## English
 
 This records the stage2 development implementation on `release/0.4.0`, after stage1 commit `35545a6fa7e515293e94e13b46ab2dd1733caea8`. No push, tag, Release, Actions dispatch, formal release candidate or physical USB operation was performed. See the [subsequent full regression](stage2-full-regression-0.4.0.md) for the owner-requested completion and corrective reruns. The owner's concurrent scope edits (goal9 USB mouse, goal12 BLE mouse trial, goal13 Ryzen LAN, goal17 device matrix and acceptance wording) are preserved and are not implementation changes in this checkpoint.

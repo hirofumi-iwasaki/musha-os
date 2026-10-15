@@ -9,7 +9,7 @@ Status: current
 Prefer the ACPI 2.0 GUID in the UEFI Configuration Table; fall back to the ACPI 1.0 GUID if absent.
 Obtain a memory map while Boot Services are active and read RSDP, RSDT / XSDT, and FADT.
 Before each read, verify that the referenced range fits within a single LoaderData,
-BootServicesData, RuntimeServicesData, ACPI Reclaim / NVS descriptor and is not read-protected.
+BootServicesData, RuntimeServicesData, ACPI Reclaim / NVS descriptor. RP/RO/XP attribute capabilities alone are not a read veto; firmware mappings are consumed only before ExitBootServices.
 Validate signatures, lengths, and checksums for RSDP and the SDTs in use.
 Limit RSDP to 4KiB, SDTs to 64KiB, and root references to 512; reject duplicate FADTs.
 
@@ -99,3 +99,9 @@ QEMU q35で100ms（0x64）を測定できた。通常smoke試験はこの成功�
 仕様参照:
 [ACPI 6.5 hardware specification §4.8.3.3](https://uefi.org/specs/ACPI/6.5/04_ACPI_Hardware_Specification.html)、
 [ACPI 6.5 tables / FADT](https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html)。
+
+## Firmware-table range policy / firmware表の範囲契約
+
+English: Before ExitBootServices, the actual acpi_read predicate requires a nonzero/nonempty overflow-safe range fully covered by one descriptor of type2/4/6/9/10. Reject unknown/reserved/MMIO ranges and partial coverage. UEFI attribute RP/RO/XP bits describe protection capabilities, not independently measured current page permissions; the firmware configuration-table contract supplies readable mappings. This neither changes firmware mappings nor grants post-EBS table access. Preserve signature/checksum/length, duplicate-FADT and PM-timer checks. The H9 evidence and its stage-specific16-test result remain unchanged in [history](history/acpi-read-policy.md).
+
+日本語：実acpi_read判定はEBS前、非ゼロ/非空/overflow安全、単一type2/4/6/9/10記述子の全被覆を要求。未知/予約/MMIO/部分被覆を拒否。RP/RO/XPは能力で現page権限の独立測定ではなく、firmware表契約のmappingで読みます。mapping変更やEBS後読出し許可にはしません。署名/checksum/長さ/FADT重複/PM timer検査を維持。H9実機証拠と当時16試験は[履歴](history/acpi-read-policy.md)へ保持。

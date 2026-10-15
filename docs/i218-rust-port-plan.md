@@ -1,5 +1,7 @@
 # I218-V Rust port plan / I218-V Rust移植方針
 
+Status: current
+
 ## English
 
 Target: Musha-OS 0.1.0, NUC5i5RYH/RYK I218-V. Established: 2026-10-08.

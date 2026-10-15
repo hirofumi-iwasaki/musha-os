@@ -1,5 +1,7 @@
 # Mac early memory initialization diagnostics
 
+Status: record (2026-10-10)
+
 ## English
 
 MacBook Pro 2018 booted the H2 USB image through the greeting, then stopped with MEMORY INVALID before USB discovery. This is a software validation result, not evidence of failed RAM. The precise failed condition is not yet known. Keep all memory protection and validation checks. Add stationary on-screen checkpoint, BootInfo map dimensions, image/table range, offending map descriptor where identifiable, reserved/DMA/MMIO range, PE and page-table stages. No early page rotation: the CPU must remain halted after failure. Capture the next screen before changing acceptance criteria.

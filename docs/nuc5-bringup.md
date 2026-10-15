@@ -1,5 +1,7 @@
 # Preparing for NUC5 hardware tests
 
+Status: current
+
 ## English
 
 ### Current v0.3.0 boot display

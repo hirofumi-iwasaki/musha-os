@@ -117,3 +117,9 @@ debugビルドでは終了時（またはアプリ失敗時）に`MUSHA: DIAG ..
 通常の再検証コマンドは上記を使用する。最初に`qemu-debug`でbuildしEFIを配置する。image生成は既存ファイルを置換しないため、新しい出力名を使う。fault試験は各featureが必要（`fat-corrupt`は破損fixtureを使用）。最後は`sh tools/build-esp.sh`で通常版へ戻す。故障注入版から実物USBを準備しない。firmware・QEMUのパスは環境に合わせる。
 
 現行パネルは上記の共通グリッドで配置します。未調査はNOT PROBED、調査中はPROBING、探索済みはSCANNED、入力先は*ACTIVEです。[複数コントローラーとハブ対応](usb-multi-controller-hub-plan.md)を参照してください。
+
+## Related PCI and NUC5 records / 関連PCI・NUC5記録
+
+- [PCI diagnostic inventory](pci.md): current diagnostic interpretation / 診断inventory解釈。
+- [NUC5 diagnostic capture history](nuc5-diagnostic-capture.md): dated capture procedures, not current acceptance requirements / 当時の採取手順。現受入条件とは区別。
+- [Current release scope](release-scope-0.4.0.md) / 現行受入範囲。

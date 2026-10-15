@@ -1,5 +1,7 @@
 # v0.3.0 release scope and publication conditions
 
+Status: record (2026-10-14)
+
 Current acceptance update (2026-10-14): candidate 9f8d999 hardware gate PASS. NUC5: existing IMG_7645 diagnostic D8=0 once plus normal cold 3/3, accepted by owner; Ryzen: cold 3/3 + hot 1/1; Mac: Basic Data boot. Normal-run D8 was not measured. This supersedes earlier pending acceptance wording below. Post-acceptance equivalence and CI/publication remain pending. See [hardware acceptance](hardware-acceptance-0.3.0.md).
 
 現行受入更新（2026-10-14）：候補9f8d999の実機ゲート合格。NUC5は所有者決定で既存IMG_7645診断D8=0証拠1回＋通常版冷間3/3、Ryzen冷間3/3＋ホット1/1、Mac Basic Data起動を採用。通常版D8は未測定です。下記の過去の未完了表記より本更新を優先します。受入後の一致確認・CI・公開は未完了。[実機受入](hardware-acceptance-0.3.0.md)。

@@ -1,5 +1,7 @@
 # CPU tables and exception diagnostics
 
+Status: current
+
 ## English
 
 Implemented on 2026-10-08. Targets the initial x86-64 BSP runtime at ring 0 with interrupts disabled.

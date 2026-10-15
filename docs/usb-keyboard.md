@@ -1,5 +1,7 @@
 # USB Boot Keyboard diagnostics
 
+Status: current
+
 ## English
 
 ### Configuration and input

@@ -1,5 +1,7 @@
 # Intel shared-port routing and attach settling
 
+Status: current
+
 ## English
 
 The NUC5 cold-boot failure on EFI `41a61ef...` is owner-reported. Routing to EHCI and late connection after reset are hypotheses; neither is proven fixed on hardware. Source reference: [Linux pci-quirks.c, usb_enable_intel_xhci_ports](https://github.com/torvalds/linux/blob/master/drivers/usb/host/pci-quirks.c) (consulted 2026-10-13). This is an independent implementation of register operations, not copied Linux source.

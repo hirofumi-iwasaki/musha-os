@@ -1,5 +1,7 @@
 # Development instructions and initial implementation
 
+Status: current
+
 > Development update: [boot policy 3.0](boot-readiness-policy.md), [ABI candidates](application-abi.md), [SDK](sdk.md). A/B is static/cooperative; [C1](ring3-prototype.md) tests a fixed Ring 3 fixture, with SDK execution still pending.
 > 開発更新：[起動方針3.0](boot-readiness-policy.md)・[ABI候補](application-abi.md)・[SDK](sdk.md)。[C1](ring3-prototype.md)で固定Ring 3試験に着手し、SDK実行は後続です。
 

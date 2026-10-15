@@ -1,5 +1,7 @@
 # Initial application file API
 
+Status: current
+
 ## English
 
 ### Scope and ownership

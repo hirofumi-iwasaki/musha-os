@@ -1,5 +1,7 @@
 # v0.2.0 — Read-only FAT32/exFAT file viewer
 
+Status: record (2026-10-12)
+
 ## English
 
 Released on 2026-10-12 as a development release. The owner approved publication with the hardware validation items below still pending.

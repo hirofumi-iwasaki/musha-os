@@ -1,5 +1,7 @@
 # Readable display / 読みやすい表示
 
+Status: record (2026-10-15)
+
 ## English
 
 The current display rule (owner decision 2026-10-14) replaces the earlier

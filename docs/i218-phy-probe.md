@@ -1,5 +1,7 @@
 # I218 PHY probe / I218 PHY診断
 
+Status: current
+
 ## English
 
 This is the first implementation milestone of the [I218 Rust port plan](i218-rust-port-plan.md). It does **not** implement I218 networking. The default build still supports only the QEMU 82574 NIC and reports unsupported LAN on NUC5. NUC5/NUC8 hardware has not been tested.

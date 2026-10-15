@@ -1,5 +1,7 @@
 # Stage 3 implementation checkpoint — 2026-10-15
 
+Status: current
+
 ## English
 
 The approved stage3 commit `b745e47bc7e663057d0b969c2902146a5b6ff30f` was pushed normally to `origin/release/0.4.0`. This document accompanies the owner-authorized stage3 implementation commit. Local verification is complete; release and hardware acceptance remain open.

@@ -1,5 +1,7 @@
 # Release documentation and publication rules
 
+Status: current
+
 ## English
 
 These rules apply to README.md, versioned release notes, and GitHub Release descriptions, including corrections after publication.

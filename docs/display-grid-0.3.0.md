@@ -1,5 +1,7 @@
 # Shared display grid / 共通文字グリッド
 
+Status: record (2026-10-14)
+
 ## English
 
 Owner decision (2026-10-14): include the shared display grid in 0.3.0 and

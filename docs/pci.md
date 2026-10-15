@@ -1,5 +1,7 @@
 # PCI device diagnostics
 
+Status: current
+
 ## English
 
 Musha-OS 0.1.0 scans buses 0–255 and devices 0–31 in segment 0 using

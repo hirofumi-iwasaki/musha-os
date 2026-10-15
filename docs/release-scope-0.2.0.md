@@ -1,5 +1,7 @@
 # v0.2.0 開発方針と公開条件
 
+Status: record (2026-10-15)
+
 Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
 
 当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。

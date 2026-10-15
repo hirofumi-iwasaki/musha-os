@@ -1,5 +1,7 @@
 # Stage4 local regression — 2026-10-15
 
+Status: current
+
 ## English
 
 This checkpoint follows the [r2 runtime integration](stage4-r2-0.4.0-progress.md). Results are local host/QEMU evidence, not NUC5/Ryzen acceptance. The full results and commands are in `out/stage4-regression/verification.json` and adjacent suite logs. All requested local suites pass: 313 workspace-library tests, 2 Rust SDK tests, 52 Python tests across 7 suites, and 26 malformed ELF cases for each ABI revision (overlapping mutations). QEMU has 275 successful case executions: CI54, C1/C2/C3 8/14/20, BasicData/ESP38, external debug27/normal26, hotplug/timing/hub7, address recovery2, resolution/hold20, USB/network variants13, startup16, diagnostic hold3, SETTINGS15, r2 runtime11, mixed FP1. These include overlapping paths and are not 275 independent features. CI54 cases use52 QEMU tool invocations within107 total build/image/test commands. Failed initial attempts and limited reruns are documented separately. The three timing sizes ran alone after other QEMU suites ended. Four SETTINGS sector/cluster geometries also pass isolated dosfstools `fsck.fat`; existing macOS checks and untouched-region assertions pass. Normal EFI SHA-256: `5eb59f8d79583a28d4e91645f86244e2b2556b5fbfb1e513550a44597d188f07`.

@@ -1,5 +1,7 @@
 # Candidate USB usability / 候補USBの利用者向け整備
 
+Status: record (2026-10-14)
+
 ## English
 
 Owner decision: 2026-10-14. Local implementation and test evidence only.

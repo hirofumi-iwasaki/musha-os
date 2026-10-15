@@ -1,5 +1,7 @@
 # External ELF loading and memory lifetime
 
+Status: current
+
 ## English
 
 The development normal build now loads external ELF and displays application output. [Application usage](external-app.md), [scope](release-scope-0.3.0.md), [2b results](handoff/0.3.0-step2b-results.md) and [2c results](handoff/0.3.0-step2c-results.md) distinguish implementation, local tests and outstanding release gates. ABI candidate r1 is not frozen. Nothing here changes published v0.2.0 assets.

@@ -1,5 +1,7 @@
 # Boot/API integration 3.0 — local validation and remaining gates
 
+Status: current
+
 ## English
 
 Latest local evidence: [A](handoff/0.3.0-release-a-results.md), [C SDK](handoff/0.3.0-release-c-results.md), [development hardware observations](hardware-acceptance-0.3.0.md), [deferred issues](open-issues-0.3.0.md). Candidate hardware cold boots remain NOT PERFORMED.

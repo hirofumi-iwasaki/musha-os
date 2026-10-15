@@ -1,7 +1,7 @@
-# Linuxでの配備状況
+# usb-install-linux — redirected / 統合先
 
-新しい配布形式と[共通手順](distribution-usage.md)を参照。
-Linux物理USB識別・更新・容量調整書込みアダプターは未提供、ホスト試験も未実施です。
-通常ファイル用Pythonツールを仮想環境で試験できますが、実USB対応済みとは扱いません。
-64 MiB像を大容量USBへddするだけの導入は不可です。
-既存のFAT32上のEFI配置という起動契約は維持します。実媒体の初回配備は別の承認・実装・検証が必要です。
+Status: superseded by [distribution-usage.md](distribution-usage.md)
+
+English: The current contract is maintained in the linked page. The original dated text and results are preserved in [history](history/usb-install-linux.md). This compatibility entry preserves existing references.
+
+日本語：現行契約は上記へ統合しました。当時の本文・結果は[history](history/usb-install-linux.md)に保存し、既存参照用の入口を維持します。

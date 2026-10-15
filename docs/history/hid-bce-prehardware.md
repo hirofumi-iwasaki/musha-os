@@ -1,5 +1,7 @@
 # HID parsing and simulated BCE I/O
 
+Status: record (2026-10-15)
+
 Development status: 2026-10-10, release/0.2.0. Both libraries are hardware-independent.
 The HID decoder is not selected by the boot runtime, which retains the tested boot
 keyboard decoder. The BCE crate remains absent from boot's production dependencies.

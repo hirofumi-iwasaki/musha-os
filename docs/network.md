@@ -1,5 +1,7 @@
 # QEMU network diagnostics / QEMUネットワーク診断
 
+Status: current
+
 ## English
 
 Implemented on 2026-10-08 for the QEMU `e1000e` 82574 device (PCI `8086:10D3`). It now runs within the [cooperative input/file/network session](cooperative-io.md). An application UDP API remains unimplemented. I218-V (NUC5) and I219-V (NUC8) network initialization and physical verification remain pending. The initial [I218 PHY probe](i218-phy-probe.md) is opt-in and does not start a network session. Other NICs report unsupported.

@@ -1,5 +1,7 @@
 # v0.3.0 open issues
 
+Status: record (2026-10-14)
+
 ## English
 
 Owner decision (2026-10-14): the automatic boot filename is `AUTORUN.ELF`; the previous `MUSHA.ELF` is not accepted. This implementation choice does not change the ABI, syscalls, NOTE or SDK-generated ELF. When AUTORUN.ELF is present, the viewer does not start.

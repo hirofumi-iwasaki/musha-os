@@ -1,0 +1,742 @@
+{
+  "integration": [
+    {
+      "original": "application-api.md",
+      "canonical": "application-abi.md",
+      "history": "history/application-api.md",
+      "original_sha256": "a64fd82e8adf80703a17d7908ed9a1ff44ea8bedac1c3643d22f33fc989444b0",
+      "history_sha256": "655191ed73e0dfd756ec2f5d5c94aaec78dd6cec60c7c39add074dee86a6c4d0",
+      "original_prose_preserved_except_status_and_relative_links": true,
+      "verified_original_source_sha256": "a64fd82e8adf80703a17d7908ed9a1ff44ea8bedac1c3643d22f33fc989444b0",
+      "destination_only_link_changes": [
+        [
+          "ring3-prototype.md",
+          "../ring3-prototype.md"
+        ],
+        [
+          "ring3-elf.md",
+          "../ring3-elf.md"
+        ],
+        [
+          "app-api.md",
+          "../app-api.md"
+        ],
+        [
+          "application-abi.md",
+          "../application-abi.md"
+        ]
+      ]
+    },
+    {
+      "original": "usb-install-linux.md",
+      "canonical": "distribution-usage.md",
+      "history": "history/usb-install-linux.md",
+      "original_sha256": "f890559e5cc638d98350a53b2a9ac1ff32880c60c383b0d418991feea9af0c50",
+      "history_sha256": "148a661037002be832e315c66300ec19a7b7063f0e04d89c1bb595b659103680",
+      "original_prose_preserved_except_status_and_relative_links": true,
+      "verified_original_source_sha256": "f890559e5cc638d98350a53b2a9ac1ff32880c60c383b0d418991feea9af0c50",
+      "destination_only_link_changes": [
+        [
+          "distribution-usage.md",
+          "../distribution-usage.md"
+        ]
+      ]
+    },
+    {
+      "original": "usb-install-windows.md",
+      "canonical": "distribution-usage.md",
+      "history": "history/usb-install-windows.md",
+      "original_sha256": "4fd8fe965ee62fe42875713d69d79397126b7516c3955eb00cbc4355f4f831bc",
+      "history_sha256": "acb58d85bcceed3c3151ee5d3df9bc3f53186b347588ef2a0afaad535163f472",
+      "original_prose_preserved_except_status_and_relative_links": true,
+      "verified_original_source_sha256": "4fd8fe965ee62fe42875713d69d79397126b7516c3955eb00cbc4355f4f831bc",
+      "destination_only_link_changes": [
+        [
+          "distribution-usage.md",
+          "../distribution-usage.md"
+        ]
+      ]
+    },
+    {
+      "original": "acpi-read-policy.md",
+      "canonical": "acpi-timer.md",
+      "history": "history/acpi-read-policy.md",
+      "original_sha256": "9d002b43db513048c939ca1c957d52eae392148d3a14e462e6b98b51bef8771d",
+      "history_sha256": "b4a4f02606d5d83748e31aedc01562fd543655e8de0296322eb61a40a92001c3",
+      "original_prose_preserved_except_status_and_relative_links": true,
+      "verified_original_source_sha256": "9d002b43db513048c939ca1c957d52eae392148d3a14e462e6b98b51bef8771d",
+      "destination_only_link_changes": []
+    },
+    {
+      "original": "memory-attribute-policy.md",
+      "canonical": "memory.md",
+      "history": "history/memory-attribute-policy.md",
+      "original_sha256": "ce525d00598941a2766ef3d434a398982733d3eaeada2e775d45d9e0ef3e28d4",
+      "history_sha256": "f6563a3f9bf97451bf7800778ce97b3114ea6eb66f859e701014621c54c7195f",
+      "original_prose_preserved_except_status_and_relative_links": true,
+      "verified_original_source_sha256": "ce525d00598941a2766ef3d434a398982733d3eaeada2e775d45d9e0ef3e28d4",
+      "destination_only_link_changes": []
+    },
+    {
+      "original": "exfat-design.md",
+      "canonical": "exfat.md",
+      "history": "history/exfat-design.md",
+      "original_sha256": "6948299b8280eaaa062f8e4e15b82758df122379bbcb880491820d539ed5b87a",
+      "history_sha256": "a4c6a2405ba08abd3213c0f6a009b6df0a62257a0196821fa8a0d155a3dab1cf",
+      "original_prose_preserved_except_status_and_relative_links": true,
+      "verified_original_source_sha256": "6948299b8280eaaa062f8e4e15b82758df122379bbcb880491820d539ed5b87a",
+      "destination_only_link_changes": [
+        [
+          "work-plan-0.2.0.md",
+          "../work-plan-0.2.0.md"
+        ],
+        [
+          "exfat-reader.md",
+          "../exfat-reader.md"
+        ]
+      ]
+    },
+    {
+      "original": "exfat-reader.md",
+      "canonical": "exfat.md",
+      "history": "history/exfat-reader.md",
+      "original_sha256": "54a48e35a0e4e9e516cd960d26c902ea01cbddc2d02345d85ed7da4a8a7f2bb6",
+      "history_sha256": "a0075498821d7e91fcba4e7eaf8648d5399f4c5a68cccaf75b5adf68f5c4acb2",
+      "original_prose_preserved_except_status_and_relative_links": true,
+      "verified_original_source_sha256": "54a48e35a0e4e9e516cd960d26c902ea01cbddc2d02345d85ed7da4a8a7f2bb6",
+      "destination_only_link_changes": [
+        [
+          "work-plan-0.2.0.md",
+          "../work-plan-0.2.0.md"
+        ],
+        [
+          "exfat-design.md",
+          "../exfat-design.md"
+        ],
+        [
+          "exfat-fixtures.md",
+          "../exfat-fixtures.md"
+        ]
+      ]
+    },
+    {
+      "original": "exfat-fixtures.md",
+      "canonical": "exfat.md",
+      "history": "history/exfat-fixtures.md",
+      "original_sha256": "ed10c71bfbcb04d1b70554d3a17da1e574137d3f45aeb93b21828b84744dcfe1",
+      "history_sha256": "24ab6c01a389bb483ff932434bd3505a599fa03f4fe88975310ea2a641ce1c06",
+      "original_prose_preserved_except_status_and_relative_links": true,
+      "verified_original_source_sha256": "ed10c71bfbcb04d1b70554d3a17da1e574137d3f45aeb93b21828b84744dcfe1",
+      "destination_only_link_changes": [
+        [
+          "exfat-reader.md",
+          "../exfat-reader.md"
+        ],
+        [
+          "exfat-design.md",
+          "../exfat-design.md"
+        ],
+        [
+          "release-validation-0.2.0.md",
+          "../release-validation-0.2.0.md"
+        ]
+      ]
+    },
+    {
+      "original": "stream-file-api.md",
+      "canonical": "exfat.md",
+      "history": "history/stream-file-api.md",
+      "original_sha256": "7baf3286f42fc41b8549955606585a7a0a3969222cc8200009397ce80932bbcd",
+      "history_sha256": "ad90db66aada63dae9e0312a9bbe1b179df640e463960b29948ab0ae49baac8f",
+      "original_prose_preserved_except_status_and_relative_links": true,
+      "verified_original_source_sha256": "7baf3286f42fc41b8549955606585a7a0a3969222cc8200009397ce80932bbcd",
+      "destination_only_link_changes": [
+        [
+          "bot-polling.md",
+          "../bot-polling.md"
+        ],
+        [
+          "bot-polling.md#工程5完了-通常サービスと別controller保持",
+          "../bot-polling.md#工程5完了-通常サービスと別controller保持"
+        ]
+      ]
+    },
+    {
+      "original": "bot-polling.md",
+      "canonical": "exfat.md",
+      "history": "history/bot-polling.md",
+      "original_sha256": "b1467d1bcc81f5a505066f754d3c2c024dc65b637721a2b03d6f494d67370161",
+      "history_sha256": "85cd25ca152d86edf08ee663d551ac24e16e87cd7ca244e8ea67d8aa9b7796a0",
+      "original_prose_preserved_except_status_and_relative_links": true,
+      "verified_original_source_sha256": "b1467d1bcc81f5a505066f754d3c2c024dc65b637721a2b03d6f494d67370161",
+      "destination_only_link_changes": []
+    }
+  ],
+  "metadata": [
+    {
+      "path": "docs/acpi-timer-diagnostics-plan.md",
+      "status": "record (2026-10-10)",
+      "original_sha256": "dd0d72149d8c3b50e79940b71c07e189021a1767bf98353b5879ff72a079f2b9",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/basic-data-validation.md",
+      "status": "current",
+      "original_sha256": "9e574d1880225b8aa9f3e3deb713351cdd76fc5ad164e854caf6b6ecf824ea1f",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/bluetooth-crypto-dependencies.md",
+      "status": "current",
+      "original_sha256": "7a1a2d996cb1d45200608d529bc267f1eb70872bdf4fb477e084742c91ed2365",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/boot-api-validation.md",
+      "status": "current",
+      "original_sha256": "896be25c8032e89f8becb0e1c5d59ca19942eaa0a591461d6cc46df049ab5f51",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/boot-readiness-policy.md",
+      "status": "current",
+      "original_sha256": "27464985637fb93df371eed4220f69aeaf21a0e707b5ba9243b000b4c6133c2d",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/cooperative-io.md",
+      "status": "current",
+      "original_sha256": "d2d91088a6799eb66c5f9064c5c3c3a5a830df7bd6091e7339c5fa3ee391aaac",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/cpu-exceptions.md",
+      "status": "current",
+      "original_sha256": "b10cf4b4402272e15537b0ffcc0a929b5dc6ca21d9f37bc578794f2e37a6d31a",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/design-0.1.0.md",
+      "status": "record (2026-10-10)",
+      "original_sha256": "085a075aaa78abf26a31efef0b3cd260679cf84cb70dcb4249d290ce14458e74",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/development.md",
+      "status": "current",
+      "original_sha256": "c042752c61ed1fdbd15edeaabb20c3220194ff54497452d554c3312383be0e3f",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/display-grid-0.3.0.md",
+      "status": "record (2026-10-14)",
+      "original_sha256": "ad6371b5c3c4551add07ef54d885fbd2d3a8a2489095d0e0db25f9c593cf5bcf",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/distribution-usage-through-0.3.0.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "135538398c05a36f29b4c85fb053dbeba5f993b0827b79895a9bf1d9a8bd2285",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/external-app.md",
+      "status": "current",
+      "original_sha256": "745711ce6e2a8fc2e150364133ee3f064ee9798c711be74e59fbe1496af050f5",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/external-elf.md",
+      "status": "current",
+      "original_sha256": "e25b36ced55bca8d3591ef5a7cf1e1aa73af18d256f6d255743da5396e5a7aad",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/file-api.md",
+      "status": "current",
+      "original_sha256": "0d40c1d5c2bb5a5969f7957b5443b6672175a6f27382f511e2d2f29d8fa2483a",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/future-design.md",
+      "status": "current",
+      "original_sha256": "9f9499b2f9a8e54f1c10b252906d38bfd9bacd109a350e22be83f2c4ae68c90f",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/hardware-acceptance-0.2.0.md",
+      "status": "record (2026-10-12)",
+      "original_sha256": "9c233671ae19d5019ed7f282db7bf73f7c9052097c23cd5ef2e92f8b2d0f81f2",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/hardware-acceptance-0.3.0.md",
+      "status": "record (2026-10-14)",
+      "original_sha256": "92c9a5573bb9781ef2c1ee2e578f6ccbf940e81425004cb13d15526de3e2c310",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/hardware-test-record-template.md",
+      "status": "current",
+      "original_sha256": "2164de66f2b34c0e2263add25210b1452f5811b4dc6790c8d227f9555bbda669",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/hardware-verification-status.md",
+      "status": "current",
+      "original_sha256": "cc278dc798b5051fd0d8bb2d42c6f6797c8993b6e705089dd62a22d455708b25",
+      "metadata_only": false,
+      "english_wrapper_added_original_body_byte_identical": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/bce-registration-memory.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "c1312bd217a3b63aafc987d58a62d6f7ba00b6f09cd882a957b43a257f284307",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/distribution-validation.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "c7e87d1897615e50597c26938940e87879482a12b20ae810ca154f957070dde6",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/hid-bce-prehardware.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "c27bd2f0c6857b8a0ca930106b3e841268b854e06c5212f498e0f3a67ac49e63",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/input-prehardware-validation.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "2368fa736120fe889f3c2759e202970e177de9ee26a3be1c69478e828202dc9d",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/mac-usb-next-steps.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "f1a7489dfd088e9b42c56769896b6fd66ee8c404c0b9389cce43e336f5be1af9",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/macbook-t2-keyboard-0.2.0-research.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "6d2d951cbca5a4b67d85b06fd854acb8f9597a8e11104eab38712f2f763a5ddc",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/mi68-display.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "b99b39c1ad41a1c9cfabc7e42b4e992a101815317e72be77912e463cb3944e83",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/pci-h14-recovery-plan.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "73e20c3763ba66abf75e30057fd8ccdfa2bab6216ce686bc59bb8a41d9074ab2",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/pci-h15-resource-evidence-plan.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "3e902d2df04a07727330ceb9a2d6045fc051882727f38725d5361f2b92984e1e",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/pci-h16-resource-parser-plan.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "29a4de6f2993e2a1bd34a042575bbb2b751a78067cc484c1a38311f1ad127672",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/pci-h17-bar-consistency-inspection-plan.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "c7a6dc1800b26a4833da89cf9cc5163a0a40be640b6efde160eff064c2a24014",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/pci-h17-hardware-results.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "fed373ab499d6132a84893c86040c6452cde362d57c7b39c682752d94db1111e",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/pci-h18-bar-index-plan.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "eb90a29bf593e57b7d816b911c49f8a77b0deca75fc16f80fd8026bb53aa385e",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/pci-h18-hardware-results.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "a533b4e74a8b765db520c1b96b64ae60bd1c18ef112eed70bbe464208c9d3c58",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/pci-h19-hardware-results.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "9266f38911ef794825225b3da829a521e5a9c93ecd82434b58096813da5dc1df",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/pci-h19-peer-resource-plan.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "f30ac93340f774ab1af5c518f348e74a41434cc66d5943d8bfce95b5cec7b072",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/history/t2-d1-diagnostics.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "93beb44f82c1ea97a2d153e9f32d25a3c1f0ca50e846903df026881f7a9c62f9",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/i218-phy-probe.md",
+      "status": "current",
+      "original_sha256": "ebf67334a6fc3aa06404480731af4ee376a2ab11f1e0d9e7d3e0adcc7b750938",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/i218-rust-port-plan.md",
+      "status": "current",
+      "original_sha256": "116eb95f167545c71a74e2a0bf5ec8cc57da70095ed7850bde44b922706a9098",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/implementation-plan-0.1.0.md",
+      "status": "record (2026-10-10)",
+      "original_sha256": "7758e31ef7a109fd8a9de8c4f1be8829f33b09f2a5e82227e44711e4ed832042",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/intel-xhci-routing.md",
+      "status": "current",
+      "original_sha256": "e93c77b47b0344ec385893d1bb3e9d3f6d75450f3095ccaafa66a2415b5e8632",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/mac-memory-diagnostics.md",
+      "status": "record (2026-10-10)",
+      "original_sha256": "f41dcf090a8ba3e40c04f636488ad90d068c535f2b78e12669b8f991912e09e6",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/mi68-preparation-results.md",
+      "status": "record (2026-10-14)",
+      "original_sha256": "74dd09b6433603b8cb0d1cd93a5fb87bc180a3d82f9fd531c283a5773d283069",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/mi68-release-preparation.md",
+      "status": "record (2026-10-14)",
+      "original_sha256": "f8d4cbe4988d5153128f6e41b3678c50648f873c8424b0a783dc32778ee49552",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/network.md",
+      "status": "current",
+      "original_sha256": "8b48378e0687ba48bbf6377a35aa97f0e76b163a97a48a225ec82c8d93c236a3",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/nuc5-bringup.md",
+      "status": "current",
+      "original_sha256": "3ad540b2aa9b6a054c34fc90bb02cd5cd5a179a8a5466e805b521af6f5957a2c",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/nuc5-diagnostic-capture.md",
+      "status": "record (2026-10-14)",
+      "original_sha256": "ea85c5730174c60afada6c52c4d26dab0a75e60c26ff915e9fa17e1b7de1dc3a",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/open-issues-0.3.0.md",
+      "status": "record (2026-10-14)",
+      "original_sha256": "7f85e0a630094acad0c84d757be725a6c65c2b5dcc7a9d04010c0bbc1bfb2185",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/pci.md",
+      "status": "current",
+      "original_sha256": "8a2b7efb0f402c9eb75c1ba492344992aaf0d9841ad0ebe5ecede2cf03f25d83",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/policy-v0.1.md",
+      "status": "record (2026-10-10)",
+      "original_sha256": "d2f1017b0ce20d1efe824415ffa93c8d294aaf90f66a42f50ae46d2c07931add",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/pre-hardware-work-plan.md",
+      "status": "current",
+      "original_sha256": "d1238fc794d8c3dbcf001f8bf4aeefdf6cb77ef4c3cd510308f2b9612a8c130c",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/release-editorial-policy.md",
+      "status": "current",
+      "original_sha256": "fe1f2ef2ac1bb37e003f0c03a1578923848710a08742cd57cfc0212e885275e0",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/release-notes-0.1.0.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "1d93ca08cf8d4218cb98c80d6328ca8e178386181b3c1ebbe11268e17127157a",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/release-notes-0.2.0.md",
+      "status": "record (2026-10-12)",
+      "original_sha256": "e4df0a8bf872e02d8201569271481c336f2c0d86cbffcfbae22a360ba52b0935",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/release-scope-0.1.0.md",
+      "status": "record (2026-10-14)",
+      "original_sha256": "d656e129ac09562dffd4a9a72f17a825ff9f34c85ccc60955d32f4aab1d13d04",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/release-scope-0.2.0.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "41faddd959544252b70fe04638afb848c76fbf356cee81ddba0792137a535930",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/release-scope-0.3.0.md",
+      "status": "record (2026-10-14)",
+      "original_sha256": "86bbcbfe287f6c46deee17d9d22763eb281422b3776110c82c14508906b91dc8",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/release-validation-0.1.0.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "ca3e9e85b1619660570da3a50330067d7647022e62f2a99a9cb6a9688e89cb1b",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/release-validation-0.2.0.md",
+      "status": "record (2026-10-15)",
+      "original_sha256": "162fa4307553f5394b9d686ccad30db4867518e1f0070ccaa393c8c66551c5d2",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/ring3-lifecycle.md",
+      "status": "current",
+      "original_sha256": "bc64e2b5f7d4fe96afbe2b2939de17cc3fd8075ab0c5df9d3485c93d150d8640",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/ryzen-h4-hardware-results.md",
+      "status": "current",
+      "original_sha256": "0e601cf7e28fd6afb17c2a7b8f855fc883e4f8b278312725f76ba50b54be425e",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/sdk-guide.md",
+      "status": "current",
+      "original_sha256": "0df35cb167d9d55aaf0c16cd808eebf697aba17a5c7118cbb63bfbd11113a425",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/stage2-0.4.0-results.md",
+      "status": "current",
+      "original_sha256": "93e4b6cb82ca372e2219a6a6fa047fdc166b19b265b1f78629099d101503c240",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/stage3-0.4.0-progress.md",
+      "status": "current",
+      "original_sha256": "9702bcd4920836489cb552d5b19e9edb269c6507d9de1fb87df5374f8b8225c4",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/stage4-local-verification-0.4.0.md",
+      "status": "current",
+      "original_sha256": "1f7df1996c845a76d19c3e8bf9d078d52bdb7c7307d5dda435524b816c6b0ff2",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/startup-configuration.md",
+      "status": "current",
+      "original_sha256": "2204e886e4519f088594e3bbe3bff377d6e575c6fdc38f222d8c734e8ae18915",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/usb-controller-diagnosis.md",
+      "status": "current",
+      "original_sha256": "9d63e04ba4b3a78ed7cc7d4cae9990de675c0bb0170886d1689922588e33998f",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/usb-enumeration.md",
+      "status": "current",
+      "original_sha256": "3c441df3b591f75666f928903c3fec8292c7be1f7466a1c9e579510c680a2e67",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/usb-h3-diagnostics-plan.md",
+      "status": "record (2026-10-14)",
+      "original_sha256": "5950ee9787eab7c46b1983f60765b1b9ecf07e46065cbe34cbb2a16046e93833",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/usb-image.md",
+      "status": "current",
+      "original_sha256": "ce56ee14f256fc4e7201814490e3cab23f2fdefef32e3899c5fd7926d69587a4",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/usb-keyboard.md",
+      "status": "current",
+      "original_sha256": "6e7ca29cf4ddb9b6344fc53514bbf4b00ea0d1f5c87413b47242bd702805b216",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/usb-multi-controller-hub-plan.md",
+      "status": "current",
+      "original_sha256": "2ddd91c59dd67e2dffd855dc822a2a4280a4d904d6a768ae44de5fef4e3a825f",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/usb-startup-timing.md",
+      "status": "current",
+      "original_sha256": "ff89084582e88a4a2f922fc9c1e66c75e3f2f484d0c87c05deaf9b54f24450f5",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/usb-storage.md",
+      "status": "current",
+      "original_sha256": "3bd204229e8c09223fa2e1fa624b6f6f03b14adeb63743544271b1f0974ba33c",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/usb-usability-0.3.0.md",
+      "status": "record (2026-10-14)",
+      "original_sha256": "8a539230df0f7b557ba254a90ff3316d6961938842da9b67ac2fc6d2b2b81cc6",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/work-plan-0.2.0.md",
+      "status": "record (2026-10-12)",
+      "original_sha256": "5e8bf4cb36ce3ca11a11aba9f317da692ea04fb07f1eca422ea9fe063c183f96",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/xhci-rings.md",
+      "status": "current",
+      "original_sha256": "8fb7be6fc49d5d3293195fafce5814fad8655af8a7e55cac8935621123093f1f",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    },
+    {
+      "path": "docs/xhci.md",
+      "status": "current",
+      "original_sha256": "33d3ac65c8da7566520210032917621e04e0dfc94aa684425dfbdbcde6f2f31e",
+      "metadata_only": true,
+      "verified_against_source_commit": true
+    }
+  ],
+  "protected_sha256": {
+    "README.md": "a6855b328f5c7ec5611f308d92f746a93c3158b814f2071cd987f7935d1368da",
+    "docs/i218-hardware-quickcheck.md": "4506c28cf5d9b7b4250458b85aa7d55b527703a3acd0ec4cbae73ee31a359918",
+    "docs/release-scope-0.4.0.md": "80f931a53c898b3e41dd899908794559c15ac40de0e359eed909e8a95bef8a61",
+    "docs/no-shell-policy.md": "296eb82befb74f041b002db632c5bb4574fc1aae581aeb49ced0c237a172a03f",
+    "docs/stage6-0.4.0-progress.md": "773380d03b848436929e75b9398b4deb15ffc8e6b8330045b379688a8b3681f0",
+    "docs/release-scope-0.5.0.md": "7e5c37e7d492ae5b15fc9c8d0b40561c5a4693715852759b43982731b11feeb2",
+    "docs/ryzen-realtek-identification.md": "70c7c17e208a699bab3839b59386b1e0bc6b7e8446f292f345cf694b408c998c",
+    "docs/third-party.md": "c7955a05731f7cf5f73fe1e3ddba61db8274f42c97c1827f3ceb14420cf3a81b",
+    "docs/scenario-games-godot.md": "c315aaf365011903e644d747fde146127096c756ead755baba7495dc59365672",
+    "docs/i218-network-0.4.0-progress.md": "a2e140a1118fd9e681b9ab69c204bb11d2852b296e5d98268c844fd9498fde67",
+    "docs/i218-power-0.4.0-progress.md": "39fb11ad38159706a22d8c12a281db435cf500e7b8ee29c59052211d7b1a8c23",
+    "docs/realtek-0.4.0-progress.md": "5710e249f17da4519be3bddc6d422123e54ff237ec452ae4f1e06b3ed6ffc0d0",
+    "docs/lan-plan-0.4.0.md": "22c878458e653c2f2e27f3804abc79a7125e5d7c860e100e826fb1a40cfdb00b",
+    "docs/lan-default-enablement-0.4.0.md": "694ec254fef3aae6ad58272fdc5eea50142c148fdd19d63cf18c7284ce00e275",
+    "docs/mac-local-preparation-0.4.0.md": "eae69eb9565b9bfe0375addb54f5c77118b8beb09a0aafe431b9534d48edf3cb",
+    "docs/mac-storage-t2-stages-0.4.0.md": "dc601a92d6d4b1eb9448db533a3052b4c7b5557b570c563000e88d200e026967"
+  },
+  "verification_source": "fdcd0369fef577e772c5d52b780625673dcf9faa",
+  "constraints": {
+    "root_README_and_owner_decision_prose": "unchanged",
+    "parallel_docs": "excluded",
+    "integration_history": "original text except Status metadata/relative Markdown destinations",
+    "no_USB_remote_CI_push": true
+  }
+}

@@ -176,3 +176,9 @@ TIME0x103、WAIT0x104、INPUT0x105、権限TIME2/WAIT4/INPUT8、既存0x100–0x
 INPUTは48byte LE値。size u16@0、kind u16@2、flags u32@4、起動時刻u64@8、source u32@16、code u16@20、modifiers u16@22、signed i32値3個@24/28/32、buttons u32@36、予約ゼロ40–47。kind1 keyboard（flags0 up/1 down、usage0–255/modifier）、2相対mouse（XY/wheel、無し0）、3gamepad button、4axis、5overflow。gamepad producerは工程6。絶対tabletは相対mouseではありません。古い64件を保持し、drain後buttonsに飽和drop数を入れたoverflowを返すためconsumerは保持状態前提をリセットします。source1/2は現keyboard/mouse sessionでhardware handleではなく、切断後の再接続/generation再利用はしません。
 
 TIMEはsample済み単調PM起動epoch ms。WAIT相対0–60000ms、flags0/INPUT1、結果timeout0/input1（同時観測時input優先）。入力wakeはINPUT権限も必要。clock非進行連続sample watchdogはERR_IO、poll失敗はDMA停止後ERR_DISCONNECTED。INPUTはpoll/pop前に全byteの書込み可能supervisor aliasを検査し、異常buffer/容量エラーではoutput/queue不変、空ERR_AGAIN、エラーRDX0。予約引数を拒否し、user仮想参照をcall外へ返しません。QEMUで実copyout・読取り専用/overflow/cross-boundary拒否・権限を検証し、純粋queue modelと区別します。
+
+## API direction and historical proposal / API方針と旧案
+
+English: This document is the canonical external ABI contract. Internal Rust API5 is described in [app-api](app-api.md). The former application-api proposal predated the runtime dispatcher and r2 calls; its wrapper-only/pending table is preserved as [history](history/application-api.md), not a current support matrix. Current time/wait/input and lifecycle requirements above supersede it. No application network syscall, POSIX, libc, dynamic loader or threads are promised.
+
+日本語：本書を外部ABI正本とし内部Rust API5は[app-api](app-api.md)へ分離。旧application-apiのwrapperのみ/未接続表はruntime/r2以前の[履歴](history/application-api.md)で現在の対応表ではありません。現行TIME/WAIT/INPUT・lifecycleは本書を優先。app network syscall/POSIX/libc/dynamic loader/threadを約束しません。
