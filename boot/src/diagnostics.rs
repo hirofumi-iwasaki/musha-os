@@ -212,14 +212,15 @@ pub fn net_failure(s: &str) {
         p.lines[9] = line(format_args!("NET ERROR {}", p.net_fail.error.as_str()));
     });
 }
-pub fn pci(row: usize, id: u32, bdf: u16) {
+pub fn pci(row: usize, id: u32, bdf: u16, revision: u8) {
     set(
         row,
         format_args!(
-            "{} PCI {:04X}:{:04X} BDF {:04X}",
+            "{} PCI {:04X}:{:04X} REV {:02X} BDF {:04X}",
             if row == 2 { "XHCI" } else { "LAN" },
             id as u16,
             id >> 16,
+            revision,
             bdf
         ),
     );
@@ -307,7 +308,7 @@ pub fn snapshot() {
 
 /// PCI inventory is read-only. The star identifies the firmware-selected BAR,
 /// which need not be the first controller in PCI configuration scan order.
-pub fn controller(index: usize, id: u32, bdf: u16, selected: bool) {
+pub fn controller(index: usize, id: u32, bdf: u16, revision: u8, selected: bool) {
     if index < 8 {
         update(|p| {
             p.controller_ids[index] = id;
@@ -316,10 +317,11 @@ pub fn controller(index: usize, id: u32, bdf: u16, selected: bool) {
         set(
             27 + index,
             format_args!(
-                "XHCI{} {:04X}:{:04X} BDF {:04X} {}",
+                "XHCI{} {:04X}:{:04X} REV {:02X} BDF {:04X} {}",
                 index,
                 id as u16,
                 id >> 16,
+                revision,
                 bdf,
                 if selected { "*ACTIVE" } else { "NOT PROBED" }
             ),
@@ -391,6 +393,7 @@ pub fn begin_controller(c: crate::pci::Controller) {
         2,
         unsafe { crate::pci::read(c.bus, c.device, c.function, 0) },
         c.bdf(),
+        unsafe { crate::pci::read(c.bus, c.device, c.function, 8) } as u8,
     );
 }
 // Preserve the outer storage view while a separate input controller is live.
@@ -672,6 +675,16 @@ mod tests {
             format: 0,
         };
         start(fb);
+        pci(3, 0x8168_10ec, 0x1234, 0x15);
+        controller(0, 0x149c_1022, 0x5678, 0x01, true);
+        unsafe {
+            let p = &*PANEL.0.get();
+            assert_eq!(p.lines[3].as_str(), "LAN PCI 10EC:8168 REV 15 BDF 1234");
+            assert_eq!(
+                p.lines[27].as_str(),
+                "XHCI0 1022:149C REV 01 BDF 5678 *ACTIVE"
+            );
+        }
         set(1, format_args!("CORE READY"));
         usb_stage("RESET");
         usb_failure("TIMEOUT");

@@ -29,6 +29,7 @@ pub(crate) fn diagnose(fb: Framebuffer, selected: Controller) {
     let mut count = 0u64;
     let mut xhci = 0u64;
     let mut intel_lan = 0u64;
+    let mut ethernet = 0u64;
     for bus in 0..=255u8 {
         for device in 0..32u8 {
             // PCI functions are present only if function zero exists.
@@ -43,7 +44,9 @@ pub(crate) fn diagnose(fb: Framebuffer, selected: Controller) {
                 if id as u16 == 0xffff {
                     continue;
                 }
-                let class = unsafe { read(bus, device, function, 8) } >> 8;
+                let class_revision = unsafe { read(bus, device, function, 8) };
+                let class = class_revision >> 8;
+                let revision = class_revision as u8;
                 count += 1;
                 if class == 0x0c0330 {
                     let bdf = ((bus as u16) << 8) | ((device as u16) << 3) | function as u16;
@@ -51,21 +54,32 @@ pub(crate) fn diagnose(fb: Framebuffer, selected: Controller) {
                         && selected.bus == bus
                         && selected.device == device
                         && selected.function == function;
-                    crate::diagnostics::controller(xhci as usize, id, bdf, active);
+                    crate::diagnostics::controller(xhci as usize, id, bdf, revision, active);
                     if active {
-                        crate::diagnostics::pci(2, id, bdf);
+                        crate::diagnostics::pci(2, id, bdf, revision);
                     }
                     xhci += 1;
                 }
-                if class >> 8 == 0x0200 && id as u16 == 0x8086 {
-                    if intel_lan == 0 {
+                if class >> 8 == 0x0200 {
+                    if ethernet == 0 {
                         crate::diagnostics::pci(
                             3,
                             id,
                             ((bus as u16) << 8) | ((device as u16) << 3) | function as u16,
+                            revision,
                         );
                     }
-                    intel_lan += 1;
+                    crate::diagnostics::observation(format_args!(
+                        "ETH {:04X}:{:04X} REV {:02X} BDF {:04X}",
+                        id as u16,
+                        id >> 16,
+                        revision,
+                        ((bus as u16) << 8) | ((device as u16) << 3) | function as u16
+                    ));
+                    ethernet += 1;
+                    if id as u16 == 0x8086 {
+                        intel_lan += 1;
+                    }
                 }
                 field(
                     b"MUSHA: PCI BDF=",
@@ -73,6 +87,7 @@ pub(crate) fn diagnose(fb: Framebuffer, selected: Controller) {
                 );
                 field(b" ID=", id as u64);
                 field(b" CLASS=", class as u64);
+                field(b" REV=", revision as u64);
                 super::debug(b"\n");
             }
         }
