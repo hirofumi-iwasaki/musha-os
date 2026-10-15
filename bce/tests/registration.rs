@@ -194,3 +194,17 @@ fn transfer_failure_and_duplicate_retirement_quarantine() {
     r.finish_transfer(t).unwrap();
     assert_eq!(r.finish_transfer(t), Err(Error::Ticket));
 }
+
+#[test]
+fn recreated_metadata_is_not_a_reset_or_stale_reply_barrier() {
+    // Deliberate limitation test: local tokens are not hardware generations.
+    let mut old = Registration::new(2).unwrap();
+    let command = old.register(config(), 0, 10, 10).unwrap();
+    old.quarantine(Error::Stopped);
+    assert_eq!(old.poll(1, Some((command.token, 0))), Err(Error::Stopped));
+    let mut recreated = Registration::new(2).unwrap();
+    let fresh = recreated.register(config(), 0, 10, 10).unwrap();
+    assert_eq!(command.token, fresh.token);
+    // Never feed old transport replies into recreated metadata. No reset API
+    // is exposed: real quiescence and draining are external prerequisites.
+}

@@ -111,13 +111,54 @@ fn le_shared_capacity_fallback_and_credit_budget() {
 }
 #[test]
 fn maximum_acl_every_usb_boundary_and_independent_event_stream() {
-    let mut packet=[0u8;1028];packet[..4].copy_from_slice(&[1,0x20,0,4]);
-    for split in 0..=packet.len(){
-        let mut acl=Stream::<1028>::new(1,true);let mut event=Stream::<257>::new(1,false);
-        let mut first=&packet[..split];let mut count=0;
-        if let Some(p)=acl.next(1,0,&mut first).unwrap(){assert_eq!(p,packet);count+=1;}
-        let mut e=&[0x10,1,7][..];assert_eq!(event.next(1,1,&mut e).unwrap().unwrap(),[0x10,1,7]);
-        let mut rest=&packet[split..];if let Some(p)=acl.next(1,2,&mut rest).unwrap(){assert_eq!(p,packet);count+=1;}
-        assert_eq!(count,1);assert!(rest.is_empty());
+    let mut packet = [0u8; 1028];
+    packet[..4].copy_from_slice(&[1, 0x20, 0, 4]);
+    for split in 0..=packet.len() {
+        let mut acl = Stream::<1028>::new(1, true);
+        let mut event = Stream::<257>::new(1, false);
+        let mut first = &packet[..split];
+        let mut count = 0;
+        if let Some(p) = acl.next(1, 0, &mut first).unwrap() {
+            assert_eq!(p, packet);
+            count += 1;
+        }
+        let mut e = &[0x10, 1, 7][..];
+        assert_eq!(event.next(1, 1, &mut e).unwrap().unwrap(), [0x10, 1, 7]);
+        let mut rest = &packet[split..];
+        if let Some(p) = acl.next(1, 2, &mut rest).unwrap() {
+            assert_eq!(p, packet);
+            count += 1;
+        }
+        assert_eq!(count, 1);
+        assert!(rest.is_empty());
     }
+}
+
+#[test]
+fn restart_requires_reset_complete_before_scan_setup_and_failed_reset_stops() {
+    use musha_platform::bluetooth::scan::Scan;
+    for generation in [1, 2, 3] {
+        let mut scan = Scan::new(generation);
+        let reset = scan.next(generation, 0).unwrap().unwrap();
+        assert_eq!(&reset.bytes[..reset.length], &[3, 12, 0]);
+        assert_eq!(scan.next(generation, 1), Err(Error::Busy));
+        // A previous host generation cannot authorize this generation's setup.
+        assert_eq!(
+            scan.event(generation - 1, 1, &[0x0e, 4, 1, 3, 12, 0]),
+            Err(Error::Stale)
+        );
+        assert_eq!(scan.next(generation, 1), Err(Error::Busy));
+        scan.event(generation, 2, &[0x0e, 4, 1, 3, 12, 0]).unwrap();
+        let mask = scan.next(generation, 3).unwrap().unwrap();
+        assert_eq!(&mask.bytes[..3], &[1, 12, 8]);
+        scan.detach();
+        assert_eq!(scan.next(generation, 4), Err(Error::Stale));
+    }
+    let mut failed = Scan::new(4);
+    failed.next(4, 0).unwrap();
+    assert_eq!(
+        failed.event(4, 1, &[0x0e, 4, 1, 3, 12, 1]),
+        Err(Error::Controller(1))
+    );
+    assert_eq!(failed.next(4, 2), Err(Error::Invalid));
 }

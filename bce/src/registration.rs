@@ -37,6 +37,9 @@ pub struct Registration {
     polls: u32,
 }
 impl Registration {
+    /// Fresh metadata only, never reset authorization. Reconstructing the same
+    /// QID restarts local tokens; a transport must exclude all prior replies and
+    /// prove device quiescence before reusing any QID or allocation.
     pub fn new(qid: u16) -> Result<Self, Error> {
         if !(2..256).contains(&qid) {
             return Err(Error::QueueId);

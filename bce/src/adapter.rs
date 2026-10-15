@@ -208,6 +208,23 @@ impl<const N: usize> Transfer<N> {
         }
         Err(self.fault.unwrap())
     }
+    /// Host-model extent gate before ownership reservation or any publication.
+    /// The caller still must prove the declared region's real allocation properties.
+    pub fn submit_in_region(
+        &mut self,
+        io: &mut impl Memory,
+        region: &wire::ContiguousRegion,
+        address: u64,
+        length: u64,
+        now: u64,
+        timeout: u64,
+    ) -> Result<(), Error> {
+        if let Some(error) = self.fault {
+            return Err(error);
+        }
+        region.contains(address, length)?;
+        self.submit(io, address, length, now, timeout)
+    }
     pub fn submit(
         &mut self,
         io: &mut impl Memory,

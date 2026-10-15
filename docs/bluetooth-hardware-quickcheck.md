@@ -41,3 +41,5 @@ Physical BT is unverified. HOGP keyboard hardware is deferred to v0.5.0; Magic K
 | PASS/FAIL/BLOCKED、検証範囲・残件 | |
 
 実BT未検証。HOGP keyboard実機はv0.5.0、Magic A3118 ClassicはLE対象外。[工程6](stage6-0.4.0-progress.md)参照。
+
+Development EFI identity / 開発EFIの識別: [three diagnostic artifacts and original provenance](hardware-acceptance-0.4.0.md#development-efi). Select the purpose-specific artifact and record CONFIG; these are not normal-candidate acceptance. / 用途別artifactとCONFIGを識別し、通常候補受入とは区別してください。

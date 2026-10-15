@@ -134,3 +134,46 @@ pub fn simple_queue_command(qid: u16, flush: bool) -> Result<[u8; 64], Error> {
     b[4..6].copy_from_slice(&qid.to_le_bytes());
     Ok(b)
 }
+
+/// Declared contiguous host-model allocation. This validates arithmetic only:
+/// it neither allocates nor proves physical contiguity, reservation or coherency.
+#[derive(Clone, Copy, Debug)]
+pub struct ContiguousRegion {
+    start: u64,
+    end: u64,
+    alignment: u64,
+}
+impl ContiguousRegion {
+    pub fn new(start: u64, length: u64, alignment: u64) -> Result<Self, Error> {
+        if alignment < 4 || !alignment.is_power_of_two() || start % alignment != 0 {
+            return Err(Error::Invalid);
+        }
+        range(start, length)?;
+        Ok(Self {
+            start,
+            end: start + length,
+            alignment,
+        })
+    }
+    pub fn contains(&self, address: u64, length: u64) -> Result<(), Error> {
+        range(address, length)?;
+        let end = address.checked_add(length).ok_or(Error::Invalid)?;
+        if address < self.start || end > self.end || address % self.alignment != 0 {
+            return Err(Error::Invalid);
+        }
+        Ok(())
+    }
+    /// Validate the full queue extent before returning an encoder payload.
+    pub fn register_queue(&self, config: RegistrationConfig<'_>) -> Result<[u8; 64], Error> {
+        let bytes = register_queue(config)?;
+        let length = u64::from(config.count)
+            .checked_mul(config.stride)
+            .ok_or(Error::Invalid)?;
+        self.contains(config.address, length)?;
+        Ok(bytes)
+    }
+    pub fn submission(&self, address: u64, length: u64) -> Result<[u8; 32], Error> {
+        self.contains(address, length)?;
+        submission(address, length)
+    }
+}

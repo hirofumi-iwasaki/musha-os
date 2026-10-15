@@ -4,26 +4,26 @@
 //! USB carries HCI bytes without UART/H4 packet indicators. Caller assembles one
 //! complete HCI packet across USB transactions before passing a borrowed slice.
 #![forbid(unsafe_code)]
-#[cfg(feature = "bluetooth-security")]
-pub mod entropy;
-#[cfg(feature = "bluetooth-security")]
-pub mod sc_crypto;
-#[cfg(feature = "bluetooth-security")]
-pub mod sc;
-#[cfg(feature = "bluetooth-security")]
-pub mod reconnect;
 pub mod acl;
 pub mod att;
 #[cfg(feature = "bluetooth-legacy")]
 pub mod bonding;
+#[cfg(feature = "bluetooth-security")]
+pub mod entropy;
 #[cfg(feature = "bluetooth-legacy")]
 pub mod hogp;
 #[cfg(feature = "bluetooth-legacy")]
 pub mod legacy;
-pub mod scan;
-pub mod usb;
-pub mod stream;
 pub mod lifecycle;
+#[cfg(feature = "bluetooth-security")]
+pub mod reconnect;
+#[cfg(feature = "bluetooth-security")]
+pub mod sc;
+#[cfg(feature = "bluetooth-security")]
+pub mod sc_crypto;
+pub mod scan;
+pub mod stream;
+pub mod usb;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {

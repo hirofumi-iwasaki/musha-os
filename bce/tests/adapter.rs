@@ -489,3 +489,29 @@ fn registration_gate_then_transfer_ack_flush_and_unregister() {
     // Transfer's metadata and backing storage still exist; no deallocation API.
     assert_eq!(life.begin_transfer(), Err(Error::Busy));
 }
+
+#[test]
+fn declared_extent_rejection_has_no_io_or_ownership_side_effects() {
+    let mut transfer = Transfer::<4>::new(2, 0, 0, 100).unwrap();
+    let mut peer = Peer::default();
+    let region = musha_bce::wire::ContiguousRegion::new(0x1000, 4096, 64).unwrap();
+    for (address, length) in [(0x1004, 8), (0x1fc0, 65), (0x2000, 8)] {
+        assert_eq!(
+            transfer.submit_in_region(&mut peer, &region, address, length, 0, 10),
+            Err(Error::Invalid)
+        );
+        assert!(peer.trace.is_empty());
+        assert_eq!(transfer.retained(), 0);
+    }
+    transfer
+        .submit_in_region(&mut peer, &region, 0x1fc0, 64, 0, 10)
+        .unwrap();
+    transfer.stop(&mut peer);
+    let trace_length = peer.trace.len();
+    assert_eq!(
+        transfer.submit_in_region(&mut peer, &region, 0x1000, 8, 1, 10),
+        Err(Error::Stopped)
+    );
+    assert_eq!(peer.trace.len(), trace_length);
+    assert_eq!(transfer.retained(), 1);
+}

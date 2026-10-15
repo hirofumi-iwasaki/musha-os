@@ -52,3 +52,45 @@ fn completion_golden_and_all_truncations() {
     }
     assert_eq!(Completion::decode(&[0; 25]), Err(Error::Length));
 }
+
+#[test]
+fn contiguous_model_checks_alignment_and_entire_queue_extent() {
+    use musha_bce::wire::{ContiguousRegion, RegistrationConfig};
+    let region = ContiguousRegion::new(0x1000, 0x1000, 64).unwrap();
+    let mut config = RegistrationConfig {
+        qid: 2,
+        count: 4,
+        vector_or_cq: 0,
+        address: 0x1f80,
+        stride: 32,
+        name: None,
+        out: false,
+    };
+    assert_eq!(
+        region.register_queue(config).unwrap(),
+        musha_bce::wire::register_queue(config).unwrap()
+    );
+    config.address += 64;
+    assert!(region.register_queue(config).is_err());
+    for (address, length) in [
+        (0xfc0, 64),
+        (0x2000, 4),
+        (0x1004, 4),
+        (0x1000, 0),
+        (0x1fc0, 65),
+        (u64::MAX - 3, 8),
+    ] {
+        assert!(region.submission(address, length).is_err());
+    }
+    assert!(region.submission(0x1fc0, 64).is_ok());
+    for (start, length, alignment) in [
+        (0, 4096, 64),
+        (4096, 0, 64),
+        (4096, 4096, 0),
+        (4096, 4096, 3),
+        (4100, 4096, 64),
+        (u64::MAX - 63, 64, 64),
+    ] {
+        assert!(ContiguousRegion::new(start, length, alignment).is_err());
+    }
+}

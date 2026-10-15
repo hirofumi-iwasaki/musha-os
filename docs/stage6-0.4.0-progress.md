@@ -1,5 +1,40 @@
 # Stage6 LE runtime checkpoint — 2026-10-15
 
+Status: current（2026-10-15、第3回ローカル監査。実Bluetooth未検証）。
+
+## Current v0.4.0 scope and limitations
+
+Earlier checkpoints retain their original evidence and pending lists. USB stream framing, shared ACL buffers and stored SC reconnect listed there have since been implemented locally; this section and the later continuation describe the current state. Earlier counts are not added to this run.
+
+Stored-key reconnect supports only an exact address-and-type match for public or static random addresses. IRK/RPA resolution, NRPA/unresolved identities, simultaneous peers, arbitrary BLE mice, Share delivery, Classic Magic Keyboard A3118 and automatic peer-display association are **unimplemented or outside v0.4.0 scope**. Hardware testing does not implement these features. BLE keyboard host coverage remains, but keyboard procurement/hardware acceptance is outside this release.
+
+A new fixture uses the same runtime Scan API to require Reset first in every generation, prohibit setup before successful Reset Complete, reject a prior-generation completion and stop after Reset failure. Existing hardware-error/disconnect, stream generation, stopped-owner lease and restart-budget checks remain. Viewer and Ring3 recovery require normal return through Host/file/input-loan scopes and controller halt/BME-off; uncertain stop retains quarantine. Host tests do not establish controller quiescence.
+
+Hardware gates are MM-BTUD46 USB/revision/firmware compatibility; Xbox1914 firmware and actual Report Map; connect/authenticate/save; cold reboot stored-key reconnect; disconnect/restart/fault shutdown; and NUC5/Ryzen cold/hot operation. A captured map outside the supported parser subset would require more software work. That conditional compatibility risk is distinct from simply waiting for hardware evidence.
+
+### Xbox fixture provenance and measured-value limits
+
+The [published Series X|S descriptor record](https://github.com/atar-axis/xpadneo/blob/master/docs/descriptors/xbxs.md), checked on 2026-10-15, identifies 045E:0B13; it is not a capture from the owner's Xbox1914. The independently constructed fixture exercises Report ID1 with 17 bytes: four unsigned16 axes, two10-bit triggers with padding, hat, 15 buttons and Consumer Record/Share with padding. Concrete checks use axis65535, button1 and Share-only changes. It does not verify complete descriptor identity, CRC, output Report ID3 vibration or the target firmware's values. No driver or descriptor dump was copied and no dependency was added.
+
+This audit passed **106 platform security tests and22 input tests**, including one new Reset-order test and existing lease/fault coverage. These are not added to the older412 count. Logs: `out/mac-local-preparation-040-round3/bluetooth-platform-tests.log` and `input-tests.log`. Bluetooth QEMU was not rerun during this audit.
+
+## 現在のv0.4.0範囲と未対応機能
+
+以下の過去checkpointの「残件」一覧には、その後ローカル実装したUSB stream組立て・shared ACL buffer・保存SC鍵再接続が含まれます。現在の状態は本節と末尾の継続記録を優先してください。過去件数は今回へ加算しません。
+
+保存鍵再接続はpublic addressとstatic random addressについて種別・全addressの完全一致に限定します。IRK/RPA解決、NRPA/未解決identityの再接続、複数peer同時、任意BLE mouse、Shareイベント配信、Classic Magic Keyboard A3118、相手displayを選ぶ自動associationは**未実装又はv0.4.0対象外の制約**です。実機試験をすれば実装済みになる機能として扱いません。BLE keyboardはホスト検証済み部分を残しますが、v0.4.0の調達/実機受入対象ではありません。
+
+今回のソフトウェア側再確認では、同じruntimeが使う `scan::Scan` に新世代ごとのReset先行、Reset完了前の次command禁止、旧世代Complete拒否、Reset失敗後停止のfixtureを追加しました。既存のhardware-error/disconnect判定、stream世代検査、lease所有者/停止確認拒否、再開上限を保持しています。viewerとRing3の再開はHost/file/input loanの通常終了とcontroller halt/BME-off確認を経由し、不確実停止はquarantineです。ホスト試験だけで実controllerの停止を証明した扱いにしません。
+
+対象実機で残る確認は、MM-BTUD46のUSB/revision/firmwareの適合、Xbox1914のfirmwareと実Report Map、接続/認証/保存、cold reboot後の保存鍵再接続、入力の切断/再開、fault時停止、NUC5/Ryzen双方のcold/hot挙動です。対象実機から得たmapがparser subset外なら追加software実装が必要です。この条件付きの互換性リスクを「実機待ちだけ」と同一視しません。
+
+### Xbox fixtureの出所と実値の境界
+
+2026-10-15に[xpadneoのSeries X|S descriptor記録](https://github.com/atar-axis/xpadneo/blob/master/docs/descriptors/xbxs.md)を再確認。これは `045E:0B13` の公開記録で、所有者のXbox1914から採取したものではありません。fixtureは独自に構成し、入力Report ID1の17byte、unsigned16 stick4軸、10bit trigger2個と各6bit padding、4bit hatと4bit padding、15buttonと1bit padding、1bit Consumer Record/Shareと7bit paddingを検査します。fixture中のstick値65535、button1、Shareだけの変化を具体的に確認します。公開dumpのinput field形状を事実参照し、descriptor全体の同一性・CRC・出力Report ID3の振動・target firmwareの実値は検証していません。元driver/descriptor dumpのcopyや依存追加はありません。
+
+今回の再確認はsecurity付きplatform **106**、input **22**試験が成功（以前の412件へ重ねて加算しません）。Reset順序の追加試験は1件、既存のReset先頭/lease/fault試験も含みます。ログは `out/mac-local-preparation-040-round3/bluetooth-platform-tests.log` と `input-tests.log`。今回BT用QEMUを再実行したとは主張しません。
+
+
 ## English
 
 Current continuation: stored SC reconnect and multiple-report/gamepad decoding are connected in source and host/software fixtures; Bluetooth-present execution and target compatibility remain unverified. The earlier checkpoint below is retained as prior evidence; see the current continuation subsection for changes.

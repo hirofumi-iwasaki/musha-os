@@ -347,24 +347,51 @@ fn sizes_ranges_stack_and_unknown_fields_fail_closed() {
 }
 #[test]
 fn directed_empty_ad_reconnect_uses_only_stored_identity_and_authenticated_map() {
-    let mut store=Store::new();store.load(&record(bond())).unwrap();
-    assert!(store.connectable(1,0,&[2;6])); // directed: no AD UUID/Appearance needed.
-    assert!(store.connectable(0,0,&[2;6]));
-    assert!(!store.connectable(2,0,&[2;6]));
-    assert!(!store.connectable(1,0,&[3;6]));
-    assert!(!store.connectable(1,1,&[2;6])); // random/RPA cannot alias public.
-    let b=verified();
+    let mut store = Store::new();
+    store.load(&record(bond())).unwrap();
+    assert!(store.connectable(1, 0, &[2; 6])); // directed: no AD UUID/Appearance needed.
+    assert!(store.connectable(0, 0, &[2; 6]));
+    assert!(!store.connectable(2, 0, &[2; 6]));
+    assert!(!store.connectable(1, 0, &[3; 6]));
+    assert!(!store.connectable(1, 1, &[2; 6])); // random/RPA cannot alias public.
+    let b = verified();
     // Independently authored map: gamepad axis plus the known Share bit.
-    let share_map=[5,1,9,5,0xa1,1,0x85,1,9,0x30,0x15,0,0x26,255,0,
-        0x75,8,0x95,1,0x81,2,5,0x0c,9,0xb2,0x25,1,0x75,1,0x81,2,
-        0x75,7,0x81,3,0xc0];
-    let mut reports=Reports::bind(&b,&share_map,&[spec(10,1)]).unwrap();
-    let mut seen=Vec::new();
-    reports.notification(9,5,&[0x1b,10,0,42,0],|c|seen.push(c)).unwrap();
-    assert_eq!(seen,[bt::hogp::Change::Gamepad(musha_input::gamepad::Change::Axis(0,42))]);
-    seen.clear();reports.notification(9,5,&[0x1b,10,0,42,1],|c|seen.push(c)).unwrap();
+    let share_map = [
+        5, 1, 9, 5, 0xa1, 1, 0x85, 1, 9, 0x30, 0x15, 0, 0x26, 255, 0, 0x75, 8, 0x95, 1, 0x81, 2, 5,
+        0x0c, 9, 0xb2, 0x25, 1, 0x75, 1, 0x81, 2, 0x75, 7, 0x81, 3, 0xc0,
+    ];
+    let mut reports = Reports::bind(&b, &share_map, &[spec(10, 1)]).unwrap();
+    let mut seen = Vec::new();
+    reports
+        .notification(9, 5, &[0x1b, 10, 0, 42, 0], |c| seen.push(c))
+        .unwrap();
+    assert_eq!(
+        seen,
+        [bt::hogp::Change::Gamepad(
+            musha_input::gamepad::Change::Axis(0, 42)
+        )]
+    );
+    seen.clear();
+    reports
+        .notification(9, 5, &[0x1b, 10, 0, 42, 1], |c| seen.push(c))
+        .unwrap();
     assert!(seen.is_empty());
-    assert!(!Reports::bind(&b,KB,&[spec(10,2)]).unwrap().single_kind().unwrap());
-    assert!(Reports::bind(&b,GP,&[spec(20,4),spec(30,5)]).unwrap().single_kind().unwrap());
-    assert!(Reports::bind(&b,&map(),&[spec(10,2),spec(20,4),spec(30,5)]).unwrap().single_kind().is_err());
+    assert!(
+        !Reports::bind(&b, KB, &[spec(10, 2)])
+            .unwrap()
+            .single_kind()
+            .unwrap()
+    );
+    assert!(
+        Reports::bind(&b, GP, &[spec(20, 4), spec(30, 5)])
+            .unwrap()
+            .single_kind()
+            .unwrap()
+    );
+    assert!(
+        Reports::bind(&b, &map(), &[spec(10, 2), spec(20, 4), spec(30, 5)])
+            .unwrap()
+            .single_kind()
+            .is_err()
+    );
 }
