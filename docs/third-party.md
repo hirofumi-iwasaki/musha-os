@@ -1,5 +1,7 @@
 # Third-party dependencies
 
+Status: current
+
 ## English
 
 | Dependency | Pinned version | License | Purpose |

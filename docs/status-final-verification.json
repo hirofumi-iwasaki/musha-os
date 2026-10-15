@@ -1,0 +1,125 @@
+{
+  "metadata": [
+    {
+      "path": "docs/handoff/0.3.0-address-recovery-results.md",
+      "original_sha256": "cff1421b1c866652b03e457365bca2d90d433fd404c0516e4991a3a1e436c358",
+      "new_sha256": "06213ddf32f33267dd1d20413a976154951f084389bfb1437dde28f814e58c82",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-autorun-rename-results.md",
+      "original_sha256": "960d13a0498c9143c8eb2083d0a8a8870ab0f4fb423d8a4786fe74aa8269d035",
+      "new_sha256": "bfe60a2eadd4fc23e40d9a5b98886dad9be886b02c34f9bc477220094d2a2872",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-boot-display-results.md",
+      "original_sha256": "65547f9a59398fbcf776446682e05a015d81fdcf73877ac2e9081d8fe4aba039",
+      "new_sha256": "74ebde8d85ae2fb7d2ca3fd218ade4f8ab8ed65f01ab5d6ced30b22b8efdb0de",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-external-elf-screen.md",
+      "original_sha256": "297b8811560ca157030a4b18c2f2235b770c138849655449a978ed1a720c031c",
+      "new_sha256": "6eaae2a8e2e7f9f92033b67c89b67d530a1ab51d3d030c288f7b03a038796541",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-intel-routing-results.md",
+      "original_sha256": "68ea31a90cff93b978cb19585752989c3116fd410667e82e9229efb9918485c5",
+      "new_sha256": "404575e6364f06bbddd4889bb8eb6c7cf794c0f9b7c4b93d5a9a1a41b97fb9d1",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-release-a-results.md",
+      "original_sha256": "5365fe3e91fb868889f35302efb291bd89c1ee68cb5387a2bdecbd1fba294b98",
+      "new_sha256": "4b536016444a889c148821af3ed1d967bb91ffdec4e9123b318734afe4b2c35a",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-release-c-results.md",
+      "original_sha256": "b0968235f093f312d9dbff64f305ee6269499eba090cc362f1386c776d60b307",
+      "new_sha256": "95e48121741a9ead9a3748cbf2199a3a2ba9169791d1b06b282e1cf681cf3327",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-release-d-results.md",
+      "original_sha256": "d0f452dfa6c76357859eaccf0baf723a69240fcb7f3e3f5ce9a3c7139992f869",
+      "new_sha256": "d732c948c5f5d10ea153fdac1635790b5933744336513f6497d4be89cd27ab59",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-release-e-ci-results.md",
+      "original_sha256": "1ffa818a8ebbcb9ddb4faa4a9948054a189e09a5cfb7c920dae5214bb74af99a",
+      "new_sha256": "eb49bd193a4f8ce4d542680d534b18a1d3224fc578535c5046f734e5ae238bb5",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-reproducibility-results.md",
+      "original_sha256": "6c821a6f2009a480477af16b926a6921c18ac763dd6e492d4b8fced451f5d4d3",
+      "new_sha256": "996f54a1bb9c20420160bbde34f77c9669ca3a6f12e22c5a6f14fe90bb67c664",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-step2b-results.md",
+      "original_sha256": "4905d2e3645726244222b65f9adcae451058310eb348658683dbc5507b08c9bb",
+      "new_sha256": "fcbb1a58108764895d4529a57c1b5a42b4eec33d6157a424e198009654d455b2",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-step2c-results.md",
+      "original_sha256": "4d7da417e2a4fa337df218d76dfd2e43cd381ad207c6818b88994e1904c4e481",
+      "new_sha256": "d66432fc66836fb81848774457cafaf2d8ece111946fa1c8cf2aaefdf41ae7a2",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-superspeed-recovery-results.md",
+      "original_sha256": "6f94a2b92b8f1d2c08ec9b3ea72f9d25a26d9996c1a20e2087292280c9a1dd85",
+      "new_sha256": "760b77c47a784da470c2d4c2aec5fb5af4ad0f32cd7f61ceed756a905591cf6f",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/handoff/0.3.0-usb-grace-results.md",
+      "original_sha256": "f2d0e76c1adb7e85cd50dd5f97ebd484672a94bb719019c5ce8a2d66d2eabb96",
+      "new_sha256": "f6f425227822db076485c0f2fb2fe50fabb7c892d6a601fb2fb7797356fcbdfe",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/realtek-0.4.0-progress.md",
+      "original_sha256": "5710e249f17da4519be3bddc6d422123e54ff237ec452ae4f1e06b3ed6ffc0d0",
+      "new_sha256": "9c627653c3f7f6979fa15bbbe148b8d63e4e591078c2c4dd9ddf8f1daff26910",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/lan-default-enablement-0.4.0.md",
+      "original_sha256": "333917e97949258b16b0bed32ab4cab72e76b65509d17cfe50324d5ad41609be",
+      "new_sha256": "bf152b0bb4a6568be2f2fcdb3dca3fc71ee8edbae2cdb99ddcb10221a659199c",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/third-party.md",
+      "original_sha256": "c7955a05731f7cf5f73fe1e3ddba61db8274f42c97c1827f3ceb14420cf3a81b",
+      "new_sha256": "156eae4ab57cab1944a02cb0e65d75f4f9564f65d7d9d3857cdc0a3a63b707dc",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/lan-plan-0.4.0.md",
+      "original_sha256": "22c878458e653c2f2e27f3804abc79a7125e5d7c860e100e826fb1a40cfdb00b",
+      "new_sha256": "61a7671d9c31fd5eb373b44cfac86d3d74af210ffb6dfd0f64cc9c6741ff8a34",
+      "metadata_only_body_byte_identical": true
+    },
+    {
+      "path": "docs/i218-network-0.4.0-progress.md",
+      "original_sha256": "64335a2986545e57164d97b36a05c9ea281af30a48e2b054d7bbc3119bb0e930",
+      "new_sha256": "b5e7069c48f44a7987d4ea37782608845cc1fa5686dbcf66a01d1ab94db7721f",
+      "metadata_only_body_byte_identical": true
+    }
+  ],
+  "reference_originals_preserved_status_exception": [
+    "docs/reference/boot-api-sdk-v3/CHANGELOG.md",
+    "docs/reference/boot-api-sdk-v3/README.md",
+    "docs/reference/boot-api-sdk-v3/docs/boot-readiness-policy.md",
+    "docs/reference/boot-api-sdk-v3/handoff/implementation-prompt.md",
+    "docs/reference/boot-api-sdk-v3/handoff/source-review.md"
+  ]
+}

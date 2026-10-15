@@ -1,5 +1,7 @@
 # I218 reset, transport and DHCP local checkpoint — v0.4.0
 
+Status: current
+
 ## English
 
 This development checkpoint has completed the full local regression; it is not hardware acceptance. The normal build still enables the QEMU82574 controller; I218-V networking is enabled only by `i218-network`. `i218-phy-probe` and `i218-power-probe` remain separate diagnostics. QEMU exposes 82574, not I218-V: enabling the I218 feature in QEMU validates shared-path regression, not I218 register behavior. NUC5 physical reset/link/traffic, OEM configuration and Realtek remain unverified.

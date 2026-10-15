@@ -1,5 +1,7 @@
 # Normal-build LAN enablement proposal / 通常版LAN有効化案
 
+Status: current
+
 ## English
 
 **Proposal only; owner approval required before changing defaults.** Keep the normal82574 path and shared DHCP/UDP implementation. Recommend enabling I218-V in normal builds only after the NUC5 optional-feature trial demonstrates reset/link/lease/echo and safe restart/stop. Its current software LCD/OEM refusal stays explicit; an unsupported firmware configuration must not be bypassed to obtain a ready label. The release's physical LAN gate remains open.

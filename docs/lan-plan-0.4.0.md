@@ -1,5 +1,7 @@
 # v0.4.0 LAN integration plan / LAN接続計画
 
+Status: current
+
 ## English
 
 Design reference only,2026-10-15. No Realtek driver or third-party source is copied, ported, vendored or compiled by this change. [Scope goal13](release-scope-0.4.0.md), [device matrix](device-support.md), [owner configuration](hardware-verification-status.md) and [identification procedure](ryzen-realtek-identification.md) govern acceptance.

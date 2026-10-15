@@ -162,3 +162,9 @@ Cleanup proposal / 整理承認用一覧: [stage2 review](docs-cleanup-stage2-re
 - [Cleanup evidence](cleanup-round3-verification.json) / metadata・原文保存証拠。
 
 - [Round3 cleanup status](docs-cleanup-round3.md) / 第3回の完了範囲と留保。
+
+## Preserved reference exception / 原典保存の例外
+
+Status: record (reference snapshot). The five Markdown originals under `docs/reference/boot-api-sdk-v3/` retain their source bytes and therefore receive no injected Status line; this index supplies their record classification. / 同directoryの5原典Markdownは出典bytesを維持しStatusを挿入せず、本索引でrecordに分類します。
+
+[Final Status verification](status-final-verification.json).

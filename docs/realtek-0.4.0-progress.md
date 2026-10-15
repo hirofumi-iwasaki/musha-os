@@ -1,5 +1,7 @@
 # Realtek local prototype / Realtekローカルprototype
 
+Status: current
+
 ## English
 
 Implemented locally, not committed: original Apache-2.0 `net/src/realtek.rs` provides a bounded reset/register interface, explicit hardware-admission denial, 16-byte no-offload TX/RX descriptors, ownership/length/address-overflow/FCS checks and conservative stop. Reset requires BME already off and polls at most1,000 times. Stop attempts BME-off even when register writes fail; without a reviewed silicon-specific drain sequence it returns `DrainUnverified`, never permission to reuse DMA memory. A private permission constructor is exercised only by host fixtures; runtime cannot obtain a permit. No normal-build selection or hardware writes are enabled.
