@@ -1,0 +1,125 @@
+# v0.5.0 release scope — draft
+
+## English
+
+Status: **draft, collecting owner decisions during v0.4.0 (started 2026-10-15).** Items marked ✔ are owner decisions. Nothing here is scheduled before v0.4.0 is published; the draft exists so that decisions taken during v0.4.0 are not lost. The naming rule, bilingual rule and hardware-evidence rules of [v0.4.0](release-scope-0.4.0.md) apply unchanged.
+
+### Direction
+
+v0.4.0 makes the drive, settings, input (USB and BLE) and the viewer usable as a small application environment. v0.5.0 adds **sound output, pixel display, read-only file access, a richer query and random numbers** (ABI candidate r3) and an SDK runtime, so that a self-contained application (display, input, sound, data) can be written for Musha-OS in C or Rust. It also widens the **hardware envelope toward laptops and newer machines**: PS/2 internal keyboards, a real-time clock, serial logging, generic HID devices, Intel I225/I226 wired LAN, Classic Bluetooth HID (Magic Keyboard), and an ACPI runtime for power control, sleep, battery and lid. Applications still cannot write files or use the network.
+
+### Required goals
+
+| # | Item | Scope | Completion condition |
+|---|---|---|---|
+| 1 | Audio output over Intel HD Audio ✔ | HDA controller driver (PCI class 04:03; Intel 9-series PCH on NUC5, AMD 1022:1487 on the Ryzen 7 machine): CORB/RIRB command rings, one output stream descriptor with a buffer descriptor list and DMA position, interrupt-on-completion per buffer. Codec driver: enumerate the audio function group widget graph, read BIOS pin defaults, select the default analog output pin (headphone/line-out jack), open the DAC→pin path, set power states, EAPD and converter format. Reference codecs: Realtek ALC283 (NUC5) and Realtek S1200A/ALC1200 (Ryzen 7 machine). Fixed format 48 kHz, 16-bit, 2 channels. HDMI/DisplayPort audio is out of scope (requires GPU infoframe setup that GOP does not perform). | A sine-wave sample is audible on the NUC5 front jack and the Ryzen rear jack; QEMU `intel-hda` + `hda-duplex` with `-audiodev wav` yields a deterministic WAV whose hash is compared in the regression |
+| 2 | Audio output over USB Audio Class 1.0 ✔ | xHCI **isochronous transfer** support (isoch TRBs with frame IDs, ring management, underrun handling) — the first isochronous use in Musha-OS. UAC1: AudioControl and AudioStreaming descriptors, alternate-setting selection, endpoint sample-rate control, Feature Unit volume/mute. Reference device: one USB DAC or speaker chosen by the owner (recorded with VID:PID). This is the only audio path on the MacBook Pro 2018 (internal speakers are behind T2 and out of scope). | The same sample is audible through the reference USB device on NUC5, Ryzen and MacBook Pro 2018; QEMU `usb-audio` with `-audiodev wav` yields a deterministic WAV compared in the regression |
+| 3 | Application audio API (ABI candidate r3) | `SYS_AUDIO_OPEN` (fixed 48 kHz/16-bit/2-ch, returns ring size), `SYS_AUDIO_WRITE` (copy PCM into a kernel-owned DMA ring, e.g. 4 × 10 ms; returns accepted bytes and underrun flag), `SYS_AUDIO_CLOSE`, `SYS_AUDIO_VOLUME`. Underrun plays silence and reports it. One output stream; device selection order: USB audio if present, else HDA. NOTE permissions bit for audio. The viewer-return path (v0.4.0 goal 10) stops and resets the stream before device reuse. | Each call covered in QEMU with C and Rust samples; a sample that plays a tone and exits on Q runs on hardware; stream stop verified on return to the viewer |
+| 4 | Device support matrix update | `docs/device-support.md`: audio rows become "supported" for HDA analog out and UAC1 out; "out of scope" rows for HDMI/DP audio, Bluetooth audio (A2DP / LE Audio), Mac internal speakers and microphone input. | Matrix and `hardware-verification-status.md` updated with the three machines' results |
+| 5 | Display API (ABI candidate r3) ✔ | `SYS_DISPLAY_INFO` returns width, height, pixel format (RGB/BGR 32-bit) and stride. `SYS_DISPLAY_PRESENT(rect)` copies a rectangle from an application back buffer in the arena to the screen; the kernel keeps ownership of the framebuffer (no user mapping of GOP memory). While an application has presented, the `log` console is hidden; on exit or fault the kernel restores its own screen, and the viewer-return path clears the application's rectangle before reuse. Target: a full 4K 32-bit frame presented in a few milliseconds. NOTE permission bit for display. | QEMU: info values match the GOP mode, presented pixels compared against reference images at two modes, partial rectangles, invalid rectangles rejected; hardware: a moving-pattern sample on NUC5, Ryzen (4K) and MacBook Pro 2018 |
+| 6 | Read-only file API (ABI candidate r3) ✔ | `SYS_FILE_OPEN(path)`, `SYS_FILE_SIZE`, `SYS_FILE_READ(offset, buffer, length)`, `SYS_FILE_CLOSE` on the boot medium: 8.3 and long names, root and one subdirectory level, read-only, bounded open count (e.g. 4) and read length, `SETTINGS/` and `EFI/` excluded. Reads go through the existing stream file service with the same quiesce rules as `AUTORUN.ELF` loading. NOTE permission bit for files. | QEMU: open/size/read/close on FAT32 and exFAT, missing file, excluded paths, handle exhaustion, invalid buffers; hardware: a sample reads a data file next to `AUTORUN.ELF` on NUC5 and Ryzen |
+| 7 | Query extension and random (ABI candidate r3) ✔ | `SYS_QUERY` returns a versioned record: feature bits, OS version, arena bytes, display geometry, input and audio availability. `SYS_RANDOM(buffer, length)` from RDRAND (`ERR_UNSUPPORTED` when absent). | Both covered in QEMU with C and Rust; RDRAND presence recorded per machine |
+| 8 | SDK runtime ✔ | C: minimal runtime (formatted output to `log`, `memcpy`/`memset`/`strlen` family, integer and basic math helpers). Rust: `alloc` support with an arena bump allocator so `Vec`/`String`/`Box` work in guests. Both: a small drawing helper (rectangle fill, 6×8 glyph text into a back buffer) and the r3 wrappers. Samples: a drawing demo, a file-reading demo, a tone demo. `check-sdk.py`/`app-check.py` cover r3. | Samples build and run in QEMU in both languages; SDK guide updated for r3 |
+| 9 | PS/2 (i8042) keyboard and touchpad ✔ | i8042 controller driver (ports 0x60/0x64, polled like the rest of the I/O model): scan-code set 2 keyboard translated to the same HID usages as USB keyboards, PS/2 mouse/touchpad in standard 3-byte (and IntelliMouse wheel) mode delivered as relative mouse events. This is the internal keyboard of nearly every non-Apple laptop and the PS/2 ports of 2015–2019 desktops. | QEMU (`-machine` i8042): keys, modifiers, mouse motion; hardware: the reference laptop's internal keyboard operates the viewer with no USB keyboard |
+| 10 | Real-time clock ✔ | CMOS RTC read (BCD/binary, 12/24 h, century from ACPI FADT) exposed as `SYS_CLOCK` (UTC seconds since 1970; time zone from `CONFIG.TXT` `tz=` as a fixed offset, no DST). Used for log timestamps at `devices` and available to applications. | QEMU `-rtc base=` matches; hardware clock matches the firmware setting on three machines |
+| 11 | Serial log output ✔ | 16550 UART (legacy COM1 0x3F8, or the ACPI SPCR/PCI serial port when present) as an additional log sink selected by `CONFIG.TXT` `serial=on` with 115200 8N1; every log level's output and all failures are mirrored; no input is read from the port. | QEMU `-serial file:` capture compared in the regression; hardware on a machine with a serial header (Ryzen 7 board or the reference laptop's dock, as available) |
+| 12 | Generic HID report-descriptor parsing ✔ | Parse USB and HOGP report descriptors (usage pages, report IDs, array/variable items, logical ranges) so that non-boot-protocol keyboards and mice, USB HID gamepads (DualShock 4 over USB, generic HID pads) and HOGP devices beyond the two reference models produce `SYS_INPUT` events. Boot protocol remains the fallback. Vendor-class controllers (Xbox over USB, GIP) stay out of scope. | Host-side fixtures for descriptors of at least six devices; QEMU `usb-kbd`/`usb-mouse`/`usb-tablet`; hardware: one non-boot keyboard and one USB HID gamepad |
+| 13 | Intel igc-class wired LAN (I225/I226) ✔ | Driver for Intel I225-LM/V and I226 (PCI 8086:15F2/15F3 and I226 IDs) on NUC11TNKi3 to link-up, DHCP and the OS UDP echo, sharing the lwIP integration of the v0.4.0 drivers. Depends on acquiring the NUC11TNKi3; if it is not available, this goal becomes a candidate. | Link, address and echo on NUC11TNKi3; e1000e and Realtek regressions unchanged |
+| 14 | ACPI runtime ✔ | An AML interpreter is the prerequisite for everything below (candidate: a port of ACPICA, BSD-licensed, integrated like lwIP; a minimal in-house interpreter is the alternative). With it: ACPI embedded-controller access, `_PTS`/`_WAK`, and the objects named in goals 15–16. Tables are still read only from firmware memory; nothing is written to the drive. | ACPICA (or the interpreter) evaluates `_S5`, `_PSR`, `_BST`, `_BIF`, `_LID` on QEMU and the three machines plus the reference laptop without faults |
+| 15 | Power control ✔ | `SYS_POWER(reboot\|off\|sleep)`: reboot via ACPI reset register with keyboard-controller fallback; power-off via `_S5` (SLP_TYP into PM1 control); **sleep = S3** with the ACPI waking vector, re-initializing xHCI, timers and the display on resume. S3 is the riskiest item of v0.5.0: if display or USB cannot be restored reliably on a reference machine, S3 is recorded as a limitation for that machine, not a release blocker. Also reachable from the viewer (keys documented in `file-viewer.md`). | QEMU: reboot, power-off and S3 resume; hardware: reboot and power-off on NUC5, Ryzen and the reference laptop; S3 resume on the reference laptop and NUC5 with results recorded per machine |
+| 16 | Battery, AC and lid status ✔ | `_PSR` (AC adapter), `_BST`/`_BIF` (battery state and capacity) and `_LID` via goal 14; exposed through `SYS_QUERY` power fields and shown at `devices`. Lid close triggers nothing by default; `CONFIG.TXT` `lid=sleep` makes it enter S3. | QEMU (`-device` battery emulation where available, otherwise host fixtures for the AML); hardware: the reference laptop on AC and battery, lid open/close |
+| 17 | Classic Bluetooth HID ✔ | The second Bluetooth path beside the v0.4.0 LE stack, on the same dongle: SDP service discovery, L2CAP HID control and interrupt channels (PSM 0x11/0x13), Secure Simple Pairing (ECDH P-192/P-256, Just Works and passkey) and legacy PIN pairing for pre-2.1 devices, link-key storage in `PAIRING.DAT` beside LE LTKs, automatic reconnection, HID report parsing shared with goal 12. Reference devices: Apple Magic Keyboard A3118 (current, SSP), the owner's 2003/2007 Apple Wireless Keyboard (legacy PIN), and DualShock 4 as the Classic controller. | Each reference device pairs, survives a cold reboot and operates the viewer or a `SYS_INPUT` sample on NUC5; three cold boots with stored bonds on NUC5 and Ryzen; mixed LE + Classic bonds coexist in `PAIRING.DAT` |
+
+### Candidate goals
+
+| Item | Scope | Note |
+|---|---|---|
+| Settings read for applications | `SYS_CONFIG_GET(key)` returns the value of an `app.*` key from `CONFIG.TXT` (read-only). | Lets applications use the v0.4.0 settings file |
+| Program arguments | An argument file beside the ELF (`AUTORUN.ARG`, proposed) delivered through the start record. | From the [no-shell principle](no-shell-policy.md) |
+| Chain launch | An application exits naming the next ELF; the kernel tears down and launches it. No concurrency, no pipes. | From the [no-shell principle](no-shell-policy.md); enables launcher/menu applications |
+| Console control | `log` extensions: clear, cursor position, foreground color. | Lower priority once the display API exists |
+| Application UDP | `SYS_NET_*` send/receive over the v0.4.0 OS-level LAN. | After the two LAN drivers are stable |
+| Microphone input | HDA input stream and UAC1 input alternate setting; `SYS_AUDIO_READ`. | After output is stable |
+| NUC11TNKi3 multi-xHCI and GOP records | Multi-xHCI (PCH + Thunderbolt/CPU side) and Tiger Lake GOP behaviour recorded; the I225 driver is goal 13. | When the machine is acquired |
+| I2C-HID touchpads | Designware I2C controller and HID over I2C for 2017+ laptops whose touchpad is not PS/2. | After goal 12; needs the reference laptop |
+| UASP storage | USB Attached SCSI for sticks and enclosures without a BOT alternate. | Read-only, same quiesce rules |
+| Generic HID report-descriptor parsing | Beyond the two v0.4.0 reference BLE devices and the USB boot-protocol keyboard/mouse. | Carried from the v0.4.0 exclusion list |
+| Realtek RTL8125 (2.5GbE) | If a reference machine with RTL8125 is added. | Not required while the Ryzen 7 machine has RTL8111H |
+
+### Beyond v0.5.0 (from the games scenario)
+
+The [games scenario](scenario-games-godot.md) (Godot as the placeholder target, no GPU driver in 0.x) orders later work: v0.6.0 candidates are a libc layer (musl), C++ runtime, a real allocator, a raised arena limit, microsecond time, a single-thread contract and an SDL2 port as the proving target; v0.7.0 candidate is Mesa `softpipe` providing OpenGL 3.3 on the CPU. None of these is a v0.5.0 goal.
+
+### Explicitly outside v0.5.0 (as of this draft)
+
+A command shell, processes, pipes or terminals (see the [no-shell principle](no-shell-policy.md)); Wi-Fi and built-in Bluetooth (firmware redistribution); vendor-class USB controllers (Xbox over USB / GIP); Apple SPI keyboards (2016–2017 MacBook Pro); AHCI/NVMe/eMMC; SMP; HDMI/DisplayPort audio; Bluetooth audio (A2DP, LE Audio); Mac internal speakers; audio mixing of multiple streams; sample-rate conversion; application file-write API; built-in Intel wireless/Bluetooth; preemption; multiple concurrent applications; ABI freeze; TCP or an application network API.
+
+### Decisions needed from the owner (collected during v0.4.0)
+
+1. The reference USB audio device (DAC or speaker) for goal 2.
+2. Which of the candidate r3 calls (settings read, console control, UDP, power) are promoted to required.
+3. **The reference laptop** for goals 9, 15 and 16 (internal keyboard, battery, lid, S3): a used 2015–2019 Intel laptop with an i8042 keyboard, ACPI battery and HDA codec (a ThinkPad T-series of that period is the usual choice). NUC5 and Ryzen have no battery or lid; the MacBook Pro 2018 exposes these through Apple-specific paths and is not suitable as the reference.
+4. Whether S3 sleep stays required or is downgraded to a candidate after the first resume attempts.
+5. ACPICA port versus an in-house minimal AML interpreter (goal 14).
+
+## 日本語
+
+状態：**草案。v0.4.0 の作業中に所有者決定を集めている（2026-10-15 開始）。** ✔ は所有者決定。v0.4.0 公開前に着手するものはなく、v0.4.0 中に決まったことを失わないための草案。命名規則・二言語規則・実機証跡の規則は [v0.4.0](release-scope-0.4.0.md) と同じ。
+
+### 方向
+
+v0.4.0 で USB・設定・入力（USB と BLE）・ビューアーが小さなアプリ実行環境として使えるようになる。v0.5.0 は**音声出力、画素描画、読出し専用ファイルアクセス、拡張した問合せ、乱数**（ABI 候補 r3）と SDK ランタイムを加え、画面・入力・音・データを備えた自己完結のアプリが C でも Rust でも Musha-OS 向けに書けるようにする。あわせて**対応機器の範囲をノート PC と新しい機体へ広げる**：PS/2 内蔵キーボード、実時刻、シリアルログ、汎用 HID 機器、Intel I225/I226 有線 LAN、Classic Bluetooth HID（Magic Keyboard）、電源制御・スリープ・バッテリー・蓋のための ACPI ランタイム。アプリからのファイル書込みと通信はまだ含めない。
+
+### 必須目標
+
+| # | 項目 | 範囲 | 完了条件 |
+|---|---|---|---|
+| 1 | Intel HD Audio による音声出力 ✔ | HDA コントローラードライバー（PCI クラス 04:03。NUC5 は Intel 9 系 PCH、Ryzen 7 機は AMD 1022:1487）：CORB/RIRB コマンドリング、BDL と DMA 位置を持つ出力ストリーム記述子 1 本、バッファーごとの完了割込み。コーデックドライバー：オーディオ機能グループのウィジェット木の列挙、BIOS のピン既定値の読出し、既定のアナログ出力ピン（ヘッドフォン／ライン出力端子）の選択、DAC→ピン経路の開通、電源状態・EAPD・変換フォーマットの設定。基準コーデックは Realtek ALC283（NUC5）と Realtek S1200A/ALC1200（Ryzen 7 機）。フォーマットは 48 kHz・16 bit・2 ch 固定。HDMI/DisplayPort 音声は対象外（GOP が行わない GPU 側インフォフレーム設定が必要）。 | 正弦波サンプルが NUC5 前面端子と Ryzen 背面端子で聞こえる。QEMU の `intel-hda`＋`hda-duplex` と `-audiodev wav` で決定的な WAV が得られ、回帰でハッシュ比較する |
+| 2 | USB Audio Class 1.0 による音声出力 ✔ | xHCI の**アイソクロナス転送**対応（フレーム ID 付き TRB、リング管理、アンダーラン処理）。Musha-OS で初めてのアイソクロナス利用。UAC1：AudioControl／AudioStreaming 記述子、代替設定の選択、エンドポイントのサンプリング周波数設定、Feature Unit の音量・ミュート。基準機器は所有者が選ぶ USB DAC またはスピーカー 1 台（VID:PID を記録）。MacBook Pro 2018 ではこれが唯一の音声経路（内蔵スピーカーは T2 配下で対象外）。 | 同じサンプルが基準 USB 機器で NUC5・Ryzen・MacBook Pro 2018 で聞こえる。QEMU の `usb-audio` と `-audiodev wav` で決定的な WAV が得られ、回帰で比較する |
+| 3 | アプリ向け音声 API（ABI 候補 r3） | `SYS_AUDIO_OPEN`（48 kHz/16 bit/2 ch 固定、リング長を返す）、`SYS_AUDIO_WRITE`（カーネル所有の DMA リング〔例：10 ms × 4〕へ PCM を複写。受理バイト数とアンダーランフラグを返す）、`SYS_AUDIO_CLOSE`、`SYS_AUDIO_VOLUME`。アンダーラン時は無音を流して報告する。出力ストリームは 1 本。機器の選択順は USB 音声があればそれ、なければ HDA。NOTE に音声の permissions ビット。ビューアー復帰経路（v0.4.0 目標 10）は機器再利用の前にストリームを停止・リセットする。 | 各呼出しを C・Rust サンプルで QEMU 網羅。音を鳴らして Q で終了するサンプルが実機で動作。ビューアー復帰時のストリーム停止を検証 |
+| 4 | デバイス対応表の更新 | `docs/device-support.md` の音声行を HDA アナログ出力と UAC1 出力で「対応」にし、HDMI/DP 音声・Bluetooth 音声（A2DP／LE Audio）・Mac 内蔵スピーカー・マイク入力を「対象外」に置く。 | 対応表と `hardware-verification-status.md` を 3 機種の結果で更新 |
+| 5 | 画面 API（ABI 候補 r3）✔ | `SYS_DISPLAY_INFO` で幅・高さ・画素形式（RGB/BGR 32 bit）・ストライドを返す。`SYS_DISPLAY_PRESENT(矩形)` で arena 内のアプリのバックバッファーから画面へ矩形を複写する。フレームバッファーの所有権はカーネルが持ち続ける（GOP メモリーを利用者空間に map しない）。アプリが present した後は `log` のコンソールを隠し、終了・例外時はカーネルが自分の画面に戻す。ビューアー復帰経路は再利用前にアプリの矩形を消去する。目標：4K 32 bit の全面 present が数 ms。NOTE に画面の permissions ビット。 | QEMU：info の値が GOP モードと一致、present した画素を 2 モードで基準画像と比較、部分矩形、不正矩形の拒否。実機：動くパターンのサンプルを NUC5・Ryzen（4K）・MacBook Pro 2018 で確認 |
+| 6 | 読出し専用ファイル API（ABI 候補 r3）✔ | 起動媒体上の `SYS_FILE_OPEN(パス)`、`SYS_FILE_SIZE`、`SYS_FILE_READ(オフセット, バッファー, 長さ)`、`SYS_FILE_CLOSE`。8.3 名と長い名前、ルートと 1 階層下、読出し専用、同時オープン数（例：4）と読出し長に上限、`SETTINGS/` と `EFI/` は対象外。読出しは既存の stream file サービスを使い、`AUTORUN.ELF` 読込みと同じ機器静止規則に従う。NOTE にファイルの permissions ビット。 | QEMU：FAT32 と exFAT で open/size/read/close、ファイル無し、対象外パス、ハンドル枯渇、不正バッファー。実機：`AUTORUN.ELF` と同じ場所のデータファイルを読むサンプルを NUC5・Ryzen で確認 |
+| 7 | 問合せの拡張と乱数（ABI 候補 r3）✔ | `SYS_QUERY` が版付きレコードを返す：機能ビット、OS 版、arena バイト数、画面寸法、入力・音声の有無。`SYS_RANDOM(バッファー, 長さ)` は RDRAND から（無ければ `ERR_UNSUPPORTED`）。 | 両方を C・Rust で QEMU 網羅。RDRAND の有無を機種ごとに記録 |
+| 8 | SDK ランタイム ✔ | C：最小ランタイム（`log` への整形出力、`memcpy`/`memset`/`strlen` 系、整数と基本的な算術の補助）。Rust：arena 上の bump アロケーターによる `alloc` 対応で `Vec`/`String`/`Box` がゲストで使える。両言語：小さな描画補助（矩形塗り、6×8 字形でのバックバッファーへの文字描画）と r3 ラッパー。サンプル：描画デモ、ファイル読出しデモ、音のデモ。`check-sdk.py`/`app-check.py` が r3 を対象にする。 | 両言語でサンプルが QEMU でビルド・動作。SDK ガイドを r3 向けに更新 |
+| 9 | PS/2（i8042）キーボードとタッチパッド ✔ | i8042 コントローラードライバー（ポート 0x60/0x64。他の I/O と同じくポーリング）：スキャンコードセット 2 のキーボードを USB キーボードと同じ HID usage に変換、PS/2 マウス／タッチパッドは標準 3 バイト（と IntelliMouse ホイール）モードで相対マウスイベントとして届ける。Apple 以外のほぼ全ノート PC の内蔵キーボードと、2015〜2019 年のデスクトップの PS/2 端子がこれ。 | QEMU（i8042）：キー、修飾キー、マウス移動。実機：基準ノート PC の内蔵キーボードで USB キーボード無しにビューアーを操作 |
+| 10 | 実時刻（RTC）✔ | CMOS RTC の読出し（BCD/バイナリー、12/24 時間、世紀は ACPI FADT から）を `SYS_CLOCK`（1970 年からの UTC 秒。時差は `CONFIG.TXT` の `tz=` で固定オフセット、夏時間なし）として提供。`devices` のログ時刻に使い、アプリからも使える。 | QEMU の `-rtc base=` と一致。実機 3 台でファームウェア設定の時刻と一致 |
+| 11 | シリアルへのログ出力 ✔ | 16550 UART（レガシー COM1 0x3F8、または ACPI SPCR／PCI シリアルがあればそれ）を `CONFIG.TXT` の `serial=on` で追加のログ出力先にする（115200 8N1）。全ログレベルの出力と全ての失敗を複写する。ポートからの入力は読まない。 | QEMU の `-serial file:` 取得を回帰で比較。実機はシリアルヘッダーのある機体（Ryzen 7 のマザーボード、または基準ノート PC のドック）で確認 |
+| 12 | 汎用 HID レポートディスクリプター解釈 ✔ | USB と HOGP のレポートディスクリプター（usage page、report ID、array/variable 項目、論理範囲）を解釈し、boot protocol 以外のキーボード・マウス、USB HID ゲームパッド（USB 接続の DualShock 4、汎用 HID パッド）、基準 2 機種以外の HOGP 機器が `SYS_INPUT` イベントを出せるようにする。boot protocol は後退先として残す。ベンダークラスのコントローラー（USB 接続の Xbox、GIP）は対象外のまま。 | 6 機種以上のディスクリプターのホスト側 fixture。QEMU の `usb-kbd`/`usb-mouse`/`usb-tablet`。実機：boot protocol でないキーボード 1 台と USB HID ゲームパッド 1 台 |
+| 13 | Intel igc 系有線 LAN（I225/I226）✔ | NUC11TNKi3 の Intel I225-LM/V と I226（PCI 8086:15F2/15F3 と I226 の ID）のドライバーを、リンクアップ・DHCP・OS の UDP echo まで。v0.4.0 のドライバーと lwIP 統合を共有する。NUC11TNKi3 の入手に依存し、入手できなければ候補に下げる。 | NUC11TNKi3 でリンク・アドレス・echo。e1000e と Realtek の回帰は不変 |
+| 14 | ACPI ランタイム ✔ | 以下すべての前提となる AML 解釈器（候補：BSD ライセンスの ACPICA を lwIP と同様に統合。最小の自前解釈器が代替案）。これにより ACPI 組込みコントローラー（EC）アクセス、`_PTS`/`_WAK`、目標 15〜16 のオブジェクトが使える。表はファームウェアのメモリーから読むだけで、USB には何も書かない。 | ACPICA（または解釈器）が QEMU・実機 3 台・基準ノート PC で `_S5`・`_PSR`・`_BST`・`_BIF`・`_LID` を障害なく評価 |
+| 15 | 電源制御 ✔ | `SYS_POWER(reboot\|off\|sleep)`：再起動は ACPI リセットレジスター（キーボードコントローラーを後退先に）、電源断は `_S5`（SLP_TYP を PM1 制御へ）、**スリープは S3** で ACPI の waking vector から復帰し、xHCI・タイマー・表示を再初期化する。S3 は v0.5.0 で最も危険な項目で、基準機で表示や USB を確実に復元できない場合はその機種の制約として記録し、公開の妨げにはしない。ビューアーからも操作できる（キーは `file-viewer.md` に記載）。 | QEMU：再起動・電源断・S3 復帰。実機：NUC5・Ryzen・基準ノート PC で再起動と電源断。S3 復帰は基準ノート PC と NUC5 で、機種ごとに結果を記録 |
+| 16 | バッテリー・AC・蓋の状態 ✔ | 目標 14 を通じて `_PSR`（AC アダプター）、`_BST`/`_BIF`（バッテリーの状態と容量）、`_LID`。`SYS_QUERY` の電源欄で提供し、`devices` に表示する。蓋を閉じても既定では何もせず、`CONFIG.TXT` の `lid=sleep` で S3 に入る。 | QEMU（バッテリーのエミュレーションがあればそれ、無ければ AML のホスト fixture）。実機：基準ノート PC で AC とバッテリー、蓋の開閉 |
+| 17 | Classic Bluetooth HID ✔ | v0.4.0 の LE スタックと並ぶ第 2 の Bluetooth 経路を同じドングルで：SDP によるサービス探索、L2CAP の HID 制御・割込みチャネル（PSM 0x11/0x13）、Secure Simple Pairing（ECDH P-192/P-256、Just Works と passkey）と 2.1 以前の機器向けレガシー PIN ペアリング、`PAIRING.DAT` への LE の LTK と並ぶリンクキー保存、自動再接続、目標 12 と共有する HID レポート解釈。基準機器：Apple Magic Keyboard A3118（現行、SSP）、所有者手持ちの 2003/2007 年 Apple Wireless Keyboard（レガシー PIN）、Classic 側コントローラーとして DualShock 4。 | 各基準機器が NUC5 でペアリングでき、冷間再起動を越えて再接続し、ビューアーまたは `SYS_INPUT` のサンプルを操作できる。保存済みボンドで NUC5・Ryzen 冷間起動 3 回。LE と Classic のボンドが `PAIRING.DAT` に共存 |
+
+### 候補目標
+
+| 項目 | 範囲 | 備考 |
+|---|---|---|
+| アプリ向け設定読出し | `SYS_CONFIG_GET(キー)` が `CONFIG.TXT` の `app.*` キーの値を返す（読出し専用）。 | v0.4.0 の設定ファイルをアプリでも使えるようにする |
+| プログラム引数 | ELF と同じ場所の引数ファイル（`AUTORUN.ARG`、提案）を start record で渡す。 | [シェルを持たない原則](no-shell-policy.md)から |
+| 連鎖起動 | アプリが次の ELF を指定して終了し、カーネルが後始末の後に起動する。同時実行もパイプも無い。 | [シェルを持たない原則](no-shell-policy.md)から。ランチャーやメニューのアプリが作れる |
+| コンソール制御 | `log` の拡張：消去、カーソル位置、前景色。 | 画面 API があれば優先度は下がる |
+| アプリ向け UDP | v0.4.0 の OS 内部 LAN の上で `SYS_NET_*` の送受信。 | 2 つの LAN ドライバーが安定した後 |
+| マイク入力 | HDA 入力ストリームと UAC1 入力代替設定、`SYS_AUDIO_READ`。 | 出力が安定した後 |
+| NUC11TNKi3 の複数 xHCI と GOP の記録 | 複数 xHCI（PCH 側＋Thunderbolt/CPU 側）と Tiger Lake の GOP の挙動を記録。I225 ドライバーは目標 13。 | 入手後 |
+| I2C-HID タッチパッド | 2017 年以降のタッチパッドが PS/2 でないノート PC 向けの Designware I2C コントローラーと HID over I2C。 | 目標 12 の後。基準ノート PC が必要 |
+| UASP ストレージ | BOT の代替設定を持たない USB メモリー・ケース向けの USB Attached SCSI。 | 読出し専用、同じ機器静止規則 |
+| 汎用 HID レポートディスクリプター解釈 | v0.4.0 の基準 BLE 2 機器と USB boot protocol のキーボード・マウス以外。 | v0.4.0 の除外一覧から持越し |
+| Realtek RTL8125（2.5GbE） | RTL8125 搭載の基準機を追加した場合。 | Ryzen 7 機が RTL8111H である間は不要 |
+
+### v0.5.0 より後（ゲーム用途シナリオから）
+
+[ゲーム用途シナリオ](scenario-games-godot.md)（Godot を仮置きの目標とし、0.x 系では GPU ドライバーを持たない）が後の作業順序を決める：v0.6.0 の候補は libc 層（musl）、C++ ランタイム、本物のアロケーター、arena 上限の引上げ、µs 時刻、単一スレッド契約、検証対象としての SDL2 移植。v0.7.0 の候補は Mesa `softpipe` による CPU 上の OpenGL 3.3。いずれも v0.5.0 の目標ではない。
+
+### v0.5.0 に含めないもの（この草案時点）
+
+コマンドシェル・プロセス・パイプ・端末（[シェルを持たない原則](no-shell-policy.md)参照）。Wi-Fi と内蔵 Bluetooth（ファームウェアの再配布）。ベンダークラスの USB コントローラー（USB 接続の Xbox／GIP）。Apple の SPI キーボード（2016〜2017 年 MacBook Pro）。AHCI/NVMe/eMMC。SMP。HDMI/DisplayPort 音声。Bluetooth 音声（A2DP、LE Audio）。Mac 内蔵スピーカー。複数ストリームのミキシング。サンプリング周波数変換。アプリ向けファイル書込み API。内蔵 Intel 無線/Bluetooth。プリエンプション。複数アプリの同時実行。ABI の固定。TCP やアプリ向け通信 API。
+
+### 所有者の判断が必要な点（v0.4.0 中に集める）
+
+1. 目標 2 の基準 USB 音声機器（DAC またはスピーカー）。
+2. 候補の r3 呼出し（設定読出し、コンソール制御、UDP、電源）のうち必須に上げるもの。
+3. **基準ノート PC**（目標 9・15・16：内蔵キーボード、バッテリー、蓋、S3）：i8042 キーボード・ACPI バッテリー・HDA コーデックを持つ 2015〜2019 年の中古 Intel ノート PC（この時期の ThinkPad T シリーズが通例の選択）。NUC5 と Ryzen にはバッテリーも蓋も無く、MacBook Pro 2018 はこれらを Apple 固有の経路で出すため基準にならない。
+4. S3 スリープを必須のままにするか、最初の復帰試験の後に候補へ下げるか。
+5. ACPICA の移植か、最小の自前 AML 解釈器か（目標 14）。
