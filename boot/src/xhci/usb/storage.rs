@@ -85,8 +85,8 @@ impl Pipe {
                 Some(&mut host.mouse_saved),
                 None,
                 None,
-                    Some(&mut host.bt_mailbox),
-)
+                Some(&mut host.bt_mailbox),
+            )
         };
         match result {
             Ok(_) => {

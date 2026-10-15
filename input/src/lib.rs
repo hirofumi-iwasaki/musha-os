@@ -6,10 +6,10 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-pub mod hid;
-pub mod passkey;
-pub mod merge;
 pub mod gamepad;
+pub mod hid;
+pub mod merge;
+pub mod passkey;
 pub mod sources;
 
 #[derive(Default)]
