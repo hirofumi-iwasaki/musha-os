@@ -99,7 +99,9 @@ jobs:
           cargo run --locked --release -p musha-input --example hid_fuzz -- 100000 7445454
           cargo run --locked --release -p musha-input --example hid_fuzz -- 100000 123456789
       - name: Measure HID UEFI memory layout
-        run: python3 tools/measure-hid-memory.py
+        run: |
+          python3 tools/test-hid-memory-symbols.py
+          python3 tools/measure-hid-memory.py
       - name: Build diagnostic USB image
         run: |
           cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features qemu-debug

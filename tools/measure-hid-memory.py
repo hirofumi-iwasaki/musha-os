@@ -7,6 +7,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
+from hid_memory_symbols import body
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'out/hid-memory'
@@ -35,15 +36,9 @@ text = assembly.read_text()
 (OUT / 'input.s').write_text(text)
 ptext = probe.read_text()
 
-def body(source, suffix):
-    matches = list(re.finditer(r'^([^\s:]*' + re.escape(suffix) + r'):\n', source, re.M))
-    assert len(matches) == 1, (suffix, len(matches))
-    start = matches[0].end()
-    return source[start:].split('\n\t.def\t', 1)[0]
-
-def frame(source, suffix):
+def frame(source, suffix, namespace=None):
     # Only the pinned compiler's straight-line prologue. Fail on unfamiliar form.
-    lines = body(source, suffix).splitlines()
+    lines = body(source, suffix, namespace).splitlines()
     pushes = 0
     eax = None
     for line in lines[:24]:
@@ -69,12 +64,12 @@ for name in ['HID_LAYOUT_SIZE', 'HID_DECODER_SIZE', 'HID_LAYOUT_ALIGN', 'HID_DEC
     raw = ast.literal_eval(m[1]).encode('latin1') + b'\0'
     assert len(raw) == 8, name
     sizes[name] = int.from_bytes(raw, 'little')
-frames = {name: frame(source, symbol) for name, source, symbol in [
-    ('Layout::parse', text, '6Layout5parse'),
-    ('Decoder::new', text, '7Decoder3new'),
-    ('construct probe', ptext, 'hid_probe_construct'),
-    ('update probe', ptext, 'hid_probe_update'),
-    ('release probe', ptext, 'hid_probe_release'),
+frames = {name: frame(source, symbol, namespace) for name, source, symbol, namespace in [
+    ('Layout::parse', text, '6Layout5parse', '11musha_input3hid'),
+    ('Decoder::new', text, '7Decoder3new', '11musha_input3hid'),
+    ('construct probe', ptext, 'hid_probe_construct', None),
+    ('update probe', ptext, 'hid_probe_update', None),
+    ('release probe', ptext, 'hid_probe_release', None),
 ]}
 result = {'rustc': run(['rustc','-vV']).stdout, 'target': 'x86_64-unknown-uefi',
           'sizes_bytes': sizes, 'prologue_bytes_including_saved_registers': frames,
