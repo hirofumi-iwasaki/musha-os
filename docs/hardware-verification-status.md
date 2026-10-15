@@ -150,3 +150,17 @@ IMG_7527〜IMG_7536の全10ページを確認。PCI RECOVERED 7D00、SanDisk 078
 IMG_7540〜IMG_7552の13枚で全12診断ページを確認。利用者がLenovoキーボードのA、Shift+A、Esc動作を報告。C0/00A0/root02に17EF:6009を認識しINPUT DONE K1 S0、KEY CODE 29、APP COMPLETEを表示。C2/7D00/root03のSanDiskでは、PCI復旧、USB/FAT32/MUSHA.TXT 16 byteのアプリ読出しが今回も成功。異なるコントローラーのストレージと外付け入力を同一セッションで使用し終了まで確認した。
 
 この構成でのUSB読出し・外付け入力の復旧目標は達成。C1/0700のMEMORY DISABLEDは復旧対象外の制御器の状態で、上記成功を否定しない。全ポート対応や内蔵キーボード対応、反復・長時間安定性まで確認済みとは記載しない。[証拠・接続経路・残件](pci-h19-hardware-results.md)。
+
+## 2026-10-15 Ryzen Realtek identification prerequisite / Realtek特定の前提
+
+### English
+
+Goal13 now requires Ryzen Realtek LAN as well as NUC5 I218-V. Exact Ryzen Ethernet PCI vendor:device/subsystem/revision and motherboard manufacturer/product/revision remain **UNKNOWN**. The six retained JSON/text/log files under `out/ryzen-*`, the Ryzen hardware results and the 2026-10-13 provenance do not contain those explicit identifiers. Video appearance and CPU/xHCI inventory are not used to infer a chip. This is an identification finding, not a LAN test or a change to historical acceptance.
+
+Before Realtek driver work, the owner captures the same machine's PCI Hardware Ids and motherboard identity using the [read-only Windows/Linux procedure](ryzen-realtek-identification.md), then appends dated evidence and identifiers here. Existing normal devices panels do not list every unsupported PCI vendor. Required future physical evidence is Ryzen link/DHCP/OS UDP echo, separately from NUC5 I218-V. No new physical test was performed for this entry.
+
+### 日本語
+
+目標13はNUC5 I218-Vに加えRyzen Realtek LANも必須。Ryzen Ethernetの正確なPCI vendor:device／subsystem／revisionとboard manufacturer／product／revisionは**未特定**。保持する `out/ryzen-*` JSON/text/log計6件、Ryzen実機結果、2026-10-13来歴には明示IDが無い。動画の見た目、CPU／xHCI一覧からchipを推定しない。特定状況の追記であり、LAN試験や過去受入の変更ではない。
+
+Realtek着手前に所有者が同一機体のPCI Hardware Idsとboardを[Windows/Linux読取り専用手順](ryzen-realtek-identification.md)で採取し、日時・証拠・識別値をこの新節へ追記する。現行通常devices表示は未対応PCI vendor全件の一覧ではない。今後必要な実機証拠はRyzenのlink／DHCP／OS UDP echoで、NUC5 I218-Vと別に検証する。この追記で新しい実機試験は行っていない。
