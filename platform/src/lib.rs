@@ -2,8 +2,10 @@
 #![no_std]
 pub mod acpi_read;
 pub mod config;
+pub mod config_hash;
 pub mod controllers;
 pub mod diagnostics;
+pub mod pairing;
 pub mod pci_resources;
 pub mod readiness;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -42,6 +42,7 @@ name = "musha-fs"
 version = "0.1.0"
 dependencies = [
  "musha-api",
+ "musha-platform",
 ]
 
 [[package]]

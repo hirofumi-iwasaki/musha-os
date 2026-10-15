@@ -26,6 +26,11 @@ musha-viewer = { path = "../viewer" }
 
 [features]
 qemu-debug = []
+# Disposable-image SETTINGS write/cleanup checks only; excluded from normal builds.
+settings-write-probe = ["qemu-debug"]
+settings-write-timeout = ["settings-write-probe"]
+settings-write-cancel = ["settings-write-probe"]
+settings-write-bounds = ["settings-write-probe"]
 # Development-only configuration observation; never a distribution feature.
 startup-config-probe = ["qemu-debug", "file-viewer-probe"]
 startup-failure-probe = []

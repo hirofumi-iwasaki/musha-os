@@ -7,6 +7,7 @@ mod gpt;
 pub mod operation;
 pub mod planner;
 pub mod read_plan;
+pub mod settings;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
     Io,

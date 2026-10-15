@@ -1,6 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-//! One read-only BOT command, advanced without waiting or accessing DMA.
+//! One bounded BOT command, advanced without waiting or accessing DMA.
 use super::{Command, cbw, csw};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
@@ -151,7 +151,17 @@ mod tests {
         for command in [
             Command::Ready,
             Command::Sense,
+            Command::ModeSense,
             Command::Capacity,
+            Command::SynchronizeCache,
+            Command::Write {
+                lba: 1,
+                sector_bytes: 512,
+            },
+            Command::Write {
+                lba: 1,
+                sector_bytes: 4096,
+            },
             Command::Read {
                 lba: 1,
                 sector_bytes: 512,
@@ -209,6 +219,38 @@ mod tests {
             }
             assert!(t.poll(0).is_err());
             assert!(t.complete(Phase::Command, 31, &[]).is_err());
+        }
+    }
+    #[test]
+    fn canceled_write_at_every_phase_cannot_submit_again() {
+        for stop in 0..3 {
+            let mut t = Transaction::new(
+                1,
+                Command::Write {
+                    lba: 1,
+                    sector_bytes: 512,
+                },
+                0,
+                2000,
+            )
+            .unwrap();
+            for (i, (phase, n)) in [
+                (Phase::Command, 31),
+                (Phase::Data, 512),
+                (Phase::Status, 13),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                assert_eq!(t.poll(0), Ok(Progress::Submit(phase, n)));
+                if i == stop {
+                    t.cancel();
+                    assert_eq!(t.poll(0), Err(Error::Canceled));
+                    assert_eq!(t.complete(phase, n, &[]), Err(Error::Canceled));
+                    break;
+                }
+                t.complete(phase, n, &[]).unwrap();
+            }
         }
     }
     #[test]

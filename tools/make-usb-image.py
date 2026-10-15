@@ -268,9 +268,13 @@ def create(output, efi, size_mib=64, size_bytes=None, partition_type='basic-data
         for (name, value) in sorted(node.items()):
             (short, long) = short_name(name, used)
             names.append((name, value, short, lfn(name, short) if long else b''))
-        size = (0 if root else 64) + sum((32 + len(long) for (_, _, _, long) in names)) + 32
+        size = (32 if root else 64) + sum((32 + len(long) for (_, _, _, long) in names)) + 32
         start = allocate(bytes(size))
         records = bytearray()
+        if root:
+            # FAT volume label metadata must agree with the BPB label. It is
+            # not a file and does not change the four-entry drive contract.
+            records += entry(b'MUSHA-OS   ', 8, 0)
         if not root:
             records += entry(
                 b'.          ',

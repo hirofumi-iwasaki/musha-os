@@ -110,6 +110,7 @@ struct Active {
     transaction: Transaction,
     transfer: Option<(Phase, usize, usize)>,
     hold_data: bool,
+    data_out: bool,
     delayed_until: Option<u64>,
 }
 impl Bot {
@@ -118,13 +119,20 @@ impl Bot {
             return Err("BOT BUSY");
         }
         self.tag = self.tag.checked_add(1).ok_or("BOT TAG")?;
-        let hold_data =
-            cfg!(feature = "storage-timeout") && matches!(command, Command::Read { .. });
+        let hold_data = (cfg!(feature = "storage-timeout")
+            && matches!(command, Command::Read { .. }))
+            || ((cfg!(feature = "settings-write-timeout")
+                || cfg!(feature = "settings-write-cancel"))
+                && command.data_out());
         let transaction = Transaction::new(
             self.tag,
             command,
             host.clock.now()?,
-            if hold_data { 20 } else { 2000 },
+            if hold_data && !command.data_out() {
+                20
+            } else {
+                2000
+            },
         )
         .map_err(transaction_error)?;
         unsafe {
@@ -138,6 +146,7 @@ impl Bot {
             transaction,
             transfer: None,
             hold_data,
+            data_out: command.data_out(),
             delayed_until: None,
         });
         Ok(())
@@ -158,6 +167,7 @@ impl Bot {
             Progress::Submit(phase, bytes) => {
                 let (pipe, buffer) = match phase {
                     Phase::Command => (&mut self.output, self.cbw),
+                    Phase::Data if active.data_out => (&mut self.output, self.data),
                     Phase::Data => (&mut self.input, self.data),
                     Phase::Status => (&mut self.input, self.csw),
                 };
@@ -170,6 +180,16 @@ impl Bot {
                 ) {
                     Ok(address) => {
                         active.transfer = Some((phase, address, bytes));
+                        if cfg!(feature = "settings-write-probe")
+                            && phase == Phase::Data
+                            && active.data_out
+                        {
+                            crate::debug(b"MUSHA: SETTINGS_WRITE_DATA_PENDING\n");
+                            if cfg!(feature = "settings-write-cancel") {
+                                active.transaction.cancel();
+                                crate::debug(b"MUSHA: SETTINGS_WRITE_CANCELED\n");
+                            }
+                        }
                         if phase == Phase::Data && active.delayed_until.is_some() {
                             crate::debug(b"MUSHA: LIVE_STORAGE_WAIT\n");
                         }
@@ -188,13 +208,17 @@ impl Bot {
                         if !cfg!(feature = "live-storage-timeout") && host.clock.now()? >= until {
                             host.regs.write(
                                 host.doorbell + self.slot as usize * 4,
-                                self.input.dci as u32,
+                                if active.data_out {
+                                    self.output.dci
+                                } else {
+                                    self.input.dci
+                                } as u32,
                             )?;
                             active.delayed_until = None;
                         }
                     }
                 }
-                let pipe = if phase == Phase::Command {
+                let pipe = if phase == Phase::Command || (phase == Phase::Data && active.data_out) {
                     &mut self.output
                 } else {
                     &mut self.input
@@ -538,6 +562,10 @@ pub(super) fn probe(
             );
         }
     }
+    #[cfg(feature = "settings-write-probe")]
+    if !host.discovery {
+        settings_probe(host, &mut bot, blocks, size)?;
+    }
     crate::debug(b"MUSHA: STORAGE_PROBE_OK READ_ONLY\n");
     Ok(Device {
         prepared,
@@ -549,6 +577,9 @@ pub(super) fn probe(
         first_hash,
         next_probe: 0,
         check_at: 0,
+        write_protected: false,
+        write_checked: false,
+        write_sense: false,
     })
 }
 
@@ -565,6 +596,9 @@ pub(super) struct Device {
     first_hash: u64,
     next_probe: u64,
     check_at: u64,
+    write_protected: bool,
+    write_checked: bool,
+    write_sense: bool,
 }
 impl Device {
     pub(super) fn with_port(mut self, port: usize) -> Self {
@@ -607,6 +641,79 @@ impl Device {
             }
         }
     }
+    /// Internal block transport only: callers must first authorize SETTINGS sectors.
+    /// Failure reserves DMA buffers exactly like a read until controller shutdown.
+    pub(super) fn begin_write(
+        &mut self,
+        host: &mut Host<'_>,
+        lba: u64,
+        bytes: &[u8],
+    ) -> Result<(), &'static str> {
+        if lba >= self.blocks || lba > u32::MAX as u64 || bytes.len() != self.size as usize {
+            return Err("LBA RANGE");
+        }
+        if !self.write_checked {
+            if !self.bot.command(host, Command::ModeSense)? {
+                return Err("SCSI MODE SENSE");
+            }
+            let mut header = [0; 4];
+            copy(self.bot.data, &mut header);
+            self.write_protected =
+                storage::mode_write_protected(&header).ok_or("SCSI MODE HEADER")?;
+            self.write_checked = true;
+        }
+        if self.write_protected {
+            return Err("MEDIA READ ONLY");
+        }
+        self.check_connected(host)?;
+        self.bot.begin(
+            host,
+            Command::Write {
+                lba: lba as u32,
+                sector_bytes: self.size,
+            },
+        )?;
+        // begin clears the DMA buffer before the OUT payload is published.
+        for (i, byte) in bytes.iter().enumerate() {
+            unsafe {
+                (self.bot.data as *mut u8).add(i).write_volatile(*byte);
+            }
+        }
+        Ok(())
+    }
+    pub(super) fn begin_sync(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        self.check_connected(host)?;
+        if self.write_protected {
+            return Err("MEDIA READ ONLY");
+        }
+        self.bot.begin(host, Command::SynchronizeCache)
+    }
+    pub(super) fn poll_write(&mut self, host: &mut Host<'_>) -> Result<Option<bool>, &'static str> {
+        match self.bot.poll(host)? {
+            None => Ok(None),
+            Some(ok) if self.write_sense => {
+                self.write_sense = false;
+                if !ok {
+                    return Err("SCSI SENSE");
+                }
+                let mut bytes = [0; 18];
+                copy(self.bot.data, &mut bytes);
+                let sense = storage::sense(&bytes).ok_or("SCSI SENSE FORMAT")?;
+                if sense.write_protected() {
+                    self.write_protected = true;
+                    Err("MEDIA READ ONLY")
+                } else {
+                    Err("SCSI WRITE FAILED")
+                }
+            }
+            Some(false) => {
+                self.bot.begin(host, Command::Sense)?;
+                self.write_sense = true;
+                Ok(None)
+            }
+            Some(true) => Ok(Some(true)),
+        }
+    }
     #[cfg(feature = "live-file-probe")]
     pub(super) fn delay_read(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
         self.bot.pending.as_mut().ok_or("BOT IDLE")?.delayed_until =
@@ -615,6 +722,7 @@ impl Device {
     }
     pub(super) fn stopped(&mut self, host: &mut Host<'_>) {
         self.bot.pending = None;
+        self.write_sense = false;
         host.bulk_pending = None;
         host.bulk_saved = None;
     }
@@ -664,4 +772,235 @@ impl Device {
         }
         Ok(())
     }
+}
+
+#[cfg(feature = "settings-write-probe")]
+fn settings_probe(
+    host: &mut Host<'_>,
+    bot: &mut Bot,
+    blocks: u64,
+    size: u32,
+) -> Result<(), &'static str> {
+    struct Image<'a, 'h> {
+        host: &'a mut Host<'h>,
+        bot: &'a mut Bot,
+        blocks: u64,
+        size: u32,
+        protected: bool,
+    }
+    impl musha_fs::settings::Disk for Image<'_, '_> {
+        fn read(&mut self, lba: u64, b: &mut [u8]) -> Result<(), musha_fs::Error> {
+            self.bot
+                .read(self.host, lba, self.blocks, self.size)
+                .map_err(|_| musha_fs::Error::Io)?;
+            copy(self.bot.data, b);
+            Ok(())
+        }
+        fn write(&mut self, lba: u64, b: &[u8]) -> Result<(), musha_fs::Error> {
+            if self.protected
+                || lba >= self.blocks
+                || lba > u32::MAX as u64
+                || b.len() != self.size as usize
+            {
+                return Err(musha_fs::Error::Io);
+            }
+            self.bot
+                .begin(
+                    self.host,
+                    Command::Write {
+                        lba: lba as u32,
+                        sector_bytes: self.size,
+                    },
+                )
+                .map_err(|_| musha_fs::Error::Io)?;
+            for (i, byte) in b.iter().enumerate() {
+                unsafe {
+                    (self.bot.data as *mut u8).add(i).write_volatile(*byte);
+                }
+            }
+            loop {
+                match self.bot.poll(self.host).map_err(|_| musha_fs::Error::Io)? {
+                    None => core::hint::spin_loop(),
+                    Some(true) => return Ok(()),
+                    Some(false) => break,
+                }
+            }
+            if self
+                .bot
+                .command(self.host, Command::Sense)
+                .map_err(|_| musha_fs::Error::Io)?
+            {
+                let mut b = [0; 18];
+                copy(self.bot.data, &mut b);
+                if storage::sense(&b).is_some_and(|s| s.write_protected()) {
+                    self.protected = true;
+                    crate::debug(b"MUSHA: SETTINGS_WRITE_PROTECTED\n");
+                }
+            }
+            Err(musha_fs::Error::Io)
+        }
+        fn sync(&mut self) -> Result<(), musha_fs::Error> {
+            if self
+                .bot
+                .command(self.host, Command::SynchronizeCache)
+                .map_err(|_| musha_fs::Error::Io)?
+            {
+                Ok(())
+            } else {
+                Err(musha_fs::Error::Io)
+            }
+        }
+        fn protected(&self) -> bool {
+            self.protected
+        }
+    }
+    // This large bounded workspace is BSP-owned CPU memory, never a DMA buffer.
+    struct Shared(core::cell::UnsafeCell<musha_fs::settings::Workspace>);
+    unsafe impl Sync for Shared {}
+    static WORK: Shared = Shared(core::cell::UnsafeCell::new(
+        musha_fs::settings::Workspace::new(),
+    ));
+    let workspace = unsafe { &mut *WORK.0.get() };
+    // Discover write protection without attempting WRITE, since protected USB
+    // devices may stall the OUT phase and require BOT reset recovery afterwards.
+    if !bot.command(host, Command::ModeSense)? {
+        return Err("SETTINGS MODE SENSE");
+    }
+    let mut mode = [0; 4];
+    copy(bot.data, &mut mode);
+    let protected = storage::mode_write_protected(&mode).ok_or("SETTINGS MODE HEADER")?;
+    if protected {
+        crate::debug(b"MUSHA: SETTINGS_WRITE_PROTECTED\n");
+    }
+    let mut image = Image {
+        host,
+        bot,
+        blocks,
+        size,
+        protected,
+    };
+    let mut record = [0; 4096];
+    musha_platform::pairing::encode_state(
+        &[],
+        if cfg!(feature = "settings-write-bounds") {
+            None
+        } else {
+            Some([1; 32])
+        },
+        &mut record,
+    )
+    .map_err(|_| "SETTINGS RECORD")?;
+    let config = musha_fs::settings::write_owned(
+        &mut image,
+        blocks,
+        size as usize,
+        b"CONFIG.TXT",
+        &record,
+        musha_platform::pairing::recognized,
+        workspace,
+    );
+    if config != Err(musha_fs::settings::WriteError::Unowned) {
+        return Err("CONFIG WRITE ALLOWED");
+    }
+    crate::debug(b"MUSHA: CONFIG_WRITE_REFUSED\n");
+    crate::debug(b"MUSHA: SETTINGS_WRITE_BEGIN\n");
+    let first = musha_fs::settings::write_owned(
+        &mut image,
+        blocks,
+        size as usize,
+        musha_fs::settings::OWNED_NAME,
+        &record,
+        musha_platform::pairing::recognized,
+        workspace,
+    );
+    settings_debug(format_args!("MUSHA: SETTINGS_WRITE_RESULT {:?}\n", first));
+    if first.is_ok() {
+        if cfg!(feature = "settings-write-bounds") {
+            crate::debug(b"MUSHA: SETTINGS_ZERO_PAYLOAD_OK\n");
+            let mut bonds = [musha_platform::pairing::Bond {
+                address_type: 0,
+                address: [1; 6],
+                key_size: 16,
+                flags: 2,
+                ediv: 0,
+                random: [0; 8],
+                ltk: [3; 16],
+            }; musha_platform::pairing::MAX_BONDS];
+            for (i, bond) in bonds.iter_mut().enumerate() {
+                bond.address[0] = i as u8;
+            }
+            musha_platform::pairing::encode_state(&bonds, None, &mut record)
+                .map_err(|_| "SETTINGS LIMIT RECORD")?;
+        } else {
+            musha_platform::pairing::encode_state(&[], Some([2; 32]), &mut record)
+                .map_err(|_| "SETTINGS RECORD")?;
+        }
+        let second = musha_fs::settings::write_owned(
+            &mut image,
+            blocks,
+            size as usize,
+            musha_fs::settings::OWNED_NAME,
+            &record,
+            musha_platform::pairing::recognized,
+            workspace,
+        );
+        settings_debug(format_args!(
+            "MUSHA: SETTINGS_OVERWRITE_RESULT {:?}\n",
+            second
+        ));
+        if second != Ok(false) {
+            return Err("SETTINGS OVERWRITE");
+        }
+        let p = musha_fs::settings::preflight(
+            blocks,
+            size as usize,
+            musha_fs::settings::OWNED_NAME,
+            4096,
+            false,
+            &mut |l, b| musha_fs::settings::Disk::read(&mut image, l, b),
+        )
+        .map_err(|_| "SETTINGS READBACK PLAN")?;
+        let mut readback = [0; 4096];
+        for (i, b) in readback.chunks_mut(size as usize).enumerate() {
+            musha_fs::settings::Disk::read(
+                &mut image,
+                p.data_sector(i).ok_or("SETTINGS READBACK RANGE")?,
+                b,
+            )
+            .map_err(|_| "SETTINGS READBACK")?;
+        }
+        if record != readback {
+            return Err("SETTINGS CONTENT");
+        }
+        crate::debug(b"MUSHA: SETTINGS_READBACK_OK\n");
+        if cfg!(feature = "settings-write-bounds") {
+            crate::debug(b"MUSHA: SETTINGS_MAX_BONDS_OK\n");
+            let overflow = musha_fs::settings::write_owned(
+                &mut image,
+                blocks,
+                size as usize,
+                musha_fs::settings::OWNED_NAME,
+                &[0; 4097],
+                musha_platform::pairing::recognized,
+                workspace,
+            );
+            if overflow != Err(musha_fs::settings::WriteError::Unowned) {
+                return Err("SETTINGS OVERFLOW ACCEPTED");
+            }
+            crate::debug(b"MUSHA: SETTINGS_OVERFLOW_REFUSED\n");
+        }
+    }
+    Err("SETTINGS PROBE DONE") // Exercise existing controller DMA shutdown.
+}
+
+#[cfg(feature = "settings-write-probe")]
+fn settings_debug(args: core::fmt::Arguments<'_>) {
+    struct Debug;
+    impl core::fmt::Write for Debug {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            crate::debug(s.as_bytes());
+            Ok(())
+        }
+    }
+    let _ = core::fmt::write(&mut Debug, args);
 }

@@ -71,13 +71,16 @@ class ImageTests(unittest.TestCase):
                     cluster = struct.unpack_from('<I', fat, cluster * 4)[0] & 0x0fffffff
                 return bytes(result[:length])
             root = read(data_start)
+            label = next(root[i:i+32] for i in range(0,len(root),32) if root[i+11]==8)
+            self.assertEqual(label[:11],bpb[71:82])
+            self.assertEqual(label[20:22]+label[26:32],bytes(8))
             def find(directory,name):
                 return next(directory[i:i+32] for i in range(0,len(directory),32) if directory[i:i+11]==name)
             def contents(entry):return read(data_start+struct.unpack_from('<H',entry,26)[0]-2)
             self.assertEqual(file_from_entry(find(root,b'README  TXT')),usb.usb_readme((usb.pathlib.Path(__file__).resolve().parent.parent/'VERSION').read_text().strip()))
             efi_dir=contents(find(root,b'EFI        '));boot_dir=contents(find(efi_dir,b'BOOT       '))
             self.assertEqual(file_from_entry(find(boot_dir,b'BOOTX64 EFI')),self.efi.read_bytes())
-            self.assertEqual({root[i:i+11] for i in range(0,len(root),32) if root[i]},{b'DOCS       ',b'EFI        ',b'README  TXT',b'SETTINGS   '})
+            self.assertEqual({root[i:i+11] for i in range(0,len(root),32) if root[i] and not root[i+11]&8},{b'DOCS       ',b'EFI        ',b'README  TXT',b'SETTINGS   '})
 
     def test_reproducible_and_refuses_existing_files_and_symlinks(self):
         a = usb.create(self.root / 'a.img', self.efi)

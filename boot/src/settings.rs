@@ -25,6 +25,15 @@ pub struct Settings {
 }
 use core::sync::atomic::{AtomicBool, Ordering};
 static CLOSE_FAILED: AtomicBool = AtomicBool::new(false);
+struct RawHash(core::cell::UnsafeCell<Option<[u8; 32]>>);
+unsafe impl Sync for RawHash {} // Written once by BSP before ExitBootServices.
+static RAW_HASH: RawHash = RawHash(core::cell::UnsafeCell::new(None));
+/// CPU-owned digest only, retained after all CONFIG handles and buffers are gone.
+/// Stage6 supplies the successful pairing + durable-record acknowledgement.
+pub fn pairing_config_hash() -> Option<[u8; 32]> {
+    unsafe { *RAW_HASH.0.get() }
+}
+
 struct Handle(*mut file::Protocol);
 impl Drop for Handle {
     fn drop(&mut self) {
@@ -58,7 +67,11 @@ unsafe fn open(parent: &Handle, name: &[u8]) -> Result<Handle, efi::Status> {
 }
 #[repr(align(4096))]
 struct Sector([u8; 4096]);
-unsafe fn load(bs: *mut efi::BootServices, device: efi::Handle) -> (Config, ReadState) {
+unsafe fn load(
+    bs: *mut efi::BootServices,
+    device: efi::Handle,
+    raw_hash: &mut Option<[u8; 32]>,
+) -> (Config, ReadState) {
     let defaults = Config::default();
     let mut ptr = core::ptr::null_mut();
     let mut guid = block_io::PROTOCOL_GUID;
@@ -134,7 +147,10 @@ unsafe fn load(bs: *mut efi::BootServices, device: efi::Handle) -> (Config, Read
         }
         if count == 0 {
             return match parse(&bytes[..used]) {
-                Ok(config) => (config, ReadState::Loaded),
+                Ok(config) => {
+                    *raw_hash = Some(musha_platform::config_hash::sha256(&bytes[..used]));
+                    (config, ReadState::Loaded)
+                }
                 Err(_) => (defaults, ReadState::Malformed),
             };
         }
@@ -148,10 +164,12 @@ pub unsafe fn read(
     device: efi::Handle,
 ) -> Settings {
     CLOSE_FAILED.store(false, Ordering::Relaxed);
-    let (mut config, mut state) = unsafe { load(bs, device) };
+    let mut raw_hash = None;
+    let (mut config, mut state) = unsafe { load(bs, device, &mut raw_hash) };
     if CLOSE_FAILED.load(Ordering::Relaxed) {
         config = Config::default();
         state = ReadState::ReadError;
+        raw_hash = None;
     }
     crate::debug(b"MUSHA: CONFIG FILE CLEANUP COMPLETE\n");
     #[cfg(feature = "startup-config-probe")]
@@ -174,6 +192,9 @@ pub unsafe fn read(
     }
     if forced {
         config.log = LogLevel::Devices;
+    }
+    unsafe {
+        *RAW_HASH.0.get() = raw_hash;
     }
     Settings {
         config,

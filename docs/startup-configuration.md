@@ -25,6 +25,8 @@ Log control covers OS startup only. quiet makes no ordinary startup writes or ba
 
 Application logs and viewer UI remain visible at every level. Their existing 80×24 console and viewer grid are unchanged. The ready footer uses only space below both grids and is restored after viewer frames/application console rendering; it never reserves a row inside application output. Required media or viewer keyboard failure does not claim ready. This is software development validation, not physical acceptance; use the [new record template](hardware-test-record-template.md) with devices for new hardware evidence.
 
+Owner addition2026-10-15: CONFIG is user-owned and the OS never pads, resizes or rewrites it. Stage3 retains SHA-256 of the exact raw bytes after successful parse/close. Stage6 will persist that hash only after successful pairing and durable record save; an identical consumed hash suppresses `pair=on`. Changing content rearms it; saving identical content does not. Actual Bluetooth/pairing remains unimplemented.
+
 ## 日本語
 
 v0.4.0 開発版は FAT32 起動デバイスの `/SETTINGS/CONFIG.TXT` を LoadedImage → BlockIO 幾何確認 → SimpleFileSystem の順に読み、GOP 選択と OS 初表示より前に設定を確定する。他のデータ媒体からは読まない。exFAT は読出し専用データ媒体。file／directory／volume handle は GOP と最終 memory map 採取前に close し、ExitBootServices 後はコピーした値だけを保持する。最終 map／ExitBootServices 間に firmware 呼出しを増やさない。
@@ -49,3 +51,5 @@ firmware F8 または数字8は CONFIG 読出し後に devices を強制する�
 log は OS 起動出力だけを制御する。quiet は通常の起動描画・背景再塗りを行わず、必須失敗は表示する。ready は必須探索後の `Musha-OS ready.` だけ。phases は UEFI／EBS／runtime／timer／USB host／boot media／keyboard／LAN／Bluetooth／applicationまたはviewer／ready を表示する。devices は詳細診断に加え下部専用行に最新 phase、PM-epoch 要約を表示する。未対応 LAN／Bluetooth は未対応とし、成功を装ったり毎回無条件 fatal にしたりしない。OS の PM epoch 成立前の firmware 開始時刻は不明のまま。
 
 アプリの log と viewer UI は全 level で表示し、既存80×24 console と viewer grid を変えない。ready footer は両 grid より下の余白だけを使い、viewer frame／app console 描画後に復元する。アプリ出力内の行を予約しない。必須媒体や viewer keyboard の失敗では ready を宣言しない。これは開発時のソフトウェア検証で実機受入ではない。新しい実機証拠は devices で[記録様式](hardware-test-record-template.md)を使う。
+
+所有者追加判断2026-10-15：CONFIGは利用者所有で、OSはpadding・resize・書換えを一切行わない。工程3はparse/close成功後、正確なraw bytesのSHA-256のみ保持する。工程6でpair成功とrecord永続化成功後にだけhashを保存し、同じ消費済みhashの `pair=on` を抑止する。内容変更で再有効になり、同一内容を保存し直すだけでは再有効にならない。実Bluetooth/pairingは未実装。
