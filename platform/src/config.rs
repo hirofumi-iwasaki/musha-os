@@ -22,6 +22,8 @@ pub struct Config {
     pub log: LogLevel,
     pub display: Display,
     pub pair: bool,
+    /// Explicit startup opt-in; absence or atomic parse fallback disables echo.
+    pub lan_echo: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParseError {
@@ -80,6 +82,13 @@ pub fn parse(bytes: &[u8]) -> Result<Config, ParseError> {
                         return Err(ParseError::Value);
                     }
                     Display::Exact(w, h)
+                }
+            }
+            "lan.echo" => {
+                config.lan_echo = match value {
+                    "on" => true,
+                    "off" => false,
+                    _ => return Err(ParseError::Value),
                 }
             }
             "pair" => {
@@ -145,7 +154,8 @@ mod tests {
             Ok(Config {
                 log: LogLevel::Devices,
                 display: Display::Exact(1024, 768),
-                pair: true
+                pair: true,
+                lan_echo: false
             })
         );
     }

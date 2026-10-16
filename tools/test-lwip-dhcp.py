@@ -18,12 +18,12 @@ libpath=out/('lwip.dylib' if sys.platform=='darwin' else 'lwip.so')
 cmd=['clang','-dynamiclib' if sys.platform=='darwin' else '-shared','-fPIC','-std=c11','-O2','-I',str(ROOT/'net/port'),'-I',str(ROOT/'third_party/lwip/src/include'),*[str(x)for x in files],str(ROOT/'net/port/shim.c'),str(assert_source),'-o',str(libpath)]
 with (out/'build.log').open('w')as log:subprocess.run(cmd,stdout=log,stderr=subprocess.STDOUT,check=True)
 lib=ctypes.CDLL(str(libpath));ptr=ctypes.POINTER(ctypes.c_ubyte)
-lib.musha_lwip_init.argtypes=[ptr];lib.musha_lwip_tx.argtypes=[ptr,ctypes.c_uint16];lib.musha_lwip_input.argtypes=[ptr,ctypes.c_uint16];lib.musha_lwip_address.argtypes=[ptr];lib.musha_lwip_poll.argtypes=[ctypes.c_uint32]
+lib.musha_lwip_init.argtypes=[ptr,ctypes.c_int];lib.musha_lwip_tx.argtypes=[ptr,ctypes.c_uint16];lib.musha_lwip_input.argtypes=[ptr,ctypes.c_uint16];lib.musha_lwip_address.argtypes=[ptr];lib.musha_lwip_poll.argtypes=[ctypes.c_uint32]
 mac=(ctypes.c_ubyte*6)(2,0,0,0,0,1);buf=(ctypes.c_ubyte*1514)();now=0;rows=[]
 def address():
  b=(ctypes.c_ubyte*4)();valid=lib.musha_lwip_address(b);return bytes(b)if valid else None
-def start():
- assert lib.musha_lwip_init(mac)==0
+def start(echo_enabled=False):
+ assert lib.musha_lwip_init(mac,int(echo_enabled))==0
  assert address() is None,'static or previous address survived restart'
 def tick(server,drop_renew=False):
  global now
@@ -44,7 +44,7 @@ def acquire(server):
  assert address()==server.ip and address()!=bytes([10,0,2,15]),'no dynamic lease'
  assert {x['kind']for x in server.events}>={1,3}
 def stop():lib.musha_lwip_stop();assert address()is None;assert lib.musha_lwip_tx(buf,len(buf))==0
-server=fixture.Server('10.0.2.77',lease=20,renew=4,rebind=12);start();acquire(server);requests=sum(x['kind']==3 for x in server.events)
+server=fixture.Server('10.0.2.77',lease=20,renew=4,rebind=12);start(echo_enabled=True);acquire(server);requests=sum(x['kind']==3 for x in server.events)
 for _ in range(100):tick(server)
 assert address()==server.ip and sum(x['kind']==3 for x in server.events)>requests
 stop();rows.append({'case':'dynamic-lease-and-renew','passed':True})

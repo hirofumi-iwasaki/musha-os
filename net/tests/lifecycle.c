@@ -7,7 +7,7 @@
 #include "lwip/memp.h"
 #include "lwip/mem.h"
 void musha_lwip_stop(void);
-int musha_lwip_init(const u8_t *);
+int musha_lwip_init(const u8_t *, int);
 void musha_lwip_poll(u32_t);
 int musha_lwip_tx(u8_t *, u16_t);
 u32_t sys_now(void);
@@ -20,14 +20,17 @@ int main(void) {
     u32_t used[MEMP_MAX];
     u32_t heap = 0;
     musha_lwip_stop(); /* Partial/empty teardown is idempotent. */
-    CHECK(musha_lwip_init((void *)0) == -1);
+    CHECK(musha_lwip_init((void *)0, 0) == -1);
+    CHECK(musha_lwip_init(mac, 2) == -1);
     for (u32_t session = 0; session < 1000; ++session) {
         u32_t before = sys_now();
-        CHECK(musha_lwip_init(mac) == 0);
+        int echo_enabled = session & 1;
+        CHECK(musha_lwip_init(mac, echo_enabled) == 0);
         CHECK(sys_now() == before); /* Endpoint restart never rewinds time. */
-        CHECK(musha_lwip_init(mac) == -1); /* Cannot replace a live endpoint. */
+        CHECK(musha_lwip_init(mac, echo_enabled) == -1); /* Cannot replace a live endpoint. */
         CHECK(netif_list && netif_list == netif_default && !netif_list->next);
-        CHECK(udp_pcbs && udp_pcbs->next && !udp_pcbs->next->next);
+        CHECK(udp_pcbs);
+        CHECK(echo_enabled ? (udp_pcbs->next && !udp_pcbs->next->next) : !udp_pcbs->next);
         u8_t address[4];
         CHECK(!musha_lwip_address(address)); /* DHCP pending, never static IP. */
         struct pbuf *payload = pbuf_alloc(PBUF_TRANSPORT, 17, PBUF_POOL);
@@ -36,8 +39,8 @@ int main(void) {
         IP_ADDR4(&destination,10,0,2,2);
         struct udp_pcb *application = udp_pcbs;
         while (application && application->local_port != 12345) application = application->next;
-        CHECK(application);
-        CHECK(udp_sendto(application,payload,&destination,43210) == ERR_RTE);
+        CHECK(echo_enabled ? application != 0 : application == 0);
+        if (application) CHECK(udp_sendto(application,payload,&destination,43210) == ERR_RTE);
         pbuf_free(payload); /* No route exists until a DHCP lease is supplied. */
         musha_lwip_poll(1000 + session * 10);
         musha_lwip_stop();

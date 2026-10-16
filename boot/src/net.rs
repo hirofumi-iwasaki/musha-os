@@ -13,7 +13,7 @@ static BDF: AtomicU32 = AtomicU32::new(u32::MAX);
 static I218_QUARANTINED: AtomicU32 = AtomicU32::new(0);
 static USB_BDF: AtomicU32 = AtomicU32::new(u32::MAX);
 unsafe extern "C" {
-    fn musha_lwip_init(mac: *const u8) -> i32;
+    fn musha_lwip_init(mac: *const u8, echo_enabled: i32) -> i32;
     fn musha_lwip_stop();
     fn musha_lwip_poll(ms: u32);
     fn musha_lwip_input(bytes: *const u8, length: u16) -> i32;
@@ -112,7 +112,7 @@ impl Nic {
         }
         bme_off
     }
-    fn initialize(&self, t: &mut acpi::Time) -> Result<(), &'static str> {
+    fn initialize(&self, t: &mut acpi::Time, echo_enabled: bool) -> Result<(), &'static str> {
         let init_start = t.now()?;
         #[cfg(feature = "i218-nvm-reject-probe")]
         {
@@ -206,18 +206,26 @@ impl Nic {
         unsafe {
             musha_lwip_poll(crate::bootstate::epoch_now().ok_or("CLOCK")? as u32);
         }
-        if unsafe { musha_lwip_init(mac.as_ptr()) } != 0 {
+        if unsafe { musha_lwip_init(mac.as_ptr(), i32::from(echo_enabled)) } != 0 {
             return Err("LWIP INIT");
         }
-        crate::bootlog::summary_phase("lan", "link ready; DHCP pending");
+        crate::bootlog::summary_phase(
+            "lan",
+            if echo_enabled {
+                "link ready; echo enabled; DHCP pending"
+            } else {
+                "link ready; echo disabled; DHCP pending"
+            },
+        );
         crate::bootlog::device(
             "lan",
             format_args!(
-                "{} {:02x}:{:02x}.{} link up; DHCP pending",
+                "{} {:02x}:{:02x}.{} link up; echo {}; DHCP pending",
                 if self.pch { "I218-V" } else { "82574" },
                 self.c.bus,
                 self.c.device,
-                self.c.function
+                self.c.function,
+                if echo_enabled { "enabled" } else { "disabled" }
             ),
         );
         crate::debug(b"MUSHA: NET_DHCP_STARTED NO_ADDRESS\n");
@@ -239,6 +247,7 @@ pub(crate) struct Session {
     address: [u8; 4],
     address_wait: u64,
     dhcp_state: u32,
+    echo_enabled: bool,
 }
 impl Session {
     pub(crate) fn start(
@@ -320,8 +329,9 @@ impl Session {
             address: [0; 4],
             address_wait: time.now()?,
             dhcp_state: 0,
+            echo_enabled: crate::bootlog::echo_enabled(),
         };
-        if let Err(error) = session.nic.initialize(time) {
+        if let Err(error) = session.nic.initialize(time, session.echo_enabled) {
             if error == "I218 INIT BUDGET 5S" {
                 // No DMA was enabled: reset/PHY did not reach ring admission.
                 // Avoid all MMIO after an ambiguous reset; this dedicated DMA
@@ -405,8 +415,16 @@ impl Session {
                     musha_platform::boot_log::Level::Phases,
                     "lan",
                     format_args!(
-                        "DHCP {}.{}.{}.{} UDP echo port 12345 ready",
-                        address[0], address[1], address[2], address[3]
+                        "DHCP {}.{}.{}.{}{}",
+                        address[0],
+                        address[1],
+                        address[2],
+                        address[3],
+                        if self.echo_enabled {
+                            " UDP echo port 12345 ready"
+                        } else {
+                            "; echo disabled"
+                        }
                     ),
                 );
                 crate::debug(b"MUSHA: NET_READY IP=");
@@ -427,7 +445,11 @@ impl Session {
                     }
                     crate::debug(&digits[at..]);
                 }
-                crate::debug(b" UDP=12345 DHCP\n");
+                crate::debug(if self.echo_enabled {
+                    b" UDP=12345 DHCP\n"
+                } else {
+                    b" ECHO=disabled DHCP\n"
+                });
             }
         } else {
             if self.address != [0; 4] {

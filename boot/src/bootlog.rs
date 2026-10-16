@@ -44,6 +44,7 @@ static STATE: Shared = Shared(UnsafeCell::new(State {
         log: LogLevel::Ready,
         display: Display::Max,
         pair: false,
+        lan_echo: false,
     },
     ready: false,
     early: true,
@@ -190,11 +191,16 @@ pub fn app(bytes: &[u8]) {
         false,
     );
 }
+static LAN_ECHO: AtomicBool = AtomicBool::new(false);
+pub fn echo_enabled() -> bool {
+    LAN_ECHO.load(Ordering::Relaxed)
+}
 pub fn configure(config: Config) {
     let Some(_lease) = lease() else {
         return;
     };
     LOG_MODE.store(config.log as u8, Ordering::Relaxed);
+    LAN_ECHO.store(config.lan_echo, Ordering::Relaxed);
     unsafe {
         (*STATE.0.get()).config = config;
     }
@@ -241,8 +247,16 @@ pub fn initialize(fb: Framebuffer, settings: crate::settings::Settings, fallback
     device(
         "settings",
         format_args!(
-            "{:?} log={:?} display={:?} pair={}",
-            settings.state, settings.config.log, settings.config.display, settings.config.pair
+            "{:?} log={:?} display={:?} pair={} lan.echo={}",
+            settings.state,
+            settings.config.log,
+            settings.config.display,
+            settings.config.pair,
+            if settings.config.lan_echo {
+                "on"
+            } else {
+                "off"
+            }
         ),
     );
     device(

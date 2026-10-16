@@ -58,8 +58,8 @@ void musha_lwip_stop(void) {
     memset(lengths, 0, sizeof(lengths));
     memset(queue, 0, sizeof(queue));
 }
-int musha_lwip_init(const u8_t *mac) {
-    if (initialized || !mac) return -1;
+int musha_lwip_init(const u8_t *mac, int echo_enabled) {
+    if (initialized || !mac || (echo_enabled != 0 && echo_enabled != 1)) return -1;
     if (!core_initialized) {
         lwip_init();
         core_initialized = 1;
@@ -75,13 +75,15 @@ int musha_lwip_init(const u8_t *mac) {
     netif_set_default(&nic);
     netif_set_link_up(&nic);
     netif_set_up(&nic);
-    echo = udp_new();
-    if (!echo || udp_bind(echo,IP_ADDR_ANY,12345)!=ERR_OK) {
-        musha_lwip_stop();
-        return -1;
+    if (echo_enabled) {
+        echo = udp_new();
+        if (!echo || udp_bind(echo,IP_ADDR_ANY,12345)!=ERR_OK) {
+            musha_lwip_stop();
+            return -1;
+        }
+        udp_recv(echo,receive,0);
     }
     udp_received = tx_drops = rx_drops = 0;
-    udp_recv(echo,receive,0);
     if (dhcp_start(&nic) != ERR_OK) {
         musha_lwip_stop();
         return -1;

@@ -66,3 +66,83 @@ fn ring_roundtrips_trace_without_reclassifying_application_or_changing_names() {
     }
     assert_eq!(ring.lost(), 0);
 }
+
+#[test]
+fn lan_echo_is_default_off_and_only_explicit_on_enables_it() {
+    assert!(!config::Config::default().lan_echo);
+    for text in [
+        b"".as_slice(),
+        b"# defaults\n",
+        b"log=trace\npair=on\ndisplay=1024x768\n",
+        b"lan.echo=off\n",
+    ] {
+        assert!(!config::parse(text).unwrap().lan_echo);
+    }
+    assert!(config::parse(b"lan.echo=on\n").unwrap().lan_echo);
+    assert!(
+        config::parse(b" lan.echo = on # opt in\r\n")
+            .unwrap()
+            .lan_echo
+    );
+}
+#[test]
+fn lan_echo_duplicate_keys_follow_existing_last_key_wins_rule() {
+    assert!(
+        !config::parse(b"lan.echo=on\nlan.echo=off\n")
+            .unwrap()
+            .lan_echo
+    );
+    assert!(
+        config::parse(b"lan.echo=off\nlan.echo=on\n")
+            .unwrap()
+            .lan_echo
+    );
+}
+#[test]
+fn invalid_lan_echo_rejects_the_entire_configuration_instead_of_partial_enablement() {
+    for value in [
+        "", "ON", "Off", "true", "false", "1", "0", "yes", "on=off", "on off",
+    ] {
+        let bytes = format!("log=quiet\nlan.echo=on\npair=on\nlan.echo={value}\n");
+        assert_eq!(
+            config::parse(bytes.as_bytes()),
+            Err(ParseError::Value),
+            "{value}"
+        );
+        // Mirrors the firmware caller's existing fallback, without file writes.
+        assert!(!config::parse(bytes.as_bytes()).unwrap_or_default().lan_echo);
+    }
+    assert_eq!(
+        config::parse(b"lan.echo=on\nbad\n"),
+        Err(ParseError::Syntax)
+    );
+    assert_eq!(
+        config::parse(b"lan.echo=on\n#\xff"),
+        Err(ParseError::NonAscii)
+    );
+}
+#[test]
+fn echo_setting_preserves_display_trace_pair_unknown_keys_and_size_limits() {
+    use musha_platform::config::{Config, Display, MAX_CONFIG_BYTES};
+    assert_eq!(
+        config::parse(
+            b"future=value\r\nlan.echo=on\r\nlog=trace\r\npair=on\r\ndisplay=1600x1200\r\n"
+        ),
+        Ok(Config {
+            log: LogLevel::Trace,
+            display: Display::Exact(1600, 1200),
+            pair: true,
+            lan_echo: true
+        })
+    );
+    assert_eq!(
+        config::parse(b"lan.echo=on\npair=off"),
+        Err(ParseError::Value)
+    );
+    let mut exact = b"lan.echo=on\n#".to_vec();
+    exact.resize(MAX_CONFIG_BYTES, b'x');
+    assert!(config::parse(&exact).unwrap().lan_echo);
+    exact.push(b'x');
+    assert_eq!(config::parse(&exact), Err(ParseError::TooLarge));
+    assert!(!config::parse(&exact).unwrap_or_default().lan_echo);
+}

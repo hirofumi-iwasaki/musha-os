@@ -12,6 +12,7 @@ import struct
 import socket
 import subprocess
 import time
+from echo_fixture import boot as configure_echo_boot
 
 ROOT = Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser(description=__doc__)
@@ -23,6 +24,7 @@ p.add_argument('--qemu', default='qemu-system-x86_64')
 p.add_argument('--format', choices=['fat32','exfat'], default='fat32')
 p.add_argument('--selected-name', action='store_true', help='Rename fixture to SECOND.ELF and launch from viewer, checking its real display name')
 p.add_argument('--lan', action='store_true', help='Require a real UDP echo after every viewer restart')
+p.add_argument('--echo-disabled', action='store_true', help='Verify default-off with a real DHCP lease and no UDP reply after each restart')
 p.add_argument('--launches', type=int, choices=range(1, 4), default=3)
 p.add_argument('--quarantine', action='store_true', help='Expect stop-failure injection and forbid arena reuse')
 p.add_argument('--screen-reference', type=Path, help='Feature-free screen-only comparison against verified return frame')
@@ -30,6 +32,7 @@ p.add_argument('--input', action='store_true', help='Drive existing r2 keyboard 
 p.add_argument('--detail', type=int, help='Expected exit status or fault vector')
 p.add_argument('--outcome', type=int, choices=[0, 1, 2], default=0)
 a = p.parse_args()
+if a.lan and a.echo_disabled: p.error('Choose echo-on or default-off')
 o = a.output.resolve()
 o.mkdir(parents=True, exist_ok=False)
 spec = importlib.util.spec_from_file_location('external_fixture', ROOT/'tools/smoke-external-elf.py')
@@ -63,11 +66,13 @@ cmd = [a.qemu, '-machine', 'q35,accel=tcg', '-cpu', 'qemu64,+syscall,+nx', '-m',
        '-display', 'none', '-vga', 'std', '-debugcon', f'file:{debug}',
        '-qmp', f'unix:{sock},server=on,wait=off', '-no-reboot']
 lan_port = None
-if a.lan:
+if a.lan or a.echo_disabled:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as reservation:
         reservation.bind(('127.0.0.1', 0))
         lan_port = reservation.getsockname()[1]
     cmd += ['-netdev', f'user,id=n,hostfwd=udp:127.0.0.1:{lan_port}-:12345', '-device', 'e1000e,netdev=n']
+if a.lan or a.echo_disabled:
+    configure_echo_boot(cmd, o, efi=a.efi, enabled=a.lan)
 (o/'command.json').write_text(json.dumps(cmd, indent=2)+'\n')
 report = {'scope': 'QEMU only; no physical USB acceptance', 'passed': False, 'format': a.format, 'lan': a.lan, 'launches': [], 'efi_sha256': hashlib.sha256(a.efi.read_bytes()).hexdigest(), 'elf_sha256': hashlib.sha256(a.elf.read_bytes()).hexdigest()}
 with (o/'qemu.log').open('w') as log:
@@ -148,28 +153,30 @@ with (o/'qemu.log').open('w') as log:
                 assert 'FILE_IDENTITIES_RELEASED AFTER_DMA_STOP' in text[start:scrub]
                 assert 'XHCI_QUIESCED DMA_DISABLED' in text[start:scrub]
                 assert 'STREAM_MOUNT_'+a.format.upper() in text[scrub:frame]
-                if a.lan:
+                if a.lan or a.echo_disabled:
                     wait('NET_READY', scrub)
                     text = debug.read_text()
-                    assert 'NET_READY IP=10.0.2.15 UDP=12345 DHCP' in text[scrub:] and 'LWIP INIT' not in text, text
+                    assert ('NET_READY IP=10.0.2.15 UDP=12345 DHCP' if a.lan else 'NET_READY IP=10.0.2.15 ECHO=disabled DHCP') in text[scrub:] and 'LWIP INIT' not in text, text
                     payload = ('stage5-'+a.format+'-mount-'+str(launch)).encode()
                     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as peer:
                         peer.settimeout(.5)
-                        end = time.monotonic()+10
+                        end = time.monotonic()+(1.5 if a.echo_disabled else 10)
                         while True:
                             peer.sendto(payload, ('127.0.0.1', lan_port))
                             try:
                                 echoed, _ = peer.recvfrom(2048)
+                                assert a.lan, 'Default-off UDP service replied'
                                 assert echoed == payload, (echoed, payload)
                                 break
                             except socket.timeout:
                                 if time.monotonic()>end:
+                                    if a.echo_disabled: break
                                     raise RuntimeError('No UDP echo after viewer restart')
                 call('screendump', {'filename': str(o/('viewer-'+str(launch)+'.ppm'))})
                 detail = int(re.search(r'APP_RECOVERED KIND=[0-9A-F]{16} DETAIL=([0-9A-F]{16})', text[recovered:]).group(1), 16)
                 if a.detail is not None:
                     assert detail == a.detail, (detail, a.detail)
-                report['launches'].append({'index': launch, 'outcome': a.outcome, 'detail': detail, 'lan_echo': a.lan, 'viewer': True, 'scrub_after_dma': True})
+                report['launches'].append({'index': launch, 'outcome': a.outcome, 'detail': detail, 'lan_echo': a.lan, 'echo_disabled_verified': a.echo_disabled, 'viewer': True, 'scrub_after_dma': True})
                 print('PASS app return '+str(launch), flush=True)
                 if launch+1<a.launches:
                     start = len(debug.read_text())

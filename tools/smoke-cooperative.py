@@ -4,6 +4,7 @@
 """Verify concurrent keyboard, cached file reads and actual NIC traffic."""
 import argparse, pathlib, socket, struct, subprocess, time, shutil, json, hashlib
 import importlib.util
+from echo_fixture import boot as configure_echo_boot
 _spec=importlib.util.spec_from_file_location("dhcp_fixture",pathlib.Path(__file__).with_name("dhcp-fixture.py"))
 dhcp_fixture=importlib.util.module_from_spec(_spec);_spec.loader.exec_module(dhcp_fixture)
 from distribution import usb_readme
@@ -78,6 +79,8 @@ if a.exfat_boot_image:
  if not a.exfat_boot_image.is_file():parser.error('Boot image must be a regular file')
  boot_hash=hashlib.sha256(a.exfat_boot_image.read_bytes()).hexdigest()
  cmd.extend(['-drive',f'if=ide,format=raw,snapshot=on,file={a.exfat_boot_image}','-boot','order=c'])
+# Network fixtures explicitly opt in; published/default images remain echo-off.
+configure_echo_boot(cmd, out, image=a.exfat_boot_image or a.usb_image, efi=root/'out/esp/EFI/BOOT/BOOTX64.EFI')
 def checksum(b):
  if len(b)%2:b+=b'\0'
  n=sum(struct.unpack('!'+str(len(b)//2)+'H',b))

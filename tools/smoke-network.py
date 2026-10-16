@@ -4,6 +4,7 @@
 """Exercise ARP, ICMP and checksummed UDP through the actual QEMU NIC rings."""
 import argparse, pathlib, socket, struct, subprocess, time, shutil, json, hashlib
 import importlib.util
+from echo_fixture import boot as configure_echo_boot
 _spec=importlib.util.spec_from_file_location("dhcp_fixture",pathlib.Path(__file__).with_name("dhcp-fixture.py"))
 dhcp_fixture=importlib.util.module_from_spec(_spec);_spec.loader.exec_module(dhcp_fixture)
 parser=argparse.ArgumentParser()
@@ -11,10 +12,11 @@ parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--case',choices=['normal','link-down'],default='normal')
 parser.add_argument('--usb-image',type=pathlib.Path)
+parser.add_argument('--output',type=pathlib.Path)
 a=parser.parse_args();root=pathlib.Path(__file__).resolve().parent.parent
-out=root/('out/qemu-network-'+a.case);out.mkdir(parents=True,exist_ok=True)
+out=a.output.resolve() if a.output else root/('out/qemu-network-'+a.case);out.mkdir(parents=True,exist_ok=True)
 f=pathlib.Path(a.firmware_dir);shutil.copyfile(f/'edk2-i386-vars.fd',out/'vars.fd')
-log=out/'debug.log';log.write_text('');qmp=out/'qmp.sock'
+log=out/'debug.log';log.write_text('');qmp=root/'out'/('qmp-net-'+hashlib.sha256(str(out).encode()).hexdigest()[:12]+'.sock')
 if qmp.exists():qmp.unlink()
 probe=socket.socket();probe.bind(('127.0.0.1',0));port=probe.getsockname()[1];probe.close()
 cmd=[a.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev',f'socket,id=net0,listen=127.0.0.1:{port}','-device','e1000e,netdev=net0',
@@ -35,6 +37,8 @@ if a.usb_image:
  image_hash=hash_image()
  index=next(i for i,arg in enumerate(cmd) if arg.startswith('if=none,id=esp,'))
  cmd[index]=f'if=none,id=esp,format=raw,readonly=on,file={a.usb_image}'
+# Network fixtures explicitly opt in; published/default images remain echo-off.
+configure_echo_boot(cmd, out, image=a.usb_image, efi=root/'out/esp/EFI/BOOT/BOOTX64.EFI')
 def checksum(b):
  if len(b)%2:b+=b'\0'
  n=sum(struct.unpack('!'+str(len(b)//2)+'H',b))
