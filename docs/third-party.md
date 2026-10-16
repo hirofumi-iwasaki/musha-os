@@ -63,3 +63,9 @@ Normal boot enables pinned AES/CMAC/P-256/subtle/zeroize. The [individual ledger
 通常bootで固定版AES/CMAC/P-256/subtle/zeroizeを有効化。[個別台帳](bluetooth-crypto-dependencies.md)にUEFI28依存、採用原MIT/BSD-3-Clause、source/lock hashと監査範囲を記録。配布DOCSのCOPYING/UPSTREAM.json/SHA256SUMSをbinaryとともに保持します。実装sourceはvendorせず、新SMP/runtimeが監査済みとは主張しません。
 
 参照のみのRealtek/Xbox作業（2026-10-15）：[Realtek進捗](realtek-0.4.0-progress.md)にFreeBSD re/rlのBSD-4-Clause、Linux v6.18 r8169のGPL-2.0-only調査を記録。code/header/PHY sequenceのコピー・翻訳・vendorはせず、prototypeは独自Apache-2.0でhardware admissionは閉じています。[工程6進捗](stage6-0.4.0-progress.md)にはxpadneo公開Xbox BLE descriptorの事実参照（driver GPL-2.0-only、非driverはfile指定を優先し原則GPL-3.0-or-later）を記録。実装やdescriptor dumpを取り込まずfixtureは独自作成。依存・採用原典・firmware・再配布license fileの追加はありません。将来採用は個別license/適用される広告条項を別途保持し、既存e1000のBSD-3-ClauseをRealtek reへ流用しません。
+
+## MushaMAME repository boundary / 別リポジトリー境界
+
+MAME code is not included in musha-os or its SDK; the planned MushaMAME port belongs to a separate repository with its own upstream licenses and source-distribution obligations. See the [repository plan](musha-mame-repository-plan.md).
+
+MAMEコードはmusha-osにもSDKにも含めません。予定するMushaMAME移植は別リポジトリーに置き、上流licenseとsource配布義務を独立して満たします。[リポジトリー計画](musha-mame-repository-plan.md)参照。
