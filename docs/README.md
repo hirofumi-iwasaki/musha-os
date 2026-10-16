@@ -35,6 +35,10 @@ Current contracts, local validation and physical acceptance are separate. Past r
 
 ## Policies / 方針
 
+- [Security policy / セキュリティ方針](security-policy.md)
+- [Vulnerability reporting / 脆弱性報告](../SECURITY.md)
+- [Musha POSIX profile / POSIXプロファイル](posix-profile.md)
+
 - [release-editorial-policy](release-editorial-policy.md)
 - [release-distribution-policy](release-distribution-policy.md)
 - [boot-readiness-policy](boot-readiness-policy.md)
