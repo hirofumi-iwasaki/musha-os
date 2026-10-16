@@ -8,6 +8,7 @@ import json
 import re
 from pathlib import Path
 import shutil
+import struct
 import socket
 import subprocess
 import time
@@ -20,6 +21,7 @@ p.add_argument('--output', type=Path, required=True)
 p.add_argument('--firmware-dir', type=Path, required=True)
 p.add_argument('--qemu', default='qemu-system-x86_64')
 p.add_argument('--format', choices=['fat32','exfat'], default='fat32')
+p.add_argument('--selected-name', action='store_true', help='Rename fixture to SECOND.ELF and launch from viewer, checking its real display name')
 p.add_argument('--lan', action='store_true', help='Require a real UDP echo after every viewer restart')
 p.add_argument('--launches', type=int, choices=range(1, 4), default=3)
 p.add_argument('--quarantine', action='store_true', help='Expect stop-failure injection and forbid arena reuse')
@@ -35,6 +37,14 @@ fixture = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture)
 image = o/'data.img'
 fixture.fixture(image, a.efi.resolve(), a.elf.read_bytes(), a.format)
+if a.selected_name:
+    if a.format!='fat32' or a.quarantine or a.screen_reference: raise ValueError('selected-name needs FAT32 functional fixture')
+    with image.open('r+b') as media:
+        media.seek(2048*512);boot=media.read(512)
+        directory=(2048+32+2*struct.unpack_from('<I',boot,36)[0])*512
+        media.seek(directory);entries=media.read(512)
+        slot=next(i for i in range(0,512,32) if entries[i:i+11]==b'AUTORUN ELF')
+        media.seek(directory+slot);media.write(b'SECOND  ELF')
 before = hashlib.sha256(image.read_bytes()).hexdigest()
 esp = o/'esp/EFI/BOOT'
 esp.mkdir(parents=True)
@@ -97,6 +107,13 @@ with (o/'qemu.log').open('w') as log:
                 time.sleep(.12)
             call('qmp_capabilities')
             start = 0
+            if a.selected_name:
+                wait('VIEWER_FRAME LIST')
+                key('end')
+                wait('VIEWER_FRAME LIST 0000000000000001')
+                start = len(debug.read_text())
+                key('ret')
+                wait('VIEWER_ELF_SELECTED SAME_VALIDATION', start)
             if a.quarantine:
                 wait('APP_RECOVERY_STOP_UNCONFIRMED QUARANTINED')
                 text = debug.read_text()
@@ -124,6 +141,10 @@ with (o/'qemu.log').open('w') as log:
                 scrub = wait('APP_ARENA_SCRUBBED VIEWER_RESTART', recovered)
                 frame = wait('VIEWER_FRAME LIST', scrub)
                 text = debug.read_text()
+                if a.selected_name:
+                    assert 'app: starting SECOND.ELF' in text[start:scrub],text[start:scrub]
+                    assert 'app: SECOND.ELF exited, status' in text[start:scrub],text[start:scrub]
+                    assert 'app: starting AUTORUN.ELF' not in text[start:scrub],text[start:scrub]
                 assert 'FILE_IDENTITIES_RELEASED AFTER_DMA_STOP' in text[start:scrub]
                 assert 'XHCI_QUIESCED DMA_DISABLED' in text[start:scrub]
                 assert 'STREAM_MOUNT_'+a.format.upper() in text[scrub:frame]

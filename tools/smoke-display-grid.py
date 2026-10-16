@@ -50,13 +50,13 @@ with (o/'qemu.log').open('w') as log:
    ctl('qmp_capabilities')
    while time.monotonic()<end:
     ctl('screendump',{'filename':str(o/'screen.ppm')});rows=read_screen()
-    if rows and ('boot: starting musha-os' if a.stage=='starting' else 'pci: devices=') in '\n'.join(rows):break
+    if rows and ('Musha-OS 0.4.0 starting' if a.stage=='starting' else 'pci: devices=') in '\n'.join(rows):break
     time.sleep(.1)
    else:raise RuntimeError('Stage not visible')
    (o/'screen.txt').write_text('\n'.join(rows)+'\n')
-   expected = 'boot: starting musha-os' if a.stage == 'starting' else 'pci: devices='
+   expected = 'Musha-OS 0.4.0 starting' if a.stage == 'starting' else 'pci: devices='
    assert expected in '\n'.join(rows), rows
-   assert any(line.startswith('[') for line in rows), 'devices timestamp missing at left origin'
+   assert ('Musha-OS 0.4.0 starting' in rows[0]) if a.stage=='starting' else any(line.startswith('[') for line in rows), 'header or device timestamp missing at left origin'
    (o/'result.json').write_text(json.dumps({'passed':True,'resolution':[w,h],'stage':a.stage,'scale':scale,'efi_sha256':hashlib.sha256(a.efi.read_bytes()).hexdigest(),'scope':'test-only exact GOP selection and stage hold; not distribution EFI','command':cmd},indent=2)+'\n')
  finally:
   proc.terminate();proc.wait(timeout=10);qmp.unlink(missing_ok=True)

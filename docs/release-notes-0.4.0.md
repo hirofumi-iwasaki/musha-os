@@ -10,7 +10,7 @@ Publication date: PENDING. Source/tag commit: PENDING. Candidate EFI SHA256: PEN
 
 ### Main changes and implementation boundary
 
-Owner-approved display replacement: [boot-log](boot-log.md) defines one full-frame sequential white/black console for startup/device decisions/app output/errors, devices-level PM timestamps, wrapping/scrolling and a shared event ring. It removes diagnostic panels/pages, colored status words, PM footer, startup background fill, red exception band and separate80x24 app console. The viewer keeps its own layout; viewer→app clears the console and app→viewer repaints it. Required failures remain visible at all levels; optional LAN/BT reasons are nonfatal only where cleanup is confirmed. Serial mirroring remains a v0.5.0 goal. Implementation/tests and exact-EFI hardware photographs are required before this contract closes a release gate; older panel-based evidence remains historical.
+Owner-approved display replacement: [boot-log](boot-log.md) defines one full-frame sequential white/black console for startup/device decisions/app output/errors, concise devices-level decisions, trace-level transfer/stage/timing detail, PM timestamps, wrapping/scrolling and an all-detail event ring. F8/8 selects trace. Phases starts with `Musha-OS 0.4.0 starting`; readiness ends with `Musha-OS 0.4.0 ready`. It removes diagnostic panels/pages, colored status words, PM footer, startup background fill, red exception band and separate80x24 app console. The viewer keeps its own layout; viewer→app clears the console and app→viewer repaints it. Required failures remain visible at all levels; optional LAN/BT reasons are nonfatal only where cleanup is confirmed. Serial mirroring remains a v0.5.0 goal. Implementation/tests and exact-EFI hardware photographs are required before this contract closes a release gate; older panel-based evidence remains historical.
 
 The v0.4.0 development tree includes configurable startup, an empty shipped SETTINGS directory with bounded OS-owned FAT32 records, reorganized drive assets, experimental r2 TIME/WAIT/INPUT calls, C/Rust samples, relative USB mouse input, and viewer launch/return with device stop and arena cleanup. Local test results remain in the individual stage records and do not pre-fill this candidate's gates.
 
@@ -66,7 +66,7 @@ Record candidate hashes, exact machine/topology/power conditions, raw photos/log
 
 ### 主な変更と実装境界
 
-所有者承認の表示置換：[bootlog](boot-log.md)で起動/device/app/errorを全画面白黒逐次consoleへ統一し、devicesのPM時刻・折返し/scroll・共通event ringを使用。診断panel/page・色status・PM footer・起動背景全fill・赤例外帯・80x24専用app枠は廃止。viewerは従来layoutで、app起動でconsole clear/復帰でviewer再描画。必須失敗は全level、任意LAN/BT理由は停止確認済みの範囲で非致命。serialはv0.5.0。実装/試験/正確なEFI実機写真が揃うまでgateを完了せず、旧panel証拠は過去記録として保持します。
+所有者承認の表示置換：[bootlog](boot-log.md)で起動/device/app/errorを全画面白黒逐次consoleへ統一し、devicesの簡潔な機器判断、traceの詳細transfer/stage/timing、PM時刻・折返し/scroll・全詳細event ringを使用。F8/8はtraceを選択。phases先頭は`Musha-OS 0.4.0 starting`、末尾は`Musha-OS 0.4.0 ready`です。診断panel/page・色status・PM footer・起動背景全fill・赤例外帯・80x24専用app枠は廃止。viewerは従来layoutで、app起動でconsole clear/復帰でviewer再描画。必須失敗は全level、任意LAN/BT理由は停止確認済みの範囲で非致命。serialはv0.5.0。実装/試験/正確なEFI実機写真が揃うまでgateを完了せず、旧panel証拠は過去記録として保持します。
 
 開発treeには起動設定、空で配布するSETTINGSとOS所有FAT32限定record、配布構成、実験的r2 TIME/WAIT/INPUT、C/Rust sample、USB相対mouse、device停止/arena cleanupを伴うviewer起動/復帰があります。各stageのローカル結果で今回候補gateを先取りしません。
 

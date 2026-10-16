@@ -1,5 +1,10 @@
 # NUC5 segment recovery diagnosis / NUC5 segment復帰診断
 
+Current trace follow-up: detailed control/stage/timing and BAR evidence requires a newly built `log=trace` EFI; F8/8 selects trace. The earlier development EFI hashes and observations below predate trace and keep their original settings. Concise device facts remain at devices; no old artifact is relabeled or regenerated here. See [boot log](boot-log.md).
+
+現行Trace仕上げ：詳細制御／stage／計測／BAR証拠は新sourceからbuildした `log=trace` EFIで採取し、F8／8もtraceへ強制します。下記の旧開発EFI hash／観測はTrace追加前なので元の設定と来歴を保持します。devicesは機器事実の要約です。本追記で旧artifactを付け替えたり再生成したりしません。[boot log](boot-log.md)参照。
+
+
 Status: current (2026-10-16). Local correction verified; physical retest pending. Uncommitted development work.
 
 ## English

@@ -10,6 +10,7 @@ pub enum Level {
     Phases = 2,
     Devices = 3,
     Application = 4,
+    Trace = 5,
 }
 pub struct Ring {
     bytes: [u8; CAPACITY],
@@ -86,6 +87,7 @@ impl Record<'_> {
             1 => Level::Ready,
             2 => Level::Phases,
             3 => Level::Devices,
+            5 => Level::Trace,
             _ => Level::Application,
         }
     }

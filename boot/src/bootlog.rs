@@ -16,6 +16,8 @@ struct State {
     config: Config,
     ready: bool,
     early: bool,
+    device_keys: [u128; 128],
+    device_count: usize,
 }
 static MEDIA_SEEN: AtomicBool = AtomicBool::new(false);
 static LAST_MS: AtomicU64 = AtomicU64::new(0);
@@ -45,13 +47,19 @@ static STATE: Shared = Shared(UnsafeCell::new(State {
     },
     ready: false,
     early: true,
+    device_keys: [0; 128],
+    device_count: 0,
 }));
 fn visible(config: LogLevel, level: Level) -> bool {
     match level {
         Level::Error | Level::Application => true,
         Level::Ready => config != LogLevel::Quiet,
-        Level::Phases => matches!(config, LogLevel::Phases | LogLevel::Devices),
-        Level::Devices => config == LogLevel::Devices,
+        Level::Phases => matches!(
+            config,
+            LogLevel::Phases | LogLevel::Devices | LogLevel::Trace
+        ),
+        Level::Devices => matches!(config, LogLevel::Devices | LogLevel::Trace),
+        Level::Trace => config == LogLevel::Trace,
     }
 }
 struct Text {
@@ -71,6 +79,9 @@ impl Write for Text {
     }
 }
 pub fn event(level: Level, tag: &str, args: fmt::Arguments<'_>) {
+    event_inner(level, tag, args, false);
+}
+fn event_inner(level: Level, tag: &str, args: fmt::Arguments<'_>, summary: bool) {
     let mut text = Text {
         bytes: [0; 4096],
         used: 0,
@@ -83,7 +94,9 @@ pub fn event(level: Level, tag: &str, args: fmt::Arguments<'_>) {
         LAST_MS.store(now, Ordering::Relaxed);
         now
     };
-    let timestamp = level == Level::Devices || (devices() && level != Level::Application);
+    let timestamp = !tag.is_empty()
+        && (matches!(level, Level::Devices | Level::Trace)
+            || (devices() && level != Level::Application));
     let result = if timestamp {
         if tag.is_empty() {
             write!(text, "[{:>3}.{:03}] {}", ms / 1000, ms % 1000, args)
@@ -111,12 +124,9 @@ pub fn event(level: Level, tag: &str, args: fmt::Arguments<'_>) {
         text.bytes[text.used] = b'\n';
         text.used += 1;
     }
-    if matches!(level, Level::Devices | Level::Phases) {
-        text.bytes[..text.used].make_ascii_lowercase();
-    }
-    emit(level, ms, &text.bytes[..text.used]);
+    emit(level, ms, &text.bytes[..text.used], summary);
 }
-fn emit(level: Level, ms: u64, bytes: &[u8]) {
+fn emit(level: Level, ms: u64, bytes: &[u8], summary: bool) {
     if level == Level::Error {
         ERROR_SEEN.store(true, Ordering::Relaxed);
     }
@@ -129,7 +139,7 @@ fn emit(level: Level, ms: u64, bytes: &[u8]) {
     unsafe {
         let s = &mut *STATE.0.get();
         s.ring.push(level, ms, s.early, bytes);
-        if visible(s.config.log, level) {
+        if visible(s.config.log, level) && !(summary && s.config.log == LogLevel::Devices) {
             if level == Level::Error {
                 s.console.set_visible(true);
             }
@@ -143,13 +153,41 @@ fn emit(level: Level, ms: u64, bytes: &[u8]) {
     }
 }
 pub fn detail(tag: &str, args: fmt::Arguments<'_>) {
+    event(Level::Trace, tag, args);
+}
+pub fn device(tag: &str, args: fmt::Arguments<'_>) {
     event(Level::Devices, tag, args);
+}
+pub fn device_once(key: u128, tag: &str, args: fmt::Arguments<'_>) {
+    let mut repeated = true;
+    if let Some(_lease) = lease() {
+        unsafe {
+            let state = &mut *STATE.0.get();
+            if !state.device_keys[..state.device_count].contains(&key)
+                && state.device_count < state.device_keys.len()
+            {
+                state.device_keys[state.device_count] = key;
+                state.device_count += 1;
+                repeated = false;
+            }
+        }
+    }
+    event(
+        if repeated {
+            Level::Trace
+        } else {
+            Level::Devices
+        },
+        tag,
+        args,
+    );
 }
 pub fn app(bytes: &[u8]) {
     emit(
         Level::Application,
         crate::bootstate::epoch_now().unwrap_or(0),
         bytes,
+        false,
     );
 }
 pub fn configure(config: Config) {
@@ -166,7 +204,10 @@ pub fn pair_requested() -> bool {
     unsafe { (*STATE.0.get()).config.pair }
 }
 pub fn devices() -> bool {
-    LOG_MODE.load(Ordering::Relaxed) == LogLevel::Devices as u8
+    matches!(LOG_MODE.load(Ordering::Relaxed), v if v == LogLevel::Devices as u8 || v == LogLevel::Trace as u8)
+}
+pub fn trace() -> bool {
+    LOG_MODE.load(Ordering::Relaxed) == LogLevel::Trace as u8
 }
 pub fn bind(fb: Framebuffer) {
     let Some(_lease) = lease() else {
@@ -178,8 +219,8 @@ pub fn bind(fb: Framebuffer) {
 }
 pub fn initialize(fb: Framebuffer, settings: crate::settings::Settings, fallback: bool) {
     bind(fb);
-    phase("boot", "starting Musha-OS 0.4.0");
-    phase(
+    event(Level::Phases, "", format_args!("Musha-OS 0.4.0 starting"));
+    summary_phase(
         "settings",
         match settings.state {
             crate::settings::ReadState::Loaded => "CONFIG.TXT loaded",
@@ -188,32 +229,43 @@ pub fn initialize(fb: Framebuffer, settings: crate::settings::Settings, fallback
             _ => "CONFIG.TXT unavailable; defaults",
         },
     );
-    phase("display", "GOP mode selected");
-    detail(
+    event_inner(
+        Level::Phases,
+        "display",
+        format_args!(
+            "GOP {}x{} stride={} format={}",
+            fb.width, fb.height, fb.stride, fb.format
+        ),
+        true,
+    );
+    device(
         "settings",
         format_args!(
             "{:?} log={:?} display={:?} pair={}",
             settings.state, settings.config.log, settings.config.display, settings.config.pair
         ),
     );
-    detail(
-        "gop",
+    device(
+        "display",
         format_args!(
             "{}x{} stride={} format={} base=0x{:x} bytes={}",
             fb.width, fb.height, fb.stride, fb.format, fb.base, fb.bytes
         ),
     );
     if settings.forced {
-        phase("settings", "devices selected by F8/8");
+        phase("settings", "trace selected by F8/8");
     }
     if fallback {
-        phase("gop", "requested mode unavailable; maximum selected");
+        phase("display", "requested mode unavailable; maximum selected");
     }
 }
 pub fn firmware_exited() {
     unsafe {
         (*STATE.0.get()).early = false;
     }
+}
+pub fn summary_phase(name: &str, status: &str) {
+    event_inner(Level::Phases, name, format_args!("{}", status), true);
 }
 pub fn phase(name: &str, status: &str) {
     event(Level::Phases, name, format_args!("{}", status));
@@ -227,7 +279,7 @@ pub fn retain_media_observation() {
 }
 pub fn media_ready(exfat: bool) {
     retain_media_observation();
-    phase(
+    summary_phase(
         "storage",
         if exfat {
             "exFAT readable"
@@ -253,7 +305,9 @@ pub fn ready(application: bool) {
         }
         (*STATE.0.get()).ready = true;
     }
-    phase(if application { "app" } else { "viewer" }, "starting");
+    if !application {
+        phase("viewer", "starting");
+    }
     event(
         Level::Ready,
         "",
@@ -331,5 +385,17 @@ pub fn dump() {
             }
         }
         crate::debug(b"MUSHA: RING_END\n");
+    }
+}
+
+#[cfg(test)]
+pub fn test_record_levels(mut record: impl FnMut(Level, u64)) {
+    let Some(_lease) = lease() else {
+        return;
+    };
+    unsafe {
+        for item in (*STATE.0.get()).ring.records() {
+            record(item.level(), item.milliseconds());
+        }
     }
 }

@@ -216,7 +216,14 @@ pub(crate) fn display(s: Snapshot) {
         s.controller.bytes,
     );
     if !stable || address.is_none() {
-        crate::diagnostics::observation(format_args!("RTL TXCONFIG SKIP RESOURCE/UC/DECODE"));
+        crate::bootlog::device(
+            "lan",
+            format_args!(
+                "Realtek 10ec:8168 revision={:02x} bdf={:04x} TxConfig40 skipped: resource/UC/decode",
+                s.revision,
+                s.controller.bdf()
+            ),
+        );
         return;
     }
     if READ.swap(true, Ordering::Relaxed) {
@@ -225,7 +232,15 @@ pub(crate) fn display(s: Snapshot) {
     // Sole volatile read; memory::initialize validated and mapped this exact
     // firmware range UC, excluding RAM/reserved/other MMIO. Never enables BME.
     let value = unsafe { (address.unwrap() as *const u32).read_volatile() };
-    crate::diagnostics::observation(format_args!("RTL TXCONFIG40 {:08X} READONLY ONCE", value));
+    crate::bootlog::device(
+        "lan",
+        format_args!(
+            "Realtek 10ec:8168 revision={:02x} bdf={:04x} TxConfig40=0x{:08x} read-only",
+            s.revision,
+            s.controller.bdf(),
+            value
+        ),
+    );
     crate::debug(b"MUSHA: RTL_TXCONFIG40=");
     crate::debug(&crate::cpu::hex(value as u64));
     crate::debug(b" READONLY\n");

@@ -268,7 +268,7 @@ with (out/'qemu.log').open('w') as err:
       stages={'control-out-timeout':'configuration','control-out-stall':'configuration','xhci-timeout':'halt','xhci-command-timeout':'rings / commands','usb-descriptor-timeout':'device descriptor','storage-timeout':'storage sector read','fat-corrupt':'fat32 file read'}
       required+=['usb: stage '+stages[args.case]]
      for expected in required:
-      if expected not in events: raise RuntimeError('Sequential diagnostic missing: '+expected+'\n'+events)
+      if expected.casefold() not in events.casefold(): raise RuntimeError('Sequential diagnostic missing: '+expected+'\n'+events)
 
     break
    if proc.poll() is not None:raise RuntimeError((out/'qemu.log').read_text())

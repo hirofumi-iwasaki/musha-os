@@ -28,6 +28,10 @@ Both new EFIs were built with `cargo build --locked --release --target x86_64-un
 
 `i218-network` also enables `i218-phy-probe`. **`log=devices` is a SETTINGS/CONFIG.TXT runtime setting, not a build feature**; record the actual media CONFIG bytes/hash before a test. The HCI probe transitively enables `qemu-debug` and is an explicit development transport reset, not the normal Bluetooth pairing/runtime build. It sends HCI Reset without loading firmware; an ASUS reset response does not prove CSR reference-dongle, pairing, Xbox or HOGP compatibility. Record exact USB IDs/revision/class and response/error as the [Bluetooth quickcheck](bluetooth-hardware-quickcheck.md) specifies. Instructions describe owner execution only; the normal candidate identity above remains PENDING.
 
+### Trace follow-up source boundary — 2026-10-16
+
+The following three EFI hashes predate the trace follow-up and retain their original `log=devices` contract. They are not trace-enabled binaries; do not set `log=trace` on them or claim the new F8 behavior. No development EFI or Parallels image was regenerated for this follow-up. A newly built follow-up EFI is required for trace diagnostics.
+
 ### Single-console development EFIs — 2026-10-16
 
 These three local development files replace the display implementation for the **next** hardware retest; they do not supersede historical observations or constitute release candidates. Each uses `SETTINGS/CONFIG.TXT` containing `log=devices` and `display=max`. They were built from HEAD `19888ff` plus the recorded boot-log implementation; the source before/after each build matched. Those unchanged compile sources were subsequently committed as `c141f04`; documentation changes do not relabel the original dirty-build provenance. Full commands, compile-source digest and CONFIG/README hashes are in `out/bootlog-development-20261016/registry.json`. The HCI probe transitively enables the development debug port; the other two requested feature sets do not. No USB write or physical execution was performed.
@@ -63,6 +67,10 @@ NUC5: first verify no #GP, USB read → AUTORUN → ready. I218 remains opt-in: 
 新2本はlocked/release/x86_64-unknown-uefi/no-default-featuresで個別feature・target-dirを指定。HEAD`969ece347a22496be51954ce63d2d2e5308d5f0a`＋dirty、source-set SHA256`485d38f756931f7d18d6c0584c8266dc6bb46aacc1bc0777ea6599a059ea7336`を記録し各build前後のsource全file hash一致。`out/i218-development-040/`・`out/asus-hci-development-040/`にfile別hash/dirty一覧/command/build log/manifest/SHA256SUMSを保存。source-set hashは各manifestに列挙した範囲のもので、歴史inventoryと範囲が違えば単純比較で同一sourceと判断しません。
 
 `i218-network`は`i218-phy-probe`も有効化。**`log=devices`はCONFIGの実行時設定でbuild featureではありません**。実媒体CONFIG内容/hashを別途記録。HCI probeは`qemu-debug`を伴う開発transport resetで通常BT pair/runtime buildではなく、firmware投入無しReset応答がCSR基準dongle/pair/Xbox/HOGP対応を証明するものではありません。[BT手順](bluetooth-hardware-quickcheck.md)の実USB ID/revision/class・応答/errorを採取。実行は所有者手順で通常候補identityはPENDINGのままです。
+
+### Trace仕上げのsource境界 — 2026-10-16
+
+次の3EFI hashはTrace追加前であり、元のlog=devices契約を保持します。Trace対応binaryではないためlog=traceを設定したり新F8動作を主張しません。今回仕上げでは開発EFI／Parallels imageを再生成していません。Trace採取には仕上げsource以降の新buildが必要です。
 
 ### 単一コンソール開発EFI — 2026-10-16
 

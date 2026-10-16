@@ -47,7 +47,7 @@ pub(crate) fn diagnose(_fb: Framebuffer, selected: Controller) {
                 let class = class_revision >> 8;
                 let revision = class_revision as u8;
                 count += 1;
-                crate::bootlog::detail(
+                crate::bootlog::device(
                     "pci",
                     format_args!(
                         "{:02x}:{:02x}.{} {:04x}:{:04x} revision={:02x} class={:06x}",
@@ -109,7 +109,7 @@ pub(crate) fn diagnose(_fb: Framebuffer, selected: Controller) {
     field(b" XHCI=", xhci);
     field(b" INTEL_LAN=", intel_lan);
     super::debug(b"\nMUSHA: PCI_ENUMERATION_OK\n");
-    crate::bootlog::detail(
+    crate::bootlog::device(
         "pci",
         format_args!("devices={} xhci={} intel-lan={}", count, xhci, intel_lan),
     );

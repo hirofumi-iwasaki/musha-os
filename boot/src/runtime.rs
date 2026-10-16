@@ -166,14 +166,6 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         }
                         Err(error) => crate::net::failed(error),
                     }
-                    crate::bootlog::phase(
-                        "LAN",
-                        if network.is_some() {
-                            "driver active; hardware link not certified"
-                        } else {
-                            "driver unavailable in current configuration"
-                        },
-                    );
                     if !cfg!(external_app)
                         || crate::bootstate::report().files
                             != musha_platform::readiness::Service::Live
@@ -280,7 +272,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 }
             }
         };
-        crate::bootlog::phase("USB host", "device discovery");
+        crate::bootlog::phase("usb", "host ready");
         let usb_result = crate::xhci::run_session(info, &mut cycle);
         drop(cycle);
         crate::bluetooth::confirm_restart(!matches!(

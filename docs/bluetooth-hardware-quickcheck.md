@@ -4,7 +4,7 @@ Status: current (procedure only, 2026-10-15). No physical Bluetooth pass is reco
 
 ## English
 
-For a v0.4.0 EFI implementing [boot-log](boot-log.md), use `log=devices` and photograph continuous white-on-black lines, with PM timestamps and scrolling. No rotating diagnostic pages, old colored status words or PM footer are required. Capture adapter/peer IDs, pairing/save/reconnect decisions and HCI response/failure as bluetooth/usb events in the same timestamped log. Photograph actual input-monitor app output separately from pair success. Existing debug-port markers are auxiliary developer evidence, not a substitute for a visible HCI response or physical input. Hardware acceptance is still pending.
+For a v0.4.0 EFI implementing [boot-log](boot-log.md), use `log=devices` and photograph continuous white-on-black lines, with PM timestamps and scrolling. Devices now gives concise per-device decisions; use `log=trace` (or the F8/8 startup override) for detailed transfer/stage/timing and inventory evidence. The ring retains all detail at every display level. No rotating diagnostic pages, old colored status words or PM footer are required. Capture adapter/peer IDs, pairing/save/reconnect decisions and HCI response/failure as bluetooth/usb events in the same timestamped log. Photograph actual input-monitor app output separately from pair success. Existing debug-port markers are auxiliary developer evidence, not a substitute for a visible HCI response or physical input. Hardware acceptance is still pending.
 
 1. Record candidate commit, EFI SHA-256/features, NUC5 model/firmware, MM-BTUD46 label/revision and Xbox Series X|S model1914 firmware. Connect the dongle **directly to a photographed NUC5 rear USB port**, plus the boot USB and external keyboard. Use `log=devices` in the existing CONFIG; retain its exact bytes/hash. No USB is written by this document.
 2. Cold boot (power off ≥10 s; record AC state). Photograph devices log lines: controller/BDF/root/slot, actual dongle VID:PID, revision, USB class/subclass/protocol and endpoints. `0A12:0001`, `E0/01/01` are expectations, not measured identity or proof of CSR firmware compatibility. Internal AC7265 Bluetooth is a separate path.
@@ -26,7 +26,7 @@ Physical BT is unverified. HOGP keyboard hardware is deferred to v0.5.0; Magic K
 
 ## 日本語
 
-[bootlog](boot-log.md)実装v0.4.0 EFIは`log=devices`でPM時刻付き白黒逐次log/scrollを撮影。診断巡回頁・旧色status語・PM footerは条件にしません。adapter/peer ID、pair/保存/再接続判断、HCI応答/失敗を同timestamp logのbluetooth/usb行へ記録。input-monitorの実出力はpair成功と別に撮影。既存debug markerは補助証拠で画面応答/実入力の代用にしません。 実機受入は未完です。
+[bootlog](boot-log.md)実装v0.4.0 EFIは`log=devices`でPM時刻付き白黒逐次log/scrollを撮影。devicesは機器判断を簡潔に表示し、詳細transfer/stage/timing・一覧は`log=trace`又はF8/8起動overrideで採取。ringは全表示levelで詳細を保持。診断巡回頁・旧色status語・PM footerは条件にしません。adapter/peer ID、pair/保存/再接続判断、HCI応答/失敗を同timestamp logのbluetooth/usb行へ記録。input-monitorの実出力はpair成功と別に撮影。既存debug markerは補助証拠で画面応答/実入力の代用にしません。 実機受入は未完です。
 
 1. 候補commit、EFI SHA-256/features、NUC5型番/firmware、MM-BTUD46ラベル/revision、Xbox Series X|S model1914 firmwareを記録。dongleは**NUC5背面の撮影したUSBポートへ直挿し**し、起動USB・外付けkeyboardも接続。既存CONFIGの`log=devices`と正確な内容/hashを記録。本書ではUSBへ書込みません。
 2. 電源off ≥10秒（AC接続状態も記録）から起動。devicesのcontroller/BDF/root/slot、実VID:PID/revision、class/subclass/protocol、endpointを撮影。`0A12:0001`、`E0/01/01`は見込みで、実測値・CSR firmware互換の証拠ではありません。内蔵AC7265 BTと区別します。

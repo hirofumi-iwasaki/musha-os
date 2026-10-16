@@ -56,7 +56,7 @@ mod bootlog;
 mod timing;
 // One test owns the BSP globals for the entire matrix; no parallel API calls.
 #[test]
-fn single_log_levels_retained_ring_application_and_failure_boundaries() {
+fn five_log_levels_retained_ring_application_and_failure_boundaries() {
     use musha_platform::{
         boot_log::Level,
         config::{Config, LogLevel},
@@ -73,6 +73,7 @@ fn single_log_levels_retained_ring_application_and_failure_boundaries() {
             LogLevel::Ready,
             LogLevel::Phases,
             LogLevel::Devices,
+            LogLevel::Trace,
         ] {
             let mut pixels = vec![0x12345678u32; width * height + 16];
             let fb = musha_framebuffer::Framebuffer {
@@ -110,6 +111,26 @@ fn single_log_levels_retained_ring_application_and_failure_boundaries() {
             } else {
                 assert!(pixels[..width * height].iter().any(|v| *v != 0x12345678));
             }
+            // Device decisions appear at Devices/Trace; low-level details only
+            // at Trace. Both still enter the retained ring at every setting.
+            pixels[..width * height].fill(0x12345678);
+            bootlog::device("usb", format_args!("Decision README.TXT width={width}"));
+            assert_eq!(
+                pixels[..width * height].iter().any(|v| *v != 0x12345678),
+                matches!(log, LogLevel::Devices | LogLevel::Trace)
+            );
+            pixels[..width * height].fill(0x12345678);
+            bootlog::detail("usb", format_args!("LowLevel AUTORUN.ELF width={width}"));
+            assert_eq!(
+                pixels[..width * height].iter().any(|v| *v != 0x12345678),
+                log == LogLevel::Trace
+            );
+            pixels[..width * height].fill(0x12345678);
+            bootlog::summary_phase("storage", "FAT32 readable");
+            assert_eq!(
+                pixels[..width * height].iter().any(|v| *v != 0x12345678),
+                matches!(log, LogLevel::Phases | LogLevel::Trace)
+            );
             // No footer or overlay may repaint over the viewer's ownership.
             pixels[..width * height].fill(0x12345678);
             bootlog::overlay();
@@ -157,6 +178,60 @@ fn single_log_levels_retained_ring_application_and_failure_boundaries() {
         },
         false,
     );
+    // A repeated device decision is retained as Trace and stops repainting
+    // Devices. It does not disappear from the ring.
+    bootlog::configure(Config {
+        log: LogLevel::Devices,
+        ..config
+    });
+    bootlog::device_once(0xfeed, "usb", format_args!("CasePreserved README.TXT"));
+    assert!(pixels[..640 * 480].iter().any(|p| *p != 0x12345678));
+    pixels[..640 * 480].fill(0x12345678);
+    bootlog::device_once(0xfeed, "usb", format_args!("CasePreserved README.TXT"));
+    assert!(pixels.iter().all(|p| *p == 0x12345678));
+    let mut levels = Vec::new();
+    bootlog::test_record_levels(|level, ms| levels.push((level, ms)));
+    assert_eq!(
+        levels[levels.len() - 2..]
+            .iter()
+            .map(|r| r.0)
+            .collect::<Vec<_>>(),
+        [Level::Devices, Level::Trace]
+    );
+    bootlog::configure(Config {
+        log: LogLevel::Trace,
+        ..config
+    });
+    for _ in 0..2 {
+        pixels[..640 * 480].fill(0x12345678);
+        bootlog::device_once(0xbeef, "usb", format_args!("TraceBoth SanDisk"));
+        assert!(pixels[..640 * 480].iter().any(|p| *p != 0x12345678));
+    }
+    // Fill the remaining 126 slots without painting; overflow stays Trace,
+    // and cannot evict an earlier device key or suppress a retained record.
+    bootlog::viewer(true);
+    for key in 0..126 {
+        bootlog::device_once(key, "usb", format_args!("Capacity {key}"));
+    }
+    bootlog::viewer(false);
+    bootlog::configure(Config {
+        log: LogLevel::Devices,
+        ..config
+    });
+    pixels[..640 * 480].fill(0x12345678);
+    bootlog::device_once(0xcafe, "usb", format_args!("OverflowStillRetained"));
+    bootlog::device_once(0xfeed, "usb", format_args!("OriginalKeyStillTrace"));
+    assert!(pixels.iter().all(|p| *p == 0x12345678));
+    levels.clear();
+    bootlog::test_record_levels(|level, ms| levels.push((level, ms)));
+    assert_eq!(
+        levels[levels.len() - 2..]
+            .iter()
+            .map(|r| r.0)
+            .collect::<Vec<_>>(),
+        [Level::Trace, Level::Trace]
+    );
+    bootlog::configure(config);
     appconsole::prepare(fb);
     assert!(pixels.iter().all(|p| *p == 0x12345678));
     // Quiet suppresses startup, never the application's own output or rejection.
@@ -174,7 +249,15 @@ fn single_log_levels_retained_ring_application_and_failure_boundaries() {
     assert!(text.contains("MUSHA: LOG Musha-OS halted\n"));
     let retained = text.rsplit_once("MUSHA: RING_BEGIN\n").unwrap().1;
     assert!(retained.contains("MUSHA: RING_END\n"));
-    assert!(retained.contains("settings: loaded log=quiet"));
+    assert!(retained.contains("settings: CONFIG.TXT loaded"));
+    assert!(retained.contains("Decision README.TXT"));
+    assert!(retained.contains("LowLevel AUTORUN.ELF"));
+    assert_eq!(retained.matches("CasePreserved README.TXT").count(), 2);
+    assert!(retained.contains("OverflowStillRetained"));
+    assert!(retained.contains("OriginalKeyStillTrace"));
+    assert_eq!(retained.matches("TraceBoth SanDisk").count(), 2);
+    assert!(!text.contains("musha-os 0.4.0 starting"));
+    assert!(!text.contains("musha-os 0.4.0 ready"));
     assert!(retained.contains("application output\n"));
     assert!(retained.contains("stage 299"));
     assert!(!retained.contains("TIMING LIMIT / MORE OMITTED"));

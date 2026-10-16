@@ -307,10 +307,7 @@ extern "win64" fn dispatch(frame: &mut Frame) {
                 }
                 #[cfg(external_app)]
                 {
-                    crate::appconsole::message(format_args!(
-                        "app: external ELF exited, status {}",
-                        frame.rdi as i32
-                    ));
+                    crate::external::exited(frame.rdi as i32);
                     crate::bootstate::update(|r, _| r.finish(true));
                     crate::debug(b"MUSHA: EXTERNAL_APP_EXIT\n");
                     lifecycle::exit(frame.rdi);

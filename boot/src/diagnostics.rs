@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Diagnostic producers feed the same sequential log; there is no panel or page.
-use core::fmt;
+use core::{
+    fmt,
+    sync::atomic::{AtomicU16, Ordering},
+};
+static CONTROLLER: AtomicU16 = AtomicU16::new(0);
 use musha_framebuffer::Framebuffer;
 pub fn flush() {}
 pub fn start(_fb: Framebuffer) {}
@@ -45,7 +49,13 @@ pub fn usb(
     speed: &str,
     class: [u8; 3],
 ) {
-    crate::bootlog::detail(
+    crate::bootlog::device_once(
+        (1u128 << 127)
+            | ((CONTROLLER.load(Ordering::Relaxed) as u128) << 80)
+            | ((port as u128) << 64)
+            | ((route as u128) << 32)
+            | ((vendor as u128) << 16)
+            | product as u128,
         "usb",
         format_args!(
             "root={} route=0x{:05x} slot={} {:04x}:{:04x} speed={} class={:02x}/{:02x}/{:02x}",
@@ -57,9 +67,12 @@ pub fn snapshot() {
     crate::bootlog::dump();
 }
 pub fn controller(index: usize, id: u32, bdf: u16, revision: u8, selected: bool) {
-    pci(0, id, bdf, revision);
+    detail_controller(index, id, bdf, revision, selected);
+}
+fn detail_controller(index: usize, id: u32, bdf: u16, _revision: u8, selected: bool) {
+    let _ = id;
     crate::bootlog::detail(
-        "xhci",
+        "usb",
         format_args!(
             "index={} bdf=0x{:04x} firmware-selected={}",
             index, bdf, selected
@@ -83,10 +96,11 @@ pub fn supported_device(keyboard: bool) {
     );
 }
 pub fn inventory_total(total: usize) {
-    crate::bootlog::detail("xhci", format_args!("controllers={} limit=8", total));
+    crate::bootlog::detail("usb", format_args!("controllers={} limit=8", total));
 }
 pub fn begin_controller(c: crate::pci::Controller) {
-    crate::bootlog::detail("xhci", format_args!("begin bdf=0x{:04x}", c.bdf()));
+    CONTROLLER.store(c.bdf(), Ordering::Relaxed);
+    crate::bootlog::detail("usb", format_args!("begin bdf=0x{:04x}", c.bdf()));
 }
 /// No display state belongs to a device session. Retained as a zero-size lifetime token.
 pub struct ControllerState;
@@ -102,7 +116,7 @@ pub fn controller_result(
 ) {
     match result {
         Some((keyboard, storage)) => crate::bootlog::detail(
-            "xhci",
+            "usb",
             format_args!(
                 "bdf=0x{:04x} scanned keyboard={} storage={} input={}",
                 c.bdf(),
@@ -112,7 +126,7 @@ pub fn controller_result(
             ),
         ),
         None => crate::bootlog::detail(
-            "xhci",
+            "usb",
             format_args!(
                 "bdf=0x{:04x} failed {}",
                 c.bdf(),
@@ -124,7 +138,7 @@ pub fn controller_result(
 pub fn controller_limit(truncated: bool) {
     if truncated {
         crate::bootlog::detail(
-            "xhci",
+            "usb",
             format_args!("controller limit 8; remaining not probed"),
         );
     }

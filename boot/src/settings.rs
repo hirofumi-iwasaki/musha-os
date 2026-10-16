@@ -191,7 +191,7 @@ pub unsafe fn read(
         }
     }
     if forced {
-        config.log = LogLevel::Devices;
+        config.log = LogLevel::Trace;
     }
     unsafe {
         *RAW_HASH.0.get() = raw_hash;

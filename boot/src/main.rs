@@ -145,8 +145,8 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         stop();
     }
     bootlog::firmware_exited();
-    bootlog::phase("uefi", "ExitBootServices complete");
-    bootlog::phase("Runtime", "paging and arena initialization");
+    bootlog::detail("core", format_args!("ExitBootServices complete"));
+    bootlog::detail("core", format_args!("paging and arena initialization"));
     diagnostics::start(info.framebuffer);
     #[cfg(external_app)]
     appconsole::prepare(info.framebuffer);
@@ -219,7 +219,17 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
             stop();
         }
     };
-    bootlog::phase("core", "ready");
+    bootlog::phase("core", "runtime ready");
+    bootlog::device(
+        "memory",
+        format_args!(
+            "image=0x{:x}+{} arena=0x{:x}+{}",
+            info.image_base,
+            info.image_bytes,
+            arena.as_ptr() as usize,
+            arena.len()
+        ),
+    );
     let _ = acpi::Time::new(info.timer).and_then(|mut t| t.now());
     bootstate::update(|r, t| {
         r.core(t);
@@ -234,7 +244,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         bootstate::update(|r, _| r.phase = musha_platform::readiness::Phase::BootFailed);
         stop();
     }
-    bootlog::phase("Timer", "PM clock available");
+    bootlog::phase("timer", "PM clock available");
     #[cfg(feature = "startup-failure-probe")]
     {
         bootlog::failure("clock", "forced test failure");

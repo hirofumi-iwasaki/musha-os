@@ -151,6 +151,10 @@ def run(name, config, expected, key=None, missing=False, efi=None, failure=False
                 assert expected.lower() in '\n'.join(primary).lower(), (expected, primary[-20:])
                 assert expected.lower() in '\n'.join(retained).lower(), (expected, retained[-20:])
                 plain = [re.sub(r'^\[\s*\d+\.\d{3}\] ', '', line) for line in primary]
+                assert primary[0] == 'Musha-OS 0.4.0 starting', primary[:3]
+                assert primary == retained, 'primary/retained startup record mismatch'
+                if key:
+                    assert any('settings: Loaded log=Trace ' in line for line in plain), plain
                 if failure:
                     assert any(line.startswith('ERROR: ') for line in plain), primary[-20:]
                     assert 'Musha-OS halted' in plain, primary[-20:]
@@ -203,6 +207,9 @@ if __name__ == '__main__':
     run('ready', b'log=ready\n', 'settings: loaded log=ready display=max pair=false')
     run('phases', b'log=phases\n', 'settings: loaded log=phases display=max pair=false')
     run('devices', b'log=devices\n', 'settings: loaded log=devices display=max pair=false')
+    run('trace', b'log=trace\n', 'settings: loaded log=trace display=max pair=false')
+    run('trace-malformed', b'log=trace\nbad\n', 'settings: malformed log=ready display=max pair=false')
+    run('invalid-level', b'log=verbose\n', 'settings: malformed log=ready display=max pair=false')
     run('missing-file', None, 'settings: missingfile log=ready display=max pair=false')
     run('missing-directory', None, 'settings: missingdirectory log=ready display=max pair=false', missing=True)
     run('malformed', b'log=quiet\nbad\n', 'settings: malformed log=ready display=max pair=false')
@@ -211,5 +218,5 @@ if __name__ == '__main__':
     run('display-low', b'log=ready\ndisplay=640x480\n', 'settings: loaded log=ready display=exact(640, 480) pair=false')
     run('display-good', b'log=phases\ndisplay=1024x768\npair=on\n', 'settings: loaded log=phases display=exact(1024, 768) pair=true')
     run('display-fallback', b'log=phases\ndisplay=1234x567\n', 'requested mode unavailable; maximum selected')
-    run('f8', b'log=quiet\n', 'devices selected by F8/8', key='f8')
-    run('digit8', b'log=quiet\n', 'devices selected by F8/8', key='8')
+    run('f8', b'log=quiet\n', 'trace selected by F8/8', key='f8')
+    run('digit8', b'log=quiet\n', 'trace selected by F8/8', key='8')

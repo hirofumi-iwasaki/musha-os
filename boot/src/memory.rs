@@ -116,7 +116,7 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         if cache_cr0 & ((1 << 29) | (1 << 30)) != 0 {
             cache.framebuffer = cache.uc;
         }
-        crate::bootlog::detail(
+        crate::bootlog::device(
             "display",
             format_args!(
                 "framebuffer cache={} index={} pat=0x{:016x} cr0-cache-disabled={} PAT unchanged",

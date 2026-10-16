@@ -7,6 +7,48 @@ struct Shared(UnsafeCell<(Reader, [u8; MAX_BYTES])>);
 // BSP only, interrupts disabled, non-reentrant callbacks. No reference escapes
 // while staging is mutable; image() is called only after runtime has returned.
 unsafe impl Sync for Shared {}
+#[derive(Clone, Copy)]
+pub struct ApplicationName {
+    bytes: [u8; 255],
+    len: usize,
+}
+impl ApplicationName {
+    pub fn as_str(&self) -> &str {
+        core::str::from_utf8(&self.bytes[..self.len]).unwrap_or("application")
+    }
+}
+static mut APP_NAME: ApplicationName = {
+    let mut bytes = [0; 255];
+    let name = b"AUTORUN.ELF";
+    let mut i = 0;
+    while i < name.len() {
+        bytes[i] = name[i];
+        i += 1;
+    }
+    ApplicationName {
+        bytes,
+        len: name.len(),
+    }
+};
+pub fn application_name() -> ApplicationName {
+    unsafe { APP_NAME }
+}
+pub fn exited(status: i32) {
+    let name = application_name();
+    crate::appconsole::message(format_args!(
+        "app: {} exited, status {}",
+        name.as_str(),
+        status
+    ));
+    #[cfg(feature = "app-log-screen-probe")]
+    {
+        crate::debug(b"MUSHA: APP_LOG_SCREEN_HOLD\n");
+        crate::bootlog::dump();
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+}
 static mut READ_STARTED: u64 = 0;
 static mut RESUMED: bool = false;
 static mut LAST_OUTCOME: (u64, u64) = (2, 0);
@@ -49,9 +91,7 @@ pub fn step(
     }
     let state = reader.step(files, bytes, now);
     if before == State::Searching && reader.claimed() {
-        if crate::bootlog::devices() {
-            crate::bootlog::phase("app", "loading AUTORUN.ELF");
-        }
+        crate::bootlog::detail("app", format_args!("loading AUTORUN.ELF"));
         crate::bootstate::update(|r, t| {
             r.ready(true, t);
         });
@@ -91,6 +131,26 @@ pub fn select(
     id: musha_api::stream::Id,
     now: u64,
 ) -> bool {
+    let mut selected = None;
+    if let Ok(mut cursor) = files.list_begin() {
+        while let Ok(Some((candidate, entry))) = files.list_next(&mut cursor) {
+            if candidate == id {
+                let mut name = ApplicationName {
+                    bytes: [0; 255],
+                    len: entry.name_len as usize,
+                };
+                for (to, from) in name.bytes.iter_mut().zip(&entry.name[..name.len]) {
+                    *to = if (32..=126).contains(from) {
+                        *from as u8
+                    } else {
+                        b'.'
+                    };
+                }
+                selected = Some(name);
+                break;
+            }
+        }
+    }
     let reader = unsafe { &mut (*STAGING.0.get()).0 };
     match reader.select(files, id, now) {
         Err(Rejection::Stream(musha_api::stream::Error::Again)) => false,
@@ -99,6 +159,11 @@ pub fn select(
             true
         }
         Ok(()) => {
+            if let Some(name) = selected {
+                unsafe {
+                    APP_NAME = name;
+                }
+            }
             crate::bootstate::update(|r, t| {
                 r.prepare_launch(t);
             });
@@ -192,14 +257,15 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
         }
         let state = unsafe { (&*STAGING.0.get()).0.state() };
         if matches!(state, State::Ready(_)) {
-            crate::bootlog::ready(true);
             if unsafe { RESUMED } {
                 crate::bootlog::application_screen();
             }
             crate::bootlog::viewer(false);
-            crate::bootlog::phase("app", "starting external ELF");
+            let name = application_name();
+            crate::appconsole::message(format_args!("app: starting {}", name.as_str()));
             crate::debug(b"MUSHA: EXTERNAL_ELF_DEVICES_STOPPED\n");
             let outcome = execute(arena, info);
+            crate::bootlog::ready(false);
             unsafe {
                 LAST_OUTCOME = (outcome.kind, outcome.detail);
             }
@@ -268,9 +334,7 @@ pub fn duplicate_catalog(name: &[u16; 12], _fb: musha_framebuffer::Framebuffer) 
         // A readable catalog with ambiguous AUTORUN is an app rejection, not
         // an absent volume. Never publish its files or execute either entry.
         crate::bootlog::retain_media_observation();
-        if crate::bootlog::devices() {
-            crate::bootlog::phase("app", "loading AUTORUN.ELF");
-        }
+        crate::bootlog::detail("app", format_args!("loading AUTORUN.ELF"));
         crate::bootstate::update(|r, t| {
             r.ready(true, t);
         });

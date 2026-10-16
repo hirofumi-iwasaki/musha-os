@@ -33,6 +33,12 @@ mod bootlog {
     pub fn detail(tag: &str, args: core::fmt::Arguments<'_>) {
         EVENTS.lock().unwrap().push(format!("detail {tag}: {args}"));
     }
+    pub fn device(tag: &str, args: core::fmt::Arguments<'_>) {
+        EVENTS.lock().unwrap().push(format!("device {tag}: {args}"));
+    }
+    pub fn device_once(_: u128, tag: &str, args: core::fmt::Arguments<'_>) {
+        device(tag, args);
+    }
     pub fn phase(tag: &str, text: &str) {
         EVENTS.lock().unwrap().push(format!("phase {tag}: {text}"));
     }
@@ -106,17 +112,16 @@ fn producers_preserve_order_fields_and_never_read_pci_or_draw_a_panel() {
             "detail usb: stage enumerate",
             "detail lan: stage reset",
             "detail pci: 03:05.2 8086:9cb1 revision=03",
-            "detail pci: 03:05.2 8086:9cb1 revision=03",
-            "detail xhci: index=2 bdf=0x032a firmware-selected=true",
-            "detail usb: root=4 route=0x12345 slot=7 046d:c31c speed=high class=03/01/01",
+            "detail usb: index=2 bdf=0x032a firmware-selected=true",
+            "device usb: root=4 route=0x12345 slot=7 046d:c31c speed=high class=03/01/01",
             "detail usb: kind keyboard",
             "detail usb: supported boot keyboard",
             "detail usb: supported BOT storage",
-            "detail xhci: controllers=3 limit=8",
-            "detail xhci: begin bdf=0x032a",
-            "detail xhci: bdf=0x032a scanned keyboard=true storage=2 input=true",
-            "detail xhci: bdf=0x032a failed timeout",
-            "detail xhci: controller limit 8; remaining not probed",
+            "detail usb: controllers=3 limit=8",
+            "detail usb: begin bdf=0x032a",
+            "detail usb: bdf=0x032a scanned keyboard=true storage=2 input=true",
+            "detail usb: bdf=0x032a failed timeout",
+            "detail usb: controller limit 8; remaining not probed",
             "detail usb: control slot=7 request=0x12345678 index=0x4321 bytes=512",
             "detail usb: transfer failure expected slot=7 endpoint=3 trb=0x123400 event=00000001 00000002 00000003 00000004",
             "detail usb: failure descriptor timeout",

@@ -20,15 +20,21 @@ pub fn rejected(reason: &[u8]) {
     crate::bootstate::update(|r, _| r.finish(false));
 }
 pub unsafe fn fault(vector: u64, error: u64, rip: u64, rsp: u64) {
+    #[cfg(external_app)]
+    let name = crate::external::application_name();
+    #[cfg(external_app)]
+    let name = name.as_str();
+    #[cfg(not(external_app))]
+    let name = "application";
     if musha_platform::exceptions::hardware_error(vector) {
         message(format_args!(
-            "app: external ELF faulted, vector={} error=0x{:x} rip=0x{:x} rsp=0x{:x}",
-            vector, error, rip, rsp
+            "app: {} faulted, vector={} error=0x{:x} rip=0x{:x} rsp=0x{:x}",
+            name, vector, error, rip, rsp
         ));
     } else {
         message(format_args!(
-            "app: external ELF faulted, vector={} error=n/a rip=0x{:x} rsp=0x{:x}",
-            vector, rip, rsp
+            "app: {} faulted, vector={} error=n/a rip=0x{:x} rsp=0x{:x}",
+            name, vector, rip, rsp
         ));
     }
     crate::bootstate::update(|r, _| r.finish(false));

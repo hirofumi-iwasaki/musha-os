@@ -10,7 +10,7 @@ p.add_argument('log', type=Path)
 p.add_argument('--hub-depth', type=int, default=0)
 a = p.parse_args()
 text = a.log.read_text()
-lines = [re.sub(r'^MUSHA: LOG \[[^]]+\] time: ', '', x) for x in text.splitlines() if re.match(r'^MUSHA: LOG \[[^]]+\] time: ', x)]
+lines = [re.sub(r'^MUSHA: LOG \[[^]]+\] time: ', '', x).lower() for x in text.splitlines() if re.match(r'^MUSHA: LOG \[[^]]+\] time: ', x)]
 rows = []
 for i, line in enumerate(lines):
     match = re.fullmatch(r'bdf=0x([0-9a-f]{4}) stage=(.+) start-ms=(\d+)', line)

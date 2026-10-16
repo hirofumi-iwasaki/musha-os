@@ -191,8 +191,8 @@ with (out/'qemu.log').open('w') as err:
     assert hash_image()==image_hash and 'APP_FILE_OK' in text
     assert text.index('NET_QUIESCED')<text.index('APP_FILE_RECHECK_OK')
    control('quit');proc.wait(timeout=5)
-   assert 'lan: stage polling' in text
-   assert 'lan: '+reason.lower() in text
+   assert 'lan: stage polling' in text.lower()
+   assert 'lan: '+reason.lower() in text.lower()
    print('PASS:',a.case,'isolated; input/file progress and both DMA stop')
    raise SystemExit(0)
   def send(frame):

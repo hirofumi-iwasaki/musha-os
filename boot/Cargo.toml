@@ -26,6 +26,8 @@ musha-viewer = { path = "../viewer" }
 
 [features]
 qemu-debug = []
+# Test-only halt after the real app exit line, before viewer repaint.
+app-log-screen-probe = []
 # Development fixture for firmware FS/GS selectors aliased by the OS TSS slot.
 segment-takeover-probe = ["qemu-debug"]
 # Fail before DMA admission to exercise LAN rejection -> application recovery.

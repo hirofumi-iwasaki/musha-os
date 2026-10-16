@@ -209,7 +209,17 @@ impl Nic {
         if unsafe { musha_lwip_init(mac.as_ptr()) } != 0 {
             return Err("LWIP INIT");
         }
-        crate::bootlog::phase("lan", "link ready; DHCP pending");
+        crate::bootlog::summary_phase("lan", "link ready; DHCP pending");
+        crate::bootlog::device(
+            "lan",
+            format_args!(
+                "{} {:02x}:{:02x}.{} link up; DHCP pending",
+                if self.pch { "I218-V" } else { "82574" },
+                self.c.bus,
+                self.c.device,
+                self.c.function
+            ),
+        );
         crate::debug(b"MUSHA: NET_DHCP_STARTED NO_ADDRESS\n");
         Ok(())
     }
@@ -560,7 +570,6 @@ impl Drop for Session {
     }
 }
 pub(crate) fn failed(error: &str) {
-    crate::bootlog::phase("LAN", error);
     crate::diagnostics::net_failure(error);
     crate::debug(b"MUSHA: NET_FAILED ");
     crate::debug(error.as_bytes());

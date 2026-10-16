@@ -4,7 +4,7 @@ Status: current (single boot log, 2026-10-16). Blank fields are not results.
 
 ## English
 
-Use [boot-log](boot-log.md) with `log=devices` for new v0.4.0 runs. Capture sequential text and any available ring dump, not former panel pages/status colors. Keep original photos/videos immutable; record extracted-frame offsets separately from PM-epoch times. Published v0.3.0 [formatter trials](formatted-media-boot-verification.md) retain their own six-run viewer criterion. This blank template grants no physical write or acceptance.
+Use [boot-log](boot-log.md) with `log=devices` for concise per-device decisions in new v0.4.0 runs; use `log=trace` for detailed transfer/stage/timing and inventory evidence. F8/8 requests trace, and the ring retains all detail at every display level. Capture sequential text and any available ring dump, not former panel pages/status colors. Keep original photos/videos immutable; record extracted-frame offsets separately from PM-epoch times. Published v0.3.0 [formatter trials](formatted-media-boot-verification.md) retain their own six-run viewer criterion. This blank template grants no physical write or acceptance.
 
 | Field | Recorded value / evidence |
 |---|---|
@@ -33,7 +33,7 @@ Copy one form per run/configuration. Printed readiness does not certify optional
 
 ## 日本語
 
-新規v0.4.0は[bootlog](boot-log.md)の`log=devices`を用い逐次textと取得できたringを採取。旧panel頁/色を条件にしません。原写真/videoを保持し動画offsetとPM時刻を分離。公開v0.3.0の[formatter](formatted-media-boot-verification.md)は専用6run/viewer条件のまま。本空様式で実書込み/受入を承認しません。
+新規v0.4.0は[bootlog](boot-log.md)の`log=devices`で機器ごとの簡潔な判断、`log=trace`で詳細transfer/stage/timing・一覧を採取。F8/8はtraceを要求し、ringは全表示levelで詳細を保持。逐次textと取得できたringを保存します。旧panel頁/色を条件にしません。原写真/videoを保持し動画offsetとPM時刻を分離。公開v0.3.0の[formatter](formatted-media-boot-verification.md)は専用6run/viewer条件のまま。本空様式で実書込み/受入を承認しません。
 
 | 項目 | 実測値・証拠 |
 |---|---|

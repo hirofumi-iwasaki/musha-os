@@ -120,6 +120,7 @@ def main():
     p.add_argument('--extra-empty-xhci',action='store_true',help='Add an empty controller for attach-wait regression')
     p.add_argument('--diagnostic-timing',action='store_true',help='Require retained timing records; sequential diagnostics keep the normal lifecycle')
     p.add_argument('--hub-depth',type=int,choices=range(1,6),help='USB2 hub chain for the keyboard (Hello timing regression)')
+    p.add_argument('--hold-app-log',action='store_true',help='Require real app start/log/exit held on the shared console; uses app-log-screen-probe')
     p.add_argument('--efi',type=Path,help='Use an already built candidate; --normal supplies screen-only checks')
     p.add_argument('--resolution', help='Explicit GOP mode WIDTHxHEIGHT (EDID disabled)')
     p.add_argument('--start-at',help='Resume the all-case sequence at this named case; earlier reports remain separate')
@@ -162,20 +163,23 @@ def main():
         if a.normal and a.case != 'all' and cases[a.case][2] in ('timing','disconnect'):
             raise ValueError('This observation requires the debug candidate')
         features=[] if a.normal else ['external-elf-probe']
+        if a.hold_app_log:
+            if a.case!='hello-fat32': raise ValueError('hold-app-log requires hello-fat32')
+            features.append('app-log-screen-probe')
         if not a.normal and (a.diagnostic_timing or a.case=='hotplug-5000'):
             features.append('diagnostics-detail')
         env=dict(os.environ,CARGO_TARGET_DIR=str(out/'target'),MUSHA_RING3_CASE='normal')
         if a.efi:
             efi=a.efi.resolve()
         else:
-            (out/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot']+([] if a.normal else ['--features',','.join(features)]),env))
+            (out/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot']+(['--features',','.join(features)] if features else []),env))
             efi=out/'target/x86_64-unknown-uefi/release/musha-boot.efi'
         report['features']=features
         report['efi_sha256']=hashlib.sha256(efi.read_bytes()).hexdigest()
         esp=out/'esp/EFI/BOOT';esp.mkdir(parents=True);shutil.copyfile(efi,esp/'BOOTX64.EFI')
         boot_drive=f'if=ide,format=raw,file=fat:rw:{out/"esp"}'
         if not a.normal:
-            module('smoke-startup').fixture(out/'boot.img',efi,b'log=devices\n')
+            module('smoke-startup').fixture(out/'boot.img',efi,b'log=ready\n' if a.hold_app_log else b'log=devices\n')
             boot_drive=f'if=ide,format=raw,snapshot=on,file={out/"boot.img"}'
         if a.start_at and (a.case!='all' or a.start_at not in cases): raise ValueError('start-at requires an all-case member')
         started=a.start_at is None
@@ -204,7 +208,7 @@ def main():
                 report['cases'].append({'case':name,'passed':True,'normal_efi_sha256':hashlib.sha256(normal.read_bytes()).hexdigest(),'reference':str(reference),'pixels':str(d/'pixels/result.json')});print('PASS external ELF '+name,flush=True);continue
             fixture(data,efi,payload,fmt,16777217 if name=='too-large' else None, partition_type=a.partition_type)
             if not a.normal and fmt=='fat32':
-                module('smoke-startup').configure_fixture(data,b'log=devices\n')
+                module('smoke-startup').configure_fixture(data,b'log=ready\n' if a.hold_app_log else b'log=devices\n')
             if name=='duplicate':
                 with data.open('r+b') as f:
                     f.seek(2048*512);boot=f.read(512);root=(2048+32+2*struct.unpack_from('<I',boot,36)[0])*512
@@ -273,7 +277,7 @@ def main():
                                 if kind=='disconnect': control('device_del',{'id':'storage'});removed=True
                             if a.normal:
                                 control('screendump',{'filename':str(d/'screen.ppm')})
-                                shown='\n'.join(screen_rows(d/'screen.ppm', viewer=True))
+                                shown='\n'.join(screen_rows(d/'screen.ppm', viewer=not a.hold_app_log))
                                 if name in ('log-long','log-utf8') and not observed_log:
                                     log_rows=screen_rows(d/'screen.ppm')
                                     log_screen='\n'.join(log_rows)
@@ -281,7 +285,9 @@ def main():
                                         shutil.copyfile(d/'screen.ppm',d/'app-log.ppm')
                                         (d/'app-log.txt').write_text(log_screen+'\n')
                                         observed_log=True
+                                if a.hold_app_log and 'app: AUTORUN.ELF exited, status 0' in shown: break
                                 if ('ELF exited: status' in shown or 'ELF faulted: vector' in shown or 'ELF refused.' in shown): break
+                            elif a.hold_app_log and 'APP_LOG_SCREEN_HOLD' in text and text.endswith('MUSHA: RING_END\n'): break
                             elif text.endswith('\n') and 'APP_ARENA_SCRUBBED VIEWER_RESTART' in text and 'VIEWER_FRAME ' in text.split('APP_ARENA_SCRUBBED VIEWER_RESTART')[-1]:
                                 break
                             if proc.poll() is not None: raise RuntimeError((d/'qemu.log').read_text())
@@ -296,7 +302,25 @@ def main():
                         import re
                         dimensions=re.match(rb'P6\s+(\d+)\s+(\d+)',(d/'screen.ppm').read_bytes())
                         assert dimensions and tuple(map(int,dimensions.groups()))==(4096,2160)
-                    rows=screen_rows(d/'screen.ppm', viewer=True);screen='\n'.join(rows);(d/'screen.txt').write_text(screen+'\n')
+                    rows=screen_rows(d/'screen.ppm', viewer=not a.hold_app_log);screen='\n'.join(rows);(d/'screen.txt').write_text(screen+'\n')
+                    if a.hold_app_log:
+                        sequence=['app: starting AUTORUN.ELF','Hello Musha-OS!','app: AUTORUN.ELF exited, status 0']
+                        positions=[screen.index(line) for line in sequence]
+                        assert positions==sorted(positions),screen
+                        if a.normal:
+                            assert text=='','Normal held EFI emitted debug output'
+                            (d/'console-transcript.txt').write_text('\n'.join(sequence)+'\n')
+                        else:
+                            primary=[line.split('MUSHA: LOG ',1)[1] for line in text.splitlines() if 'MUSHA: LOG ' in line]
+                            joined='\n'.join(primary)
+                            assert joined.index(sequence[0])<joined.index(sequence[1])<joined.index(sequence[2]),joined
+                            assert 'app: loading AUTORUN.ELF' in joined, 'filtered trace lost from primary/ring'
+                            retained=text.rsplit('MUSHA: RING_BEGIN\n',1)[1].split('MUSHA: RING_END',1)[0]
+                            assert 'app: loading AUTORUN.ELF' in retained, 'filtered trace lost from retained ring'
+                        assert before==hashlib.sha256(data.read_bytes()).hexdigest()
+                        report['cases'].append({'case':name,'passed':True,'application_console_sequence':sequence,'normal_debug_empty':a.normal,'screen':str(d/'screen.ppm')})
+                        print('PASS real shared application console '+name,flush=True)
+                        continue
                     if not a.normal and kind in ('exit','fault'):
                         handoff=text.index('EXTERNAL_ELF_DEVICES_STOPPED')
                         assert text.index('EXTERNAL_ELF_READ_COMPLETE') < text.index('XHCI_QUIESCED',text.index('EXTERNAL_ELF_READ_COMPLETE')) < handoff < text.index('RING3_ELF_ENTERING'),text
@@ -351,7 +375,7 @@ def main():
                                         column=0
                                         if row+1<rows: row+=1
                                         else: expected.pop(0);expected.append([' ']*columns)
-                                    for ch in 'Musha-OS 0.4.0 ready\n'+'Z'*4096:
+                                    for ch in 'app: starting AUTORUN.ELF\n'+'Z'*4096:
                                         if ch=='\n': newline();continue
                                         if column==columns: newline();column=2
                                         expected[row][column]=ch;column+=1

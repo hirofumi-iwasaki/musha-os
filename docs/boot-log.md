@@ -54,10 +54,10 @@ viewer: starting
 Musha-OS 0.4.0 ready
 ```
 
-`devices` — `phases` plus one line per recognized device and per decision, with timestamps:
+`devices` — `phases` plus one concise factual line per recognized device or decision, with timestamps. Repeated discovery of the same USB identity is retained at `trace`, not repeated on the devices screen. Settings/GOP/media/LAN phase summaries are replaced by their fuller single factual line at devices; their original phase records remain in trace and the ring:
 
 ```
-[  0.000] Musha-OS 0.4.0 starting (build a1b2c3d, features: none)
+Musha-OS 0.4.0 starting
 [  0.012] settings: CONFIG.TXT loaded (log=devices display=max)
 [  0.014] display: gop 3840x2160 stride 3840 bgr, grid 160x54 scale 4
 [  0.165] core: runtime ready (image 0x140000000 size 0x123b000, arena 64 MiB)
@@ -78,10 +78,14 @@ Musha-OS 0.4.0 ready
 Hello Musha-OS!
 [  1.790] app: AUTORUN.ELF exited, status 0
 [  1.795] viewer: starting
-[  1.795] Musha-OS 0.4.0 ready (ready at 1.795 s)
+Musha-OS 0.4.0 ready
 ```
 
-The exact set of `devices` lines is defined by the implementation, but every value that the current diagnostic panels show and that a hardware record needs (PCI vendor:device:revision and BDF, USB VID:PID, port and speed, GOP mode, image/arena ranges, media size, marker hash, PM-epoch times) must appear as a line here. Hardware acceptance records are photographs of this log at `devices`.
+The exact devices summaries and trace details are defined by the implementation, and every value that the current diagnostic panels show and that a hardware record needs (PCI vendor:device:revision and BDF, USB VID:PID, port and speed, GOP mode, image/arena ranges, media size, marker hash, PM-epoch times) must appear as a line here. Hardware summaries use devices; complete diagnostic evidence uses trace. Values omitted from concise summaries remain in trace and the ring.
+
+`trace` — `devices` plus every low-level stage, control request, transfer result, timing pair and raw diagnostic field formerly shown at devices. This is the detailed hardware-capture level; F8 / digit 8 forces trace. All five display levels retain every record in the same 64 KiB ring. No trace filter deletes ring content.
+
+The first phases/devices/trace line is exactly `Musha-OS 0.4.0 starting`; the startup-ready terminal line is exactly `Musha-OS 0.4.0 ready`, without timestamps or a tag. Device/trace records retain timestamps. Proper names and app bytes preserve case. UEFI and initialization progress belongs in trace; phases folds it into `core: runtime ready`. The USB phase tag is `usb`; display includes the selected dimensions. LAN reports observable availability/link/address or a concrete failure reason, never a development-certification disclaimer.
 
 ### 4. Application output, viewer, return
 
@@ -110,8 +114,8 @@ Musha-OS halted
 
 ### 7. Ring buffer and mirrors
 
-- Every line, regardless of display level, is appended to an in-memory ring (64 KiB) with its timestamp and the level it belongs to. The screen shows the subset the configured level allows; the ring holds everything at `devices` detail.
-- The ring is the single source for every mirror: the serial port (v0.5.0 goal 11), the `devices` key override (F8 / 8 shows the ring content), and any future UDP or file sink. A mirror never has its own formatting.
+- Every line, regardless of display level, is appended to an in-memory ring (64 KiB) with its timestamp and the level it belongs to. The screen shows the subset the configured level allows; the ring holds everything at `trace` detail.
+- The ring is the single source for every mirror: the serial port (v0.5.0 goal 11), the `trace` key override (F8 / 8 selects trace and shows all retained detail), and any future UDP or file sink. A mirror never has its own formatting.
 
 ### 8. Removal list
 
@@ -119,18 +123,18 @@ The following are removed, not hidden: the diagnostic panel pages (`diagnostic_p
 
 ### 9. Verification
 
-- QEMU: screen references regenerated for the four levels, for the halt case and for the application exit/fault cases; a text dump of the ring compared as the primary check, pixels as the secondary check.
+- QEMU: screen references regenerated for the five levels, for the halt case and for the application exit/fault cases; a text dump of the ring compared as the primary check, pixels as the secondary check.
 - Hardware: the next NUC5 and Ryzen runs are photographed at `devices`; the photographs become the new examples in `hardware-test-record-template.md`.
 
-### 10. Implementation decisions and complete devices inventory
+### 10. Implementation decisions and complete devices/trace inventory
 
 The implementation keeps a 65,536-byte ring inside the reserved LoadedImage, with whole-record eviction, a loss counter, level, PM milliseconds and an early/firmware flag. No allocation or firmware handle is retained. Settings and GOP decisions enter it before ExitBootServices; their unavailable PM epoch is represented by zero plus the early flag. This does not claim time since EFI entry. A record exceeding 4,095 formatted bytes becomes an explicit log error, rather than a silently truncated sentence. Application syscall limits and bytes accepted by `SYS_LOG` remain unchanged.
 
-The console uses a fixed CPU text shadow (384 columns by 128 rows), including 4K and 8K GOP grids under the specified scale. It never reads framebuffer pixels to scroll. Binding writes no pixels; only new cells and changed scroll rows are painted. Viewer pixels retain their existing layout. Selecting an ELF from the viewer clears black once, then appends `app: starting external ELF`; the selected filename is not fabricated. App exit/fault lines identify external ELF and include status or vector/error/RIP. No framebuffer display syscall or new public ABI is introduced.
+The console uses a fixed CPU text shadow (384 columns by 128 rows), including 4K and 8K GOP grids under the specified scale. It never reads framebuffer pixels to scroll. Binding writes no pixels; only new cells and changed scroll rows are painted. Viewer pixels retain their existing layout. Selecting an ELF from the viewer clears black once, then appends `app: starting <catalog name>`; the catalog name is copied before scoped handles close (non-ASCII units display as dots without changing identity). App exit/fault lines identify the same name and include status or vector/error/RIP. No framebuffer display syscall or new public ABI is introduced.
 
 Only an existing PAT WC entry may be selected for GOP pages. PAT and MTRRs are never changed; WB RAM and strong-UC MMIO/DMA stay unchanged. Missing WC, or CR0 cache-disable/no-write-through state, selects UC fallback and records the reason. This is a documented fallback, not a claim that WC was enabled on an untested machine. Pixel packing, stride, glyph values and bounds remain unchanged. Architectural references: [Intel SDM, volume 3A, sections 13.5.2.2 and 13.12.4](https://cdrdv2-public.intel.com/868137/325462-089-sdm-vol-1-2abcd-3abcd-4.pdf), and [AMD APM volume 2, section 7.8.5](https://docs.amd.com/api/khub/documents/sD1_QL~h4Afq2_tvzxqqSQ/content). Batch SFENCE drains WC stores; it is not vsync. The old UC full-frame fill and repeated whole-console redraw were code-level cost sources; physical elapsed rendering time has not been measured.
 
-`pci`, `xhci`, `device`, `input`, `time`, `uefi`, `gop` and `boot` are additional lowercase tags. At devices level every kernel event has the timestamp; raw app bytes are not rewritten. Mandatory `ERROR` and the product name may contain uppercase letters. The `MUSHA: LOG` / retained `MUSHA: RING` development debug-port capture is the primary QEMU evidence, not an implemented serial output feature.
+`pci`, `device` and `time` are the additional retained tags: PCI inventory, generic legacy diagnostic fields, and timing records respectively. `xhci` is folded into `usb`, GOP into `display`, and firmware/runtime progress into `core`; the untagged product header replaces `boot`. The complete tag set is `core`, `memory`, `timer`, `usb`, `storage`, `keyboard`, `mouse`, `lan`, `bluetooth`, `display`, `settings`, `app`, `viewer`, `pci`, `device`, `time`. Device/trace kernel events have timestamps; raw app bytes are not rewritten. Mandatory `ERROR` and the product name may contain uppercase letters. The `MUSHA: LOG` / retained `MUSHA: RING` development debug-port capture is the primary QEMU evidence, not an implemented serial output feature.
 
 All previously diagnostic values feed this same log, including:
 
@@ -204,10 +208,10 @@ viewer: starting
 Musha-OS 0.4.0 ready
 ```
 
-`devices` — `phases` に加えて、認識した機器と判断ごとに 1 行、時刻付き：
+`devices` — 認識した機器と判断ごとに1行、時刻付き。settings／GOP／media／LANのphase重複は対応する詳細1行へ統合し、元phaseはtrace／ringへ保持：
 
 ```
-[  0.000] Musha-OS 0.4.0 starting (build a1b2c3d, features: none)
+Musha-OS 0.4.0 starting
 [  0.012] settings: CONFIG.TXT loaded (log=devices display=max)
 [  0.014] display: gop 3840x2160 stride 3840 bgr, grid 160x54 scale 4
 [  0.165] core: runtime ready (image 0x140000000 size 0x123b000, arena 64 MiB)
@@ -228,10 +232,14 @@ Musha-OS 0.4.0 ready
 Hello Musha-OS!
 [  1.790] app: AUTORUN.ELF exited, status 0
 [  1.795] viewer: starting
-[  1.795] Musha-OS 0.4.0 ready (ready at 1.795 s)
+Musha-OS 0.4.0 ready
 ```
 
-`devices` の行の正確な集合は実装が決めるが、現行の診断パネルが表示し実機記録に必要な値（PCI vendor:device:revision と BDF、USB VID:PID、ポートと速度、GOP モード、image/arena の範囲、媒体サイズ、マーカーのハッシュ、PM 起点の時刻）は全てここに行として現れなければならない。実機受入記録は `devices` のこのログの写真である。
+devicesは機器又は判断ごとの事実を1行へ要約し、同じUSB identityの反復探索はtraceへ保持します。PCI vendor:device:revision／BDF、USB VID:PID／port／speed、GOP、image／arena、媒体、marker hash、PM時刻を含む全診断値はdevices要約又はtrace詳細へ記録します。機器の要約写真はdevices、完全な診断証拠はtraceで採取します。
+
+`trace` は `devices` に加え、低水準stage・制御転送・transfer結果・計測対・旧診断fieldを全て表示する詳細採取レベルです。F8／数字8はtraceへ強制します。5表示レベルすべてで同じ64KiB ringへ全recordを保持し、trace filterで履歴を削除しません。
+
+phases／devices／traceの先頭はexact `Musha-OS 0.4.0 starting`、起動完了末尾はexact `Musha-OS 0.4.0 ready` とし、この2行にはtimestamp／tagを付けません。機器／trace recordのtimestampは保持し、固有名とapp byteの大文字小文字を変更しません。UEFIと初期化の逐次経過はtraceへ置き、phasesでは `core: runtime ready` に畳みます。USB phase tagはusb、displayは実選択解像度を含みます。LANは実際の可否／link／address又は具体的失敗理由を示し、開発認証の注記を画面へ出しません。
 
 ### 4. アプリ出力、ビューアー、復帰
 
@@ -260,8 +268,8 @@ Musha-OS halted
 
 ### 7. リングバッファーと複写先
 
-- 表示レベルに関係なく、全ての行を時刻と所属レベル付きでメモリー上のリング（提案：64 KiB）に追記する。画面は設定レベルが許す部分集合を表示し、リングは `devices` の詳細で全てを保持する。
-- リングは全ての複写先の唯一の源である：シリアルポート（v0.5.0 目標 11）、`devices` 強制キー（F8／8 でリングの内容を表示）、将来の UDP やファイルへの出力。複写先が独自の書式を持つことはない。
+- 表示レベルに関係なく、全ての行を時刻と所属レベル付きでメモリー上のリング（提案：64 KiB）に追記する。画面は設定レベルが許す部分集合を表示し、リングは `trace` の詳細で全てを保持する。
+- リングは全ての複写先の唯一の源である：シリアルポート（v0.5.0 目標 11）、`trace` 強制キー（F8／8 で trace を選択して全詳細を表示）、将来の UDP やファイルへの出力。複写先が独自の書式を持つことはない。
 
 ### 8. 撤去するもの
 
@@ -269,18 +277,18 @@ Musha-OS halted
 
 ### 9. 検証
 
-- QEMU：4 レベル、停止ケース、アプリの終了・例外ケースの画面基準を再生成する。主検査はリングのテキストダンプの比較、副検査が画素比較。
+- QEMU：5 レベル、停止ケース、アプリの終了・例外ケースの画面基準を再生成する。主検査はリングのテキストダンプの比較、副検査が画素比較。
 - 実機：次の NUC5・Ryzen の起動を `devices` で撮影し、その写真を `hardware-test-record-template.md` の新しい例にする。
 
-### 10. 実装上の判断と devices 全項目
+### 10. 実装上の判断と devices／trace 全項目
 
 65,536 byte のリングは予約済み LoadedImage 内に置き、レコード単位の追出し、損失数、レベル、PM ミリ秒、firmware 終了前フラグを保持する。動的割当てや firmware handle は保持しない。設定と GOP の判断は ExitBootServices 前に記録し、PM epoch 不明は 0 と early フラグで示す。EFI entry からの時間とは主張しない。整形後 4,095 byte を超えるレコードは明示的なログエラーとし、黙って文を切らない。SYS_LOG の syscall 上限と受理する byte は変えない。
 
-コンソールは CPU 側の固定 shadow（384 列 × 128 行）を持ち、規定倍率の 4K／8K GOP を含む。スクロールで framebuffer を読み戻さない。bind は pixel を書かず、新しい cell とスクロールで変わる文字領域だけ描く。viewer の既存配置は保持する。viewer から ELF を選択した時だけ黒消去し、app: starting external ELF と続ける。未取得の選択名は捏造しない。終了／fault は external ELF と status または vector／error／RIP を記録する。表示 syscall や公開 ABI は追加しない。
+コンソールは CPU 側の固定 shadow（384 列 × 128 行）を持ち、規定倍率の 4K／8K GOP を含む。スクロールで framebuffer を読み戻さない。bind は pixel を書かず、新しい cell とスクロールで変わる文字領域だけ描く。viewer の既存配置は保持する。viewer から ELF を選択した時だけ黒消去し、app: starting <catalog name> と続ける。選択catalog名をfile service終了前にコピーし、非ASCII UTF-16 code unitは表示だけドット化してfile identityを変更しない。終了／fault は同じcatalog名と status または vector／error／RIP を記録する。表示 syscall や公開 ABI は追加しない。
 
 GOP には既存 PAT の WC entry だけを使う。PAT／MTRR を変更せず、WB RAM と strong-UC の MMIO／DMA を保持する。WC が無い場合や CR0 cache-disable／no-write-through 状態では UC に fallback し理由を記録する。これは未試験機で WC を有効化したとの主張ではない。根拠は [Intel SDM volume 3A §13.5.2.2／13.12.4](https://cdrdv2-public.intel.com/868137/325462-089-sdm-vol-1-2abcd-3abcd-4.pdf) と [AMD APM volume 2 §7.8.5](https://docs.amd.com/api/khub/documents/sD1_QL~h4Afq2_tvzxqqSQ/content)。pixel 値、stride、glyph、境界は不変で、batch 後 SFENCE は WC store の完了であり vsync ではない。旧 UC 全画面 fill と console 全再描画はコード上の負荷要因だが、実機描画時間は未測定である。
 
-追加 tag は pci／xhci／device／input／time／uefi／gop／boot とする。devices の kernel 行はすべて timestamp 付きとし、アプリ生 byte は書換えない。必須 ERROR と製品名の大文字は許す。開発用 debug-port の MUSHA: LOG／MUSHA: RING を QEMU の主証拠とするが、serial 出力実装とは扱わない。
+追加tagはPCI一覧のpci、旧診断fieldのdevice、計測のtimeです。xhciはusb、GOPはdisplay、firmware/runtime経過はcoreへ畳み、bootはtag無し製品見出しへ統合します。全tag集合はcore／memory／timer／usb／storage／keyboard／mouse／lan／bluetooth／display／settings／app／viewer／pci／device／timeです。機器／traceのkernel行はtimestamp付きとし、アプリ生 byte は書換えない。必須 ERROR と製品名の大文字は許す。開発用 debug-port の MUSHA: LOG／MUSHA: RING を QEMU の主証拠とするが、serial 出力実装とは扱わない。
 
 | producer | 保持する全項目群／実機採取値 |
 |---|---|

@@ -9,6 +9,7 @@ pub enum LogLevel {
     Ready,
     Phases,
     Devices,
+    Trace,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Display {
@@ -58,6 +59,7 @@ pub fn parse(bytes: &[u8]) -> Result<Config, ParseError> {
                     "ready" => LogLevel::Ready,
                     "phases" => LogLevel::Phases,
                     "devices" => LogLevel::Devices,
+                    "trace" => LogLevel::Trace,
                     _ => return Err(ParseError::Value),
                 }
             }
