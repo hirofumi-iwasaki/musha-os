@@ -39,6 +39,8 @@ Current contracts, local validation and physical acceptance are separate. Past r
 - [Vulnerability reporting / 脆弱性報告](../SECURITY.md)
 - [Musha POSIX profile / POSIXプロファイル](posix-profile.md)
 
+- [Kernel size budget / kernelサイズ方針](size-budget.md)
+
 - [release-editorial-policy](release-editorial-policy.md)
 - [release-distribution-policy](release-distribution-policy.md)
 - [boot-readiness-policy](boot-readiness-policy.md)
@@ -67,6 +69,16 @@ Current contracts, local validation and physical acceptance are separate. Past r
 - [release-scope-0.5.0](release-scope-0.5.0.md)
 - [release-validation-0.1.0](release-validation-0.1.0.md)
 - [release-validation-0.2.0](release-validation-0.2.0.md)
+
+## Security and implementation research / 安全性・実装調査
+
+- [Fuzzing foundation proposal / fuzz基盤案](fuzzing-foundation-proposal.md)
+- [Unsafe inventory / unsafe棚卸](unsafe-inventory-0.5.0.md)
+- [CPU defense audit / CPU防御監査](cpu-defense-audit-0.5.0.md)
+- [User-enrolled Secure Boot research / 登録鍵調査](secure-boot-user-keys-0.5.0-research.md)
+- [UDP echo owner decision / 既定off採用判断](udp-echo-default-options.md)
+
+Research and inventories do not establish implementation completion or physical acceptance. / 調査・棚卸は実装完了・実機受入を証明しません。
 
 ## Historical records / 過去の記録
 

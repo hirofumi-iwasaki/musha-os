@@ -9,7 +9,7 @@ The v0.4.0 development implementation reads `/SETTINGS/CONFIG.TXT` on the FAT32 
 Create this optional file yourself; distribution archives keep SETTINGS empty. Up to 4096 ASCII bytes are accepted. Use LF or CRLF, `key=value`, whitespace and `#` comments (including inline comments). Unknown keys are ignored; repeated known keys use the last value. Missing directory/file, read/close error, oversized/non-ASCII input or any malformed known value uses all defaults. A bare line without `=` is malformed. A firmware close error is recorded by the development debug probe and uses defaults; every acquired handle receives a close attempt.
 
 ```text
-# Defaults are log=ready and display=max
+# Defaults: log=ready, display=max, lan.echo=off
 log=devices
 display=1024x768
 pair=on
@@ -19,7 +19,10 @@ pair=on
 |---|---|
 | log | quiet, ready (default), phases, devices, trace |
 | display | max (default), or positive decimal WxH; unavailable/unsafe modes fall back to max and phases/devices/trace reports the fallback |
+| lan.echo | exact lowercase on/off; default off. on enables UDP12345 echo; invalid value resets the whole CONFIG to defaults. DHCP is independent; no driver admission changes |
 | pair | on; retained for stage6. Bluetooth and pairing writes are not implemented in stage2. |
+
+For a build implementing the 2026-10-16 UDP-echo decision, omit `lan.echo` for default-off or use `lan.echo=on` only for an intended echo test. Record exact CONFIG bytes/hash; the choice is retained through session reinitialization. With link up, phases reports `lan: link ready; echo disabled; DHCP pending` (enabled when opted in). After a lease, off reports `lan: DHCP a.b.c.d; echo disabled`; on retains `DHCP a.b.c.d UDP echo port 12345 ready`. These are intended effective-state lines, not new physical results. This user-owned file is edited by the host, never rewritten by Musha-OS. An older EFI may ignore the key and retains its old service behavior; verify source/features/hash before relying on the switch.
 
 Firmware F8 or digit8 forces trace after CONFIG is read. Press/hold it during firmware boot; recognition depends on the firmware input queue. Both paths have QEMU injection tests, which do not prove every physical firmware's key handling.
 
@@ -36,7 +39,7 @@ v0.4.0 開発版は FAT32 起動デバイスの `/SETTINGS/CONFIG.TXT` を Loade
 任意ファイルは利用者が作成する。配布 archive の SETTINGS は空のまま。上限 4096 ASCII byte、LF／CRLF、`key=value`、空白、`#` comment（行途中も可）に対応する。未知 key は無視し、既知 key の重複は最後を使う。directory／file 欠落、read／close error、上限超過、非 ASCII、既知値の不正はいずれも設定全体を既定値に戻す。`=` のない非空行も不正。close error は開発 debug probe に記録し既定値を使い、取得した各 handle に close を試みる。
 
 ```text
-# defaults: log=ready, display=max
+# defaults: log=ready, display=max, lan.echo=off
 log=devices
 display=1024x768
 pair=on
@@ -46,7 +49,10 @@ pair=on
 |---|---|
 | log | quiet、ready（既定）、phases、devices、trace |
 | display | max（既定）または正の10進数 WxH。利用不可・安全条件未達の mode は max に戻し phases／devices／trace で報告 |
+| lan.echo | 小文字on/offのみ、既定off。onでUDP12345 echo有効。不正値はCONFIG全体を既定へ戻す。DHCPは独立、driver gate不変 |
 | pair | on を工程6用に保持。工程2では Bluetooth・pairing 書込みは未実装 |
+
+2026-10-16採用のecho設定を実装したbuildでは、lan.echo省略で既定off、echo試験時だけ`lan.echo=on`を使いCONFIG原bytes/hashを記録し、session再初期化にも設定を保持。link時は`lan: link ready; echo disabled; DHCP pending`（有効時enabled）、lease後offは`lan: DHCP a.b.c.d; echo disabled`、onは`DHCP a.b.c.d UDP echo port 12345 ready`を表示する契約です。新しい実機結果ではありません。この利用者所有fileはhostで編集しMusha-OSから書換えません。旧EFIはkeyを無視して旧service動作を保つ場合があるため、source/features/hashを確認します。
 
 firmware F8 または数字8は CONFIG 読出し後に trace を強制する。firmware 起動中に押す／保持する。認識は firmware の入力 queue に依存する。両経路の QEMU 注入試験は実機全 firmware の認識を保証しない。
 

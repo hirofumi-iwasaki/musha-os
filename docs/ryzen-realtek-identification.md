@@ -9,6 +9,10 @@ Status: current (read-only diagnostic procedure; physical capture pending).
 
 ## English
 
+### Current echo opt-in boundary (2026-10-16 JST)
+
+With an EFI implementing the new default-off switch, the owner enables a subsequent network test by setting `lan.echo=on` in `SETTINGS/CONFIG.TXT` on the FAT32 boot volume; preserve other keys and record bytes/hash plus EFI source/features/hash. DHCP is independent of echo. Confirm actual enabled state, then require a real lease and a separately returned UDP12345 token as in the [I218 echo procedure](i218-hardware-quickcheck.md). This setting does not turn the read-only TxConfig diagnostic into a driver, grant Realtek hardware admission or waive profile/stop checks. Identification-only runs need no echo opt-in. Old EFIs below retain their original parser/service behavior.
+
 ### Development EFI read-only capture (2026-10-15)
 
 Use an owner-approved development EFI with **`t2-diagnostics,diagnostics-detail`** and `log=devices` (F8/8 can force devices). This is a local build feature, not a claim that the NIC works. Record EFI SHA256, CONFIG, board, cold interval (power off at least10 seconds) and AC state. The normal build does not perform this capture. Copying EFI to physical USB and running it remain owner operations.
@@ -65,6 +69,10 @@ Select the PCI **Ethernet class0200** entry, not a Realtek card reader/audio dev
 After review, append the explicit identifiers and evidence path to a new Ryzen section of [hardware verification status](hardware-verification-status.md). Match the device-specific programming reference before implementation. Earlier normal devices diagnostics selected only Intel Ethernet. The current read-only inventory adds the first Ethernet of any vendor and bounded journal observations; missing/omitted rows still do not prove hardware absence. Cross-check subsystem IDs and multiple NICs with the host capture. I218-V and Realtek need separate driver initialization and physical link/DHCP/OS-echo evidence; QEMU82574 proves neither physical controller.
 
 ## 日本語
+
+### 現行echo有効化の境界（2026-10-16 JST）
+
+新しい既定off switch対応EFIで後続の通信試験を行う場合、所有者がFAT32起動媒体の`SETTINGS/CONFIG.TXT`へ他keyを保持して`lan.echo=on`を設定し、原bytes/hashとEFI source/features/hashを記録。DHCPとechoは独立です。実効enabled、実lease、[I218 echo手順](i218-hardware-quickcheck.md)の独立したUDP12345返信を確認します。この設定は読取専用TxConfig診断をdriverに変えず、Realtek実機有効化やprofile/停止確認を省略しません。特定だけのrunはecho有効化不要。下記旧EFIは元parser/service挙動のままです。
 
 ### 開発EFIの読取り専用採取（2026-10-15）
 

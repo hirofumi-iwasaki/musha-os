@@ -18,6 +18,19 @@ Stage6 contains USB HCI/LE pairing, stored reconnect and descriptor-driven HOGP 
 
 I218 networking is an opt-in implemented development path with physical link/DHCP/echo pending. Realtek requires exact PCI/revision/TxConfig profile evidence and its separate backend; unsupported profiles are not accepted. T2 has host models and shared input preparation, but live BCE MMIO/DMA/VHCI/internal keyboard integration remains unimplemented. Mac storage cause/repeatability remains a separate hardware gate. Refer to the [device matrix](device-support.md), [scope](release-scope-0.4.0.md) and [work plan](work-plan-0.4.0.md) for exact boundaries; no pending work is described as a completed product feature. The [final ready/PAT record](boot-log-ready-pat-0.4.0-results.md), [trace record](boot-log-trace-0.4.0-results.md) and [SDK packaging record](sdk-packaging-0.4.0-progress.md) provide local evidence, not formal candidate or physical acceptance.
 
+UDP echo decision (2026-10-16 JST): **off by default in the new v0.4.0 implementation**. An owner enables the intended test with `lan.echo=on` in the FAT32 boot volume's `SETTINGS/CONFIG.TXT`, preserving other keys and recording the file hash. DHCP remains independent; an address is not proof that UDP12345 echo is enabled. This does not enable a gated NIC or claim physical networking. Old published/development EFIs retain their original behavior. Verify source/hash and effective state rather than assuming an old parser recognizes the new key.
+
+### Kernel size worksheet (not candidate acceptance)
+
+Under the [owner size policy](size-budget.md), record exact source/features/hash and manifest measurements. This normal build is not automatically the owner-defined published full configuration. Raw section sizes include PE alignment padding; virtual `.data`/BSS and image size are RAM, not file bytes.
+
+| Configuration | EFI file | .text / .rdata / .data raw | .data/BSS virtual; image virtual | Previous-release delta |
+|---|---|---|---|---|
+| Normal candidate (`efi_size`) | NOT MEASURED for this candidate | NOT MEASURED | NOT MEASURED | NOT MEASURED; owner-recorded v0.3 baseline475,648 B, asset/hash correspondence must be recorded |
+| Minimal (`efi_size_minimal`) | UNAVAILABLE, null | UNAVAILABLE | UNAVAILABLE | UNAVAILABLE; LAN/BT optional-driver feature separation missing; not a zero-byte result |
+
+The development measurements in size-budget are dated source observations, not substituted candidate values. Minimal remains a tracked requirement, not satisfied by a same-byte no-default-features build. Release gates above remain PENDING.
+
 ### Downloads (planned; not uploaded)
 
 - `musha-os-0.4.0-x64.zip`
@@ -66,6 +79,19 @@ Record candidate hashes, exact machine/topology/power conditions, raw photos/log
 ### 公開記録
 
 公開日・source/tag commit・候補EFI SHA256・配布manifest・final CIは全てPENDINGです。v0.4.0の公開/実機受入を記録したものではなく、v0.3.0公開物/証拠は不変です。本書は記入用骨組みで、告知や公開承認ではありません。
+
+UDP echo採用判断（2026-10-16 JST）：**新v0.4.0実装は既定off**。echo試験では所有者がFAT32起動媒体の`SETTINGS/CONFIG.TXT`へ他keyを保持して`lan.echo=on`を設定しhashを記録。DHCPは独立で、address取得だけではUDP12345 echo有効の証明ではありません。閉じたNIC gateを開かず実通信受入を主張しません。旧公開/開発EFIの動作は不変、旧parserが新keyに対応するとはせずsource/hashと実効状態を確認します。
+
+### kernelサイズ記入欄（候補受入ではない）
+
+[所有者のサイズ方針](size-budget.md)に従い正確なsource/features/hashとmanifest計測を記録します。この通常版を所有者定義の公開full構成と自動的に同一視しません。raw sectionはPE alignment padding込み、仮想.data/BSS・imageはRAMでfile bytesではありません。
+
+| 構成 | EFI file | .text/.rdata/.data raw | .data/BSS virtual・image virtual | 前版差分 |
+|---|---|---|---|---|
+| 通常候補（efi_size） | 今回候補は未計測 | 未計測 | 未計測 | 未計測。所有者記録の0.3基準475,648 Bとのasset/hash対応を記録して比較 |
+| 最小（efi_size_minimal） | 利用不可・null | 利用不可 | 利用不可 | 利用不可。LAN/BTの任意driver feature分離が未達で0 Bではない |
+
+size-budgetの開発計測は各source当時の観測で、今回候補の値へ流用しません。minimalは継続要件で、同一bytesのno-default-features buildを達成扱いにしません。公開gateはPENDINGのままです。
 
 ### 主な変更と実装境界
 
