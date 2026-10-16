@@ -8,7 +8,7 @@ Status: **owner decision, 2026-10-15.** Applies to every version until revised b
 
 Musha-OS does not have, and will not add, a command shell. There is no `sh`, `bash`, `zsh` or an equivalent of `COMMAND.COM`. The reason is not the shell program itself but what it requires underneath: a process model with `fork`/`exec`, pipes, signals, terminals, environment variables, a current directory, exit-status propagation and job control. Musha-OS is built on the opposite model — **one application per session, cooperative I/O, the kernel owning devices and memory** — and adopting a shell would mean adopting the UNIX process model with it. That is a change to what Musha-OS is, not a feature.
 
-Concretely, Musha-OS has none of the following and does not plan them: shell, processes, concurrent applications, pipes, signals, tty/pty, environment variables, current directory, user accounts or file permissions. The file viewer is the only launcher; the application is the unit of execution. The libc layer planned for the games scenario does not change this: it provides the C library over Musha syscalls, not a POSIX process model.
+Concretely, Musha-OS has none of the following and does not plan them: shell, processes, concurrent applications, pipes, signals, tty/pty, environment variables, current directory, user accounts or file permissions. The file viewer is the only launcher; the application is the unit of execution. The libc layer planned for the games scenario does not change this: it provides the C library over Musha syscalls, not a POSIX process model (see the [Musha POSIX profile](posix-profile.md)).
 
 ### What the request usually means, and the answer without a shell
 
@@ -32,7 +32,7 @@ The viewer is a launcher and a read-only file inspector. It will not grow a comm
 
 Musha-OS はコマンドシェルを持たず、今後も追加しない。`sh`・`bash`・`zsh` も、`COMMAND.COM` に相当するものも無い。理由はシェルというプログラムそのものではなく、その下に必要になるもの——`fork`/`exec`、パイプ、シグナル、端末、環境変数、カレントディレクトリー、終了ステータスの伝播、ジョブ制御というプロセスモデル——にある。Musha-OS はその反対のモデル——**1 セッションに 1 アプリ、協調 I/O、カーネルによる機器とメモリーの一元所有**——の上に作られており、シェルを入れることは UNIX のプロセスモデルを一緒に入れることになる。それは機能の追加ではなく、Musha-OS が何であるかの変更である。
 
-具体的に、Musha-OS には次のものが無く、計画もしない：シェル、プロセス、複数アプリの同時実行、パイプ、シグナル、tty/pty、環境変数、カレントディレクトリー、利用者アカウント、ファイルのアクセス権。ファイルビューアーが唯一のランチャーで、アプリが実行の単位である。ゲーム用途シナリオで計画する libc 層もこれを変えない：Musha の syscall 上に C ライブラリーを提供するものであり、POSIX のプロセスモデルではない。
+具体的に、Musha-OS には次のものが無く、計画もしない：シェル、プロセス、複数アプリの同時実行、パイプ、シグナル、tty/pty、環境変数、カレントディレクトリー、利用者アカウント、ファイルのアクセス権。ファイルビューアーが唯一のランチャーで、アプリが実行の単位である。ゲーム用途シナリオで計画する libc 層もこれを変えない：Musha の syscall 上に C ライブラリーを提供するものであり、POSIX のプロセスモデルではない（[Musha POSIX プロファイル](posix-profile.md)参照）。
 
 ### 「シェルが欲しい」の裏にある要望と、シェル無しでの答え
 

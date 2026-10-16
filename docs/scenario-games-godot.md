@@ -22,7 +22,7 @@ Consequence: the screen path for games is CPU rendering into an arena back buffe
 
 | Need | Musha-OS today | Fill-in |
 |---|---|---|
-| C/C++ standard library | none (no libc) | **libc layer**: musl (MIT) ported onto Musha syscalls; static only |
+| C/C++ standard library | none (no libc) | **libc layer** per the [Musha POSIX profile](posix-profile.md): mlibc or musl (MIT) ported onto Musha syscalls; static only |
 | C++ runtime | none | static libstdc++ or libc++ with RTTI; exceptions not required (Godot builds with `-fno-exceptions`) |
 | Memory | arena ≤ 64 MiB, bump allocation in SDK | real allocator (dlmalloc-class) over the arena; **arena limit raised to several GiB** |
 | Threads | none | Godot's Web build is single-threaded; start without threads (explicit single-thread contract), cooperative threads later if needed |
@@ -77,7 +77,7 @@ Musha-OS は 0.x 系で GPU ドライバーを**持たない**。3 つの選択�
 
 | 要求 | 現在の Musha-OS | 埋めるもの |
 |---|---|---|
-| C/C++ 標準ライブラリー | 無し（libc 無し） | **libc 層**：musl（MIT）を Musha の syscall 上に移植。静的リンクのみ |
+| C/C++ 標準ライブラリー | 無し（libc 無し） | **libc 層**（[Musha POSIX プロファイル](posix-profile.md)に従う）：mlibc か musl（MIT）を Musha の syscall 上に移植。静的リンクのみ |
 | C++ ランタイム | 無し | libstdc++ か libc++ の静的リンクと RTTI。例外は不要（Godot は `-fno-exceptions`） |
 | メモリー | arena ≤ 64 MiB、SDK は bump 割当て | arena 上の本物のアロケーター（dlmalloc 級）。**arena 上限を数 GiB に引上げ** |
 | スレッド | 無し | Godot の Web 向けビルドは単一スレッド。まずスレッド無し（単一スレッド契約を明示）、必要なら後で協調スレッド |
