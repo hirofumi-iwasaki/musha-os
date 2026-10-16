@@ -19,6 +19,7 @@ enum Op {
     Copy(u16, usize),
     Clear(u16),
     Retain,
+    Command(u16),
 }
 #[derive(Default)]
 struct Peer {
@@ -514,4 +515,314 @@ fn declared_extent_rejection_has_no_io_or_ownership_side_effects() {
     );
     assert_eq!(peer.trace.len(), trace_length);
     assert_eq!(transfer.retained(), 1);
+}
+
+impl musha_bce::registered::Transport for Peer {
+    fn publish_command(&mut self, request: &musha_bce::registration::Request) -> Result<(), Error> {
+        self.op(Op::Command(u16::from_le_bytes(
+            request.bytes[4..6].try_into().unwrap(),
+        )))
+    }
+}
+fn integrated() -> musha_bce::registered::RegisteredTransfer<4> {
+    musha_bce::registered::RegisteredTransfer::new(
+        2,
+        3,
+        musha_bce::wire::ContiguousRegion::new(0x2000, 0x2000, 4).unwrap(),
+        0,
+        100,
+    )
+    .unwrap()
+}
+fn queue_config(cq: bool) -> musha_bce::wire::RegistrationConfig<'static> {
+    musha_bce::wire::RegistrationConfig {
+        qid: if cq { 3 } else { 2 },
+        count: 4,
+        vector_or_cq: if cq { 0 } else { 3 },
+        address: if cq { 0x2000 } else { 0x2100 },
+        stride: if cq { 24 } else { 32 },
+        name: None,
+        out: !cq,
+    }
+}
+fn integrated_ready(peer: &mut Peer) -> musha_bce::registered::RegisteredTransfer<4> {
+    use musha_bce::registered::QueueKind::*;
+    let mut r = integrated();
+    let cq = r
+        .register(peer, Completion, queue_config(true), 0, 100, 100)
+        .unwrap();
+    r.poll_registration(peer, Completion, 1, Some((cq, 0)))
+        .unwrap();
+    let sq = r
+        .register(peer, Submission, queue_config(false), 2, 100, 100)
+        .unwrap();
+    r.poll_registration(peer, Submission, 3, Some((sq, 0)))
+        .unwrap();
+    r
+}
+#[test]
+fn integrated_cq_then_sq_ack_and_extent_gates_precede_all_transfer_io() {
+    use musha_bce::registered::QueueKind::*;
+    let mut p = Peer::default();
+    let mut r = integrated();
+    assert_eq!(r.submit(&mut p, 0x3000, 4, 0, 10), Err(Error::Busy));
+    assert_eq!(
+        r.register(&mut p, Submission, queue_config(false), 0, 10, 10),
+        Err(Error::Busy)
+    );
+    assert!(p.trace.is_empty());
+    let cq = r
+        .register(&mut p, Completion, queue_config(true), 0, 100, 100)
+        .unwrap();
+    assert_eq!(
+        r.register(&mut p, Submission, queue_config(false), 0, 10, 10),
+        Err(Error::Busy)
+    );
+    r.poll_registration(&mut p, Completion, 1, Some((cq, 0)))
+        .unwrap();
+    let sq = r
+        .register(&mut p, Submission, queue_config(false), 2, 100, 100)
+        .unwrap();
+    let old = p.trace.clone();
+    assert_eq!(r.submit(&mut p, 0x3000, 4, 3, 10), Err(Error::Busy));
+    assert_eq!(p.trace, old);
+    r.poll_registration(&mut p, Submission, 4, Some((sq, 0)))
+        .unwrap();
+    for (address, length) in [
+        (0x2000, 4),
+        (0x2100, 4),
+        (0x1ffc, 8),
+        (0x3ffc, 8),
+        (0x3001, 4),
+        (0x3000, 0),
+    ] {
+        assert_eq!(
+            r.submit(&mut p, address, length, 5, 10),
+            Err(Error::Invalid)
+        );
+        assert_eq!(p.trace, old);
+    }
+    r.submit(&mut p, 0x3000, 4, 5, 10).unwrap();
+    assert_eq!(r.retained(), 1);
+}
+#[test]
+fn integrated_wrong_queue_layout_never_publishes_or_consumes_registration() {
+    use musha_bce::registered::QueueKind::*;
+    let mut p = Peer::default();
+    let mut r = integrated();
+    for (count, stride, out, address) in [
+        (3, 24, false, 0x2000),
+        (4, 32, false, 0x2000),
+        (4, 24, true, 0x2000),
+        (4, 24, false, 0x3ffc),
+    ] {
+        let mut c = queue_config(true);
+        c.count = count;
+        c.stride = stride;
+        c.out = out;
+        c.address = address;
+        assert!(r.register(&mut p, Completion, c, 0, 10, 10).is_err());
+        assert!(p.trace.is_empty());
+    }
+    let cq = r
+        .register(&mut p, Completion, queue_config(true), 0, 100, 100)
+        .unwrap();
+    r.poll_registration(&mut p, Completion, 1, Some((cq, 0)))
+        .unwrap();
+    let before = p.trace.clone();
+    let mut c = queue_config(false);
+    c.address = 0x2000;
+    assert_eq!(
+        r.register(&mut p, Submission, c, 2, 10, 10),
+        Err(Error::Invalid)
+    );
+    assert_eq!(p.trace, before);
+    c = queue_config(false);
+    c.vector_or_cq = 7;
+    assert_eq!(
+        r.register(&mut p, Submission, c, 2, 10, 10),
+        Err(Error::Invalid)
+    );
+    assert_eq!(p.trace, before);
+}
+#[test]
+fn integrated_publication_and_registration_ack_failure_quarantine_both_queues() {
+    use musha_bce::{registered::QueueKind::*, registration::State};
+    for sq_failure in [false, true] {
+        for publication in [false, true] {
+            let mut p = Peer::default();
+            let mut r = integrated();
+            if sq_failure {
+                let token = r
+                    .register(&mut p, Completion, queue_config(true), 0, 100, 100)
+                    .unwrap();
+                r.poll_registration(&mut p, Completion, 1, Some((token, 0)))
+                    .unwrap();
+            }
+            if publication {
+                p.fail_at = Some(p.trace.len() + 1);
+            }
+            let kind = if sq_failure { Submission } else { Completion };
+            let expected = if publication {
+                Error::Io
+            } else {
+                Error::Status
+            };
+            let token = r.register(&mut p, kind, queue_config(!sq_failure), 2, 100, 100);
+            if publication {
+                assert_eq!(token, Err(expected));
+            } else {
+                assert_eq!(
+                    r.poll_registration(&mut p, kind, 3, Some((token.unwrap(), 7))),
+                    Err(expected)
+                );
+            }
+            assert_eq!(
+                r.states(),
+                (State::Quarantined(expected), State::Quarantined(expected))
+            );
+            assert!(p.retained);
+            let before = p.trace.clone();
+            assert_eq!(r.submit(&mut p, 0x3000, 4, 4, 10), Err(expected));
+            r.stop(&mut p);
+            assert_eq!(p.trace, before);
+        }
+    }
+}
+#[test]
+fn integrated_failed_cq_ack_retains_ownership_and_rejects_all_later_activity() {
+    use musha_bce::{registered::QueueKind::*, registration::State};
+    let mut p = Peer::default();
+    let mut r = integrated_ready(&mut p);
+    p.payload = vec![9, 8, 7, 6];
+    r.submit(&mut p, 0x3000, 4, 4, 100).unwrap();
+    p.complete(0);
+    p.cq[16..18].copy_from_slice(&2u16.to_le_bytes());
+    p.fail_at = Some(p.trace.len() + 6);
+    let mut out = [0; 4];
+    assert_eq!(r.poll(&mut p, 5, &mut out), Err(Error::Io));
+    assert_eq!(out, [9, 8, 7, 6]);
+    assert_eq!(r.retained(), 1);
+    assert_eq!(
+        r.states(),
+        (State::Quarantined(Error::Io), State::Quarantined(Error::Io))
+    );
+    let before = p.trace.clone();
+    assert_eq!(
+        r.poll_registration(&mut p, Submission, 6, None),
+        Err(Error::Io)
+    );
+    assert_eq!(r.poll(&mut p, 6, &mut out), Err(Error::Io));
+    assert_eq!(r.submit(&mut p, 0x3000, 4, 6, 100), Err(Error::Io));
+    r.stop(&mut p);
+    assert_eq!(p.trace, before);
+}
+#[test]
+fn integrated_delayed_completion_and_ring_wrap_retire_only_after_cq_ack() {
+    let mut p = Peer::default();
+    let mut r = integrated_ready(&mut p);
+    p.payload = vec![1, 2, 3, 4];
+    let mut out = [0; 4];
+    for n in 0..13 {
+        let now = 4 + n * 3;
+        r.submit(&mut p, 0x3000, 4, now, 100).unwrap();
+        assert_eq!(r.poll(&mut p, now + 1, &mut out), Ok(None));
+        assert_eq!(r.retained(), 1);
+        p.complete((n % 4) as u16);
+        p.cq[16..18].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(r.poll(&mut p, now + 2, &mut out), Ok(Some(4)));
+        assert_eq!(r.retained(), 0);
+        assert_eq!(out, [1, 2, 3, 4]);
+    }
+}
+#[test]
+fn integrated_timeout_and_shutdown_keep_pending_allocation_terminal() {
+    for stop in [false, true] {
+        let mut p = Peer::default();
+        let mut r = integrated_ready(&mut p);
+        r.submit(&mut p, 0x3000, 4, 4, 10).unwrap();
+        let expected = if stop {
+            r.stop(&mut p);
+            Error::Stopped
+        } else {
+            Error::Timeout
+        };
+        let mut out = [0; 4];
+        assert_eq!(r.poll(&mut p, 14, &mut out), Err(expected));
+        assert_eq!(r.retained(), 1);
+        assert!(p.retained);
+        let before = p.trace.clone();
+        p.complete(0);
+        p.cq[16..18].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(r.poll(&mut p, 15, &mut out), Err(expected));
+        assert_eq!(r.submit(&mut p, 0x3000, 4, 15, 10), Err(expected));
+        assert_eq!(p.trace, before);
+    }
+}
+#[test]
+fn integrated_reconstruction_still_does_not_prove_hardware_reset() {
+    use musha_bce::registered::QueueKind::*;
+    let mut p = Peer::default();
+    let mut old = integrated();
+    let a = old
+        .register(&mut p, Completion, queue_config(true), 0, 100, 100)
+        .unwrap();
+    old.stop(&mut p);
+    assert_eq!(
+        old.poll_registration(&mut p, Completion, 1, Some((a, 0))),
+        Err(Error::Stopped)
+    );
+    let mut fresh = integrated();
+    let b = fresh
+        .register(&mut p, Completion, queue_config(true), 0, 100, 100)
+        .unwrap();
+    assert_eq!(a, b);
+    // Never inject a stale command reply into fresh metadata: no hardware epoch
+    // exists on wire. No reset/reclaim API is offered by this wrapper either.
+}
+
+#[test]
+fn integrated_registration_deadline_poll_budget_and_cross_queue_clock_are_terminal() {
+    use musha_bce::{registered::QueueKind::*, registration::State};
+    for case in 0..3 {
+        let mut p = Peer::default();
+        let mut r = integrated();
+        let token = r
+            .register(&mut p, Completion, queue_config(true), 2, 10, 1)
+            .unwrap();
+        let expected = match case {
+            0 => {
+                assert_eq!(
+                    r.poll_registration(&mut p, Completion, 12, Some((token, 0))),
+                    Err(Error::Timeout)
+                );
+                Error::Timeout
+            }
+            1 => {
+                assert_eq!(r.poll_registration(&mut p, Completion, 3, None), Ok(false));
+                assert_eq!(
+                    r.poll_registration(&mut p, Completion, 4, Some((token, 0))),
+                    Err(Error::PollLimit)
+                );
+                Error::PollLimit
+            }
+            _ => {
+                r.poll_registration(&mut p, Completion, 3, Some((token, 0)))
+                    .unwrap();
+                assert_eq!(
+                    r.register(&mut p, Submission, queue_config(false), 2, 10, 10),
+                    Err(Error::ClockBackwards)
+                );
+                Error::ClockBackwards
+            }
+        };
+        assert_eq!(
+            r.states(),
+            (State::Quarantined(expected), State::Quarantined(expected))
+        );
+        assert!(p.retained);
+        let before = p.trace.clone();
+        assert_eq!(r.submit(&mut p, 0x3000, 4, 20, 10), Err(expected));
+        assert_eq!(p.trace, before);
+    }
 }
