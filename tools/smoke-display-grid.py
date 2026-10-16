@@ -28,7 +28,7 @@ def read_screen():
     v=0
     for x in range(5):
      at=(((row*10+y)*scale)*w+(col*6+x)*scale)*3
-     v=(v<<1)|(data[at:at+3] in [bytes([240]*3),bytes([240,220,100]),bytes([0,240,100]),bytes([0,220,240])])
+     v=(v<<1)|(data[at:at+3] in [bytes([255]*3)])
     bits.append(v)
    line+=font.get(tuple(bits),'?')
   lines.append(line.rstrip())
@@ -50,15 +50,13 @@ with (o/'qemu.log').open('w') as log:
    ctl('qmp_capabilities')
    while time.monotonic()<end:
     ctl('screendump',{'filename':str(o/'screen.ppm')});rows=read_screen()
-    if rows and ('starting...' if a.stage=='starting' else 'PCI DEVICES') in '\n'.join(rows):break
+    if rows and ('boot: starting musha-os' if a.stage=='starting' else 'pci: devices=') in '\n'.join(rows):break
     time.sleep(.1)
    else:raise RuntimeError('Stage not visible')
    (o/'screen.txt').write_text('\n'.join(rows)+'\n')
-   assert 'Musha-OS' in rows[2]
-   if a.stage=='diagnostics':
-    assert 'CORE READY' in rows[3] and 'PCI DEVICES' in rows[6]
-    panel=w//(6*scale)//2 if w>=1200 else 2;start=2 if w>=1200 else 20
-    assert 'MUSHA-OS' in rows[start][panel:]
+   expected = 'boot: starting musha-os' if a.stage == 'starting' else 'pci: devices='
+   assert expected in '\n'.join(rows), rows
+   assert any(line.startswith('[') for line in rows), 'devices timestamp missing at left origin'
    (o/'result.json').write_text(json.dumps({'passed':True,'resolution':[w,h],'stage':a.stage,'scale':scale,'efi_sha256':hashlib.sha256(a.efi.read_bytes()).hexdigest(),'scope':'test-only exact GOP selection and stage hold; not distribution EFI','command':cmd},indent=2)+'\n')
  finally:
   proc.terminate();proc.wait(timeout=10);qmp.unlink(missing_ok=True)

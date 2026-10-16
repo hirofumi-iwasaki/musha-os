@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """Real r2 syscalls through USB external ELF path; disposable QEMU image only."""
-import argparse, hashlib, importlib.util, json, os, shutil, socket, subprocess, time
+import argparse, hashlib, importlib.util, json, os, shutil, socket, subprocess, time, re
 from pathlib import Path
+def raw_application_channel(text):
+    # These fixed fixtures log each label/value as single-line syscall chunks.
+    # The primary mirror precedes each legacy raw chunk and inserts a diagnostic
+    # newline; remove only that mirror, preserving raw order and payload bytes.
+    # Never join arbitrary whitespace or relax the exact numeric expectations.
+    return re.sub(r'MUSHA: LOG [^\n]*\n', '', text)
+
 ROOT = Path(__file__).resolve().parents[1]
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--elf', type=Path, required=True)
@@ -111,16 +118,18 @@ try:
                         if 'APP_INPUT_STOPPED DMA_DISABLED' in text:
                             break
                         time.sleep(0.05)
-                    assert ('R2 MOUSE EXIT' if a.mouse_only else 'R2 Q EXIT') in text and 'EXTERNAL_APP_EXIT' in text and ('APP_INPUT_STOPPED DMA_DISABLED' in text), text
+                    app_text = raw_application_channel(text)
+                    report['application_channel'] = 'legacy raw bytes after removing primary LOG mirror records'
+                    assert ('R2 MOUSE EXIT' if a.mouse_only else 'R2 Q EXIT') in app_text and 'EXTERNAL_APP_EXIT' in text and ('APP_INPUT_STOPPED DMA_DISABLED' in text), text
                     assert 'EXTERNAL_APP_EXIT_STATUS' not in text and 'EXCEPTION VECTOR=' not in text, text
                     if not a.mouse_only:
-                        assert text.count('R2 KEY DOWN') >= 2 and text.count('R2 KEY UP') >= 2, text
+                        assert app_text.count('R2 KEY DOWN') >= 2 and app_text.count('R2 KEY UP') >= 2, text
                     if a.mouse:
                         for marker in ['R2 MOUSE', 'DX 0x0000000000000011', 'DY 0xFFFFFFFFFFFFFFF7', 'BUTTONS 0x0000000000000001']:
-                            assert marker in text, text
-                        assert 'WHEEL 0x0000000000000001' in text or 'WHEEL 0xFFFFFFFFFFFFFFFF' in text, text
+                            assert marker in app_text, text
+                        assert 'WHEEL 0x0000000000000001' in app_text or 'WHEEL 0xFFFFFFFFFFFFFFFF' in app_text, text
                     if a.tablet:
-                        assert 'R2 MOUSE' not in text, text
+                        assert 'R2 MOUSE' not in app_text, text
                 else:
                     if a.expect == 'removed':
                         call('device_del', {'id': 'k'})

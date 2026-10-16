@@ -85,8 +85,8 @@ def screen_rows(path, viewer=False):
     w,h=map(int,header.groups()); pixels=data[header.end():]; scale=max(1,min(4,(h+300)//600))
     if viewer:
         scale=max(1,min(scale,w//(6*84),h//(10*32)))
-    columns=max(1,min(80,w//(6*scale)-4)); visible_rows=max(1,min(28 if viewer else 24,h//(10*scale)-4))
-    foreground=bytes([218,228,238]) if viewer else bytes([240]*3)
+    columns=max(1,min(80,w//(6*scale)-4)) if viewer else w//(6*scale); visible_rows=max(1,min(28,h//(10*scale)-4)) if viewer else h//(10*scale)
+    foreground=bytes([218,228,238]) if viewer else bytes([255]*3)
     font={}
     for key,values in re.findall(r"(b'(?:\\.|[^'])+'|\d+) => \[([\d, ]+)\]",(ROOT/'framebuffer/src/lib.rs').read_text()):
         c=ast.literal_eval(key);c=c[0] if isinstance(c,bytes) else c
@@ -100,7 +100,7 @@ def screen_rows(path, viewer=False):
             for y in range(7):
                 v=0
                 for x in range(5):
-                    at=(((20+row*10+y)*scale)*w+(12+col*6+x)*scale)*3
+                    at=((((20 if viewer else 0)+row*10+y)*scale)*w+((12 if viewer else 0)+col*6+x)*scale)*3
                     v=(v<<1)|(pixels[at:at+3]==foreground)
                 bits.append(v)
             line+=font.get(tuple(bits),'?')
@@ -118,7 +118,7 @@ def main():
     p.add_argument('--partition-type', choices=['basic-data','esp'], default='basic-data')
     p.add_argument('--case',default='all',help='Functional cases by default; timing-16384/1048576/16777216 are explicit measurements')
     p.add_argument('--extra-empty-xhci',action='store_true',help='Add an empty controller for attach-wait regression')
-    p.add_argument('--diagnostic-timing',action='store_true',help='Require timing records; diagnostics-detail exits before network startup')
+    p.add_argument('--diagnostic-timing',action='store_true',help='Require retained timing records; sequential diagnostics keep the normal lifecycle')
     p.add_argument('--hub-depth',type=int,choices=range(1,6),help='USB2 hub chain for the keyboard (Hello timing regression)')
     p.add_argument('--efi',type=Path,help='Use an already built candidate; --normal supplies screen-only checks')
     p.add_argument('--resolution', help='Explicit GOP mode WIDTHxHEIGHT (EDID disabled)')
@@ -263,7 +263,7 @@ def main():
                             if hotplug is not None:
                                 now=time.monotonic()
                                 if attach_seen is None and 'MUSHA: ATTACH WAIT START' in text: attach_seen=now
-                                if hold_seen is None and 'DIAGNOSTIC_CAPTURE_LOOP' in text: hold_seen=now
+                                if hold_seen is None and 'ERROR: storage: no readable boot media found' in text: hold_seen=now
                                 if attach_seen is not None and not added and now-attach_seen>=hotplug/1000:
                                     control('device_add',{'driver':'usb-storage','id':'storage','drive':'data','bus':'x.0','port':'1'});added=True
                                     (d/'hotplug.json').write_text(json.dumps({'delay_ms':hotplug,'actual_host_delay_ms':(now-attach_seen)*1000,'hold_before_add':hold_seen is not None},indent=2)+'\n')
@@ -291,7 +291,7 @@ def main():
                         time.sleep(.3);control('screendump',{'filename':str(d/'screen.ppm')})
                     if not a.normal and len(payload)>=1048576 and name!='too-large':
                         loading_text='\n'.join(screen_rows(d/'loading.ppm'));(d/'loading.txt').write_text(loading_text+'\n')
-                        assert 'Loading AUTORUN.ELF ...' in loading_text,loading_text
+                        assert 'app: loading autorun.elf' in text,text
                     if name=='hello-high-resolution':
                         import re
                         dimensions=re.match(rb'P6\s+(\d+)\s+(\d+)',(d/'screen.ppm').read_bytes())
@@ -302,21 +302,31 @@ def main():
                         assert text.index('EXTERNAL_ELF_READ_COMPLETE') < text.index('XHCI_QUIESCED',text.index('EXTERNAL_ELF_READ_COMPLETE')) < handoff < text.index('RING3_ELF_ENTERING'),text
                         assert handoff < text.index('APP_RECOVERED') < text.index('APP_ARENA_SCRUBBED VIEWER_RESTART'),text
                         if a.diagnostic_timing:
-                            assert 'MUSHA: TIMING TIME' in text and 'MUSHA: NET_READY' not in text,text
-                        else:
-                            assert text.index('NET_QUIESCED DMA_DISABLED') < handoff,text
+                            assert 'time: bdf=0x' in text,text
+                        assert text.index('NET_QUIESCED DMA_DISABLED') < handoff,text
                         assert text.index('OS_READY EXTERNAL_APP') < text.index('APP_ENTERING EXTERNAL_APP') < text.index('APP_RUNNING EXTERNAL_APP'),text
                         assert 'OS_READY FILE_VIEWER' not in text,text
                     if hotplug is not None:
                         assert added and attach_seen is not None
-                        assert text.count('MUSHA: RESCAN 1/1 START')==1,text
+                        rescans=text.count('MUSHA: RESCAN 1/1 START')
+                        assert rescans in (0,1),text
                         assert text.count('XHCI_RESET_OK')==(1 if kind=='no-medium' else 4),text
-                        rescan_text=text.split('MUSHA: RESCAN 1/1 START',1)[1].split('MUSHA: RESCAN 1/1 DONE',1)[0]
-                        assert 'XHCI_RESET_OK' not in rescan_text,rescan_text
+                        if rescans:
+                            rescan_text=text.split('MUSHA: RESCAN 1/1 START',1)[1].split('MUSHA: RESCAN 1/1 DONE',1)[0]
+                            assert 'XHCI_RESET_OK' not in rescan_text,rescan_text
+                            assert text.count('MUSHA: RESCAN 1/1 DONE')==1,text
+                        else:
+                            # Arrival during the first bounded attach wait needs
+                            # no rescan. Require actual readable data before its
+                            # first host stop, not merely a plugged device.
+                            assert kind=='exit',text
+                            assert text.index('STORAGE_PROBE_OK READ_ONLY')<text.index('XHCI_QUIESCED'),text
+                            assert text.index('FAT32_FILE_OK')<text.index('EXTERNAL_ELF_READING'),text
+                        (d/'attach-path.json').write_text(json.dumps({'rescans':rescans,'path':'rescan' if rescans else 'first bounded attach wait'},indent=2)+'\n')
                         if kind=='exit': assert 'Hello Musha-OS!' in text and 'ELF exited: status 0' in screen,screen+text
                     if kind=='no-medium':
                         assert hold_seen is not None and hold_seen-attach_seen<5,text
-                        assert 'DIAGNOSTIC_HOLD NO_MEDIUM' in text and 'RING3_ELF_ENTERING' not in text,text
+                        assert 'ERROR: storage: no readable boot media found' in text and 'Musha-OS halted' in text and 'RING3_ELF_ENTERING' not in text and 'MUSHA: OS_READY ' not in text,text
                         assert 'MUSHA: RESCAN 1/1 DONE' in text,text
                     if kind=='exit':
                         assert f'ELF exited: status {detail}.' in screen,screen
@@ -333,9 +343,19 @@ def main():
                                 log_rows=[]
                             if name=='log-long':
                                 if a.normal:
-                                    columns=len(log_rows[0]);remainder=4096%columns
-                                    assert log_rows[0]=='Z'*columns and log_rows[-1].rstrip()=='Z'*(remainder or columns),log_screen
-                                    assert set(''.join(log_rows).strip()) <= set('Z '),log_screen
+                                    columns=len(log_rows[0]); rows=len(log_rows)
+                                    expected=[[' ']*columns for _ in range(rows)]
+                                    row=column=0
+                                    def newline():
+                                        nonlocal row,column
+                                        column=0
+                                        if row+1<rows: row+=1
+                                        else: expected.pop(0);expected.append([' ']*columns)
+                                    for ch in 'Musha-OS 0.4.0 ready\n'+'Z'*4096:
+                                        if ch=='\n': newline();continue
+                                        if column==columns: newline();column=2
+                                        expected[row][column]=ch;column+=1
+                                    assert log_rows==[''.join(line) for line in expected],log_screen
                                 else: assert 'Z'*4096 in text,text
                             else:
                                 if a.normal:

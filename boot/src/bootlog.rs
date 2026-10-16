@@ -1,243 +1,335 @@
 // SPDX-License-Identifier: Apache-2.0
-//! BSP-only startup log. Application/viewer rendering is explicitly outside this policy.
-use core::{cell::UnsafeCell, fmt::Write};
-use musha_framebuffer::{Framebuffer, OutputGuard, metrics};
+//! Single BSP console and firmware-independent startup history.
+use core::{
+    cell::UnsafeCell,
+    fmt::{self, Write},
+    sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
+};
+use musha_framebuffer::{Framebuffer, boot_console::Console};
 use musha_platform::{
-    config::{Config, LogLevel},
-    diagnostics::Line,
+    boot_log::{Level, Ring},
+    config::{Config, Display, LogLevel},
 };
 struct State {
-    fb: Option<Framebuffer>,
+    ring: Ring,
+    console: Console,
     config: Config,
-    row: usize,
     ready: bool,
-    media: bool,
-    keyboard: bool,
+    early: bool,
+}
+static MEDIA_SEEN: AtomicBool = AtomicBool::new(false);
+static LAST_MS: AtomicU64 = AtomicU64::new(0);
+static ERROR_SEEN: AtomicBool = AtomicBool::new(false);
+static LOG_MODE: AtomicU8 = AtomicU8::new(LogLevel::Ready as u8);
+static BUSY: AtomicBool = AtomicBool::new(false);
+struct Lease;
+impl Drop for Lease {
+    fn drop(&mut self) {
+        BUSY.store(false, Ordering::Release);
+    }
+}
+fn lease() -> Option<Lease> {
+    BUSY.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .ok()
+        .map(|_| Lease)
 }
 struct Shared(UnsafeCell<State>);
-unsafe impl Sync for Shared {} // BSP only; no mutable reference is retained across callbacks.
+unsafe impl Sync for Shared {} // BSP only, interrupts disabled; no references escape.
 static STATE: Shared = Shared(UnsafeCell::new(State {
-    fb: None,
+    ring: Ring::new(),
+    console: Console::new(),
     config: Config {
         log: LogLevel::Ready,
-        display: musha_platform::config::Display::Max,
+        display: Display::Max,
         pair: false,
     },
-    row: 0,
     ready: false,
-    media: false,
-    keyboard: false,
+    early: true,
 }));
+fn visible(config: LogLevel, level: Level) -> bool {
+    match level {
+        Level::Error | Level::Application => true,
+        Level::Ready => config != LogLevel::Quiet,
+        Level::Phases => matches!(config, LogLevel::Phases | LogLevel::Devices),
+        Level::Devices => config == LogLevel::Devices,
+    }
+}
+struct Text {
+    bytes: [u8; 4096],
+    used: usize,
+}
+impl Write for Text {
+    fn write_str(&mut self, value: &str) -> fmt::Result {
+        let end = self
+            .used
+            .checked_add(value.len())
+            .filter(|n| *n < self.bytes.len())
+            .ok_or(fmt::Error)?;
+        self.bytes[self.used..end].copy_from_slice(value.as_bytes());
+        self.used = end;
+        Ok(())
+    }
+}
+pub fn event(level: Level, tag: &str, args: fmt::Arguments<'_>) {
+    let mut text = Text {
+        bytes: [0; 4096],
+        used: 0,
+    };
+    // Fatal/NMI paths never reenter a possibly borrowed PM-clock state.
+    let ms = if level == Level::Error {
+        LAST_MS.load(Ordering::Relaxed)
+    } else {
+        let now = crate::bootstate::epoch_now().unwrap_or(0);
+        LAST_MS.store(now, Ordering::Relaxed);
+        now
+    };
+    let timestamp = level == Level::Devices || (devices() && level != Level::Application);
+    let result = if timestamp {
+        if tag.is_empty() {
+            write!(text, "[{:>3}.{:03}] {}", ms / 1000, ms % 1000, args)
+        } else {
+            write!(
+                text,
+                "[{:>3}.{:03}] {}: {}",
+                ms / 1000,
+                ms % 1000,
+                tag,
+                args
+            )
+        }
+    } else if tag.is_empty() {
+        text.write_fmt(args)
+    } else {
+        write!(text, "{}: {}", tag, args)
+    };
+    let level = if result.is_err() { Level::Error } else { level };
+    if result.is_err() {
+        text.used = 0;
+        let _ = text.write_str("ERROR: log: record exceeds 4096 bytes");
+    }
+    if text.used == 0 || text.bytes[text.used - 1] != b'\n' {
+        text.bytes[text.used] = b'\n';
+        text.used += 1;
+    }
+    if matches!(level, Level::Devices | Level::Phases) {
+        text.bytes[..text.used].make_ascii_lowercase();
+    }
+    emit(level, ms, &text.bytes[..text.used]);
+}
+fn emit(level: Level, ms: u64, bytes: &[u8]) {
+    if level == Level::Error {
+        ERROR_SEEN.store(true, Ordering::Relaxed);
+    }
+    let Some(_lease) = lease() else {
+        // A fault during rendering must not create a second mutable reference.
+        crate::debug(b"MUSHA: LOG_REENTRANT ");
+        crate::debug(bytes);
+        return;
+    };
+    unsafe {
+        let s = &mut *STATE.0.get();
+        s.ring.push(level, ms, s.early, bytes);
+        if visible(s.config.log, level) {
+            if level == Level::Error {
+                s.console.set_visible(true);
+            }
+            s.console.append(bytes);
+        }
+    }
+    crate::debug(b"MUSHA: LOG ");
+    crate::debug(bytes);
+    if !bytes.ends_with(b"\n") {
+        crate::debug(b"\n");
+    }
+}
+pub fn detail(tag: &str, args: fmt::Arguments<'_>) {
+    event(Level::Devices, tag, args);
+}
+pub fn app(bytes: &[u8]) {
+    emit(
+        Level::Application,
+        crate::bootstate::epoch_now().unwrap_or(0),
+        bytes,
+    );
+}
 pub fn configure(config: Config) {
+    let Some(_lease) = lease() else {
+        return;
+    };
+    LOG_MODE.store(config.log as u8, Ordering::Relaxed);
     unsafe {
         (*STATE.0.get()).config = config;
     }
-    musha_framebuffer::set_output_enabled(config.log == LogLevel::Devices);
+    musha_framebuffer::set_output_enabled(true);
 }
 pub fn pair_requested() -> bool {
     unsafe { (*STATE.0.get()).config.pair }
 }
 pub fn devices() -> bool {
-    unsafe { (*STATE.0.get()).config.log == LogLevel::Devices }
+    LOG_MODE.load(Ordering::Relaxed) == LogLevel::Devices as u8
+}
+pub fn bind(fb: Framebuffer) {
+    let Some(_lease) = lease() else {
+        return;
+    };
+    unsafe {
+        let _ = (*STATE.0.get()).console.bind(fb);
+    }
 }
 pub fn initialize(fb: Framebuffer, settings: crate::settings::Settings, fallback: bool) {
-    unsafe {
-        let s = &mut *STATE.0.get();
-        s.fb = Some(fb);
-        s.row = 0;
-        s.ready = false;
-        s.media = false;
-        s.keyboard = false;
-    }
-    phase("UEFI", "configuration copied; firmware files closed");
+    bind(fb);
+    phase("boot", "starting Musha-OS 0.4.0");
     phase(
-        "CONFIG",
+        "settings",
         match settings.state {
-            crate::settings::ReadState::Loaded => "loaded",
-            crate::settings::ReadState::MissingDirectory => "SETTINGS absent; defaults",
-            crate::settings::ReadState::MissingFile => "CONFIG absent; defaults",
-            crate::settings::ReadState::Malformed => "malformed; all defaults",
-            crate::settings::ReadState::NonFat32 => "boot device not FAT32; defaults",
-            _ => "firmware read unavailable; defaults",
+            crate::settings::ReadState::Loaded => "CONFIG.TXT loaded",
+            crate::settings::ReadState::Malformed => "CONFIG.TXT malformed; defaults",
+            crate::settings::ReadState::NonFat32 => "boot device is not FAT32; defaults",
+            _ => "CONFIG.TXT unavailable; defaults",
         },
     );
+    phase("display", "GOP mode selected");
+    detail(
+        "settings",
+        format_args!(
+            "{:?} log={:?} display={:?} pair={}",
+            settings.state, settings.config.log, settings.config.display, settings.config.pair
+        ),
+    );
+    detail(
+        "gop",
+        format_args!(
+            "{}x{} stride={} format={} base=0x{:x} bytes={}",
+            fb.width, fb.height, fb.stride, fb.format, fb.base, fb.bytes
+        ),
+    );
     if settings.forced {
-        phase("LOG", "devices forced by F8/8");
+        phase("settings", "devices selected by F8/8");
     }
     if fallback {
-        phase("DISPLAY", "requested mode unavailable; max fallback");
+        phase("gop", "requested mode unavailable; maximum selected");
     }
-    crate::debug(b"MUSHA: CONFIG LOG/DISPLAY/PAIR ");
-    let mut line = Line::EMPTY;
-    let _ = write!(
-        line,
-        "{:?} {:?} {} {:?}\n",
-        settings.config.log, settings.config.display, settings.config.pair, settings.state
-    );
-    crate::debug(line.as_str().as_bytes());
+}
+pub fn firmware_exited() {
+    unsafe {
+        (*STATE.0.get()).early = false;
+    }
 }
 pub fn phase(name: &str, status: &str) {
-    let (config, fb, row) = unsafe {
-        let s = &mut *STATE.0.get();
-        let row = s.row;
-        s.row = s.row.saturating_add(1);
-        (s.config, s.fb, row)
-    };
-    let mut line = Line::EMPTY;
-    let _ = write!(line, "{}: {}", name, status);
-    crate::debug(b"MUSHA: PHASE ");
-    crate::debug(line.as_str().as_bytes());
-    crate::debug(b"\n");
-    if !matches!(config.log, LogLevel::Phases | LogLevel::Devices) {
-        return;
-    }
-    if let Some(fb) = fb {
-        let _visible = OutputGuard::allow();
-        let m = metrics::Metrics::new(fb.width, fb.height);
-        if config.log == LogLevel::Devices {
-            // Latest phase occupies a dedicated footer, below the existing diagnostic grid.
-            let y = fb.height.saturating_sub(40 * m.scale);
-            unsafe {
-                for py in y..(y + 8 * m.scale).min(fb.height) {
-                    for x in 0..fb.width {
-                        fb.pixel(x, py, fb.color(12, 20, 32));
-                    }
-                }
-                fb.text_scaled(line.as_str(), 8, y, fb.color(190, 210, 230), m.scale);
-            }
-            return;
-        }
-        // Log-only lines; no whole-background repaint at phases level.
-        unsafe {
-            fb.text_grid(
-                line.as_str(),
-                metrics::LABEL,
-                metrics::MARGIN + row.min(m.rows.saturating_sub(5)),
-                fb.color(190, 210, 230),
-            );
-        }
-    }
+    event(Level::Phases, name, format_args!("{}", status));
+}
+pub fn media_seen() -> bool {
+    MEDIA_SEEN.load(Ordering::Acquire)
+}
+// A boot-volume observation outlives its scoped USB file handles.
+pub fn retain_media_observation() {
+    MEDIA_SEEN.store(true, Ordering::Release);
 }
 pub fn media_ready(exfat: bool) {
-    unsafe {
-        (*STATE.0.get()).media = true;
-    }
+    retain_media_observation();
     phase(
-        "Boot media",
+        "storage",
         if exfat {
-            "exFAT data readable"
+            "exFAT readable"
         } else {
             "FAT32 readable"
         },
     );
 }
 pub fn keyboard(available: bool) {
-    unsafe {
-        (*STATE.0.get()).keyboard = available;
-    }
     phase(
-        "Keyboard",
+        "keyboard",
         if available {
-            "USB boot keyboard found"
+            "USB keyboard available"
         } else {
-            "not found (application may be keyboard-free)"
+            "unavailable"
         },
     );
 }
 pub fn ready(application: bool) {
-    let (media, keyboard, already, pair) = unsafe {
-        let s = &*STATE.0.get();
-        (s.media, s.keyboard, s.ready, s.config.pair)
-    };
-    if already {
-        return;
-    }
-    phase(
-        "Bluetooth",
-        if crate::bluetooth::present() {
-            "LE service configured; hardware unverified"
-        } else if pair {
-            "USB HCI adapter unavailable; pair request retained"
-        } else {
-            "USB HCI adapter unavailable"
-        },
-    );
-    phase(
-        if application { "Application" } else { "Viewer" },
-        "starting",
-    );
-    if !media {
-        failure("BOOT MEDIA", "unavailable; recovery UI only");
-        return;
-    }
-    if !application && !keyboard {
-        failure("KEYBOARD", "required for viewer; unavailable");
-        return;
-    }
     unsafe {
+        if (*STATE.0.get()).ready {
+            return;
+        }
         (*STATE.0.get()).ready = true;
     }
-    if devices() {
-        crate::diagnostics::startup_snapshot();
-    }
-    phase("Ready", "required device discovery complete");
-    overlay();
+    phase(if application { "app" } else { "viewer" }, "starting");
+    event(
+        Level::Ready,
+        "",
+        format_args!("Musha-OS {} ready", include_str!("../../VERSION").trim()),
+    );
     crate::debug(b"MUSHA: STARTUP_READY\n");
     #[cfg(feature = "startup-config-probe")]
+    dump();
+    #[cfg(feature = "startup-config-probe")]
     if option_env!("MUSHA_BOOT_PROBE_HOLD") == Some("ready") {
-        crate::debug(b"MUSHA: STARTUP READY HOLD\n");
         loop {
             core::hint::spin_loop();
         }
     }
 }
-/// Only unused screen space below both existing fixed UIs is eligible for the footer.
-pub fn overlay() {
-    let (fb, config, ready) = unsafe {
-        let s = &*STATE.0.get();
-        (s.fb, s.config, s.ready)
-    };
-    if !ready || config.log == LogLevel::Quiet {
-        return;
-    }
-    let Some(fb) = fb else {
+pub fn viewer(hidden: bool) {
+    musha_framebuffer::flush_writes();
+    let Some(_lease) = lease() else {
         return;
     };
-    let m = metrics::Metrics::new(fb.width, fb.height);
-    let viewer = metrics::Metrics::viewer(fb.width, fb.height);
-    let ui_bottom = (32 * viewer.line_pitch).max(26 * m.line_pitch);
-    let y = fb.height.saturating_sub(16 * m.scale);
-    if y.saturating_sub(8 * m.scale) <= ui_bottom {
-        return;
-    }
-    let _visible = OutputGuard::allow();
     unsafe {
-        for py in y..(y + 8 * m.scale).min(fb.height) {
-            for px in 0..(200 * m.scale).min(fb.width) {
-                fb.pixel(px, py, fb.color(12, 20, 32));
-            }
-        }
-        fb.text_scaled("Musha-OS ready.", 8, y, fb.color(160, 240, 160), m.scale);
-    }
-    if devices() {
-        crate::timing::summary(fb, y.saturating_sub(8 * m.scale), m.scale);
+        (*STATE.0.get()).console.set_visible(!hidden);
     }
 }
-pub fn failure(stage: &str, error: &str) {
-    let fb = unsafe { (*STATE.0.get()).fb };
-    crate::debug(b"MUSHA: STARTUP FAILURE ");
-    crate::debug(stage.as_bytes());
-    crate::debug(b": ");
-    crate::debug(error.as_bytes());
-    crate::debug(b"\n");
-    if let Some(fb) = fb {
-        let _visible = OutputGuard::allow();
-        let m = metrics::Metrics::new(fb.width, fb.height);
-        let y = fb.height.saturating_sub(24 * m.scale);
-        let mut line = Line::EMPTY;
-        let _ = write!(line, "FAILED {}: {}", stage, error);
-        unsafe {
-            fb.text_scaled(line.as_str(), 8, y, fb.color(255, 80, 80), m.scale);
+pub fn application_screen() {
+    let Some(_lease) = lease() else {
+        return;
+    };
+    unsafe {
+        let s = &mut *STATE.0.get();
+        s.console.clear_black();
+        s.console.set_visible(true);
+    }
+}
+/// No footer exists; retained only while safe-point callers are migrated.
+pub fn overlay() {}
+pub fn failure(stage: &str, reason: &str) {
+    event(Level::Error, "ERROR", format_args!("{}: {}", stage, reason));
+}
+pub fn halted() {
+    if !ERROR_SEEN.load(Ordering::Relaxed) {
+        return;
+    }
+    event(Level::Error, "", format_args!("Musha-OS halted"));
+}
+
+/// Dump retained records without changing pixels, device state or timestamps.
+pub fn dump() {
+    let Some(_lease) = lease() else {
+        return;
+    };
+    unsafe {
+        let s = &*STATE.0.get();
+        let mut metadata = Text {
+            bytes: [0; 4096],
+            used: 0,
+        };
+        let _ = write!(
+            metadata,
+            "MUSHA: RING_META bytes={} lost={}\n",
+            s.ring.used(),
+            s.ring.lost()
+        );
+        crate::debug(&metadata.bytes[..metadata.used]);
+        crate::debug(b"MUSHA: RING_BEGIN\n");
+        for record in s.ring.records() {
+            crate::debug(b"MUSHA: RING ");
+            let mut last = b'\n';
+            for byte in record.bytes() {
+                crate::debug(&[byte]);
+                last = byte;
+            }
+            if last != b'\n' {
+                crate::debug(b"\n");
+            }
         }
+        crate::debug(b"MUSHA: RING_END\n");
     }
 }

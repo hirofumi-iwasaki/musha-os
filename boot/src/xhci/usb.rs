@@ -1,6 +1,5 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-use musha_framebuffer::metrics as grid;
 pub(super) mod bluetooth;
 mod file;
 mod hub;
@@ -1284,14 +1283,6 @@ fn run_keyboard(
         b"MUSHA: HID_READY
 ",
     );
-    unsafe {
-        host.framebuffer.text_grid(
-            "KEYBOARD READY",
-            grid::LABEL,
-            grid::KEYBOARD,
-            host.framebuffer.color(0, 240, 100),
-        );
-    }
 
     let mut file_session = match storage.as_deref_mut().and_then(|d| d.prepared.take()) {
         Some(prepared) => Some(file::Session::new(prepared)?),

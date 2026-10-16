@@ -42,7 +42,9 @@ with (out/'qemu.log').open('w') as err:
     if marker in text[start:]:return text.index(marker,start)+len(marker)
     if time.monotonic()>deadline or proc.poll() is not None:raise RuntimeError('Missing '+marker+'\n'+text[-6000:])
     time.sleep(.02)
-  wait('RUNTIME_POLL_READY')
+  if a.case=='no-medium':
+   terminal=wait('Musha-OS halted');wait('MUSHA: RING_END',terminal)
+  else:wait('RUNTIME_POLL_READY')
   qs=socket.socket(socket.AF_UNIX);qs.settimeout(10);qs.connect(str(qmp));stream=qs.makefile('rwb');stream.readline()
   def control(name,args=None):
    stream.write((json.dumps({'execute':name,'arguments':args or {}})+'\n').encode());stream.flush()
@@ -65,7 +67,17 @@ with (out/'qemu.log').open('w') as err:
    if a.apple_double_files:index*=2
    wait(f'VIEWER_FRAME {view} {index:016X} {offset:016X} {len(payload):016X} {fnv(payload):016X}',start)
   if a.case=='no-medium':
-   frame('UNAVAILABLE');screen('no-medium')
+   text=log.read_text()
+   assert 'ERROR: storage: no readable boot media found' in text
+   assert 'MUSHA: OS_READY ' not in text and 'MUSHA: STARTUP_READY' not in text
+   assert 'VIEWER_FRAME' not in text and 'APP_ENTERING' not in text
+   assert text.index('XHCI_QUIESCED DMA_DISABLED') < text.index('ERROR: storage:') < text.index('Musha-OS halted')
+   if 'NET_DHCP_STARTED' in text: assert text.index('NET_QUIESCED DMA_DISABLED') < text.index('ERROR: storage:')
+   screen('no-medium');assert (sha(boot),sha(data))==hashes
+   (out/'result.json').write_text(json.dumps({'passed':True,'case':'required-boot-media-halt','dma_stopped_before_error':True,'no_app_or_viewer':True,'images_unchanged':True},indent=2)+'\n')
+   control('quit');proc.wait(timeout=5)
+   print('PASS: required boot media failure; DMA stopped before monochrome ERROR and halt')
+   raise SystemExit(0)
   else:
    frame('LIST');screen('list')
   if a.case in ('cancel','disconnect','timeout'):

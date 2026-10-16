@@ -3,7 +3,6 @@
 //! PCI configuration mechanism 1: segment zero, firmware-configured buses.
 use core::arch::asm;
 use musha_framebuffer::Framebuffer;
-use musha_framebuffer::metrics as grid;
 
 // The boot CPU is the sole caller; interrupts stay disabled. CF8/CFC transactions
 // cannot interleave. Discovery does not size BARs or reconfigure buses.
@@ -25,7 +24,7 @@ fn field(label: &[u8], value: u64) {
     super::debug(label);
     super::debug(&super::cpu::hex(value));
 }
-pub(crate) fn diagnose(fb: Framebuffer, selected: Controller) {
+pub(crate) fn diagnose(_fb: Framebuffer, selected: Controller) {
     let mut count = 0u64;
     let mut xhci = 0u64;
     let mut intel_lan = 0u64;
@@ -48,6 +47,19 @@ pub(crate) fn diagnose(fb: Framebuffer, selected: Controller) {
                 let class = class_revision >> 8;
                 let revision = class_revision as u8;
                 count += 1;
+                crate::bootlog::detail(
+                    "pci",
+                    format_args!(
+                        "{:02x}:{:02x}.{} {:04x}:{:04x} revision={:02x} class={:06x}",
+                        bus,
+                        device,
+                        function,
+                        id as u16,
+                        id >> 16,
+                        revision,
+                        class
+                    ),
+                );
                 if class == 0x0c0330 {
                     let bdf = ((bus as u16) << 8) | ((device as u16) << 3) | function as u16;
                     let active = selected.base != 0
@@ -97,34 +109,10 @@ pub(crate) fn diagnose(fb: Framebuffer, selected: Controller) {
     field(b" XHCI=", xhci);
     field(b" INTEL_LAN=", intel_lan);
     super::debug(b"\nMUSHA: PCI_ENUMERATION_OK\n");
-    // Discovery is diagnostic: zero devices in a class is reported, not treated
-    // as proof of a working driver or as a reason to stop unrelated hardware.
-    unsafe {
-        fb.text_grid("PCI DEVICES", grid::LABEL, grid::PCI, fb.color(0, 220, 240));
-        let digits = super::cpu::hex(count);
-        fb.text_grid(
-            core::str::from_utf8_unchecked(&digits),
-            grid::VALUE,
-            grid::PCI,
-            fb.color(0, 220, 240),
-        );
-        fb.text_grid("XHCI", grid::LABEL, grid::XHCI, fb.color(0, 220, 240));
-        let digits = super::cpu::hex(xhci);
-        fb.text_grid(
-            core::str::from_utf8_unchecked(&digits),
-            grid::VALUE,
-            grid::XHCI,
-            fb.color(0, 220, 240),
-        );
-        fb.text_grid("INTEL LAN", grid::LABEL, grid::LAN, fb.color(0, 220, 240));
-        let digits = super::cpu::hex(intel_lan);
-        fb.text_grid(
-            core::str::from_utf8_unchecked(&digits),
-            grid::VALUE,
-            grid::LAN,
-            fb.color(0, 220, 240),
-        );
-    }
+    crate::bootlog::detail(
+        "pci",
+        format_args!("devices={} xhci={} intel-lan={}", count, xhci, intel_lan),
+    );
 }
 
 pub(crate) use musha_platform::controllers::{Controller, Controllers, MAX_CONTROLLERS};

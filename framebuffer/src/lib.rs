@@ -51,6 +51,13 @@ impl Framebuffer {
         }
         y.checked_mul(self.stride)?.checked_add(x)?.checked_mul(4)
     }
+    /// Complete a drawing batch before handing off the framebuffer or halting.
+    /// Volatile pixels preserve values but do not drain x86 WC store buffers.
+    /// This is not display scanout/vsync synchronization. Call once per batch,
+    /// never once per pixel. It does not touch the framebuffer address.
+    pub fn flush_writes(&self) {
+        flush_writes();
+    }
     pub fn color(&self, r: u8, g: u8, b: u8) -> u32 {
         if self.format == 0 {
             u32::from(r) | u32::from(g) << 8 | u32::from(b) << 16
@@ -143,6 +150,13 @@ impl Framebuffer {
                 }
             }
         }
+    }
+}
+/// Complete an OS drawing batch without exposing framebuffer memory.
+pub fn flush_writes() {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        core::arch::asm!("sfence", options(nostack, preserves_flags));
     }
 }
 // Original minimal 5x7 bitmap glyphs for this boot milestone, not a third-party font.
@@ -343,5 +357,6 @@ mod tests {
     }
 }
 
-pub mod console;
 pub mod mode;
+
+pub mod boot_console;

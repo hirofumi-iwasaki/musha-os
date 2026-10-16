@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(dead_code, unexpected_cfgs)]
-fn debug(_: &[u8]) {}
+static DEBUG: std::sync::Mutex<Vec<u8>> = std::sync::Mutex::new(Vec::new());
+fn debug(bytes: &[u8]) {
+    DEBUG.lock().unwrap().extend_from_slice(bytes);
+}
+fn debug_text() -> String {
+    String::from_utf8(DEBUG.lock().unwrap().clone()).unwrap()
+}
 mod bluetooth {
     pub fn present() -> bool {
         false
@@ -48,9 +54,13 @@ mod appconsole;
 mod bootlog;
 #[path = "../../boot/src/timing.rs"]
 mod timing;
+// One test owns the BSP globals for the entire matrix; no parallel API calls.
 #[test]
-fn startup_policy_clipping_application_space_and_normal_timing_bounds() {
-    use musha_platform::config::{Config, LogLevel};
+fn single_log_levels_retained_ring_application_and_failure_boundaries() {
+    use musha_platform::{
+        boot_log::Level,
+        config::{Config, LogLevel},
+    };
     for (width, height) in [
         (320, 356),
         (640, 480),
@@ -87,38 +97,41 @@ fn startup_policy_clipping_application_space_and_normal_timing_bounds() {
                 },
                 false,
             );
-            if log == LogLevel::Quiet || log == LogLevel::Ready {
-                assert!(pixels.iter().all(|v| *v == 0x12345678));
+            if matches!(log, LogLevel::Quiet | LogLevel::Ready) {
+                assert!(
+                    pixels.iter().all(|v| *v == 0x12345678),
+                    "startup must not fill at {log:?}"
+                );
             }
-            bootlog::media_ready(false);
-            bootlog::keyboard(true);
-            bootlog::ready(false);
-            // Emulate a complete application/viewer repaint, then restore startup footer.
             pixels[..width * height].fill(0x12345678);
-            bootlog::overlay();
+            bootlog::event(Level::Ready, "", format_args!("Musha-OS 0.4.0 ready"));
             if log == LogLevel::Quiet {
                 assert!(pixels.iter().all(|v| *v == 0x12345678));
             } else {
-                assert!(
-                    pixels[..width * height].iter().any(|v| *v != 0x12345678),
-                    "missing ready at {width}x{height}"
-                );
-                let m = musha_framebuffer::metrics::Metrics::new(width, height);
-                let v = musha_framebuffer::metrics::Metrics::viewer(width, height);
-                let bottom = (32 * v.line_pitch).max(26 * m.line_pitch);
-                assert!(
-                    pixels[..bottom * width].iter().all(|v| *v == 0x12345678),
-                    "application grid overwritten"
-                );
+                assert!(pixels[..width * height].iter().any(|v| *v != 0x12345678));
             }
-            assert_eq!(&pixels[width * height..], &[0x12345678; 16]);
-            bootlog::configure(Config {
-                log: LogLevel::Quiet,
-                ..config
-            });
+            // No footer or overlay may repaint over the viewer's ownership.
             pixels[..width * height].fill(0x12345678);
-            bootlog::failure("CLOCK", "missing");
-            assert!(pixels[..width * height].iter().any(|v| *v != 0x12345678));
+            bootlog::overlay();
+            assert!(pixels.iter().all(|v| *v == 0x12345678));
+            bootlog::viewer(true);
+            bootlog::phase("usb", "host ready");
+            assert!(pixels.iter().all(|v| *v == 0x12345678));
+            bootlog::viewer(false);
+            pixels[..width * height].fill(0x12345678);
+            bootlog::failure("clock", "missing");
+            bootlog::halted();
+            let changed: Vec<_> = pixels[..width * height]
+                .iter()
+                .copied()
+                .filter(|p| *p != 0x12345678)
+                .collect();
+            assert!(!changed.is_empty(), "required failure hidden at {log:?}");
+            assert!(
+                changed.iter().all(|p| matches!(*p, 0 | 0xffffff)),
+                "colored failure band returned"
+            );
+            assert_eq!(&pixels[width * height..], &[0x12345678; 16]);
         }
     }
     let mut pixels = vec![0x12345678u32; 640 * 480 + 16];
@@ -145,20 +158,26 @@ fn startup_policy_clipping_application_space_and_normal_timing_bounds() {
         false,
     );
     appconsole::prepare(fb);
-    assert!(
-        pixels.iter().all(|p| *p == 0x12345678),
-        "prepare must not draw at quiet"
-    );
+    assert!(pixels.iter().all(|p| *p == 0x12345678));
+    // Quiet suppresses startup, never the application's own output or rejection.
+    appconsole::append(b"application output\n");
+    assert!(pixels[..640 * 480].iter().any(|p| *p != 0x12345678));
     appconsole::rejected(b"Invalid ELF or ABI NOTE");
-    assert!(
-        pixels[..640 * 480].iter().any(|p| *p != 0x12345678),
-        "quiet rejection must be visible"
-    );
-    assert_eq!(&pixels[640 * 480..], &[0x12345678; 16]);
+    bootlog::ready(false);
     for i in 0..300 {
         timing::record(format_args!("stage {i}"));
     }
-    assert_eq!(timing::count(), 256);
-    assert_eq!(timing::row(255).as_str(), "TIMING LIMIT / MORE OMITTED");
+    bootlog::dump();
+    let text = debug_text();
+    assert!(text.contains("MUSHA: LOG Musha-OS 0.4.0 ready\n"));
+    assert!(text.contains("MUSHA: LOG ERROR: clock: missing\n"));
+    assert!(text.contains("MUSHA: LOG Musha-OS halted\n"));
+    let retained = text.rsplit_once("MUSHA: RING_BEGIN\n").unwrap().1;
+    assert!(retained.contains("MUSHA: RING_END\n"));
+    assert!(retained.contains("settings: loaded log=quiet"));
+    assert!(retained.contains("application output\n"));
+    assert!(retained.contains("stage 299"));
+    assert!(!retained.contains("TIMING LIMIT / MORE OMITTED"));
+    assert_eq!(&pixels[640 * 480..], &[0x12345678; 16]);
     musha_framebuffer::set_output_enabled(true);
 }

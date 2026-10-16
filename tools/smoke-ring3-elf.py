@@ -31,6 +31,11 @@ try:
  if a.lifecycle:
   cases['map-failure']=(out/'abi.elf','reject-map')
   cases['kernel-fault']=(out/'abi.elf','fatal')
+ # The resumed production path now requires readable USB boot media. Keep
+ # the fixture read-only and disposable; vvfat firmware boot is not OS storage.
+ data_image = out/'resume-data.img'
+ if a.lifecycle:
+  run(['python3',ROOT/'tools/make-fat32-fixture.py',data_image])
  if a.case!='all' and a.case not in cases:raise ValueError('Unknown case '+a.case)
  for name,(elf,expected) in cases.items():
   if a.case not in ('all',name):continue
@@ -40,7 +45,11 @@ try:
   (d/'build.log').write_text(run(['cargo','build','--locked','--release','--target','x86_64-unknown-uefi','-p','musha-boot','--features',(('ring3-lifecycle-kernel-fault' if name=='kernel-fault' else ('ring3-lifecycle-map-failure' if name=='map-failure' else 'ring3-lifecycle-probe'))+',file-viewer-probe') if a.lifecycle else 'ring3-elf-probe'],env=buildenv))
   esp=d/'esp/EFI/BOOT';esp.mkdir(parents=True,exist_ok=True);shutil.copyfile(out/'target/x86_64-unknown-uefi/release/musha-boot.efi',esp/'BOOTX64.EFI')
   shutil.copyfile(a.firmware_dir/'edk2-i386-vars.fd',d/'vars.fd');debug=d/'debug.log';debug.write_text('')
-  cmd=[a.qemu,'-machine','q35,accel=tcg','-cpu','qemu64,+syscall,+nx','-m','256M','-drive',f'if=pflash,format=raw,readonly=on,file={a.firmware_dir/"edk2-x86_64-code.fd"}','-drive',f'if=pflash,format=raw,file={d/"vars.fd"}','-drive',f'if=ide,format=raw,file=fat:rw:{d/"esp"}','-device','qemu-xhci','-vga','std','-display','none','-monitor','none','-serial','none','-debugcon',f'file:{debug}','-global','isa-debugcon.iobase=0xe9','-no-reboot']
+  cmd=[a.qemu,'-machine','q35,accel=tcg','-cpu','qemu64,+syscall,+nx','-m','256M','-drive',f'if=pflash,format=raw,readonly=on,file={a.firmware_dir/"edk2-x86_64-code.fd"}','-drive',f'if=pflash,format=raw,file={d/"vars.fd"}','-drive',f'if=ide,format=raw,file=fat:rw:{d/"esp"}','-device',('qemu-xhci,id=resume-xhci' if a.lifecycle else 'qemu-xhci'),'-vga','std','-display','none','-monitor','none','-serial','none','-debugcon',f'file:{debug}','-global','isa-debugcon.iobase=0xe9','-no-reboot']
+  if a.lifecycle:
+   cmd += ['-drive',f'if=none,id=resume-data,format=raw,readonly=on,file={data_image}',
+           '-device','usb-storage,drive=resume-data,bus=resume-xhci.0,port=1',
+           '-device','usb-kbd,bus=resume-xhci.0,port=2']
   report['commands'].append(cmd)
   with (d/'qemu.log').open('w') as log:
    proc=subprocess.Popen(cmd,stdout=log,stderr=log)
@@ -49,7 +58,7 @@ try:
     while time.monotonic()<deadline:
      text=debug.read_text()
      if a.lifecycle:
-      if 'C3_OS_RESUMED\n' in text and 'MUSHA: APP_ENTERING\n' in text:break
+      if 'C3_OS_RESUMED\n' in text and 'MUSHA: VIEWER_FRAME LIST' in text and 'Musha-OS 0.4.0 ready' in text:break
       if 'EXCEPTION VECTOR=' in text and text.endswith('\n'):
        if expected=='fatal':break
        raise RuntimeError(text)
@@ -61,6 +70,7 @@ try:
      assert 'EXCEPTION VECTOR=0000000000000006' in text and 'RING3_FAULT CS=0000000000000008' in text,text
      assert 'C3_RECLAIMED' not in text and 'C3_OS_RESUMED' not in text,text
     elif a.lifecycle:
+     assert 'ERROR: storage:' not in text and 'Musha-OS halted' not in text,text
      outcome=2 if expected.startswith('reject') else (1 if expected.startswith(('pf','fault')) else 0)
      detail=14 if expected.startswith('pf') else (int(expected[5:]) if expected.startswith('fault') else (42 if name=='nonzero' else 0))
      for attempt in range(3):

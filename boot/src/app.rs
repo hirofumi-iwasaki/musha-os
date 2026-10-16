@@ -1,7 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 use musha_api::{Application, Context, Error, Step};
-use musha_framebuffer::metrics as grid;
 #[cfg(any(feature = "live-file-probe", feature = "file-app-probe"))]
 mod stream_probe;
 pub(crate) const VIEWER: bool = (!cfg!(feature = "qemu-debug")
@@ -87,7 +86,13 @@ impl Diagnostic {
         crate::debug(&crate::cpu::hex(self.file_hash));
         crate::debug(b" CLOSED_HANDLE_REJECTED\n");
         if !VIEWER && ctx.screen_size().1 >= 508 {
-            ctx.text_grid("APP FILE READ OK", grid::LABEL, grid::FILE, [0, 240, 100]);
+            crate::bootlog::detail(
+                "storage",
+                format_args!(
+                    "README bytes={} hash=0x{:x}",
+                    self.file_bytes, self.file_hash
+                ),
+            );
         }
         Ok(())
     }
@@ -185,28 +190,7 @@ impl Application for Diagnostic {
                 self.exit_requested = true;
             }
             if !VIEWER && event.pressed {
-                let (width, height) = ctx.screen_size();
-                if grid::Metrics::new(width, height).rows > grid::KEY + grid::MARGIN {
-                    let m = grid::Metrics::new(width, height);
-                    let py = m.y(grid::KEY);
-                    if py + m.line_pitch <= height {
-                        ctx.rectangle(
-                            m.x(grid::LABEL),
-                            py,
-                            m.x(m.status_end_column().saturating_sub(grid::LABEL)),
-                            m.line_pitch,
-                            [12, 20, 32],
-                        )?;
-                    }
-                    ctx.text_grid("KEY CODE", grid::LABEL, grid::KEY, [0, 220, 240]);
-                    ctx.text_grid(
-                        core::str::from_utf8(&crate::cpu::hex(event.usage as u64))
-                            .map_err(|_| Error::Invalid)?,
-                        grid::VALUE,
-                        grid::KEY,
-                        [0, 220, 240],
-                    );
-                }
+                crate::bootlog::detail("input", format_args!("key usage=0x{:x}", event.usage));
             }
         }
         if self.complete {
@@ -259,16 +243,7 @@ impl Application for Diagnostic {
             return Ok(Step::Continue);
         }
         let bytes = ctx.arena_bytes();
-        if !VIEWER {
-            ctx.text_grid("ARENA BYTES", grid::LABEL, grid::ARENA, [0, 220, 240]);
-            let digits = crate::cpu::hex(bytes as u64);
-            ctx.text_grid(
-                core::str::from_utf8(&digits).map_err(|_| Error::Invalid)?,
-                grid::VALUE,
-                grid::ARENA,
-                [0, 220, 240],
-            );
-        }
+        crate::bootlog::detail("memory", format_args!("arena bytes={}", bytes));
         let digits = crate::cpu::hex(bytes as u64);
         crate::debug(b"MUSHA: ARENA_BYTES=");
         crate::debug(&digits);
@@ -287,7 +262,7 @@ impl Application for Diagnostic {
             let _ = ctx.file_close(handle);
         }
         if self.complete && !VIEWER {
-            ctx.text_grid("APP COMPLETE", grid::LABEL, grid::APP, [0, 240, 100]);
+            crate::bootlog::phase("app", "complete");
         }
     }
 }

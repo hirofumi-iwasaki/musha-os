@@ -35,7 +35,7 @@ pub fn waiting() -> bool {
 pub fn step(
     files: &mut musha_api::stream::Files<'_>,
     now: u64,
-    fb: musha_framebuffer::Framebuffer,
+    _fb: musha_framebuffer::Framebuffer,
 ) -> State {
     let (reader, bytes) = unsafe { &mut *STAGING.0.get() };
     let before = reader.state();
@@ -50,7 +50,7 @@ pub fn step(
     let state = reader.step(files, bytes, now);
     if before == State::Searching && reader.claimed() {
         if crate::bootlog::devices() {
-            crate::appconsole::start(fb, b"Loading AUTORUN.ELF ...\n");
+            crate::bootlog::phase("app", "loading AUTORUN.ELF");
         }
         crate::bootstate::update(|r, t| {
             r.ready(true, t);
@@ -193,7 +193,11 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
         let state = unsafe { (&*STAGING.0.get()).0.state() };
         if matches!(state, State::Ready(_)) {
             crate::bootlog::ready(true);
-            crate::appconsole::start(info.framebuffer, b"External ELF  (Ring 3)\n");
+            if unsafe { RESUMED } {
+                crate::bootlog::application_screen();
+            }
+            crate::bootlog::viewer(false);
+            crate::bootlog::phase("app", "starting external ELF");
             crate::debug(b"MUSHA: EXTERNAL_ELF_DEVICES_STOPPED\n");
             let outcome = execute(arena, info);
             unsafe {
@@ -259,10 +263,13 @@ pub fn boot_name(name: &[u16; 12]) -> bool {
             .iter()
             .all(|&c| c == 0)
 }
-pub fn duplicate_catalog(name: &[u16; 12], fb: musha_framebuffer::Framebuffer) {
+pub fn duplicate_catalog(name: &[u16; 12], _fb: musha_framebuffer::Framebuffer) {
     if boot_name(name) && unsafe { (&mut *STAGING.0.get()).0.duplicate() } {
+        // A readable catalog with ambiguous AUTORUN is an app rejection, not
+        // an absent volume. Never publish its files or execute either entry.
+        crate::bootlog::retain_media_observation();
         if crate::bootlog::devices() {
-            crate::appconsole::start(fb, b"Loading AUTORUN.ELF ...\n");
+            crate::bootlog::phase("app", "loading AUTORUN.ELF");
         }
         crate::bootstate::update(|r, t| {
             r.ready(true, t);

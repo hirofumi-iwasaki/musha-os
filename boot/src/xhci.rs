@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Own/reset, build permanent DMA rings, probe commands, then quiesce.
 use crate::{BootInfo, acpi, pci};
-use musha_framebuffer::metrics as grid;
 mod usb;
 struct Registers {
     base: usize,
@@ -563,24 +562,15 @@ pub(crate) fn run_session(
     if crate::app::VIEWER {
         return result;
     }
-    clear_line(info.framebuffer, grid::KEYBOARD);
-    unsafe {
-        info.framebuffer.text_grid(
-            if result.is_ok() {
-                if found_device {
-                    "USB DEVICE READY"
-                } else {
-                    "USB NO KBD/STORAGE"
-                }
-            } else {
-                "XHCI FAILED"
-            },
-            grid::LABEL,
-            grid::KEYBOARD,
-            info.framebuffer
-                .color(if result.is_ok() { 0 } else { 255 }, 240, 100),
-        );
-    }
+    crate::bootlog::detail(
+        "usb",
+        format_args!(
+            "session result={} found-device={}",
+            result.err().unwrap_or("ok"),
+            found_device
+        ),
+    );
+
     result
 }
 
@@ -1128,18 +1118,6 @@ impl Host<'_> {
             core::hint::spin_loop();
         }
         Err("CLOCK STALLED")
-    }
-}
-
-fn clear_line(fb: musha_framebuffer::Framebuffer, row: usize) {
-    let m = grid::Metrics::new(fb.width, fb.height);
-    let y = m.y(row);
-    for row in y..(y + m.line_pitch).min(fb.height) {
-        for x in m.x(grid::LABEL)..m.x(m.status_end_column()).min(fb.width) {
-            unsafe {
-                fb.pixel(x, row, fb.color(12, 20, 32));
-            }
-        }
     }
 }
 

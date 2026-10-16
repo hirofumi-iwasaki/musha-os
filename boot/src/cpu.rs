@@ -7,7 +7,6 @@ use core::{
     arch::{asm, naked_asm},
     sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
-use musha_framebuffer::metrics as grid;
 
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
@@ -282,6 +281,8 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
             (*frame).cs,
             (*frame).vector,
             (*frame).error,
+            (*frame).rip,
+            (*frame).rsp,
         );
     }
     let _visible = musha_framebuffer::OutputGuard::allow();
@@ -319,56 +320,57 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
             crate::debug(&hex(frame.rsp));
             crate::debug(b"\n");
         }
-        let fb = (*info).framebuffer;
         let mut cr2 = 0u64;
         if frame.vector == 14 {
             asm!("mov {}, cr2",out(reg) cr2,options(nomem,nostack,preserves_flags));
         }
-        let m = grid::Metrics::new(fb.width, fb.height);
-        for y in m.y(grid::CORE)..m.y(grid::DISCOVERY + 4).min(fb.height) {
-            for x in m.x(grid::LABEL)..m.x(m.columns.saturating_sub(grid::MARGIN)) {
-                fb.pixel(x, y, fb.color(32, 0, 0));
-            }
-        }
-        fb.text_grid(
-            "CPU EXCEPTION",
-            grid::LABEL,
-            grid::CORE,
-            fb.color(255, 80, 80),
-        );
-        for (i, (label, value)) in [
-            ("VECTOR", frame.vector),
-            ("ERROR", frame.error),
-            ("RIP", frame.rip),
-            ("CR2", cr2),
-        ]
-        .iter()
-        .enumerate()
-        {
-            fb.text_grid(
-                label,
-                grid::LABEL,
-                grid::DISCOVERY + i,
-                fb.color(255, 220, 220),
+        let name = match frame.vector {
+            0 => "#DE",
+            1 => "#DB",
+            2 => "NMI",
+            3 => "#BP",
+            4 => "#OF",
+            5 => "#BR",
+            6 => "#UD",
+            7 => "#NM",
+            8 => "#DF",
+            10 => "#TS",
+            11 => "#NP",
+            12 => "#SS",
+            13 => "#GP",
+            14 => "#PF",
+            16 => "#MF",
+            17 => "#AC",
+            18 => "#MC",
+            19 => "#XM",
+            20 => "#VE",
+            21 => "#CP",
+            29 => "#VC",
+            30 => "#SX",
+            _ => "unknown",
+        };
+        if musha_platform::exceptions::hardware_error(frame.vector) {
+            crate::bootlog::event(
+                musha_platform::boot_log::Level::Error,
+                "ERROR",
+                format_args!(
+                    "cpu: exception {} (vector {}) error 0x{:x} rip 0x{:x} cr2 0x{:x}",
+                    name, frame.vector, frame.error, frame.rip, cr2
+                ),
             );
-            let bytes = hex(*value);
-            let text =
-                if *label == "ERROR" && !musha_platform::exceptions::hardware_error(frame.vector) {
-                    "N/A"
-                } else {
-                    core::str::from_utf8_unchecked(&bytes)
-                };
-            // SAFETY: hex constructs only ASCII characters.
-            fb.text_grid(
-                text,
-                grid::VALUE,
-                grid::DISCOVERY + i,
-                fb.color(255, 220, 220),
+        } else {
+            crate::bootlog::event(
+                musha_platform::boot_log::Level::Error,
+                "ERROR",
+                format_args!(
+                    "cpu: exception {} (vector {}) error n/a rip 0x{:x} cr2 0x{:x}",
+                    name, frame.vector, frame.rip, cr2
+                ),
             );
         }
         #[cfg(external_app)]
         if frame.cs & 3 == 3 {
-            crate::appconsole::fault(fb, frame.vector, frame.error, frame.rip, frame.rsp);
+            crate::appconsole::fault(frame.vector, frame.error, frame.rip, frame.rsp);
         }
         crate::debug(b"MUSHA: EXCEPTION VECTOR=");
         crate::debug(&hex(frame.vector));

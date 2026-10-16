@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """Boot the staged EFI on QEMU USB storage; verify the post-exit marker."""
+import sys
 import argparse, hashlib, importlib.util, json, os, pathlib, shutil, socket, subprocess, time
 from smoke_qemu_checks import check_hub_enumerations
 parser=argparse.ArgumentParser()
@@ -34,7 +35,7 @@ if args.hub_depth and (args.keyboard_usb_version!=1 or args.extra_xhci or args.u
 if args.storage_fixture and args.fat_fixture:parser.error('Choose one fixture type')
 if args.usb_image and args.fat_fixture:parser.error('Choose either a boot image or a FAT fixture; the API selects the first successful file')
 if args.case=='fat-corrupt' and not args.fat_fixture:parser.error('fat-corrupt requires --fat-fixture')
-if args.usb_image and args.case != 'normal':parser.error('--usb-image requires a normal diagnostic build')
+if args.usb_image and args.case=='fat-corrupt':parser.error('fat-corrupt uses its deliberately invalid FAT fixture')
 root=pathlib.Path(__file__).resolve().parent.parent
 out=args.output.resolve() if args.output else root/'out'/('qemu-'+args.case);out.mkdir(parents=True,exist_ok=True)
 firmware=pathlib.Path(args.firmware_dir)
@@ -78,6 +79,14 @@ def sha256_file(path):
  with path.open('rb') as source:
   for chunk in iter(lambda:source.read(1024*1024),b''):digest.update(chunk)
  return digest.hexdigest()
+# v0.4.0 requires a readable boot volume. vvfat is not a FAT32 fixture;
+# use the same deterministic generator as deployment tests, never a real device.
+if not args.usb_image and not args.fat_fixture:
+ generated=out/'boot-media.img'
+ if generated.exists(): raise RuntimeError('Refusing to replace an existing fixture')
+ source_efi=args.efi.resolve() if args.efi else esp/'EFI/BOOT/BOOTX64.EFI'
+ subprocess.run([sys.executable,str(root/'tools/make-usb-image.py'),str(generated),'--efi',str(source_efi)],check=True,stdout=subprocess.DEVNULL)
+ args.usb_image=generated
 image_hash=None
 if args.usb_image:
  args.usb_image=args.usb_image.resolve()
@@ -213,42 +222,53 @@ with (out/'qemu.log').open('w') as err:
       raise RuntimeError('Expected xHCI and Intel 82574 missing: '+text)
      if 'MUSHA: PCI_ENUMERATION_OK' not in text:raise RuntimeError('PCI enumeration incomplete')
     if args.case not in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt']:
+     if 'Musha-OS halted' not in text or text.rfind('MUSHA: RING_END') < text.rfind('Musha-OS halted'):
+      time.sleep(.02);continue
+     names={'ud':('#UD',6),'df':('#DF',8),'gp':('#GP',13),'pf':('#PF',14),'ro':('#PF',14),'nx':('#PF',14),'guard':('#PF',14)}
+     name,vector=names[args.case]
+     expected=f'ERROR: cpu: exception {name} (vector {vector}) error '
+     assert expected in text, 'Sequential exception record missing'
+     if args.case=='ud': assert expected+'n/a' in text, 'No-error-code vector was displayed as numeric zero'
+     else: assert expected+'0x' in text, 'Hardware error code missing'
      import re
      match=re.search(r'RIP=([0-9A-F]{16}) CR2=([0-9A-F]{16})',text)
      if not match or (args.case!='nx' and int(match.group(1),16)==0):raise RuntimeError('Invalid exception frame: '+text)
      if args.case=='pf' and int(match.group(2),16)!=0:raise RuntimeError('Unexpected CR2')
      if args.case in ['ro','nx','guard'] and int(match.group(2),16)==0:raise RuntimeError('Missing fault address')
-    if args.case in ['xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'] and 'MUSHA: EXIT_BOOT_SERVICES_OK STACK_OK GOP_OK CPU_TABLES_OK PAGING_OK ARENA_OK' not in text:
+    if args.case in ['xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'] and ('Musha-OS halted' not in text or text.rfind('MUSHA: RING_END') < text.rfind('Musha-OS halted')):
      time.sleep(0.1);continue
     if args.case in ['xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'] and 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('DMA cleanup missing: '+text)
     if args.case=='storage-timeout' and 'MUSHA: STORAGE_CAPACITY BLOCKS=' not in text:raise RuntimeError('Read timeout was not reached')
     if args.case in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt']:
-     required=['MUSHA: DIAG STATE SESSION COMPLETE','MUSHA: DIAG XHCI PCI 1B36:000D']
+     # v0.4.0 uses one chronological console, not retained panel rows.
+     import re
+     events = '\n'.join(re.sub(r'^MUSHA: LOG (?:\[[^]]+\] )?', '', line) for line in text.splitlines() if line.startswith('MUSHA: LOG '))
+     required=['device: state session complete', '1b36:000d'] if args.case=='normal' else ['1b36:000d', 'ERROR: storage: no readable boot media found', 'Musha-OS halted']
      if args.case=='normal':
-      required+=['MUSHA: DIAG USB STEP STOPPED DMA DISABLED','MUSHA: DIAG USB C','0627:0001',
-       'MUSHA: DIAG LAN PCI 8086:'+('10D3' if args.nic=='e1000e' else '100E'),
-       'MUSHA: DIAG NET STEP '+('STOPPED DMA DISABLED' if args.nic=='e1000e' else 'DRIVER UNSUPPORTED / ABSENT')]
-      required+=['MUSHA: DIAG XHCI0 1B36:000D', 'INPUT DONE', 'BOOT KEYBOARD MATCH / CHECK INPUT']
-      if not args.keyboard_second or args.devices_second:required+=['46F4:0001', 'BOT STORAGE MATCH / CHECK READ']
-      if not args.extra_xhci:required+=[f'MUSHA: DIAG THIS CONTROLLER BOOT KBD 1 BOT STORAGE {2 if args.fat_fixture or args.storage_fixture else 1}']
+      required+=['usb: stage stopped dma disabled', 'usb: root=', '0627:0001',
+       '8086:'+('10d3' if args.nic=='e1000e' else '100e'),
+       'lan: stage '+('stopped dma disabled' if args.nic=='e1000e' else 'driver unsupported / absent'),
+       'usb: kind boot keyboard match / check input', 'input=true']
+      if not args.keyboard_second or args.devices_second: required+=['46f4:0001', 'usb: kind bot storage match / check read']
+      if not args.extra_xhci: required+=['storage='+str(2 if args.fat_fixture or args.storage_fixture else 1)]
       if args.extra_xhci:
-       required+=['MUSHA: DIAG XHCI1 1B36:000D', 'SCANNED', 'MUSHA: XHCI_SCAN_COMPLETE', 'SEQUENTIAL SCAN / DETAILS CURRENT CONTROLLER']
-       if text.count('MUSHA: XHCI_SCAN BDF=') != 2:raise RuntimeError('Both controllers must be scanned exactly once')
-       if text.count('MUSHA: RUNTIME_POLL_READY') != 1:raise RuntimeError('Ready must be emitted exactly once')
-       if args.keyboard_second or args.devices_second:
-        required+=['MUSHA: XHCI_INPUT BDF=0000000000000020', 'XHCI1 1B36:000D BDF 0020 INPUT DONE']
-       else:required+=['MUSHA: XHCI_INPUT BDF=0000000000000018']
-      if args.usb_hub or args.hub_depth:required+=['MUSHA: USB2_HUB_READY']
+       if text.count('MUSHA: XHCI_SCAN BDF=') != 2: raise RuntimeError('Both controllers must be scanned exactly once')
+       if text.count('MUSHA: RUNTIME_POLL_READY') != 1: raise RuntimeError('Ready must be emitted exactly once')
+       required+=['bdf=0x0020', 'scanned']
+       expected_input='0000000000000020' if args.keyboard_second or args.devices_second else '0000000000000018'
+       if 'MUSHA: XHCI_INPUT BDF='+expected_input not in text: raise RuntimeError('Wrong input controller')
+      if args.usb_hub or args.hub_depth:
+       if 'MUSHA: USB2_HUB_READY' not in text: raise RuntimeError('Hub readiness missing')
       if args.hub_depth:
        check_hub_enumerations(text, args.hub_depth)
-       required+=['MUSHA: HUB_CHILD_RESET_OK']
-      if args.usb_image:required+=[f'MUSHA: DIAG FILE README.TXT BYTES {len(boot_payload):08X}',f'MUSHA: DIAG FILE HASH {fnv(boot_payload):016X}']
+       if 'MUSHA: HUB_CHILD_RESET_OK' not in text: raise RuntimeError('Hub child reset missing')
+      if args.usb_image: required += [f'device: file readme.txt bytes {len(boot_payload):08x}',f'device: file hash {fnv(boot_payload):016x}']
      else:
-      required+=['MUSHA: DIAG FAIL AT USB STEP','MUSHA: DIAG USB ERROR']
-      stages={'control-out-timeout':'CONFIGURATION','control-out-stall':'CONFIGURATION','xhci-timeout':'HALT','xhci-command-timeout':'RINGS / COMMANDS','usb-descriptor-timeout':'DEVICE DESCRIPTOR','storage-timeout':'STORAGE SECTOR READ','fat-corrupt':'FAT32 FILE READ'}
-      required+=['MUSHA: DIAG FAIL AT USB STEP '+stages[args.case]]
+      required+=['usb: failure']
+      stages={'control-out-timeout':'configuration','control-out-stall':'configuration','xhci-timeout':'halt','xhci-command-timeout':'rings / commands','usb-descriptor-timeout':'device descriptor','storage-timeout':'storage sector read','fat-corrupt':'fat32 file read'}
+      required+=['usb: stage '+stages[args.case]]
      for expected in required:
-      if expected not in text:raise RuntimeError('Hardware diagnostic missing: '+expected+'\n'+text)
+      if expected not in events: raise RuntimeError('Sequential diagnostic missing: '+expected+'\n'+events)
 
     break
    if proc.poll() is not None:raise RuntimeError((out/'qemu.log').read_text())

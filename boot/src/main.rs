@@ -3,37 +3,12 @@
 #![no_std]
 #![no_main]
 
-use musha_framebuffer::metrics as grid;
 #[cfg(feature = "display-grid-probe")]
 fn grid_hold(stage: &str) {
     if option_env!("MUSHA_GRID_HOLD") == Some(stage) {
         loop {
             core::hint::spin_loop();
         }
-    }
-}
-
-/// Bounded, allocation-free boot-stage label; VERSION never carries its newline.
-unsafe fn boot_heading(fb: musha_framebuffer::Framebuffer, stage: &str) {
-    use core::fmt::Write;
-    let mut label = musha_platform::diagnostics::Line::EMPTY;
-    let _ = write!(
-        label,
-        "Musha-OS {}  {}",
-        include_str!("../../VERSION").trim(),
-        stage
-    );
-    unsafe {
-        fb.text_grid(
-            label.as_str(),
-            grid::LABEL,
-            grid::HEADING,
-            fb.color(240, 240, 240),
-        )
-    };
-    #[cfg(feature = "display-grid-probe")]
-    if stage == "starting..." {
-        grid_hold("starting");
     }
 }
 
@@ -130,9 +105,13 @@ struct BootInfo {
 const _: () = assert!(core::mem::size_of::<BootInfo>() <= 4096);
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
+    bootlog::failure("kernel", "panic");
     stop()
 }
 fn stop() -> ! {
+    bootlog::halted();
+    bootlog::dump();
+    musha_framebuffer::flush_writes();
     #[cfg(elf_app)]
     ring3::io::shutdown();
     loop {
@@ -144,48 +123,8 @@ fn stop() -> ! {
 }
 
 #[cfg(feature = "diagnostics-detail")]
-fn diagnostic_pages(info: &BootInfo, one_cycle: bool) {
-    unsafe {
-        for y in 0..info.framebuffer.height {
-            for x in 0..info.framebuffer.width {
-                info.framebuffer
-                    .pixel(x, y, info.framebuffer.color(12, 20, 32));
-            }
-        }
-    }
-    diagnostics::hide(false);
-    let mut index = 0;
-    let mut cycle = 1;
-    if let Ok(mut clock) = acpi::Time::new(info.timer) {
-        loop {
-            timing::hold_cycle(if one_cycle { 0 } else { cycle });
-            let total = diagnostics::page(index);
-            diagnostics::flush();
-            index = (index + 1) % total.max(1);
-            let Ok(start) = clock.now() else { break };
-            let mut elapsed = false;
-            for _ in 0..100_000_000 {
-                match clock.now() {
-                    Ok(now) if now.saturating_sub(start) >= 2000 => {
-                        elapsed = true;
-                        break;
-                    }
-                    Ok(_) => core::hint::spin_loop(),
-                    Err(_) => break,
-                }
-            }
-            if index == 0 {
-                cycle += 1;
-            }
-            if !elapsed || (one_cycle && index == 0) {
-                break;
-            }
-        }
-    }
-}
-#[cfg(feature = "diagnostics-detail")]
-fn diagnostic_capture(info: &BootInfo) -> ! {
-    diagnostic_pages(info, false);
+fn diagnostic_capture(_info: &BootInfo) -> ! {
+    diagnostics::snapshot();
     stop()
 }
 
@@ -205,7 +144,8 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     if info.magic != 0x4d55534841424f4f || info.version != 1 {
         stop();
     }
-    bootlog::phase("ExitBootServices", "complete");
+    bootlog::firmware_exited();
+    bootlog::phase("uefi", "ExitBootServices complete");
     bootlog::phase("Runtime", "paging and arena initialization");
     diagnostics::start(info.framebuffer);
     #[cfg(external_app)]
@@ -275,42 +215,16 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
             diagnostics::failure("CORE MEMORY", label);
             diagnostics::snapshot();
             debug(message);
-            unsafe {
-                info.framebuffer.text_grid(
-                    label,
-                    grid::LABEL,
-                    grid::DISCOVERY,
-                    info.framebuffer.color(255, 0, 0),
-                );
-            }
+
             stop();
         }
     };
-    unsafe {
-        if bootlog::devices() {
-            for y in 0..info.framebuffer.height {
-                for x in 0..info.framebuffer.width {
-                    info.framebuffer
-                        .pixel(x, y, info.framebuffer.color(12, 20, 32));
-                }
-            }
-        }
-        boot_heading(info.framebuffer, "runtime");
-        info.framebuffer.text_grid(
-            "CORE READY",
-            grid::LABEL,
-            grid::CORE,
-            info.framebuffer.color(0, 240, 100),
-        );
-    }
+    bootlog::phase("core", "ready");
     let _ = acpi::Time::new(info.timer).and_then(|mut t| t.now());
     bootstate::update(|r, t| {
         r.core(t);
     });
     debug(b"MUSHA: CORE_READY\n");
-    if cfg!(feature = "diagnostics-detail") {
-        diagnostics::page(0);
-    }
     diagnostics::flush();
     diagnostics::set(1, format_args!("STATE PCI / APPLICATION"));
     if !acpi::diagnose(info.timer, info.framebuffer) {
@@ -323,7 +237,7 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     bootlog::phase("Timer", "PM clock available");
     #[cfg(feature = "startup-failure-probe")]
     {
-        bootlog::failure("REQUIRED CLOCK", "forced test failure");
+        bootlog::failure("clock", "forced test failure");
         stop();
     }
     #[cfg(feature = "ring3-lifecycle-probe")]
@@ -333,14 +247,6 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         not(any(feature = "ring3-lifecycle-probe", feature = "external-elf-probe"))
     ))]
     ring3::run(arena, info);
-    unsafe {
-        info.framebuffer.text_grid(
-            "DEVICE DISCOVERY",
-            grid::LABEL,
-            grid::DISCOVERY,
-            info.framebuffer.color(0, 220, 240),
-        );
-    }
     pci::diagnose(info.framebuffer, info.xhci);
     pci::realtek::display(info.realtek_diag);
     #[cfg(feature = "display-grid-probe")]
@@ -350,10 +256,11 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     }
     let arena_base = arena.as_mut_ptr() as usize;
     // Diagnostic app owns the sole mutable arena borrow and exercises every page.
-    if runtime::run(arena, info).is_err() {
+    if let Err(error) = runtime::run(arena, info) {
         #[cfg(external_app)]
         if external::claimed() {
             // Never enter/reuse the arena after an unconfirmed device shutdown.
+            bootlog::failure("usb", "device session did not complete; reuse forbidden");
             appconsole::rejected(b"Device session did not complete");
             debug(b"MUSHA: EXTERNAL_ELF_REJECT Device session did not complete\n");
             #[cfg(feature = "diagnostics-detail")]
@@ -361,36 +268,28 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
             #[cfg(not(feature = "diagnostics-detail"))]
             stop();
         }
-        diagnostics::failure("APPLICATION", "APP FAILED");
+        if error == musha_api::Error::NotFound {
+            diagnostics::failure("storage", "no readable boot media found");
+        } else {
+            diagnostics::failure("app", "execution failed");
+        }
         diagnostics::set(1, format_args!("STATE APP FAILED"));
         diagnostics::snapshot();
         debug(b"MUSHA: APP_FAILED\n");
         #[cfg(feature = "diagnostics-detail")]
         diagnostic_capture(info);
-        #[cfg(not(feature = "diagnostics-detail"))]
-        unsafe {
-            info.framebuffer.text_grid(
-                "APP FAILED",
-                grid::LABEL,
-                grid::APP,
-                info.framebuffer.color(255, 0, 0),
-            );
-        }
+
         #[cfg(not(feature = "diagnostics-detail"))]
         stop();
     }
     #[cfg(all(external_app, feature = "diagnostics-detail"))]
-    if external::claimed() {
-        // Capture recovered per-port failures even when the file is now ready.
-        // All device sessions are already stopped; only display and clock run.
-        diagnostic_pages(info, true);
-        diagnostics::hide(true);
-    }
-    #[cfg(all(external_app, feature = "diagnostics-detail"))]
     if !external::claimed() {
-        diagnostics::set(1, format_args!("STATE DIAGNOSTIC HOLD / NO EXTERNAL APP"));
+        diagnostics::set(
+            1,
+            format_args!("diagnostic session complete / no external app"),
+        );
         diagnostics::snapshot();
-        debug(b"MUSHA: DIAGNOSTIC_CAPTURE_LOOP\n");
+        debug(b"MUSHA: DIAGNOSTIC_CAPTURE_STOP\n");
         diagnostic_capture(info);
     }
     #[cfg(external_app)]
@@ -429,9 +328,6 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
         asm!("mov ax, {selector}", "mov ds, ax", selector = const cpu::FAULT_INVALID_SELECTOR, out("ax") _, options(nostack));
     }
 
-    if cfg!(feature = "diagnostics-detail") {
-        diagnostics::page(0);
-    }
     diagnostics::flush();
     #[cfg(feature = "diagnostics-detail")]
     diagnostic_capture(info);
@@ -517,7 +413,9 @@ pub extern "efiapi" fn efi_main(
             ((*bs).stall)(1_000_000);
         }
         bootlog::initialize(fb, settings, fallback);
-        boot_heading(fb, "starting...");
+        #[cfg(feature = "display-grid-probe")]
+        grid_hold("starting");
+
         let image_base = loaded.image_base as usize;
         let image_bytes = loaded.image_size as usize;
         // CPU-owned zero-fill staging counts toward LoadedImage.ImageSize.
@@ -650,7 +548,7 @@ pub extern "efiapi" fn efi_main(
                 || size % stride != 0
             {
                 // No returning to firmware after a failed ExitBootServices attempt.
-                fb.text_grid("BOOT FAILED", grid::LABEL, grid::CORE, fb.color(255, 0, 0));
+                bootlog::failure("uefi", "memory map unavailable");
                 stop();
             }
             (*info).map_size = size;
@@ -670,7 +568,7 @@ pub extern "efiapi" fn efi_main(
                 break;
             }
         }
-        fb.text_grid("BOOT FAILED", grid::LABEL, grid::CORE, fb.color(255, 0, 0));
+        bootlog::failure("uefi", "ExitBootServices failed");
         stop();
     }
 }

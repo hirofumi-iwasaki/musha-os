@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-import importlib.util, sys, struct, json, time, socket, subprocess, shutil
+import importlib.util, sys, struct, json, time, socket, subprocess, shutil, re
 from pathlib import Path
 root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root / 'tools'))
@@ -109,7 +109,18 @@ def run(name, config, expected, key=None, missing=False, efi=None, failure=False
                     control('send-key', {'keys': [{'type': 'qcode', 'data': key}], 'hold-time': 80})
                 wait(b'CONFIG FRAMEBUFFER CAPTURED')
                 control('screendump', {'filename': str(out / 'baseline.ppm')})
-                wait(b'STARTUP FAILURE' if failure else b'VIEWER_FRAME LIST' if observe else b'STARTUP READY HOLD')
+                wait(b'Musha-OS halted' if failure else b'VIEWER_FRAME LIST' if observe else b'MUSHA: STARTUP_READY')
+                # Earlier diagnostic snapshots may already contain RING_END.
+                # Require a complete latest dump containing this run's terminal event.
+                terminal = b'Musha-OS halted' if failure else b'Musha-OS 0.4.0 ready'
+                while True:
+                    raw = log.read_bytes()
+                    at = raw.rfind(b'MUSHA: RING_BEGIN\n')
+                    end_at = raw.find(b'MUSHA: RING_END', at) if at >= 0 else -1
+                    if end_at > at >= 0 and terminal in raw[at:end_at]:
+                        break
+                    assert time.monotonic() < end and p.poll() is None, 'terminal retained ring dump'
+                    time.sleep(0.02)
                 time.sleep(0.1)
                 control('screendump', {'filename': str(out / 'ready.ppm')})
                 if observe:
@@ -126,19 +137,41 @@ def run(name, config, expected, key=None, missing=False, efi=None, failure=False
                     (w, h, before) = ppm(out / 'ready.ppm')
                     (w2, h2, after) = ppm(out / 'page.ppm')
                     assert (w, h) == (w2, h2)
-                    scale = min(4, max(1, (h + 300) // 600))
-                    rows = 16 * scale
-                    assert before[-w * rows * 3:] == after[-w * rows * 3:], 'ready footer lost after viewer repaint'
-                    assert before[:-w * rows * 3] != after[:-w * rows * 3], 'viewer did not change'
-                if failure:
-                    raw = (out / 'ready.ppm').read_bytes().split(b'\n255\n', 1)[1]
-                    assert any((raw[i] > 200 and raw[i + 1] < 120 and (raw[i + 2] < 120) for i in range(0, len(raw), 3))), 'quiet failure not visible'
+                    assert before != after, 'viewer did not change'
                 text = log.read_text()
-                assert expected in text, (expected, text[-2000:])
+                primary = [line.removeprefix('MUSHA: LOG ') for line in text.splitlines()
+                           if line.startswith('MUSHA: LOG ')]
+                assert primary, 'missing primary single-log records'
+                begin = text.rfind('MUSHA: RING_BEGIN\n')
+                finish = text.find('MUSHA: RING_END', begin)
+                assert begin >= 0 and finish > begin, 'missing retained ring dump'
+                retained = [line.removeprefix('MUSHA: RING ') for line in text[begin:finish].splitlines()
+                            if line.startswith('MUSHA: RING ')]
+                assert retained, 'empty retained ring'
+                assert expected.lower() in '\n'.join(primary).lower(), (expected, primary[-20:])
+                assert expected.lower() in '\n'.join(retained).lower(), (expected, retained[-20:])
+                plain = [re.sub(r'^\[\s*\d+\.\d{3}\] ', '', line) for line in primary]
+                if failure:
+                    assert any(line.startswith('ERROR: ') for line in plain), primary[-20:]
+                    assert 'Musha-OS halted' in plain, primary[-20:]
+                elif not observe:
+                    assert 'Musha-OS 0.4.0 ready' in plain, primary[-20:]
+                if not observe:
+                    def body(path):
+                        return path.read_bytes().split(b'\n255\n', 1)[1]
+                    old = body(out / 'baseline.ppm')
+                    new = body(out / 'ready.ppm')
+                    assert len(old) == len(new)
+                    changed = [new[i:i+3] for i in range(0, len(new), 3)
+                               if old[i:i+3] != new[i:i+3]]
+                    assert all(pixel in (b'\0\0\0', b'\xff\xff\xff') for pixel in changed), 'non-monochrome startup paint'
+                    if failure or name != 'quiet':
+                        assert changed, 'visible startup log missing'
+                        assert len(changed) < len(new) // 3, 'startup filled every pixel'
                 assert 'CONFIG FILE CLOSE ERROR' not in text
                 if name == 'quiet':
                     assert (out / 'baseline.ppm').read_bytes() == (out / 'ready.ppm').read_bytes(), 'quiet changed screen'
-                (out / 'result.json').write_text(json.dumps({'result': 'PASS', 'expected': expected, 'baseline_equals_ready': (out / 'baseline.ppm').read_bytes() == (out / 'ready.ppm').read_bytes()}, indent=2) + '\n')
+                (out / 'result.json').write_text(json.dumps({'result': 'PASS', 'expected': expected, 'primary_records': primary, 'retained_records': retained, 'baseline_equals_ready': (out / 'baseline.ppm').read_bytes() == (out / 'ready.ppm').read_bytes()}, indent=2) + '\n')
                 control('quit')
                 p.wait(timeout=5)
             print('PASS', name, flush=True)
@@ -163,20 +196,20 @@ if __name__ == '__main__':
         setattr(args, name, getattr(args, name).resolve())
     args.output.mkdir(exist_ok=False, parents=True)
     if args.failure_efi:
-        run('quiet-failure', b'log=quiet\n', 'STARTUP FAILURE REQUIRED CLOCK', efi=args.failure_efi.resolve(), failure=True)
+        run('quiet-failure', b'log=quiet\n', 'ERROR: clock:', efi=args.failure_efi.resolve(), failure=True)
     if args.viewer_efi:
-        run('viewer-ready', b'log=ready\ndisplay=640x480\n', 'Ready Exact(640, 480) false Loaded', efi=args.viewer_efi.resolve(), observe=True)
-    run('quiet', b'log=quiet\n', 'Quiet Max false Loaded')
-    run('ready', b'log=ready\n', 'Ready Max false Loaded')
-    run('phases', b'log=phases\n', 'Phases Max false Loaded')
-    run('devices', b'log=devices\n', 'Devices Max false Loaded')
-    run('missing-file', None, 'Ready Max false MissingFile')
-    run('missing-directory', None, 'Ready Max false MissingDirectory', missing=True)
-    run('malformed', b'log=quiet\nbad\n', 'Ready Max false Malformed')
-    run('oversized', b'#' + b'a' * 4096, 'Ready Max false Malformed')
-    run('non-ascii', b'log=quiet\n#\xff', 'Ready Max false Malformed')
-    run('display-low', b'log=ready\ndisplay=640x480\n', 'Ready Exact(640, 480) false Loaded')
-    run('display-good', b'log=phases\ndisplay=1024x768\npair=on\n', 'Phases Exact(1024, 768) true Loaded')
-    run('display-fallback', b'log=phases\ndisplay=1234x567\n', 'requested mode unavailable; max fallback')
-    run('f8', b'log=quiet\n', 'devices forced by F8/8', key='f8')
-    run('digit8', b'log=quiet\n', 'devices forced by F8/8', key='8')
+        run('viewer-ready', b'log=ready\ndisplay=640x480\n', 'settings: loaded log=ready display=exact(640, 480) pair=false', efi=args.viewer_efi.resolve(), observe=True)
+    run('quiet', b'log=quiet\n', 'settings: loaded log=quiet display=max pair=false')
+    run('ready', b'log=ready\n', 'settings: loaded log=ready display=max pair=false')
+    run('phases', b'log=phases\n', 'settings: loaded log=phases display=max pair=false')
+    run('devices', b'log=devices\n', 'settings: loaded log=devices display=max pair=false')
+    run('missing-file', None, 'settings: missingfile log=ready display=max pair=false')
+    run('missing-directory', None, 'settings: missingdirectory log=ready display=max pair=false', missing=True)
+    run('malformed', b'log=quiet\nbad\n', 'settings: malformed log=ready display=max pair=false')
+    run('oversized', b'#' + b'a' * 4096, 'settings: malformed log=ready display=max pair=false')
+    run('non-ascii', b'log=quiet\n#\xff', 'settings: malformed log=ready display=max pair=false')
+    run('display-low', b'log=ready\ndisplay=640x480\n', 'settings: loaded log=ready display=exact(640, 480) pair=false')
+    run('display-good', b'log=phases\ndisplay=1024x768\npair=on\n', 'settings: loaded log=phases display=exact(1024, 768) pair=true')
+    run('display-fallback', b'log=phases\ndisplay=1234x567\n', 'requested mode unavailable; maximum selected')
+    run('f8', b'log=quiet\n', 'devices selected by F8/8', key='f8')
+    run('digit8', b'log=quiet\n', 'devices selected by F8/8', key='8')

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cooperative QEMU 82574 session; optional I218 PHY probe, no I218/I219 networking.
 use crate::{BootInfo, acpi, pci};
-use musha_framebuffer::metrics as grid;
 #[cfg(feature = "i218-phy-probe")]
 mod i218;
 use core::{
@@ -210,6 +209,7 @@ impl Nic {
         if unsafe { musha_lwip_init(mac.as_ptr()) } != 0 {
             return Err("LWIP INIT");
         }
+        crate::bootlog::phase("lan", "link ready; DHCP pending");
         crate::debug(b"MUSHA: NET_DHCP_STARTED NO_ADDRESS\n");
         Ok(())
     }
@@ -241,6 +241,7 @@ impl Session {
         }
         let c = info.nic;
         if c.base == 0 {
+            crate::bootlog::phase("lan", "not available (no supported controller)");
             crate::diagnostics::net_stage("DRIVER UNSUPPORTED / ABSENT");
             crate::debug(b"MUSHA: NET_UNSUPPORTED\n");
             return Ok(None);
@@ -390,6 +391,14 @@ impl Session {
                     address[3],
                     now.saturating_sub(self.started)
                 ));
+                crate::bootlog::event(
+                    musha_platform::boot_log::Level::Phases,
+                    "lan",
+                    format_args!(
+                        "DHCP {}.{}.{}.{} UDP echo port 12345 ready",
+                        address[0], address[1], address[2], address[3]
+                    ),
+                );
                 crate::debug(b"MUSHA: NET_READY IP=");
                 for (i, n) in address.into_iter().enumerate() {
                     if i != 0 {
@@ -497,14 +506,9 @@ impl Session {
         self.nic.write(0x3818, ((self.tx + 1) % TX_COUNT) as u32);
         Ok(())
     }
-    pub(crate) fn finish(&mut self, fb: musha_framebuffer::Framebuffer) {
+    pub(crate) fn finish(&mut self, _fb: musha_framebuffer::Framebuffer) {
         self.report();
         self.stop();
-        if fb.height >= 540 {
-            unsafe {
-                fb.text_grid("NET TEST OK", grid::LABEL, grid::NET, fb.color(0, 220, 240));
-            }
-        }
     }
     fn report(&self) {
         let mut c = [0u32; 5];

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
 pub const PAGE: usize = 4096;
+pub mod pat;
 /// Runtime ownership is distinct from GetMemoryMap protection capabilities.
 pub const RUNTIME_ATTRIBUTE: u64 = 1 << 63;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

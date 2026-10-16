@@ -2,6 +2,7 @@
 #![no_std]
 pub mod acpi_read;
 pub mod bluetooth;
+pub mod boot_log;
 pub mod config;
 pub mod config_hash;
 pub mod controllers;

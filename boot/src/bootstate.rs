@@ -53,6 +53,7 @@ pub fn dump() {
 }
 
 pub fn frame() {
+    musha_framebuffer::flush_writes();
     let timer = unsafe { (*STATE.0.get()).timer };
     if let Some(timer) = timer {
         let _ = crate::acpi::Time::new(timer).and_then(|mut t| t.now());

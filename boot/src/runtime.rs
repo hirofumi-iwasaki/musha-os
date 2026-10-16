@@ -12,6 +12,11 @@ fn launch(
     if *initialized {
         return Ok(());
     }
+    // A missing required boot volume is rejected inside the callback, then
+    // propagated only after the enclosing USB/network owners stop normally.
+    if !crate::bootlog::media_seen() {
+        return Err(Error::NotFound);
+    }
     ctx.advance(time.now().map_err(|_| Error::Io)?)?;
     let required = ctx.version() == musha_api::API_VERSION
         && ctx.arena_bytes() > 0
@@ -42,6 +47,9 @@ fn launch(
     crate::debug(b"MUSHA: APP_ENTERING\n");
     crate::bootlog::ready(!VIEWER);
     let _visible = musha_framebuffer::OutputGuard::allow();
+    if VIEWER {
+        crate::bootlog::viewer(true);
+    }
     app.init(ctx)?;
     *initialized = true;
     Ok(())
@@ -82,13 +90,6 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         let now = time.now().map_err(|_| "APP INPUT ERROR")?;
                         match crate::external::step(files, now, info.framebuffer) {
                             musha_api::bootfile::State::Absent => {
-                                if cfg!(feature = "diagnostics-detail") {
-                                    crate::diagnostics::observation(format_args!(
-                                        "DIAGNOSTIC HOLD ELF ABSENT"
-                                    ));
-                                    crate::debug(b"MUSHA: DIAGNOSTIC_HOLD ELF_ABSENT\n");
-                                    return Ok(true);
-                                }
                                 if crate::external::resumed() {
                                     let (kind, detail) = crate::external::outcome();
                                     app.viewer.returned(kind, detail);
@@ -136,23 +137,11 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                     if crate::external::claimed() {
                         return Ok(true);
                     }
-                    if cfg!(all(external_app, feature = "diagnostics-detail")) {
-                        let no_medium = crate::bootstate::report().files
-                            != musha_platform::readiness::Service::Live;
-                        if no_medium {
-                            crate::diagnostics::observation(format_args!(
-                                "DIAGNOSTIC HOLD NO MEDIUM"
-                            ));
-                            crate::debug(b"MUSHA: DIAGNOSTIC_HOLD NO_MEDIUM\n");
-                        }
-                        return Ok(no_medium);
-                    }
+
                     if initialized {
                         return Ok(false);
                     }
-                    if VIEWER {
-                        crate::diagnostics::hide(true);
-                    }
+
                     ctx.finish_file_discovery(false);
                     if input {
                         external = Some(
@@ -324,17 +313,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                 return Ok(());
             }
         }
-        if cfg!(all(external_app, feature = "diagnostics-detail")) {
-            crate::diagnostics::observation(format_args!(
-                "DIAGNOSTIC HOLD SESSION {:?}",
-                usb_result
-            ));
-            return if usb_result == Err("QUIESCE FAILED") {
-                Err(Error::Io)
-            } else {
-                Ok(())
-            };
-        }
+
         // Only a successful discovery with no input is a missing keyboard.
         // Hardware/application errors must retain the generic session status.
         keyboard_missing = ready && !had_keyboard && usb_result.is_ok() && input_error.is_none();
@@ -366,9 +345,6 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
             return Err(error);
         }
         if !initialized {
-            if VIEWER {
-                crate::diagnostics::hide(true);
-            }
             match crate::net::Session::start(info, &mut time) {
                 Ok(session) => {
                     network = session;
@@ -470,9 +446,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
     if crate::external::claimed() {
         return result;
     }
-    if cfg!(all(external_app, feature = "diagnostics-detail")) {
-        return result;
-    }
+
     if VIEWER {
         // Final backend status drawing can overlap the UI. Repaint after all
         // device owners have stopped; preserve the unavailable/ended screen.
@@ -480,6 +454,7 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
         while !app.viewer.painted() {
             app.viewer.render_step(&mut ctx)?;
         }
+        musha_framebuffer::flush_writes();
     }
     result?;
     crate::debug(b"MUSHA: RUNTIME_COOPERATIVE_OK STEPS=");

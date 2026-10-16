@@ -20,7 +20,7 @@ for case in ('contents','length','missing'):
          '-drive',f'if=pflash,format=raw,file={out/"vars.fd"}','-drive',f'if=none,id=data,format=raw,readonly=on,file={image}',
          '-device','qemu-xhci,id=usbhost','-device','usb-storage,drive=data,bus=usbhost.0','-device','usb-kbd,bus=usbhost.0',
          '-vga','std','-display','none','-debugcon',f'file:{log}','-global','isa-debugcon.iobase=0xe9','-no-reboot']
-    expected='FILE README.TXT MISSING' if case=='missing' else 'XHCI_FAILED README MARKER'
+    expected='device: file readme.txt missing' if case=='missing' else 'XHCI_FAILED README MARKER'
     with (out/'qemu.log').open('w') as stream:
         proc=subprocess.Popen(cmd,stdout=stream,stderr=subprocess.STDOUT)
         try:

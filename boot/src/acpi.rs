@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use musha_framebuffer::metrics as grid;
 use musha_memory::{MemoryMap, Range};
 use musha_platform::Timer;
 use r_efi::efi;
@@ -246,18 +245,10 @@ unsafe fn read(port: u16) -> u32 {
     }
     raw
 }
-pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) -> bool {
+pub(crate) fn diagnose(timer: Timer, _fb: musha_framebuffer::Framebuffer) -> bool {
     if timer.port == 0 {
         show_evidence();
         super::debug(b"MUSHA: ACPI_TIMER_UNAVAILABLE\n");
-        unsafe {
-            fb.text_grid(
-                "TIMER UNAVAILABLE",
-                grid::LABEL,
-                grid::TIMER,
-                fb.color(255, 180, 0),
-            );
-        }
         return false;
     }
     let mut clock = musha_platform::Clock::new(timer, unsafe { read(timer.port) }).unwrap();
@@ -269,14 +260,6 @@ pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) -> bool
                 super::debug(b"MUSHA: ACPI_TIMER_OK MS=");
                 super::debug(&super::cpu::hex(ms));
                 super::debug(b"\n");
-                unsafe {
-                    fb.text_grid(
-                        "TIMER READY",
-                        grid::LABEL,
-                        grid::TIMER,
-                        fb.color(0, 240, 100),
-                    );
-                }
                 return true;
             }
         } else {
@@ -284,14 +267,6 @@ pub(crate) fn diagnose(timer: Timer, fb: musha_framebuffer::Framebuffer) -> bool
         }
     }
     super::debug(b"MUSHA: ACPI_TIMER_STALLED\n");
-    unsafe {
-        fb.text_grid(
-            "TIMER STALLED",
-            grid::LABEL,
-            grid::TIMER,
-            fb.color(255, 0, 0),
-        );
-    }
     false
 }
 

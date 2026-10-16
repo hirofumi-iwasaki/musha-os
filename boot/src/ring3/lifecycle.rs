@@ -174,11 +174,15 @@ pub fn reject(reason: &[u8]) -> ! {
 }
 /// Only synchronous, app-origin faults terminate an app. NMI/#MC/#DF and every
 /// CPL0 fault retain the fatal handler. No exception is resumed in user space.
-pub fn fault(frame: usize, cs: u64, vector: u64, error: u64) {
+pub fn fault(frame: usize, cs: u64, vector: u64, error: u64, rip: u64, rsp: u64) {
     unsafe {
         if ACTIVE && cs & 3 == 3 && matches!(vector, 0 | 6 | 13 | 14) {
             super::verify_fault_stack(frame, cs, vector);
             DETAIL = vector;
+            #[cfg(external_app)]
+            crate::appconsole::fault(vector, error, rip, rsp);
+            #[cfg(not(external_app))]
+            let _ = (rip, rsp);
             crate::debug(b"MUSHA: C3_APP_FAULT VECTOR=");
             crate::debug(&crate::cpu::hex(vector));
             crate::debug(b" ERROR=");

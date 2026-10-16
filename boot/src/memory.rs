@@ -108,14 +108,30 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             return Err(Error::Unsupported);
         }
         let pat = rdmsr(0x277);
-        let find = |kind: u8| {
-            (0u8..8)
-                .find(|i| ((pat >> (*i as usize * 8)) & 255) as u8 == kind)
-                .ok_or(Error::Unsupported)
-        };
-        // Preserve firmware PAT/MTRRs; select existing WB and UC entries.
-        let wb = find(6)?;
-        let uc = find(0)?;
+        // Preserve the firmware PAT/MTRRs. WC is allowed only for GOP and only
+        // when an existing entry encodes it; device registers/DMA remain UC.
+        let mut cache = musha_memory::pat::Indices::select(pat)?;
+        let cache_cr0: usize;
+        asm!("mov {}, cr0", out(reg) cache_cr0, options(nomem, nostack));
+        if cache_cr0 & ((1 << 29) | (1 << 30)) != 0 {
+            cache.framebuffer = cache.uc;
+        }
+        crate::bootlog::detail(
+            "display",
+            format_args!(
+                "framebuffer cache={} index={} pat=0x{:016x} cr0-cache-disabled={} PAT unchanged",
+                if cache.framebuffer_wc() {
+                    "wc"
+                } else {
+                    "uc fallback"
+                },
+                cache.framebuffer,
+                pat,
+                cache_cr0 & ((1 << 29) | (1 << 30)) != 0
+            ),
+        );
+        let wb = cache.wb;
+        let uc = cache.uc;
         crate::diagnostics::set(10, format_args!("MEM CHECK BOOTINFO"));
         crate::diagnostics::set(
             11,
@@ -415,7 +431,7 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         for range in &reserved[2..6] {
             tables.map(*range, true, false, tables.wb)?;
         }
-        tables.map(reserved[6], true, false, tables.uc)?;
+        tables.map(reserved[6], true, false, cache.framebuffer)?;
         // Dedicated DMA pages use UC, including non-snooping scratchpads.
         tables.map(reserved[7], true, false, tables.uc)?;
         tables.map(reserved[8], true, false, tables.uc)?;
@@ -434,7 +450,7 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         asm!("mov {}, cr0",out(reg) cr0,options(nomem,nostack));
         asm!("mov cr0, {}",in(reg) cr0|(1<<16),options(nostack));
         // Old firmware mappings may have cached these newly allocated pages as
-        // WB. Flush dirty lines before changing DMA/GOP pages to UC, then flush
+        // WB. Flush dirty lines before changing DMA/GOP memory types, then flush
         // translations via CR3. No DMA-pool access occurs between these steps.
         asm!("mfence", "wbinvd", options(nostack));
         asm!("mov cr3, {}",in(reg) tables.base,options(nostack));
