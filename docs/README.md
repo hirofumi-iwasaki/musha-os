@@ -152,6 +152,7 @@ Status: record (dates and stage-specific counts remain in each original document
 - [ring3-prototype](ring3-prototype.md)
 - [ryzen-realtek-identification](ryzen-realtek-identification.md)
 - [scenario-games-godot](scenario-games-godot.md)
+- [scenario-mame](scenario-mame.md)
 - [scope-review-0.4.0](scope-review-0.4.0.md)
 - [stage1-0.4.0-results](stage1-0.4.0-results.md)
 - [stage2-0.4.0-results](stage2-0.4.0-results.md)

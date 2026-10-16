@@ -26,7 +26,7 @@ libc candidates, to be decided when v0.6.0 is scoped by measuring the sysdeps ea
 | Time: `clock_gettime(CLOCK_MONOTONIC)`, `nanosleep`, `usleep`, `sleep` | supported, microsecond resolution | `SYS_TIME` (µs in v0.6.0), `SYS_WAIT` |
 | Time: `CLOCK_REALTIME`, `gettimeofday`, `time`, `localtime` | supported, fixed offset from `tz=` | `SYS_CLOCK` (v0.5.0 RTC) |
 | Files, read-only: `open(O_RDONLY)`, `read`, `pread`, `lseek`, `fstat`, `stat`, `close`, `opendir`/`readdir`, `access` | supported on the boot medium mounted at `/` (read-only); `SETTINGS/` and `EFI/` are not visible | `SYS_FILE_*` (v0.5.0) |
-| Files, write: `open(O_WRONLY|O_CREAT)`, `write`, `unlink`, `rename`, `mkdir` | EROFS in p1; a later profile may allow a bounded application directory | — |
+| Files, write: `open(O_WRONLY|O_CREAT)`, `write`, `unlink`, `rename`, `mkdir` | EROFS in p1; p2 candidate: a bounded application directory (`APPS/<name>/`, same bounded-write rules as `SETTINGS/`), first needed by the [MAME scenario](scenario-mame.md) for `nvram/` and `cfg/` | — |
 | Standard streams: `stdout`/`stderr` | supported; both append to the boot log console (`write(1/2)` → `log`) | `log` |
 | Standard streams: `stdin` | supported as line input from the keyboard (canonical mode only; `read(0)` returns a line) | `SYS_INPUT` |
 | `isatty`, `termios` | `isatty(0/1/2)` = 1; `tcgetattr` returns fixed values, `tcsetattr` accepted and ignored | console control (v0.5.0 candidate) |
@@ -84,7 +84,7 @@ libc の候補は、v0.6.0 の範囲決定時に各候補の sysdeps 量を測�
 | 時刻：`clock_gettime(CLOCK_MONOTONIC)`、`nanosleep`、`usleep`、`sleep` | 対応、µs 精度 | `SYS_TIME`（v0.6.0 で µs 化）、`SYS_WAIT` |
 | 時刻：`CLOCK_REALTIME`、`gettimeofday`、`time`、`localtime` | 対応。時差は `tz=` の固定オフセット | `SYS_CLOCK`（v0.5.0 の RTC） |
 | ファイル読出し：`open(O_RDONLY)`、`read`、`pread`、`lseek`、`fstat`、`stat`、`close`、`opendir`/`readdir`、`access` | 起動媒体を `/`（読出し専用）として対応。`SETTINGS/` と `EFI/` は見えない | `SYS_FILE_*`（v0.5.0） |
-| ファイル書込み：`open(O_WRONLY|O_CREAT)`、`write`、`unlink`、`rename`、`mkdir` | p1 では EROFS。後のプロファイルで上限付きアプリ用ディレクトリーを認める可能性 | — |
+| ファイル書込み：`open(O_WRONLY|O_CREAT)`、`write`、`unlink`、`rename`、`mkdir` | p1 では EROFS。p2 の候補：上限付きアプリ用ディレクトリー（`APPS/<名前>/`、`SETTINGS/` と同じ上限付き書込み規則）。最初に必要とするのは [MAME シナリオ](scenario-mame.md)の `nvram/` と `cfg/` | — |
 | 標準ストリーム：`stdout`/`stderr` | 対応。どちらも起動ログのコンソールへ追記（`write(1/2)` → `log`） | `log` |
 | 標準ストリーム：`stdin` | キーボードからの行入力として対応（canonical モードのみ。`read(0)` は 1 行を返す） | `SYS_INPUT` |
 | `isatty`、`termios` | `isatty(0/1/2)` = 1。`tcgetattr` は固定値、`tcsetattr` は受理して無視 | コンソール制御（v0.5.0 候補） |

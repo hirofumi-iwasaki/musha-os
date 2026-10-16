@@ -51,7 +51,7 @@ v0.4.0 makes the drive, settings, input (USB and BLE) and the viewer usable as a
 
 ### Beyond v0.5.0 (from the games scenario)
 
-The [games scenario](scenario-games-godot.md) (Godot as the placeholder target, no GPU driver in 0.x) orders later work: v0.6.0 candidates are a libc layer (musl), C++ runtime, a real allocator, a raised arena limit, microsecond time, a single-thread contract and an SDL2 port as the proving target; v0.7.0 candidate is Mesa `softpipe` providing OpenGL 3.3 on the CPU. The libc layer follows the [Musha POSIX profile](posix-profile.md): the POSIX API as a library interface for one static program, without the process model. None of these is a v0.5.0 goal.
+The [games scenario](scenario-games-godot.md) (Godot as the placeholder target, no GPU driver in 0.x) orders later work: v0.6.0 candidates are a libc layer (musl), C++ runtime with exceptions and RTTI, a real allocator, a raised arena limit, a raised `IMAGE_LIMIT`, microsecond time, cooperative `std::thread` and an SDL2 port as the proving target; the [MAME scenario](scenario-mame.md) (CPU rendering, no GL) follows SDL2; v0.7.0 candidate is Mesa `softpipe` providing OpenGL 3.3 on the CPU. The libc layer follows the [Musha POSIX profile](posix-profile.md): the POSIX API as a library interface for one static program, without the process model. None of these is a v0.5.0 goal.
 
 ### Explicitly outside v0.5.0 (as of this draft)
 
@@ -116,7 +116,7 @@ v0.4.0 で USB・設定・入力（USB と BLE）・ビューアーが小さな�
 
 ### v0.5.0 より後（ゲーム用途シナリオから）
 
-[ゲーム用途シナリオ](scenario-games-godot.md)（Godot を仮置きの目標とし、0.x 系では GPU ドライバーを持たない）が後の作業順序を決める：v0.6.0 の候補は libc 層（musl）、C++ ランタイム、本物のアロケーター、arena 上限の引上げ、µs 時刻、単一スレッド契約、検証対象としての SDL2 移植。v0.7.0 の候補は Mesa `softpipe` による CPU 上の OpenGL 3.3。libc 層は [Musha POSIX プロファイル](posix-profile.md)に従う：1 本の静的プログラムに対するライブラリーインターフェースとしての POSIX API であり、プロセスモデルは持たない。いずれも v0.5.0 の目標ではない。
+[ゲーム用途シナリオ](scenario-games-godot.md)（Godot を仮置きの目標とし、0.x 系では GPU ドライバーを持たない）が後の作業順序を決める：v0.6.0 の候補は libc 層（musl）、例外と RTTI 付きの C++ ランタイム、本物のアロケーター、arena 上限の引上げ、`IMAGE_LIMIT` の引上げ、µs 時刻、協調型 `std::thread`、検証対象としての SDL2 移植。SDL2 の次に [MAME シナリオ](scenario-mame.md)（CPU 描画、GL 無し）。v0.7.0 の候補は Mesa `softpipe` による CPU 上の OpenGL 3.3。libc 層は [Musha POSIX プロファイル](posix-profile.md)に従う：1 本の静的プログラムに対するライブラリーインターフェースとしての POSIX API であり、プロセスモデルは持たない。いずれも v0.5.0 の目標ではない。
 
 ### v0.5.0 に含めないもの（この草案時点）
 

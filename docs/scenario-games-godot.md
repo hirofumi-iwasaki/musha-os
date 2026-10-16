@@ -40,7 +40,8 @@ Consequence: the screen path for games is CPU rendering into an arena back buffe
 | Version | Content | Meaning for the scenario |
 |---|---|---|
 | 0.5.0 (scoped) | display present, read-only files, audio, query, random, SDK runtime | display, sound and data paths exist |
-| 0.6.0 (candidate) | libc layer (musl), C++ runtime, real allocator, arena limit raised, µs time, single-thread contract; **SDL2 port** as the proving target (software renderer + Musha video/audio/input backends) | large C/C++ programs run; many existing 2D games run through SDL before Godot does |
+| 0.6.0 (candidate) | libc layer (musl), C++ runtime (with exceptions and RTTI, needed by MAME), real allocator, arena limit raised, `IMAGE_LIMIT` raised, µs time, cooperative `std::thread`; **SDL2 port** as the proving target (software renderer + Musha video/audio/input backends) | large C/C++ programs run; many existing 2D games run through SDL before Godot does |
+| 0.6.x or 0.7.0 (candidate) | **MAME port** (`osd/musha`, CPU rendering, no GL) per the [MAME scenario](scenario-mame.md) | first large existing program runs with its core unchanged |
 | 0.7.0 (candidate) | Mesa `softpipe` providing GL 3.3 on the CPU | prerequisite of Godot's Compatibility renderer |
 | later | Godot platform port: single-threaded, Compatibility renderer, `.pck` from the drive, `SYS_AUDIO`, `SYS_INPUT` | scenario reached |
 
@@ -95,7 +96,8 @@ Musha-OS は 0.x 系で GPU ドライバーを**持たない**。3 つの選択�
 | 版 | 内容 | シナリオにとっての意味 |
 |---|---|---|
 | 0.5.0（範囲決定済み） | 画面 present、読出し専用ファイル、音声、問合せ、乱数、SDK ランタイム | 画面・音・データの経路が揃う |
-| 0.6.0（候補） | libc 層（musl）、C++ ランタイム、本物のアロケーター、arena 上限引上げ、µs 時刻、単一スレッド契約。検証対象として **SDL2 の移植**（ソフトウェアレンダラー＋Musha のビデオ・音声・入力バックエンド） | 大きな C/C++ プログラムが動く。Godot より先に既存の 2D ゲームの多くが SDL 経由で動く |
+| 0.6.0（候補） | libc 層（musl）、C++ ランタイム（MAME が要る例外と RTTI 付き）、本物のアロケーター、arena 上限引上げ、`IMAGE_LIMIT` 引上げ、µs 時刻、協調型 `std::thread`。検証対象として **SDL2 の移植**（ソフトウェアレンダラー＋Musha のビデオ・音声・入力バックエンド） | 大きな C/C++ プログラムが動く。Godot より先に既存の 2D ゲームの多くが SDL 経由で動く |
+| 0.6.x か 0.7.0（候補） | **MAME の移植**（`osd/musha`、CPU 描画、GL 無し）。[MAME シナリオ](scenario-mame.md)参照 | 大きな既存プログラムがコア無改変で初めて動く |
 | 0.7.0（候補） | Mesa `softpipe` で CPU 上に GL 3.3 | Godot Compatibility レンダラーの前提 |
 | その後 | Godot プラットフォーム層の移植：単一スレッド、Compatibility、USB からの `.pck`、`SYS_AUDIO`、`SYS_INPUT` | シナリオの達成 |
 
