@@ -39,6 +39,16 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(samples['rust']['hello.elf'].name,'hello-rust.elf')
         self.assertEqual(samples['rust']['start-record.elf'].name,'start-record-rust.elf')
         self.assertTrue(all(call.kwargs['check'] for call in run.call_args_list))
+    def test_measured_sections_and_unavailable_minimal_are_explicit(self):
+        import json
+        output=d.release.stage(self.root/'measured',self.efi,dict(self.prov,efi_size={'file_bytes':1}))
+        manifest=json.loads((output/'build-manifest.json').read_text())
+        self.assertEqual(manifest['efi_size']['file_bytes'],4096)
+        self.assertEqual(manifest['efi_size']['sections']['.data'],{'raw_bytes':512,'virtual_bytes':0x1234})
+        self.assertIsNone(manifest['efi_size_minimal'])
+        self.assertEqual(manifest['efi_size_minimal_status']['status'],'unavailable')
+        self.assertEqual(manifest['efi_size_minimal_status']['blocking_drivers'],['lan','bluetooth'])
+
     def test_cli_version_mismatch_precedes_build(self):
         r=subprocess.run([sys.executable,'-B',str(d.release.ROOT/'tools/prepare-release.py'),'--version','0.3.0'],capture_output=True,text=True)
         self.assertNotEqual(r.returncode,0);self.assertIn('VERSION mismatch',r.stderr)

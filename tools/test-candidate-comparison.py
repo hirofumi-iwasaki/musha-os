@@ -16,6 +16,11 @@ class ComparisonTests(unittest.TestCase):
     def test_missing_checksum(self):
         p=self.right/'SHA256SUMS';p.write_text('\n'.join(p.read_text().splitlines()[1:])+'\n')
         with self.assertRaises(ValueError):d.comparison.compare(self.left,self.right,'efi')
+    def test_size_metadata_is_remeasured_from_zip_bytes(self):
+        p=self.right/'build-manifest.json';m=json.loads(p.read_text());m['efi_size']['sections']['.data']['virtual_bytes']+=1;p.write_text(json.dumps(m))
+        checks=self.right/'SHA256SUMS';checks.write_text(''.join(f'{d.digest(f)}  {f.name}\n' for f in sorted(self.right.iterdir()) if f.name!='SHA256SUMS'))
+        with self.assertRaisesRegex(ValueError,'EFI size manifest differs'):d.comparison.inventory(self.right)
+
     def test_source_change_not_same_source(self):
         p=self.right/'build-manifest.json';m=json.loads(p.read_text());m['commit']='b'*40;p.write_text(json.dumps(m))
         checks=self.right/'SHA256SUMS';checks.write_text(''.join(f'{d.digest(f)}  {f.name}\n' for f in sorted(self.right.iterdir()) if f.name!='SHA256SUMS'))

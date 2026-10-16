@@ -14,8 +14,7 @@ VERSION=(ROOT/'VERSION').read_text().strip()
 class DistributionTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name).resolve()
-        self.efi=self.root/'test.efi';b=bytearray(1800);b[:2]=b'MZ';struct.pack_into('<I',b,60,128);b[128:132]=b'PE\0\0'
-        struct.pack_into('<H',b,132,0x8664);struct.pack_into('<H',b,152,0x20b);struct.pack_into('<H',b,220,10);self.efi.write_bytes(b)
+        self.efi=self.root/'test.efi';self.efi.write_bytes(load('test-efi-size').fixture())
         self.prov={'commit':'a'*40,'features':[],'working_tree':'','tag':f'v{VERSION}'}
     def zip(self,payload=None,previous=None,name='update.zip'):
         path=self.root/name;make_zip(path,payload or drive_payload(self.efi,VERSION),VERSION,self.prov,previous);return path

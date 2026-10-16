@@ -87,6 +87,7 @@ jobs:
           python3 tools/test-usb-image.py
           python3 tools/test-usb-build.py
           python3 tools/test-release-package.py
+          python3 tools/test-efi-size.py
           python3 tools/test-distribution.py
           python3 tools/test-candidate-comparison.py
       - name: Experimental SDK compile and conformance (no guest execution)

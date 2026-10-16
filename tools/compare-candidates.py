@@ -4,6 +4,7 @@
 import argparse,gzip,hashlib,importlib.util,json,subprocess,zipfile
 from pathlib import Path
 from distribution import digest,read_zip,USER_DOCS
+from efi_size import measure_bytes as measure_efi_size
 ROOT=Path(__file__).resolve().parents[1]
 
 def inventory(root):
@@ -42,6 +43,8 @@ def inventory(root):
                 runtime[language + ' SDK/' + name] = entry
     if runtime != m['runtime_payload']:
         raise ValueError('Runtime manifest differs')
+    if 'efi_size' in m and m['efi_size'] != measure_efi_size(payload['EFI/BOOT/BOOTX64.EFI']):
+        raise ValueError('EFI size manifest differs')
     import io
     spec = importlib.util.spec_from_file_location('deploy', ROOT / 'tools/deploy-image.py')
     deploy = importlib.util.module_from_spec(spec)

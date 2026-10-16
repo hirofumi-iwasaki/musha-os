@@ -17,6 +17,7 @@ import zipfile
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from distribution import version_check, make_zip, json_bytes, usb_readme
+from efi_size import measure as measure_efi_size, minimal_unavailable
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -57,6 +58,7 @@ def stage(destination, efi, provenance, release=False, version=None, previous_pa
         raise ValueError('Distribution VERSION/provenance mismatch')
     if provenance.get('features', []) or provenance.get('RUSTFLAGS', '') or provenance.get('CARGO_ENCODED_RUSTFLAGS', ''):
         raise ValueError('Only the normal, unmodified build flags are permitted')
+    efi_size = measure_efi_size(efi)
     destination = Path(destination).absolute()
     if destination.exists() or destination.is_symlink():
         raise FileExistsError(destination)
@@ -117,6 +119,9 @@ def stage(destination, efi, provenance, release=False, version=None, previous_pa
             version=version,
             status='preview' if provenance.get('working_tree') else 'candidate',
             layout_version=2,
+            efi_size=efi_size,
+            efi_size_minimal=None,
+            efi_size_minimal_status=minimal_unavailable(),
             payload=update['files'],
             update_schema=3,
             retired_files=update['retired_files'],
