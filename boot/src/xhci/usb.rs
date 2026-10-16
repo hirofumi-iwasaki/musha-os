@@ -1297,7 +1297,11 @@ fn run_keyboard(
         Some(prepared) => Some(file::Session::new(prepared)?),
         None => None,
     };
-    tick(super::AppEvent::Ready(true))?;
+    let stop = tick(super::AppEvent::Ready(true))?;
+    // Diagnostic capture exits through the existing confirmed controller stop.
+    if cfg!(feature = "diagnostics-detail") && stop {
+        return Ok(());
+    }
     let op = (host.regs.read(0)? & 255) as usize;
     let deadline = if cfg!(feature = "qemu-debug") && !cfg!(feature = "input-persistent") {
         host.clock
@@ -1588,7 +1592,10 @@ fn run_pointer(
         .map(file::Session::new)
         .transpose()?;
     let mut state = PointerState::default();
-    tick(super::AppEvent::Ready(false))?; // Mouse is never reported as a keyboard.
+    let stop = tick(super::AppEvent::Ready(false))?; // Mouse is never reported as a keyboard.
+    if cfg!(feature = "diagnostics-detail") && stop {
+        return Ok(());
+    }
     crate::debug(b"MUSHA: HID_MOUSE_READY NO_KEYBOARD\n");
     let mut poll = |tick: &mut super::Tick<'_>| {
         poll_mouse(host, mouse, &mut state, tick)?;

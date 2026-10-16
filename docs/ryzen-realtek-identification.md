@@ -6,7 +6,7 @@ Status: current (read-only diagnostic procedure; physical capture pending).
 
 ### Development EFI read-only capture (2026-10-15)
 
-Use an owner-approved development EFI with `t2-diagnostics` and `log=devices` (F8/8 can force devices). This is a local build feature, not a claim that the NIC works. Record EFI SHA256, CONFIG, board, cold interval (power off at least10 seconds) and AC state. The normal build does not perform this capture. Copying EFI to physical USB and running it remain owner operations.
+Use an owner-approved development EFI with **`t2-diagnostics,diagnostics-detail`** and `log=devices` (F8/8 can force devices). This is a local build feature, not a claim that the NIC works. Record EFI SHA256, CONFIG, board, cold interval (power off at least10 seconds) and AC state. The normal build does not perform this capture. Copying EFI to physical USB and running it remain owner operations.
 
 On the devices inventory/journal pages photograph `RTL BDF`, PCI10EC:8168 revision, subsystem vendor:device, PCI command, BAR0/BAR2 type/base/length/raw and `RTL TXCONFIG40`. A zero length means firmware resource evidence was unavailable, not a measured zero-sized BAR. The diagnostic reads PCI configuration only; it never probes BAR sizes, changes command/BME, enables decode, initializes PHY/OCP or writes NIC MMIO. Its only NIC register access is one volatile32-bit TxConfig read at offset0x40, guarded across subsequent display calls.
 
@@ -16,6 +16,8 @@ Linux is unnecessary for this path. `lspci -xxx` dumps PCI configuration space; 
 
 Supply the raw capture, exact motherboard/NIC identification, EFI hash and BDF/revision/subsystem/BAR evidence for MAC-version selection. Only then review the corresponding PHY/OCP/firmware requirements and implement reset/link, rings/frame adapter, existing lwIP DHCP/UDP and stage5 stop/restart. Host negative tests and QEMU82574 regression precede an opt-in Ryzen physical trial. PCI revision plus TxConfig is identification evidence, not permission to perform an unreviewed register sequence. The current Realtek host prototype has no runtime transport; normal LAN defaults remain unchanged pending physical acceptance.
 
+
+The corrected detailed development EFI is `out/t2-detail-segment-fix-20261016/files/EFI/BOOT/BOOTX64.EFI`, SHA256 `710cf02f0a669631f81a05d0d1c21690c98f51bd8c1c4055c36b6e2dc39c52fb`, built from commit `12a4aa0c1395856d8e5a56959fb6b1803107f86c` plus the recorded uncommitted diagnostic-only Ready-stop correction. It includes the FS/GS takeover correction. The old `59a701b1…` build had `t2-diagnostics` alone: Realtek-specific rows entered the journal but were not shown by its normal summary. `log=devices` alone cannot add the missing compiled page flow. The new `diagnostics-detail` build renders and rotates retained journal pages; look for RTL BDF, subsystem/command, BAR0/BAR2 and TXCONFIG40 or its explicit skip reason. For sustained diagnostic hold use owner-prepared media with no AUTORUN; do not delete an existing application to obtain it. An AUTORUN can divert into application execution. This is an evidence build, not a normal boot/acceptance image.
 
 ### Retained host identification routes
 
@@ -61,7 +63,7 @@ After review, append the explicit identifiers and evidence path to a new Ryzen s
 
 ### 開発EFIの読取り専用採取（2026-10-15）
 
-所有者承認対象の開発EFIを`t2-diagnostics`・`log=devices`で使用します（F8/8でもdevices強制可）。これはローカルbuild機能でNIC動作の証明ではありません。EFI SHA256、CONFIG、board、電源断10秒以上の冷間条件とAC状態を記録。通常版は本採取を行いません。実USBへのcopy・実行は所有者操作です。
+所有者承認対象の開発EFIを**`t2-diagnostics,diagnostics-detail`**・`log=devices`で使用します（F8/8でもdevices強制可）。これはローカルbuild機能でNIC動作の証明ではありません。EFI SHA256、CONFIG、board、電源断10秒以上の冷間条件とAC状態を記録。通常版は本採取を行いません。実USBへのcopy・実行は所有者操作です。
 
 devices inventory/journalで`RTL BDF`、PCI10EC:8168 revision、subsystem vendor:device、PCI command、BAR0/BAR2の種別/base/長さ/raw、`RTL TXCONFIG40`を撮影。長さ0はfirmware資源根拠が得られなかった意味で、実測サイズ0ではありません。診断はPCI設定を読み取るだけで、BARサイズprobe、command/BME変更、decode有効化、PHY/OCP初期化、NIC MMIO書込みを行いません。唯一のNIC registerアクセスはoffset0x40のvolatile32-bit読取り1回で、表示再呼出しでも増えません。
 
@@ -70,6 +72,8 @@ firmware PCI I/O資源descriptorとlive memory BARの一致が必要です。ペ
 Linuxは不要です。`lspci -xxx`はPCI設定空間のdumpでTxConfig MMIO値は得られず、設定offset0x40の値を代用できません。アドレス推測・任意register書込みtoolは使いません。skip時は理由と全写真を資源review用に保持します。
 
 raw採取値、正確なboard/NIC、EFI hash、BDF/revision/subsystem/BAR根拠を揃えMAC版を選定。その後に対応PHY/OCP/firmware要件、reset/link、ring/frame adapter、既存lwIP DHCP/UDP、工程5停止/再起動を実装します。host負例とQEMU82574回帰後にRyzen任意feature実機試験へ進みます。PCI revisionとTxConfigは識別根拠で未review書込み手順の許可ではありません。現Realtekはhost prototypeでruntime通信未接続、通常LAN既定は実機合格まで維持します。
+
+修正詳細診断EFIは`out/t2-detail-segment-fix-20261016/files/EFI/BOOT/BOOTX64.EFI`、SHA256 `710cf02f0a669631f81a05d0d1c21690c98f51bd8c1c4055c36b6e2dc39c52fb`、commit `12a4aa0c1395856d8e5a56959fb6b1803107f86c`＋記録した診断限定Ready停止の未commit修正由来でFS/GS takeover修正を含みます。旧`59a701b1…`は`t2-diagnostics`だけでRTL専用行をjournalへ保持しても通常summaryには出しませんでした。`log=devices`だけでは未compileの詳細page経路を追加できません。新`diagnostics-detail`版はjournalを描画・巡回し、RTL BDF、subsystem/command、BAR0/BAR2、TXCONFIG40又はskip理由を採取できます。継続holdには所有者が準備するAUTORUN無し診断媒体を使用し、既存appを削除して用意しません。AUTORUNがあるとapp経路へ進む場合があります。通常boot/受入像ではなく証拠採取版です。
 
 ### 保持するhost識別手順
 

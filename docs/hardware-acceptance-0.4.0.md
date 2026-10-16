@@ -6,6 +6,8 @@ Status: current (blank acceptance worksheet, 2026-10-15). All gates PENDING; no 
 
 ### English
 
+Additional corrected detailed T2/Realtek development EFI (2026-10-16): `out/t2-detail-segment-fix-20261016/files/EFI/BOOT/BOOTX64.EFI`, SHA256 `710cf02f0a669631f81a05d0d1c21690c98f51bd8c1c4055c36b6e2dc39c52fb`, source commit `12a4aa0c1395856d8e5a56959fb6b1803107f86c` plus the recorded uncommitted diagnostic-only Ready-stop correction, features `t2-diagnostics,diagnostics-detail`, CONFIG `log=devices`. Includes the committed FS/GS correction. Unlike the older t2-only59a701b1 artifact, it renders/rotates journal detail pages; the old artifact and its origin remain preserved below. RTL-specific values are still physically unmeasured. See [capture instructions](ryzen-realtek-identification.md).
+
 ### Appended NUC5 observation and corrected development EFI — 2026-10-16
 
 `IMG_7654.MOV` with the prior `268b9a49…` I218 EFI is **FAIL**, not acceptance: software-NVM configuration refused; later separate #GP (VECTOR D, ERROR18h, RIP140056D89h) during FS restore. No Hello exit/viewer return or DHCP/echo is established; cold-off/AC conditions are unverified. Original worksheet rows and evidence remain unchanged. See [exact diagnosis](nuc5-segment-recovery-0.4.0.md).
@@ -27,6 +29,8 @@ Both new EFIs were built with `cargo build --locked --release --target x86_64-un
 `i218-network` also enables `i218-phy-probe`. **`log=devices` is a SETTINGS/CONFIG.TXT runtime setting, not a build feature**; record the actual media CONFIG bytes/hash before a test. The HCI probe transitively enables `qemu-debug` and is an explicit development transport reset, not the normal Bluetooth pairing/runtime build. It sends HCI Reset without loading firmware; an ASUS reset response does not prove CSR reference-dongle, pairing, Xbox or HOGP compatibility. Record exact USB IDs/revision/class and response/error as the [Bluetooth quickcheck](bluetooth-hardware-quickcheck.md) specifies. Instructions describe owner execution only; the normal candidate identity above remains PENDING.
 
 ### 日本語
+
+修正詳細T2/Realtek開発EFI追記（2026-10-16）：`out/t2-detail-segment-fix-20261016/files/EFI/BOOT/BOOTX64.EFI`、SHA256 `710cf02f0a669631f81a05d0d1c21690c98f51bd8c1c4055c36b6e2dc39c52fb`、source commit `12a4aa0c1395856d8e5a56959fb6b1803107f86c`＋記録した診断限定Ready停止の未commit修正、feature `t2-diagnostics,diagnostics-detail`、CONFIG `log=devices`。commit済FS/GS修正を含み、旧t2単独59a701b1版と違いjournal詳細を描画・巡回します。旧artifact・来歴は下記に保持。RTL固有値は実機未採取。[採取手順](ryzen-realtek-identification.md)参照。
 
 ### NUC5観測追記と修正開発EFI — 2026-10-16
 
