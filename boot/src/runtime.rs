@@ -48,6 +48,7 @@ fn launch(
     crate::bootlog::ready(!VIEWER);
     let _visible = musha_framebuffer::OutputGuard::allow();
     if VIEWER {
+        crate::bootlog::phase("viewer", "starting");
         crate::bootlog::viewer(true);
     }
     app.init(ctx)?;

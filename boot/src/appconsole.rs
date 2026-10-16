@@ -13,11 +13,20 @@ pub fn message(args: core::fmt::Arguments<'_>) {
     crate::bootlog::event(musha_platform::boot_log::Level::Application, "", args);
 }
 pub fn rejected(reason: &[u8]) {
+    #[cfg(external_app)]
+    let name = crate::external::application_name();
+    #[cfg(external_app)]
+    let name = name.as_str();
+    #[cfg(not(external_app))]
+    let name = "application";
     message(format_args!(
-        "app: rejected: {}",
+        "app: {} rejected, {}",
+        name,
         core::str::from_utf8(reason).unwrap_or("invalid reason")
     ));
     crate::bootstate::update(|r, _| r.finish(false));
+    #[cfg(external_app)]
+    crate::external::hold_app_screen();
 }
 pub unsafe fn fault(vector: u64, error: u64, rip: u64, rsp: u64) {
     #[cfg(external_app)]
@@ -38,4 +47,6 @@ pub unsafe fn fault(vector: u64, error: u64, rip: u64, rsp: u64) {
         ));
     }
     crate::bootstate::update(|r, _| r.finish(false));
+    #[cfg(external_app)]
+    crate::external::hold_app_screen();
 }

@@ -40,6 +40,9 @@ pub fn exited(status: i32) {
         name.as_str(),
         status
     ));
+    hold_app_screen();
+}
+pub fn hold_app_screen() {
     #[cfg(feature = "app-log-screen-probe")]
     {
         crate::debug(b"MUSHA: APP_LOG_SCREEN_HOLD\n");
@@ -256,6 +259,9 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
             crate::xhci::release_files_stopped();
         }
         let state = unsafe { (&*STAGING.0.get()).0.state() };
+        if matches!(state, State::Ready(_) | State::Rejected(_)) {
+            crate::bootlog::ready(true);
+        }
         if matches!(state, State::Ready(_)) {
             if unsafe { RESUMED } {
                 crate::bootlog::application_screen();
@@ -265,7 +271,6 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
             crate::appconsole::message(format_args!("app: starting {}", name.as_str()));
             crate::debug(b"MUSHA: EXTERNAL_ELF_DEVICES_STOPPED\n");
             let outcome = execute(arena, info);
-            crate::bootlog::ready(false);
             unsafe {
                 LAST_OUTCOME = (outcome.kind, outcome.detail);
             }
@@ -279,7 +284,14 @@ pub fn finish(arena: &mut [u8], info: &crate::BootInfo) {
                 LAST_OUTCOME = (2, 0);
             }
             crate::debug(b"MUSHA: EXTERNAL_ELF_READ_REJECTED VIEWER\n");
-            let _ = reason;
+            let message = match reason {
+                Rejection::Size => "file size outside supported bounds",
+                Rejection::Duplicate => "ambiguous file name",
+                Rejection::Timeout => "file read deadline exceeded",
+                Rejection::Interrupted => "file read interrupted",
+                Rejection::Stream(_) => "file service read failed",
+            };
+            crate::appconsole::rejected(message.as_bytes());
         }
         // A Ring3 disconnect request may have arrived during execute. Its loan
         // has now returned normally; consume it as part of this existing restart.

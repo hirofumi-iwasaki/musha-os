@@ -56,9 +56,7 @@ impl Tables {
                 }
                 table = (value & ADDRESS) as usize;
             }
-            let cache_bits = ((cache & 1) as u64) << 3
-                | (((cache >> 1) & 1) as u64) << 4
-                | (((cache >> 2) & 1) as u64) << 7;
+            let cache_bits = musha_memory::pat::pte_bits(cache)?;
             let leaf = address as u64
                 | 1
                 | if write { 2 } else { 0 }
@@ -66,6 +64,46 @@ impl Tables {
                 | cache_bits;
             unsafe {
                 (table as *mut u64).add((address >> 12) & 511).write(leaf);
+            }
+        }
+        Ok(())
+    }
+    /// Inspect the installed identity leaf, not merely the requested map flags.
+    unsafe fn verify(
+        &self,
+        range: Range,
+        cache: u8,
+        write: bool,
+        execute: bool,
+    ) -> Result<(), Error> {
+        for address in (range.aligned()?.start..range.aligned()?.end).step_by(PAGE) {
+            let mut table = self.base;
+            for shift in [39, 30, 21] {
+                let value = unsafe {
+                    (table as *const u64)
+                        .add((address >> shift) & 511)
+                        .read_volatile()
+                };
+                if value & 1 == 0 || value & 128 != 0 {
+                    return Err(Error::Invalid);
+                }
+                table = (value & ADDRESS) as usize;
+                if table < self.base || table >= self.base + self.used * PAGE {
+                    return Err(Error::Invalid);
+                }
+            }
+            let leaf = unsafe {
+                (table as *const u64)
+                    .add((address >> 12) & 511)
+                    .read_volatile()
+            };
+            if leaf & ADDRESS != address as u64
+                || leaf & 1 == 0
+                || musha_memory::pat::pte_index(leaf) != cache
+                || (leaf & 2 != 0) != write
+                || (leaf & NX == 0) != execute
+            {
+                return Err(Error::Invalid);
             }
         }
         Ok(())
@@ -81,7 +119,102 @@ unsafe fn rdmsr(index: u32) -> u64 {
 }
 unsafe fn wrmsr(index: u32, value: u64) {
     unsafe {
-        asm!("wrmsr",in("ecx") index,in("eax") value as u32,in("edx") (value>>32) as u32,options(nomem,nostack));
+        asm!("wrmsr",in("ecx") index,in("eax") value as u32,in("edx") (value>>32) as u32,options(nostack));
+    }
+}
+/// Published once by BSP before application/AP startup. PAT index selection is
+/// verified, not a claim of effective MTRR/physical WC throughput.
+#[derive(Clone, Copy, Debug)]
+pub struct CacheInfo {
+    pub before: u64,
+    pub requested: u64,
+    pub readback: u64,
+    pub pat_writes: u8,
+    pub mtrr_before: u64,
+    pub mtrr_after: u64,
+    pub firmware_tables: usize,
+    pub wb: u8,
+    pub uc: u8,
+    pub framebuffer: u8,
+    pub gop_pages: usize,
+    pub leaf_verified: bool,
+}
+struct CachePublication(core::cell::UnsafeCell<Option<CacheInfo>>);
+// Single BSP writer, release publication, immutable after publication.
+unsafe impl Sync for CachePublication {}
+static CACHE_INFO: CachePublication = CachePublication(core::cell::UnsafeCell::new(None));
+static CACHE_PUBLISHED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+static PAT_ATTEMPTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+pub fn cache_info() -> Option<CacheInfo> {
+    if CACHE_PUBLISHED.load(core::sync::atomic::Ordering::Acquire) {
+        unsafe { *CACHE_INFO.0.get() }
+    } else {
+        None
+    }
+}
+/// Intel SDM Vol 3A 11.12.4 refers PAT updates to 11.11.8. Only IA32_PAT
+/// is written once; IA32_MTRR_DEF_TYPE is temporarily disabled then restored.
+/// Caller audited all firmware mappings to exclude entry 1, APs never started,
+/// no UEFI callbacks remain. IF stays clear. PCID/LA57 were rejected above.
+unsafe fn program_pat(
+    update: musha_memory::pat::Update,
+    features: u32,
+    cr4: usize,
+    cr3: usize,
+    firmware_tables: usize,
+) -> Result<CacheInfo, Error> {
+    unsafe {
+        let flags: usize;
+        let cr0: usize;
+        asm!("pushfq", "pop {}", out(reg) flags);
+        asm!("mov {}, cr0", out(reg) cr0, options(nomem,nostack));
+        // MTRR and APIC are needed for the documented protocol and BSP check.
+        if features & ((1 << 12) | (1 << 9)) != ((1 << 12) | (1 << 9))
+            || flags & (1 << 9) != 0
+            || cr0 & ((1 << 29) | (1 << 30)) != 0
+            || rdmsr(0x1b) & (1 << 8) == 0
+            || rdmsr(0xfe) & (1 << 10) == 0
+        {
+            crate::bootlog::failure("PAT", "BSP/cache/MTRR precondition failed");
+            return Err(Error::Unsupported);
+        }
+        if PAT_ATTEMPTED.swap(true, core::sync::atomic::Ordering::AcqRel) {
+            return Err(Error::Invalid);
+        }
+        let mtrr_before = rdmsr(0x2ff);
+        // These asm blocks are compiler memory barriers (no `nomem`). No
+        // framebuffer, DMA or MMIO is accessed during the transaction.
+        asm!("mfence", "mov cr0, {}", "wbinvd", in(reg) (cr0 | (1<<30)) & !(1<<29), options(nostack));
+        asm!("mov cr4, {}", "mov cr3, {}", in(reg) cr4 & !(1<<7), in(reg) cr3, options(nostack));
+        wrmsr(0x2ff, mtrr_before & !(1 << 11));
+        wrmsr(0x277, update.requested);
+        let readback = rdmsr(0x277);
+        // A corrupt PAT must never re-enable caches or return to normal Rust
+        // logging. Keep no-fill/MTRRs disabled, no extra PAT write/rollback.
+        if !update.verified(readback) {
+            asm!("cli", "2: hlt", "jmp 2b", options(noreturn, nostack));
+        }
+        wrmsr(0x2ff, mtrr_before);
+        asm!("wbinvd", "mov cr3, {}", in(reg) cr3, options(nostack));
+        let mtrr_after = rdmsr(0x2ff);
+        if mtrr_after != mtrr_before {
+            asm!("cli", "2: hlt", "jmp 2b", options(noreturn, nostack));
+        }
+        asm!("mov cr0, {}", "mov cr4, {}", in(reg) cr0, in(reg) cr4, options(nostack));
+        Ok(CacheInfo {
+            before: update.before,
+            requested: update.requested,
+            readback,
+            pat_writes: 1,
+            mtrr_before,
+            mtrr_after,
+            firmware_tables,
+            wb: update.indices.wb,
+            uc: update.indices.uc,
+            framebuffer: 1,
+            gop_pages: 0,
+            leaf_verified: false,
+        })
     }
 }
 // SAFETY: all pointers are permanent firmware LoaderData/LoadedImage mappings;
@@ -107,31 +240,11 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         if cr4 & ((1 << 12) | (1 << 17)) != 0 {
             return Err(Error::Unsupported);
         }
-        let pat = rdmsr(0x277);
-        // Preserve the firmware PAT/MTRRs. WC is allowed only for GOP and only
-        // when an existing entry encodes it; device registers/DMA remain UC.
-        let mut cache = musha_memory::pat::Indices::select(pat)?;
-        let cache_cr0: usize;
-        asm!("mov {}, cr0", out(reg) cache_cr0, options(nomem, nostack));
-        if cache_cr0 & ((1 << 29) | (1 << 30)) != 0 {
-            cache.framebuffer = cache.uc;
-        }
-        crate::bootlog::device(
-            "display",
-            format_args!(
-                "framebuffer cache={} index={} pat=0x{:016x} cr0-cache-disabled={} PAT unchanged",
-                if cache.framebuffer_wc() {
-                    "wc"
-                } else {
-                    "uc fallback"
-                },
-                cache.framebuffer,
-                pat,
-                cache_cr0 & ((1 << 29) | (1 << 30)) != 0
-            ),
-        );
-        let wb = cache.wb;
-        let uc = cache.uc;
+        let pat_before = rdmsr(0x277);
+        let update = musha_memory::pat::Update::entry1_wc(pat_before)?;
+        let wb = update.indices.wb;
+        let uc = update.indices.uc;
+        let cache = update.indices;
         crate::diagnostics::set(10, format_args!("MEM CHECK BOOTINFO"));
         crate::diagnostics::set(
             11,
@@ -184,6 +297,44 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
                 error
             },
         )?;
+        // Audit the *whole* still-active firmware address space before touching
+        // PAT. This includes aliases and paging-structure caching, not only RIP.
+        // UEFI x64 entry guarantees identity mappings; SetVirtualAddressMap is
+        // never called. Page pointers must additionally fit a complete RAM record.
+        let firmware_cr3: usize;
+        asm!("mov {}, cr3", out(reg) firmware_cr3, options(nomem, nostack));
+        let audit = musha_memory::pat::audit_firmware(
+            firmware_cr3 as u64,
+            physical_bits as u8,
+            4096,
+            |address| {
+                (0..map.count()).any(|i| {
+                    map.region(i).is_ok_and(|r| {
+                        (1..=7).contains(&r.kind)
+                            && r.range.start <= address as usize
+                            && (address as usize)
+                                .checked_add(PAGE)
+                                .is_some_and(|end| end <= r.range.end)
+                    })
+                })
+            },
+            |address, index| Ok((address as *const u64).add(index).read_volatile()),
+        )
+        .map_err(|why| {
+            crate::bootlog::failure(
+                "PAT audit",
+                &match why {
+                    musha_memory::pat::AuditError::Entry1InUse => "firmware entry 1 in use",
+                    musha_memory::pat::AuditError::Budget => "firmware table budget exceeded",
+                    musha_memory::pat::AuditError::TableMemory => {
+                        "firmware table outside readable RAM"
+                    }
+                    _ => "invalid firmware tables",
+                },
+            );
+            Error::Unsupported
+        })?;
+        let mut snapshot = program_pat(update, leaf.edx, cr4, firmware_cr3, audit.tables)?;
         crate::diagnostics::set(10, format_args!("MEM CHECK RESERVED RANGES"));
         let reserved = [
             Range::new(info.image_base, info.image_bytes)?.aligned()?,
@@ -442,7 +593,8 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
                 realtek_mapped && range.start == info.realtek_diag.controller.base;
             tables.map(range, !diagnostic_readonly, false, tables.uc)?;
         }
-        // No global mappings survive from firmware. Preserve MTRR and PAT values.
+        // No global firmware translations survive. PAT entry 1 is already WC;
+        // all other PAT entries and final MTRR values retain the firmware values.
         let efer = rdmsr(0xc0000080);
         wrmsr(0xc0000080, efer | (1 << 11));
         asm!("mov cr4, {}",in(reg) cr4 & !(1<<7),options(nostack));
@@ -460,6 +612,27 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
         if active != tables.base {
             return Err(Error::Invalid);
         }
+        tables.verify(reserved[6], cache.framebuffer, true, false)?;
+        tables.verify(reserved[7], cache.uc, true, false)?;
+        tables.verify(reserved[8], cache.uc, true, false)?;
+        snapshot.gop_pages = reserved[6].len() / PAGE;
+        snapshot.leaf_verified = true;
+        CACHE_INFO.0.get().write(Some(snapshot));
+        CACHE_PUBLISHED.store(true, core::sync::atomic::Ordering::Release);
+        crate::bootlog::device(
+            "display",
+            format_args!(
+                "framebuffer PAT=WC index=1 before=0x{:016x} requested=0x{:016x} readback=0x{:016x} PAT-writes={} MTRR-restored={} firmware-tables={} GOP-pages={} leaf-verified={}",
+                snapshot.before,
+                snapshot.requested,
+                snapshot.readback,
+                snapshot.pat_writes,
+                snapshot.mtrr_before == snapshot.mtrr_after,
+                snapshot.firmware_tables,
+                snapshot.gop_pages,
+                snapshot.leaf_verified
+            ),
+        );
         if realtek_mapped {
             crate::pci::realtek::mapped();
         }

@@ -298,15 +298,12 @@ pub fn keyboard(available: bool) {
         },
     );
 }
-pub fn ready(application: bool) {
+pub fn ready(_application: bool) {
     unsafe {
         if (*STATE.0.get()).ready {
             return;
         }
         (*STATE.0.get()).ready = true;
-    }
-    if !application {
-        phase("viewer", "starting");
     }
     event(
         Level::Ready,
