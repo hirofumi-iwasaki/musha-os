@@ -4,6 +4,34 @@ Status: current (blank acceptance worksheet, 2026-10-15). All gates PENDING; no 
 
 ## Development EFI
 
+### Latest UDP-default-off refresh — 2026-10-16
+
+#### English
+
+Source is fixed commit `2605135dc5efb983caabeb438f5fe39e6c8c937e`, built from a clean working tree. The three development-only locked/release builds below preserve equal before/after compile-source hashes. They include the current ready-before-app console, PAT entry 1 WC transition and FS/GS correction. Each directory includes offline DOCS/licenses and the generated README marker. CONFIG uses `log=trace` and `display=max`; **only I218 adds `lan.echo=on`**. Echo otherwise defaults off while DHCP remains active. No AUTORUN is bundled. These are not deployed USB media or physical results. Older artifacts below keep their original provenance.
+
+| Purpose | Explicit features | EFI SHA256 | Exact local EFI |
+|---|---|---|---|
+| t2-realtek | `t2-diagnostics,diagnostics-detail` | `02f471ec848dc297ac5c75d55e6059957e2b2a5f21e9f0f8b00f34aa061b9d98` | `/Users/hirofumiiwasaki/Github/musha-os/out/refresh-2605135/development/t2-realtek/files/EFI/BOOT/BOOTX64.EFI` |
+| i218 | `i218-network,diagnostics-detail` | `905896848bcb0e50de5296b6b60bbeff47562e4d9b5a00880bfe396f3d0ebd83` | `/Users/hirofumiiwasaki/Github/musha-os/out/refresh-2605135/development/i218/files/EFI/BOOT/BOOTX64.EFI` |
+| hci-probe | `bluetooth-hci-probe,diagnostics-detail` | `13507c591387f736c169965ce8831ced054a46c99c6276d4d09bebe924bd6381` | `/Users/hirofumiiwasaki/Github/musha-os/out/refresh-2605135/development/hci-probe/files/EFI/BOOT/BOOTX64.EFI` |
+
+Local exact-EFI QEMU checks passed 7 configurations: T2 diagnostic stop 3, I218 Hello/return 1, HCI diagnostic stop 3. Initial runner-only failures (SDK PATH and HCI debug/production observer selection) are retained separately; corrected invocations passed without source changes. Evidence: `out/refresh-2605135/verification.json`.
+
+Registry/commands/source and CONFIG hashes: `out/refresh-2605135/development/registry.json` and each `manifest.json`. Independent normal candidate generation from two clean checkouts of this same commit passed condition 1: all six files (four distributions, build-manifest and SHA256SUMS) are byte-identical. Evidence: `out/refresh-2605135/condition1/report.json` and `comparison.json`. Both manifests measure EFI size from the packaged PE bytes and retain minimal as null/unavailable because LAN/Bluetooth cannot yet both be excluded. This compares the same local environment twice, not local output against CI; the successful CI run 38882434511 has separately verified artifacts.
+
+Next owner observations: Ryzen trace captures PCI/revision/BAR/TxConfig40 or a safe skip reason, before any MAC-profile/register-write enablement. NUC5 checks no #GP, USB read → ready → AUTORUN and viewer return; I218 must either obtain a real lease or continue with its exact NVM/budget refusal after confirmed stop. Only a real lease with the explicit echo setting permits UDP echo acceptance. The published v0.3.0 formatted-media six-route/machine cold boots remain a separate gate. Mac T2 MMIO/DMA integration, physical Bluetooth and all final hardware acceptance remain pending.
+
+#### 日本語
+
+source は固定commit `2605135dc5efb983caabeb438f5fe39e6c8c937e`、生成開始時の作業ツリーはcleanです。上の開発専用3本は独立locked/release buildの前後compile-source hash一致を確認し、ready→app順序・PAT entry 1 WC切替・FS/GS修正を含みます。各dirにoffline DOCS/licensesと生成READMEマーカーを同梱。CONFIGは全て`log=trace`／`display=max`、**I218だけ`lan.echo=on`を追加**しています。未指定echoはoff、DHCPは継続します。AUTORUNは同梱せず、USB配備・実機結果ではありません。下の旧artifact来歴は保持しています。
+
+exact EFIの限定QEMUは7構成合格（T2診断停止3／I218 Hello復帰1／HCI診断停止3）。初回のSDK PATH不足とHCI debug/production observer選択不一致は実行器の失敗として保持し、source無変更の修正invocationで合格。証拠は`out/refresh-2605135/verification.json`です。
+
+registry・command・source/CONFIG hashは`out/refresh-2605135/development/registry.json`と各`manifest.json`。同commitの独立clean checkout2本から通常候補を生成し、4配布物＋build-manifest＋SHA256SUMSの6ファイル完全一致で条件1合格。`out/refresh-2605135/condition1/report.json`／`comparison.json`が証拠です。manifestのEFIサイズは配布PEから計測し、LAN/Bluetoothを両方除外できないためminimalは理由付きnull/unavailableを維持。同じローカル環境2回の比較であり、別途成果物照合済みのCI run38882434511との環境横断一致を主張しません。
+
+次は所有者のRyzen trace採取（PCI/revision/BAR/TxConfig40又は安全skip理由）で、MAC版選択・register書込み有効化より先です。NUC5は#GP無し、USB読出し→ready→AUTORUN→viewer復帰と、I218実lease又は停止確認後のNVM/budget理由付き継続を確認。UDPecho受入は実lease＋明示on時のみです。公開v0.3.0によるフォーマット3経路×2機種の冷間6回は独立gate。Mac T2実MMIO/DMA、実Bluetooth、最終実機受入は未完です。
+
 ### Stage 0 refreshed trace/PAT development EFI — 2026-10-16
 
 #### English
