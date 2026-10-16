@@ -1,8 +1,8 @@
-# Long-term scenario: MAME on Musha-OS
+# Long-term scenario: MAME on Musha-OS (MushaMAME)
 
 ## English
 
-Status: **scenario, not a release scope.** Adopted by the owner on 2026-10-16 as the second application target of the [games scenario](scenario-games-godot.md), placed **between the SDL2 port and Mesa `softpipe`** in the roadmap. Nothing here is scheduled; version numbers are placeholders that the per-version scope documents decide. Decided items are marked ✔; everything else is an assumption to be checked when the corresponding version is scoped.
+Status: **scenario, not a release scope.** Adopted by the owner on 2026-10-16 as the second application target of the [games scenario](scenario-games-godot.md), placed **between the SDL2 port and Mesa `softpipe`** in the roadmap. Name and repository decided on 2026-10-16: the port is called **MushaMAME** and lives in its own repository, **`musha-mame`**, separate from this one ✔. Nothing here is scheduled; version numbers are placeholders that the per-version scope documents decide. Decided items are marked ✔; everything else is an assumption to be checked when the corresponding version is scoped.
 
 ### The scenario
 
@@ -36,9 +36,11 @@ The fill-ins beyond what the games scenario already asks for:
 
 MAME is CPU-bound by design; the Musha-OS build is single-core without SMP, so performance equals one core at full speed. NUC5 (i5-5250U) runs 1980s and most early-1990s arcade systems at full speed; 3D arcade boards of the late 1990s do not run at speed on any single core. The Ryzen 7 5800X runs most 2D systems with headroom. `SYS_DISPLAY_PRESENT` at the native panel resolution with integer scaling is the planned path; MAME's own scaling runs on the CPU.
 
-### Licensing ✔
+### Name, repository and licensing ✔
 
-MAME is GPL-2.0-or-later. It is **never linked into the kernel or the SDK** and is distributed, if at all, as a separate application image with its own source offer, so the kernel's Apache-2.0 license and the [third-party policy](third-party.md) are unaffected. The `osd/musha` layer is contributed under MAME's own license. ROMs are not distributed by this project: the scenario covers only machines whose ROMs the user holds legally, and the documentation says so.
+The port is **MushaMAME**, developed in the separate repository **`musha-mame`** (a fork of upstream MAME carrying `osd/musha` and the Musha build target; upstream merges are rebased, Musha changes stay in clearly separated directories so they can be offered upstream later). This repository (`musha-os`) keeps only this scenario document and, later, the SDK pieces MushaMAME needs; it never vendors MAME code. On the drive MushaMAME is an ordinary application (`AUTORUN.ELF` or a file under the application directory decided in POSIX p2), so the drive naming rule of `release-distribution-policy.md` is unaffected.
+
+MAME is GPL-2.0-or-later, so `musha-mame` is GPL-2.0-or-later as a whole. It is **never linked into the kernel or the SDK** and is distributed, if at all, from its own repository as a separate application image with its own source offer, so the kernel's Apache-2.0 license and the [third-party policy](third-party.md) are unaffected. The `osd/musha` layer is contributed under MAME's own license. ROMs are not distributed by this project: the scenario covers only machines whose ROMs the user holds legally, and the documentation says so.
 
 ### Roadmap (placeholders, revised order ✔)
 
@@ -46,7 +48,7 @@ MAME is GPL-2.0-or-later. It is **never linked into the kernel or the SDK** and 
 |---|---|---|
 | 0.5.0 (scoped) | display present, read-only files, audio, query, random, SDK runtime | display, sound and ROM paths exist |
 | 0.6.0 (candidate) | libc layer, C++ runtime **with exceptions and RTTI**, real allocator, arena limit raised, **`IMAGE_LIMIT` raised**, µs time, cooperative `std::thread`; **SDL2 port** as the proving target | large C/C++ programs run |
-| 0.6.x or 0.7.0 (candidate) | **MAME `osd/musha`**: subset build (a few dozen 2D drivers), ROMs from the drive, `SYS_AUDIO`, `SYS_INPUT`; POSIX p2 writable application directory for `nvram/`/`cfg/` | first large existing program runs unchanged in its core |
+| 0.6.x or 0.7.0 (candidate) | **MushaMAME** (`musha-mame` repository, `osd/musha`): subset build (a few dozen 2D drivers), ROMs from the drive, `SYS_AUDIO`, `SYS_INPUT`; POSIX p2 writable application directory for `nvram/`/`cfg/` | first large existing program runs unchanged in its core |
 | 0.7.0 (candidate) | Mesa `softpipe` providing GL 3.3 on the CPU | prerequisite of Godot's Compatibility renderer |
 | later | Godot platform port | games scenario reached |
 
@@ -59,7 +61,7 @@ MAME is GPL-2.0-or-later. It is **never linked into the kernel or the SDK** and 
 
 ## 日本語
 
-状態：**シナリオであり、公開範囲ではない。** 2026-10-16 に所有者が、[ゲーム用途シナリオ](scenario-games-godot.md)の 2 つ目のアプリ目標として採用し、ロードマップ上で **SDL2 移植と Mesa `softpipe` の間**に置いた。ここに予定されたものはなく、版番号は仮置きで、各版の範囲文書が決める。決定済みは ✔、それ以外は各版の範囲を決める時に検証する仮定。
+状態：**シナリオであり、公開範囲ではない。** 2026-10-16 に所有者が、[ゲーム用途シナリオ](scenario-games-godot.md)の 2 つ目のアプリ目標として採用し、ロードマップ上で **SDL2 移植と Mesa `softpipe` の間**に置いた。名称とリポジトリーは 2026-10-16 に決定：移植版の名称は **MushaMAME**、本リポジトリーとは別の **`musha-mame`** リポジトリーで管理する ✔。ここに予定されたものはなく、版番号は仮置きで、各版の範囲文書が決める。決定済みは ✔、それ以外は各版の範囲を決める時に検証する仮定。
 
 ### シナリオ
 
@@ -93,9 +95,11 @@ MAME には全てのプラットフォーム機能をスタブにした `osdmini
 
 MAME は設計上 CPU 律速で、Musha-OS は SMP 無しの単一コアなので、性能は 1 コアの全速に等しい。NUC5（i5-5250U）は 1980 年代と 1990 年代前半の大半のアーケード基板を実速で動かせる。1990 年代後半の 3D 基板はどの単一コアでも実速にならない。Ryzen 7 5800X は 2D 系の大半を余裕で動かす。画面はパネル解像度の `SYS_DISPLAY_PRESENT` に整数倍で載せる予定で、MAME 自身の拡大処理は CPU 上。
 
-### ライセンス ✔
+### 名称・リポジトリー・ライセンス ✔
 
-MAME は GPL-2.0-or-later。**カーネルにも SDK にも決してリンクせず**、配布するとしても独自のソース提供を伴う別のアプリイメージとして配布するので、カーネルの Apache-2.0 と[第三者コード方針](third-party.md)には影響しない。`osd/musha` 層は MAME 自身のライセンスで提供する。ROM は本プロジェクトでは配布しない：シナリオは利用者が合法に保有する ROM の機械だけを対象とし、文書にそう明記する。
+移植版は **MushaMAME** とし、別リポジトリー **`musha-mame`**（上流 MAME のフォークに `osd/musha` と Musha 用ビルドターゲットを載せたもの。上流の取込みは rebase で行い、Musha の変更は後で上流へ提案できるよう分離したディレクトリーに置く）で開発する。本リポジトリー（`musha-os`）に置くのはこのシナリオ文書と、後に MushaMAME が要する SDK 側の部品だけで、MAME のコードは決して取り込まない。USB 上では MushaMAME は通常のアプリ（`AUTORUN.ELF` か、POSIX p2 で決めるアプリディレクトリー下のファイル）なので、`release-distribution-policy.md` の USB 上の命名規則には影響しない。
+
+MAME は GPL-2.0-or-later なので `musha-mame` 全体も GPL-2.0-or-later。**カーネルにも SDK にも決してリンクせず**、配布するとしても自リポジトリーから、独自のソース提供を伴う別のアプリイメージとして配布するので、カーネルの Apache-2.0 と[第三者コード方針](third-party.md)には影響しない。`osd/musha` 層は MAME 自身のライセンスで提供する。ROM は本プロジェクトでは配布しない：シナリオは利用者が合法に保有する ROM の機械だけを対象とし、文書にそう明記する。
 
 ### ロードマップ（仮置き。順序を改訂 ✔）
 
@@ -103,7 +107,7 @@ MAME は GPL-2.0-or-later。**カーネルにも SDK にも決してリンクせ
 |---|---|---|
 | 0.5.0（範囲決定済み） | 画面 present、読出し専用ファイル、音声、問合せ、乱数、SDK ランタイム | 画面・音・ROM の経路が揃う |
 | 0.6.0（候補） | libc 層、**例外と RTTI 付き**の C++ ランタイム、本物のアロケーター、arena 上限引上げ、**`IMAGE_LIMIT` 引上げ**、µs 時刻、協調型 `std::thread`。検証対象として **SDL2 の移植** | 大きな C/C++ プログラムが動く |
-| 0.6.x か 0.7.0（候補） | **MAME `osd/musha`**：数十の 2D ドライバーに絞ったビルド、USB からの ROM、`SYS_AUDIO`、`SYS_INPUT`。`nvram/`/`cfg/` 用の POSIX p2 書込み可能アプリディレクトリー | 大きな既存プログラムがコア無改変で初めて動く |
+| 0.6.x か 0.7.0（候補） | **MushaMAME**（`musha-mame` リポジトリー、`osd/musha`）：数十の 2D ドライバーに絞ったビルド、USB からの ROM、`SYS_AUDIO`、`SYS_INPUT`。`nvram/`/`cfg/` 用の POSIX p2 書込み可能アプリディレクトリー | 大きな既存プログラムがコア無改変で初めて動く |
 | 0.7.0（候補） | Mesa `softpipe` で CPU 上に GL 3.3 | Godot Compatibility レンダラーの前提 |
 | その後 | Godot プラットフォーム層の移植 | ゲーム用途シナリオの達成 |
 
