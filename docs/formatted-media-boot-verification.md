@@ -2,6 +2,8 @@
 
 ## English
 
+Version boundary: this gate uses the unchanged published v0.3.0 EFI. The [new sequential boot log](boot-log.md) applies to newly built v0.4.0 only; do not require its timestamps/ready text for this six-run test or replace the published asset.
+
 Status: procedure and blank record form, 2026-10-14. No hardware result is recorded here. Owner execution only; this planning task does not erase, format or update any USB.
 
 
@@ -78,6 +80,8 @@ Fill only after owner execution; blank cells are not results. Attach one detaile
 | C: Windows Explorer FAT32 | Ryzen | | | |
 
 ## 日本語
+
+版の区分：本gateは変更しない公開v0.3.0 EFI。[新しい逐次bootlog](boot-log.md)は新v0.4.0 buildだけに適用し、この6runへtimestamp/ready新文言を要求したり公開物を置換しません。
 
 状態：実施手順と空の記録様式、2026-10-14。実機結果は記録していません。実施者は所有者です。この計画作業ではUSBの消去・フォーマット・更新は行いません。
 

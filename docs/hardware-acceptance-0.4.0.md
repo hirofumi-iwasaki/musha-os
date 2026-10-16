@@ -28,6 +28,18 @@ Both new EFIs were built with `cargo build --locked --release --target x86_64-un
 
 `i218-network` also enables `i218-phy-probe`. **`log=devices` is a SETTINGS/CONFIG.TXT runtime setting, not a build feature**; record the actual media CONFIG bytes/hash before a test. The HCI probe transitively enables `qemu-debug` and is an explicit development transport reset, not the normal Bluetooth pairing/runtime build. It sends HCI Reset without loading firmware; an ASUS reset response does not prove CSR reference-dongle, pairing, Xbox or HOGP compatibility. Record exact USB IDs/revision/class and response/error as the [Bluetooth quickcheck](bluetooth-hardware-quickcheck.md) specifies. Instructions describe owner execution only; the normal candidate identity above remains PENDING.
 
+### Single-console development EFIs — 2026-10-16
+
+These three local development files replace the display implementation for the **next** hardware retest; they do not supersede historical observations or constitute release candidates. Each uses `SETTINGS/CONFIG.TXT` containing `log=devices` and `display=max`. They were built from HEAD `19888ff` plus the recorded boot-log implementation; the source before/after each build matched. Those unchanged compile sources were subsequently committed as `c141f04`; documentation changes do not relabel the original dirty-build provenance. Full commands, compile-source digest and CONFIG/README hashes are in `out/bootlog-development-20261016/registry.json`. The HCI probe transitively enables the development debug port; the other two requested feature sets do not. No USB write or physical execution was performed.
+
+| Purpose / 用途 | Features | EFI SHA256 | Local development directory / ローカル開発dir |
+|---|---|---|---|
+| t2-realtek | `t2-diagnostics,diagnostics-detail` | `017a896ee047d7c8515985c154a27dc7b180595049962e9f650c7b5b99f1380c` | `out/bootlog-development-20261016/t2-realtek/files` |
+| i218 | `i218-network,diagnostics-detail` | `65a0a0b00e2391915aa1e66e9d4d13e8584a897aa485b7a47d13d1e20d0887da` | `out/bootlog-development-20261016/i218/files` |
+| hci-probe | `bluetooth-hci-probe,diagnostics-detail` | `cf9ca285a8705e09172d82ce202fc89b477753ed3d4f027c54734747ab8ef803` | `out/bootlog-development-20261016/hci-probe/files` |
+
+NUC5: first verify no #GP, USB read → AUTORUN → ready. I218 remains opt-in: a link/lease may succeed, or the preserved NVM configuration refusal must continue nonfatally; perform UDP echo only after a real DHCP lease. Ryzen: photograph the sequential log containing Realtek identity/BAR/TxConfig40 **or its safe skip reason**; no actual Realtek value has yet been collected. HCI Reset/transport and Xbox pairing still require physical evidence. PAT WC is used only if firmware already configured a WC slot; otherwise the recorded UC fallback remains, with no PAT write. Keep old EFI hashes when comparing observations.
+
 ### 日本語
 
 修正詳細T2/Realtek開発EFI追記（2026-10-16）：`out/t2-detail-segment-fix-20261016/files/EFI/BOOT/BOOTX64.EFI`、SHA256 `710cf02f0a669631f81a05d0d1c21690c98f51bd8c1c4055c36b6e2dc39c52fb`、source commit `12a4aa0c1395856d8e5a56959fb6b1803107f86c`＋記録した診断限定Ready停止の未commit修正、feature `t2-diagnostics,diagnostics-detail`、CONFIG `log=devices`。commit済FS/GS修正を含み、旧t2単独59a701b1版と違いjournal詳細を描画・巡回します。旧artifact・来歴は下記に保持。RTL固有値は実機未採取。[採取手順](ryzen-realtek-identification.md)参照。
@@ -51,6 +63,18 @@ Both new EFIs were built with `cargo build --locked --release --target x86_64-un
 新2本はlocked/release/x86_64-unknown-uefi/no-default-featuresで個別feature・target-dirを指定。HEAD`969ece347a22496be51954ce63d2d2e5308d5f0a`＋dirty、source-set SHA256`485d38f756931f7d18d6c0584c8266dc6bb46aacc1bc0777ea6599a059ea7336`を記録し各build前後のsource全file hash一致。`out/i218-development-040/`・`out/asus-hci-development-040/`にfile別hash/dirty一覧/command/build log/manifest/SHA256SUMSを保存。source-set hashは各manifestに列挙した範囲のもので、歴史inventoryと範囲が違えば単純比較で同一sourceと判断しません。
 
 `i218-network`は`i218-phy-probe`も有効化。**`log=devices`はCONFIGの実行時設定でbuild featureではありません**。実媒体CONFIG内容/hashを別途記録。HCI probeは`qemu-debug`を伴う開発transport resetで通常BT pair/runtime buildではなく、firmware投入無しReset応答がCSR基準dongle/pair/Xbox/HOGP対応を証明するものではありません。[BT手順](bluetooth-hardware-quickcheck.md)の実USB ID/revision/class・応答/errorを採取。実行は所有者手順で通常候補identityはPENDINGのままです。
+
+### 単一コンソール開発EFI — 2026-10-16
+
+次の実機再試験用に表示を更新したローカル開発版3本であり、過去の観測を置換せず正式候補でもありません。CONFIGは `log=devices`／`display=max`。HEAD `19888ff`＋記録したbootlog差分から生成し、各build前後source一致を確認しました。同じcompile sourceは後に `c141f04` としてcommitしましたが、文書変更により元dirty buildの来歴は付け替えません。全command・compile-source digest・CONFIG／README hashは `out/bootlog-development-20261016/registry.json`。HCI probeだけは既存推移featureにより開発debug-portが有効です。USB書込み・実機実行はしていません。
+
+| Purpose / 用途 | Features | EFI SHA256 | Local development directory / ローカル開発dir |
+|---|---|---|---|
+| t2-realtek | `t2-diagnostics,diagnostics-detail` | `017a896ee047d7c8515985c154a27dc7b180595049962e9f650c7b5b99f1380c` | `out/bootlog-development-20261016/t2-realtek/files` |
+| i218 | `i218-network,diagnostics-detail` | `65a0a0b00e2391915aa1e66e9d4d13e8584a897aa485b7a47d13d1e20d0887da` | `out/bootlog-development-20261016/i218/files` |
+| hci-probe | `bluetooth-hci-probe,diagnostics-detail` | `cf9ca285a8705e09172d82ce202fc89b477753ed3d4f027c54734747ab8ef803` | `out/bootlog-development-20261016/hci-probe/files` |
+
+NUC5は#GP無し、USB読取り→AUTORUN→readyを最初に確認します。I218はopt-inを維持し、link／lease成功又は既存NVM設定要求理由付きの非致命継続を確認し、実DHCP lease成功時だけUDP echoします。RyzenはRealtek identity／BAR／TxConfig40又は安全なskip理由を逐次ログから撮影します。実Realtek値は未採取です。HCI Reset／transportとXbox pairingも実機証拠待ちです。PATは既存WC slotだけ利用し、無ければUC fallback理由を記録します。PAT書換えは行わず、比較時は旧EFI hashも保持します。
 
 ## English
 

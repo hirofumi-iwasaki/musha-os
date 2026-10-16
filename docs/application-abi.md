@@ -128,6 +128,8 @@ Planned CPL3 jump: RSP%16=0, RDI=start copy, DF=0, no return address; other GPRs
 
 RAX=number; args RDI/RSI/RDX/R10/R8/R9. Return RAX=sign-extended int32 status (zero success, negative error), RDX=value, zero on error. Preserve raw GPRs except RAX/RDX/RCX/R11; flags clobbered and DF clear at language boundaries. Preserve supported x87/SSE state. C wrapper follows ordinary SysV caller/callee rules, which differ from raw preservation. C fourth arg RCX moves to R10; RDX is input/output; asm declares RCX/R11, flags and memory effects. Unknown/unsupported calls are errors, never success stubs.
 
+SYS_LOG appends application bytes to the [single full-GOP console](boot-log.md), using the same wrapping and scrolling display as startup. This replaces the separate 80×24 display region without changing SYS_LOG number, argument/result ABI, LOG permission, UTF-8 validation, accepted-byte count or MAX_LOG_BYTES (4096). Applications receive no framebuffer address or device registers.
+
 ### C review gate (partially implemented in C1–C3)
 
 The [C3 lifecycle probe](ring3-lifecycle.md) adds bounded rollback, repeated launches and return to the static OS path; this is not general scheduling or resource management.
@@ -168,6 +170,8 @@ keyboard down/upはHID usage/modifier付き。keyboard無しmouse単独session�
 起動情報はユーザー空間への読出し専用コピーです。内部BootInfoや物理アドレスは公開しません。ハンドルのビット構成とレポート形式は未確定です。raw syscallの保存規約とC関数規約を分離します。SDKコンパイル試験はCPL3遷移、IRETQ、安全なコピー、FPU保存の実行証拠ではありません。専用Rust targetのcore再構築とC/Rust相互呼出しをCの必須条件に残します。
 
 C1の[固定payload遷移試験](ring3-prototype.md)を追加しました。[C2](ring3-elf.md)でSDK C ELF実行を追加しました。Rust r1実行は上記工程4で追加検証済み。汎用コピー・通常版の回復は未完了です。
+
+SYS_LOGはappのbyte列を[単一GOP全体console](boot-log.md)へ追記し、起動と同じ折返し・scrollを使います。従来の独立80×24領域を置換しますが、SYS_LOG番号・引数/結果ABI・LOG権限・UTF-8検査・受理byte数・MAX_LOG_BYTES（4096）は不変です。appへframebuffer addressや機器registerを渡しません。
 
 ### 実験r2契約（local実装・公開互換固定なし）
 

@@ -4,6 +4,8 @@ Status: current (procedure only, 2026-10-15). Six physical runs are pending.
 
 ## English
 
+Version boundary: this gate uses the unchanged published v0.3.0 EFI. The [new sequential boot log](boot-log.md) applies to newly built v0.4.0 only; do not require its timestamps/ready text for this six-run test or replace the published asset.
+
 1. Owner selects an expendable external USB, identifies model/serial/capacity/logical-sector and backs up data. Record host OS/build and disk/partition identity; never choose a system disk. Download unchanged published **v0.3.0** files ZIP plus SHA256SUMS; verify ZIP and extracted EFI hashes. Use no updater, developer EFI or raw image.
 2. Perform three separately recorded formatting routes: **A macOS Disk Utility MS-DOS(FAT)+MBR**, **B macOS Disk Utility MS-DOS(FAT)+GUID**, **C Windows Explorer FAT32**. In Disk Utility show all devices and select the external physical device. Verify actual **FAT32** after formatting; unavailable FAT32 means BLOCKED. For B record extra EFI partition and extract to the intended FAT32 data volume. For C record existing MBR/GPT first: Explorer formats the existing volume, not a newly chosen disk scheme. Record type/start/size/allocation/format options.
 3. Extract the ZIP **contents** to volume root, retaining supplied files unchanged. Verify `EFI/BOOT/BOOTX64.EFI`, hash, root listing and absence of `AUTORUN.ELF`/legacy app ELF. Do not run deployment/update tools.
@@ -19,6 +21,8 @@ Status: current (procedure only, 2026-10-15). Six physical runs are pending.
 Per run also record date/operator, host/formatter, disk/partition before/after, filesystem, ZIP/EFI hashes, CONFIG/root files, machine/firmware/topology and original photo/video paths. UNKNOWN is not PASS. [Full procedure and form](formatted-media-boot-verification.md).
 
 ## 日本語
+
+版の区分：本gateは変更しない公開v0.3.0 EFI。[新しい逐次bootlog](boot-log.md)は新v0.4.0 buildだけに適用し、この6runへtimestamp/ready新文言を要求したり公開物を置換しません。
 
 1. 所有者が消去可能な外付けUSBを選び型番/serial/容量/論理sectorを識別、dataを退避。host OS/build、disk/partitionを記録しsystem diskを選びません。変更しない公開**v0.3.0** files ZIPとSHA256SUMSを取得しZIP/展開EFI hashを照合。updater/開発EFI/raw像は使いません。
 2. **A macOS Disk Utility MS-DOS(FAT)+MBR、B同MS-DOS(FAT)+GUID、C Windows Explorer FAT32**を別々に実施/記録。Disk Utilityは全device表示から外付け物理deviceを選択し、結果が実際に**FAT32**か確認。選べなければBLOCKED。Bは付加EFI partitionも記録し対象FAT32 data volumeへ展開。Cは既存MBR/GPTを事前記録：Explorerは既存volumeのformatでdisk方式を新規選択する操作ではありません。type/start/size/allocation/optionを記録。

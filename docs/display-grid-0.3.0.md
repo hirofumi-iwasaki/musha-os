@@ -2,6 +2,12 @@
 
 Status: record (2026-10-14)
 
+## Current applicability / 現在の適用範囲
+
+English: The v0.3.0 record below retains its original layout, tests, screenshots and hashes. New v0.4.0 startup/application text follows [boot-log](boot-log.md): one full-frame console at the top-left, white on black, no startup fill/panels/footer/80x24 app box. The base font, height-derived scale and row pitch remain; the viewer keeps its own layout. This note adds no new hardware validation.
+
+日本語：以下v0.3.0のlayout/試験/写真/hashは原記録を保持。新v0.4.0の起動/app表示は[bootlog](boot-log.md)へ移行し、左上起点の全画面白黒console、起動全消去/panel/footer/80x24 app枠無し。基本font/高さ由来scale/行ピッチを保持しviewerは独自layout。本注記は新実機合格ではありません。
+
 ## English
 
 Owner decision (2026-10-14): include the shared display grid in 0.3.0 and

@@ -1,99 +1,61 @@
 # Hardware test record template / 実機試験記録様式
 
-Status: current
+Status: current (single boot log, 2026-10-16). Blank fields are not results.
 
 ## English
 
-Copy this document into a new result file for each configuration. Default values are UNKNOWN / NOT RUN. Fill observations without converting unknown or unsupported features into passes. Do not change the template itself to record a particular machine.
+Use [boot-log](boot-log.md) with `log=devices` for new v0.4.0 runs. Capture sequential text and any available ring dump, not former panel pages/status colors. Keep original photos/videos immutable; record extracted-frame offsets separately from PM-epoch times. Published v0.3.0 [formatter trials](formatted-media-boot-verification.md) retain their own six-run viewer criterion. This blank template grants no physical write or acceptance.
 
-For new v0.4.0 acceptance records, use `log=devices` (or firmware F8 / digit8 override), record CONFIG bytes and the override, and photograph the PM-epoch summary. This requirement does not change older records. See [startup configuration](startup-configuration.md).
-
-| Field | Observation |
+| Field | Recorded value / evidence |
 |---|---|
-| Date / operator / record ID | UNKNOWN |
-| Machine / board / CPU | UNKNOWN |
-| RAM modules / capacity | UNKNOWN |
-| UEFI version / settings / Secure Boot state | UNKNOWN |
-| Display / connector / cable / GOP resolution | UNKNOWN |
-| USB drive model / exact capacity bytes / logical sector bytes | UNKNOWN |
-| Keyboard model / USB Boot Keyboard capability | UNKNOWN |
-| USB connections: drive port / keyboard port / hubs | UNKNOWN |
-| Ethernet controller PCI ID / cable / peer | UNKNOWN |
-| Git branch / full commit / working tree changes | UNKNOWN |
-| Build type / enabled features / toolchain | UNKNOWN |
-| CONFIG contents / log level / F8 or digit8 override / requested and actual GOP | UNKNOWN |
-| PM-epoch core / ready / current ms / timing record count (devices) | UNKNOWN |
-| BOOTX64.EFI size / SHA-256 | UNKNOWN |
-| Complete USB image size / SHA-256 / GPT backup location | UNKNOWN |
-| Image creation command / physical USB preparation method | UNKNOWN |
-| Photo / log filenames | UNKNOWN |
+| Date/operator; machine/board/CPU/RAM/firmware | |
+| EFI/source/features/SHA256; deployment provenance and read-back | |
+| Media model/serial/capacity/sector/partition/filesystem | |
+| CONFIG exact bytes/hash, requested/effective log and display; F8/8 result | |
+| AUTORUN/sample filename, size/hash and permissions | |
+| Cables/ports/adapters/hubs/input/display and device labels | |
+| Cold/hot; off seconds; AC state; run ordinal | |
+| GOP mode/stride/pixel format/grid/scale; framebuffer cache mapping | |
+| Start/runtime/timer/ready lines and their PM timestamps | |
+| PCI vendor:device/revision/BDF; subsystem/BAR/command/TxConfig if exposed | |
+| USB VID:PID/class/controller/root/route/slot/speed; keyboard/mouse selection | |
+| Storage format/size; README marker length/hash; file/read result | |
+| LAN backend/reset/PHY/link/address/budget/lease time or exact unavailable reason | |
+| UDP sent/returned payload, Mac IP/interface, OS counter before/after (if run) | |
+| BT adapter/peer IDs, scan/pair/save/reconnect/input; exact failure if any | |
+| App start/output/exit/fault/refusal; viewer launch/return ordinal | |
+| Required failure or kernel exception: complete line, name/vector/error or n/a/RIP/CR2 | |
+| Explicit device-stop confirmation; unconfirmed/quarantined state | |
+| Original media path/hash, frame offsets, available ring dump, omitted evidence | |
+| PASS/FAIL/BLOCKED for this bounded gate; UNKNOWN and owner review | |
 
-| Check | Result (NOT RUN / PASS / FAIL / UNSUPPORTED) | Exact observation |
-|---|---|---|
-| devices startup / `Musha-OS ready.` / required phase results | NOT RUN | UNKNOWN |
-| CPU tables / paging / arena size | NOT RUN | UNKNOWN |
-| Timer / PCI IDs / BDF | NOT RUN | UNKNOWN |
-| xHCI ownership / reset / command rings | NOT RUN | UNKNOWN |
-| USB port / VID:PID / speed / descriptor count | NOT RUN | UNKNOWN |
-| Storage blocks / sector bytes / total capacity | NOT RUN | UNKNOWN |
-| README.TXT build length / FNV-1a / startup marker result | NOT RUN | UNKNOWN |
-| Keyboard A / Shift+A press and release / displayed key code | NOT RUN | UNKNOWN |
-| Idle input with ongoing application work | NOT RUN | UNKNOWN |
-| Esc / APP COMPLETE / USB stop status | NOT RUN | UNKNOWN |
-| Keyboard disconnect / exact failure / remaining progress | NOT RUN | UNKNOWN |
-| LAN driver status / link | NOT RUN | UNKNOWN |
-| ARP / ICMP / UDP communication with identified peer | NOT RUN | UNKNOWN |
-| NET stop status / counters | NOT RUN | UNKNOWN |
-| Cold boot repeat / elapsed time / stability | NOT RUN | UNKNOWN |
-
-For current NUC5/NUC8 builds, LAN driver UNSUPPORTED is expected; ARP/ICMP/UDP remain NOT RUN until their NIC initialization is implemented. SESSION COMPLETE alone is not a pass. Record all error rows, the last stage, and whether shutdown was actually verified. Photograph the screen before and after Esc. Record expected file contents independently; the displayed FNV-1a is not the complete image SHA-256.
-
-Failure details: UNKNOWN. Reproduction steps and recovery: UNKNOWN. Final result and remaining issues: NOT RUN.
+Copy one form per run/configuration. Printed readiness does not certify optional devices or replace feature-specific acceptance. Do not infer cold conditions, network traffic, descriptor support or successful stop from a boot image alone. Transcribe exact event text rather than requiring obsolete `USB READ OK`/`NET STEP`/red-band wording. No new hardware photograph is supplied by this documentation change.
 
 ## 日本語
 
-構成ごとに本書を別の結果ファイルへコピーする。初期値はUNKNOWN（不明）／NOT RUN（未実施）。不明や未対応を合格に読み替えず、観測結果を記入する。個体の結果をこの様式原本へ直接記入しない。
+新規v0.4.0は[bootlog](boot-log.md)の`log=devices`を用い逐次textと取得できたringを採取。旧panel頁/色を条件にしません。原写真/videoを保持し動画offsetとPM時刻を分離。公開v0.3.0の[formatter](formatted-media-boot-verification.md)は専用6run/viewer条件のまま。本空様式で実書込み/受入を承認しません。
 
-v0.4.0 の新規受入記録は `log=devices`（または firmware F8／数字8）で採取し、CONFIG の内容・override と PM-epoch 要約の写真を残す。過去の記録を変更する要件ではない。[起動設定](startup-configuration.md)を参照。
-
-| 項目 | 観測内容 |
+| 項目 | 実測値・証拠 |
 |---|---|
-| 日時／試験者／記録ID | 不明 |
-| 機種／基板／CPU | 不明 |
-| RAMモジュール／容量 | 不明 |
-| UEFI版／設定／Secure Boot状態 | 不明 |
-| display／端子／ケーブル／GOP解像度 | 不明 |
-| USB型番／正確な容量byte／logical sector byte | 不明 |
-| keyboard型番／USB Boot Keyboard対応 | 不明 |
-| USB接続: drive port／keyboard port／hub | 不明 |
-| Ethernet PCI ID／ケーブル／通信相手 | 不明 |
-| Git branch／完全commit／未commit変更 | 不明 |
-| build種別／feature／toolchain | 不明 |
-| CONFIG内容／log／F8または8／要求と実際のGOP | 不明 |
-| devices PM-epoch core／ready／現在ms／timing件数 | 不明 |
-| BOOTX64.EFIサイズ／SHA-256 | 不明 |
-| USB image全体サイズ／SHA-256／GPT副header位置 | 不明 |
-| image生成コマンド／実物USBの準備方法 | 不明 |
-| 写真／logファイル名 | 不明 |
+| 日時/実施者、実機/board/CPU/RAM/firmware | |
+| EFI/source/features/SHA256、配備来歴/読戻し | |
+| 媒体型番/serial/容量/sector/partition/filesystem | |
+| CONFIG原bytes/hash、要求/実log/display、F8/8認識 | |
+| AUTORUN/sample名・size/hash・権限 | |
+| cable/port/adapter/hub/input/display・device label | |
+| 冷間/温間、off秒、AC状態、run番号 | |
+| GOP/stride/pixel format/grid/scale、framebuffer cache mapping | |
+| start/runtime/timer/ready行とPM時刻 | |
+| PCI ID/revision/BDF、表示されたsubsystem/BAR/command/TxConfig | |
+| USB ID/class/controller/root/route/slot/speed、keyboard/mouse選択 | |
+| storage形式/容量、README長さ/hash、file/read結果 | |
+| LAN backend/reset/PHY/link/address/budget/lease時間又は非対応理由 | |
+| UDP送信/返信、Mac IP/interface、OS counter前後（実施時） | |
+| BT adapter/peer、scan/pair/保存/再接続/入力又は正確な失敗 | |
+| app開始/出力/終了/fault/拒否、viewer起動/復帰番号 | |
+| 必須失敗/kernel例外の行全文、名前/vector/error又はn/a/RIP/CR2 | |
+| 明示device停止確認、不確実/隔離状態 | |
+| 原media path/hash、動画offset、ring dump、欠落証拠 | |
+| 限定gateごとのPASS/FAIL/BLOCKED、UNKNOWN、所有者review | |
 
-| 確認 | 結果（未実施／合格／失敗／未対応） | 正確な観測内容 |
-|---|---|---|
-| devices起動／`Musha-OS ready.`／必須段階の結果 | 未実施 | 不明 |
-| CPU tables／paging／arena容量 | 未実施 | 不明 |
-| timer／PCI ID／BDF | 未実施 | 不明 |
-| xHCI ownership／reset／command rings | 未実施 | 不明 |
-| USB port／VID:PID／速度／descriptor数 | 未実施 | 不明 |
-| storage block数／sector byte／総容量 | 未実施 | 不明 |
-| README.TXTビルド長さ／FNV-1a／起動マーカー結果 | 未実施 | 不明 |
-| A／Shift+Aの押下・解放／key code | 未実施 | 不明 |
-| 無入力中のアプリ処理継続 | 未実施 | 不明 |
-| Esc／APP COMPLETE／USB停止状態 | 未実施 | 不明 |
-| keyboard切断／エラー全文／残る処理の進行 | 未実施 | 不明 |
-| LAN driver状態／link | 未実施 | 不明 |
-| 相手を特定したARP／ICMP／UDP通信 | 未実施 | 不明 |
-| NET停止状態／counter | 未実施 | 不明 |
-| cold boot再試行／所要時間／安定性 | 未実施 | 不明 |
-
-現行NUC5／NUC8版ではLAN driver未対応が想定結果。NIC初期化の実装まではARP／ICMP／UDPは未実施とする。SESSION COMPLETEだけでは合格ではない。全エラー行、最後の段階、停止を実際に検証できたかを記録する。Escの前後で画面を撮影する。期待するファイル内容は独立して記録する。表示されるFNV-1aはimage全体のSHA-256ではない。
-
-失敗詳細: 不明。再現手順と復旧方法: 不明。総合結果と残る課題: 未実施。
+run/構成毎にcopy。readyで任意機器や機能受入を証明せず、起動だけで冷間/通信/descriptor/停止確認を推測しません。旧USB READ OK/NET STEP/赤帯を要求せず実event行を転記。今回文書変更で新実機写真は追加していません。

@@ -4,6 +4,8 @@ Status: current (future procedure, 2026-10-15). Ordered/planned hardware is not 
 
 ## English
 
+For a v0.4.0 EFI implementing [boot-log](boot-log.md), use `log=devices` and photograph continuous white-on-black lines, with PM timestamps and scrolling. No rotating diagnostic pages, old colored status words or PM footer are required. Capture PCI/USB/GOP inventory and selected-mode decisions as log lines, not panel pages; keep the full available GOP-mode list separate from the selected mode. Record NOT EXPOSED if an item is absent. AUTORUN output follows app: starting and app: exited in the same console before viewer repaint. Hardware acceptance is still pending.
+
 1. After arrival record actual NUC11TNKi3 model/board, RAM/SSD, firmware version and display cable/monitor. Connect boot USB and external USB boot keyboard directly; photograph each port. No Supervisor password is required by this plan. Record whether Secure Boot can be set **off without setting a Supervisor password**. If firmware blocks this, record BLOCKED and exact screen; do not invent a password requirement or change unrelated security settings.
 2. Owner prepares a separately identified candidate file-copy USB, preserving its existing contents first. Record EFI commit/hash/features and CONFIG bytes/hash; use `log=devices`, no AUTORUN for initial viewer boot. This document authorizes no formatter, raw write or USB execution by the agent. Select the actual UEFI USB entry; cold boot after ≥10 s off, recording AC state.
 3. Photograph startup/runtime/ready or failing line, xHCI inventory **all displayed controllers with vendor:device/revision/BDF**, root/slot/port, keyboard and storage discovery, read result and viewer. Capture LAN inventory actual I225 vendor:device/revision/subsystem where available. Owner-reported I225-LM is not a measured ID and an enumerated I225 is not networking support.
@@ -23,6 +25,8 @@ Status: current (future procedure, 2026-10-15). Ordered/planned hardware is not 
 [Device matrix](device-support.md) distinguishes plans from evidence.
 
 ## 日本語
+
+[bootlog](boot-log.md)実装v0.4.0 EFIは`log=devices`でPM時刻付き白黒逐次log/scrollを撮影。診断巡回頁・旧色status語・PM footerは条件にしません。PCI/USB/GOP一覧/選択判断をpanel頁でなくlog行として撮影。全GOP一覧と選択modeを区別し欠落はNOT EXPOSED。AUTORUNは同consoleのapp開始/終了行と出力を撮りviewer再描画まで記録。 実機受入は未完です。
 
 1. 到着後に実NUC11TNKi3型番/board、RAM/SSD、firmware版、display cable/monitorを記録。起動USB/USB boot keyboardを直結しportを撮影。Supervisor passwordの設定を前提にせず、**passwordを設定しないままSecure Boot offにできるか**確認。firmwareが拒否すればBLOCKEDと画面を記録し、password必須と推測したり無関係なsecurity設定を変更しません。
 2. 所有者が既存内容を保存して識別した候補file-copy USBを用意。EFI commit/hash/features、CONFIG内容/hashを記録し`log=devices`、初回はAUTORUN無し。agentはformat/raw write/実USB操作を行いません。実UEFI USB項目を選びoff ≥10秒の冷間起動、AC状態も記録。

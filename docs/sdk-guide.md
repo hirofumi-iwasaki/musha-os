@@ -28,7 +28,7 @@ A program runs at Ring 3 with its own stack and a private memory arena. It can c
 | Call | Does | Returns |
 |---|---|---|
 | `musha_query(uint64_t *features)` | Reports the feature mask (`MUSHA_FEATURE_BASE` = 1 in r1) | `MUSHA_OK` or an error |
-| `musha_log(const void *bytes, uint64_t length, uint64_t *written)` | Shows UTF-8 text on the kernel console (80 columns × 24 rows). Printable ASCII and newline are rendered; other bytes appear as `.` | `MUSHA_OK` with `*written` = bytes accepted, or an error |
+| `musha_log(const void *bytes, uint64_t length, uint64_t *written)` | Appends UTF-8 text to the [shared full-GOP boot console](boot-log.md). Printable ASCII and newline are rendered; other bytes appear as `.`. The syscall ABI and 4096-byte limit are unchanged | `MUSHA_OK` with `*written` = bytes accepted, or an error |
 | `musha_exit(int32_t status)` | Ends the program. The screen shows `AUTORUN.ELF exited: status <n>`; the machine halts until reboot | never returns |
 
 There is no libc: no `printf`, `malloc`, file, keyboard, timer, network or drawing call. Output is `musha_log` only. The SDK supplies `memcpy`, `memset`, `memmove` and `memcmp` because the compiler may emit calls to them.
@@ -148,7 +148,7 @@ v0.4.0工程1：以下のC/r1動作を保持し、Rust r1/r2実行は上記工�
 | 呼出し | 内容 | 戻り値 |
 |---|---|---|
 | `musha_query(uint64_t *features)` | 機能マスクを返す（r1 では `MUSHA_FEATURE_BASE` = 1） | `MUSHA_OK` またはエラー |
-| `musha_log(const void *bytes, uint64_t length, uint64_t *written)` | UTF-8 テキストをカーネルのコンソール（80 桁×24 行）に表示。ASCII 印字可能文字と改行だけ描画し、他のバイトは `.` | `MUSHA_OK` と受理バイト数、またはエラー |
+| `musha_log(const void *bytes, uint64_t length, uint64_t *written)` | UTF-8テキストを[共通のGOP全体boot console](boot-log.md)へ追記。ASCII印字可能文字と改行だけ描画し、他のバイトは `.`。syscall ABI・4096byte上限は不変 | `MUSHA_OK` と受理バイト数、またはエラー |
 | `musha_exit(int32_t status)` | プログラムを終了。画面に `AUTORUN.ELF exited: status <n>` を表示し、再起動まで停止 | 戻らない |
 
 libc はありません。`printf`・`malloc`・ファイル・キーボード・タイマー・通信・描画の呼出しはなく、出力は `musha_log` だけです。コンパイラーが呼ぶことがあるため、SDK は `memcpy`・`memset`・`memmove`・`memcmp` を用意しています。

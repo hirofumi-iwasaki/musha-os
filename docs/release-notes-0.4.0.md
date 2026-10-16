@@ -10,6 +10,8 @@ Publication date: PENDING. Source/tag commit: PENDING. Candidate EFI SHA256: PEN
 
 ### Main changes and implementation boundary
 
+Owner-approved display replacement: [boot-log](boot-log.md) defines one full-frame sequential white/black console for startup/device decisions/app output/errors, devices-level PM timestamps, wrapping/scrolling and a shared event ring. It removes diagnostic panels/pages, colored status words, PM footer, startup background fill, red exception band and separate80x24 app console. The viewer keeps its own layout; viewer→app clears the console and app→viewer repaints it. Required failures remain visible at all levels; optional LAN/BT reasons are nonfatal only where cleanup is confirmed. Serial mirroring remains a v0.5.0 goal. Implementation/tests and exact-EFI hardware photographs are required before this contract closes a release gate; older panel-based evidence remains historical.
+
 The v0.4.0 development tree includes configurable startup, an empty shipped SETTINGS directory with bounded OS-owned FAT32 records, reorganized drive assets, experimental r2 TIME/WAIT/INPUT calls, C/Rust samples, relative USB mouse input, and viewer launch/return with device stop and arena cleanup. Local test results remain in the individual stage records and do not pre-fill this candidate's gates.
 
 Stage6 contains USB HCI/LE pairing, stored reconnect and descriptor-driven HOGP keyboard/controller software paths. Implementation and host/software-fixture coverage are distinct from actual adapter, BLE keyboard and Xbox1914 compatibility: physical Bluetooth is unverified; HOGP keyboard hardware acceptance is deferred to v0.5.0. Classic/MagicA3118 is outside the reference LE path. IRK/RPA and unsupported security/descriptor paths remain limited; see the [current stage6 checkpoint](stage6-0.4.0-progress.md).
@@ -63,6 +65,8 @@ Record candidate hashes, exact machine/topology/power conditions, raw photos/log
 公開日・source/tag commit・候補EFI SHA256・配布manifest・final CIは全てPENDINGです。v0.4.0の公開/実機受入を記録したものではなく、v0.3.0公開物/証拠は不変です。本書は記入用骨組みで、告知や公開承認ではありません。
 
 ### 主な変更と実装境界
+
+所有者承認の表示置換：[bootlog](boot-log.md)で起動/device/app/errorを全画面白黒逐次consoleへ統一し、devicesのPM時刻・折返し/scroll・共通event ringを使用。診断panel/page・色status・PM footer・起動背景全fill・赤例外帯・80x24専用app枠は廃止。viewerは従来layoutで、app起動でconsole clear/復帰でviewer再描画。必須失敗は全level、任意LAN/BT理由は停止確認済みの範囲で非致命。serialはv0.5.0。実装/試験/正確なEFI実機写真が揃うまでgateを完了せず、旧panel証拠は過去記録として保持します。
 
 開発treeには起動設定、空で配布するSETTINGSとOS所有FAT32限定record、配布構成、実験的r2 TIME/WAIT/INPUT、C/Rust sample、USB相対mouse、device停止/arena cleanupを伴うviewer起動/復帰があります。各stageのローカル結果で今回候補gateを先取りしません。
 

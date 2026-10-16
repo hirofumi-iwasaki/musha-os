@@ -19,6 +19,8 @@ Build standalone C r2 with `python3 tools/check-sdk.py --c-only --abi-revision 2
 
 Stage1 v0.4.0 development: this C/r1 behavior is retained; Rust r1/r2 execution is covered above; viewer launch/return is implemented locally in stage5 with the same r1 validation. The drive now has DOCS and empty SETTINGS and README is the startup marker. See [distribution usage](distribution-usage.md).
 
+### Historical r1 delivery notes / 旧r1配備記録
+
 Owner decision (2026-10-14): the automatic boot filename is `AUTORUN.ELF`; the previous `MUSHA.ELF` is not accepted. This implementation choice does not change the ABI, syscalls, NOTE or SDK-generated ELF. When AUTORUN.ELF is present, the viewer does not start.
 
 MacBook Pro 2018 currently boots but does not recognize storage in this development build; external applications are unsupported there. Internal keyboard support is absent because T2 is unimplemented. NUC5/Ryzen development Hello results do not replace candidate cold-boot acceptance.
@@ -29,16 +31,13 @@ Build the SDK C example using [the SDK instructions](sdk.md) and place the resul
 
 A matching file must be 64 bytes to 16 MiB. The kernel reads at most 4096 bytes per request into its own staging memory, with a **5000 ms deadline**. The size ceiling is not a throughput promise: local tests completed 16 KiB, while 1 MiB and 16 MiB reached the deadline before completion. Start with the 13,312-byte SDK Hello. See [read measurements and memory rationale](external-elf.md). A partial, interrupted or malformed image is never executed.
 
-The display changes to `Loading AUTORUN.ELF ...` on detection. After reading and verified device shutdown, the kernel checks ELF/NOTE and memory policy, then starts the application. It records OS_READY for the external application, APP_ENTERING before the privilege transition, and APP_RUNNING on the first `query`. It does not mark the static viewer as running for this path.
+The sequential log records the detected AUTORUN.ELF metadata and `app: starting external ELF` at launch. After reading and verified device shutdown, the kernel checks ELF/NOTE and memory policy, then starts the application. It records OS_READY for the external application, APP_ENTERING before the privilege transition, and APP_RUNNING on the first `query`. It does not mark the static viewer as running for this path.
 
-`log` displays text in a kernel-owned **80-column × 24-row** console at grid cell (2,2). Boot, diagnostic and console text share 6x8 base glyphs,
-scale clamp(round(GOP height/600),1,4), 6*scale cell width and 10*scale line pitch.
-Two-cell margins are reserved on all sides. Visible columns/rows are computed
-from this grid and capped at 80x24. The default 2048-high QEMU mode uses scale 3. Lines wrap and overflow discards the oldest row. Printable ASCII and newline are interpreted. Every other byte becomes `.` like the viewer (a multibyte character can produce several dots). UTF-8 validation still occurs first. The existing log permission, 4096-byte limit, return status and written-byte count are unchanged. All input is copied through the C2 owned supervisor aliases before drawing; applications receive neither framebuffer addresses nor hardware registers.
+### Current shared console and lifecycle
 
-- `exit`: the fresh viewer shows `ELF exited: status <n>` with the signed 32-bit result, including nonzero results, after confirmed cleanup.
-- Recoverable user exception: the fresh viewer shows `ELF faulted: vector <n>`; debug evidence records vector/error. Kernel exceptions retain the fatal diagnostic path.
-- Refusal: the fresh viewer shows `ELF refused.` for file/read/loader failure; debug evidence retains file/deadline/interruption and `ELF_*`/CPU refusal causes. Unconfirmed stop never authorizes recovery.
+`log` appends to the [shared boot console](boot-log.md), starting directly after `app: starting external ELF`. Its dimensions are the full GOP text grid, with the existing6x8 font/height-based scale and10*scale row pitch at the top-left. There is no80x24 app box, banner or footer. White/black cells wrap and scroll; each cell paints its background and startup has no whole-screen fill. The application receives neither the framebuffer address nor hardware registers. UTF-8 validation, printable-ASCII/newline rendering, non-renderable-byte handling, LOG permission,4096-byte call limit, accepted-byte count and return status remain API contracts.
+
+On confirmed completion the OS appends `app: external ELF exited, status N`, a reasoned rejection, or `app: external ELF faulted, vector=13 error=0x18 rip=0x...` as appropriate; the latter is an illustrative format, not a recorded result. Kernel CPU exceptions use `ERROR: cpu: ...` followed by `Musha-OS halted`, never a red band or a fabricated application fault. No-error-code vectors use `error n/a`. Device stop remains a separate condition and unconfirmed stop never permits reuse. When launched from the viewer, the console is cleared to black and output starts at its top; return lets the viewer repaint its existing UI. App logging remains visible even at quiet startup level. Serial mirroring is a future v0.5.0 goal.
 
 The normal path now promotes C3 rollback/scrub/device restart and viewer selection; AUTORUN automatically runs once, selected ELF uses the same checks. A stop or kernel invariant failure still halts without reuse. Application file/network/display APIs, scheduling and a public ABI freeze remain outside this work; Rust and r2 input/time calls are implemented as described above. SDK distribution and three recorded hardware cold boots remain release gates.
 
@@ -59,6 +58,8 @@ keyboard down/upはHID usage/modifier付き。keyboard無しmouse単独session�
 
 v0.4.0工程1：以下のC/r1動作を保持し、Rust r1/r2実行は上記工程4に到達、viewer起動/復帰は工程5。媒体はDOCS/空SETTINGS/README起動markerへ変更。[配布利用](distribution-usage.md)参照。
 
+### 旧r1配備記録
+
 所有者決定（2026-10-14）：自動実行名は `AUTORUN.ELF` とし、旧 `MUSHA.ELF` は受理しません。実装上の選択でありABI・syscall・NOTE・SDK生成ELFは変更しません。AUTORUN.ELFがあるとビューアーは起動しません。
 
 MacBook Pro 2018は現行開発版で起動しますがストレージ未認識のため外部アプリ未対応です。内蔵キーボードもT2未実装のため未対応です。NUC5／Ryzenの開発版Hello成功と、公開候補の冷間起動受入は区別します。
@@ -69,10 +70,12 @@ MacBook Pro 2018は現行開発版で起動しますがストレージ未認識�
 
 サイズは64バイト～16MiB、1要求最大4096バイト、読込み期限は**5000ms**です。容量上限と期限内に読める容量は別です。QEMUでは16KiBが完読し、1MiB／16MiBは未完読で期限終了しました。まず13,312バイトのSDK Helloを使用してください。[測定・メモリ配置の根拠](external-elf.md)に詳細を記載しています。不完全・中断・不正なELFは実行しません。
 
-検出後は`Loading AUTORUN.ELF ...`を表示し、読込みと機器停止を確認してからELF／NOTE・メモリ検査と実行へ進みます。外部アプリ用のOS_READY、特権遷移前のAPP_ENTERING、最初の`query`でAPP_RUNNINGを記録し、静的ビューアーの起動記録と区別します。
+検出metadataと起動時の`app: starting external ELF`を逐次logへ追記し、読込みと機器停止を確認してからELF／NOTE・メモリ検査と実行へ進みます。外部アプリ用のOS_READY、特権遷移前のAPP_ENTERING、最初の`query`でAPP_RUNNINGを記録し、静的ビューアーの起動記録と区別します。
 
-`log`はカーネル所有の**80桁×24行**の領域へ描画します。原点はグリッド(2,2)です。起動・診断と同じ基本字形6×8、倍率clamp(round(GOP高さ/600),1,4)、セル幅6×倍率、行ピッチ10×倍率を使用します。四辺に2セルの余白を確保し、画面から計算した列・行数に80×24の上限を適用します。既定QEMUの高さ2048では3倍です。折返しと最古行の破棄を行います。ASCII印字可能文字と改行以外は、既存ビューアーと同じ`.`へバイト単位で置換します。UTF-8検査、権限、4096バイト上限、戻り値・バイト数は不変です。C2の所有alias経由コピーを終えてから描画し、アプリに画面アドレスやレジスターを渡しません。
+### 現行共通consoleとlifecycle
 
-終了時は確認済みcleanup後にviewerへ戻り、`ELF exited: status <n>`に符号付き32ビット結果を表示します。回復可能user例外は`ELF faulted: vector <n>`、loader/読込み拒否は`ELF refused.`を表示し、debug証拠には詳細理由を残します。カーネル例外・停止未確認は致命的停止のままです。
+`log`は`app: starting external ELF`直後から[共通boot console](boot-log.md)へ追記。GOP全体のtext grid、既存6x8 font/高さ由来scale・10*scale行ピッチ、左上起点です。80x24専用枠/banner/footerを使わず白黒cellを折返し/scroll。cell背景を塗り起動時の全画面fillは無し。framebuffer address/機器registerをappへ渡しません。UTF-8検査、printable ASCII/改行・非表示byte扱い、LOG権限、1call4096byte、受理byte数/戻り値のAPI契約は維持。
+
+確認済終了は`app: external ELF exited, status N`、拒否理由又は`app: external ELF faulted, vector=13 error=0x18 rip=0x...`等を同consoleへ追記（例は書式で実測結果ではない）。kernel CPU例外は`ERROR: cpu: ...`と`Musha-OS halted`で赤帯/app faultへのすり替え無し。error codeをpushしないvectorは`error n/a`。device停止は別条件で未確認なら再利用しません。viewerから起動時はconsoleを黒clearし先頭から出力、復帰で従来viewerを再描画。quietでもapp logは可視。serial mirrorはv0.5.0目標。
 
 通常版へC3復元・消去・機器再開・viewer選択起動を昇格し、AUTORUN自動起動は初回だけ、選択ELFも同じ検査です。app向けfile/network/display API・スケジューリング・ABI固定は対象外で、Rustとr2 time/inputは上記の実装済み契約に従います。SDK配布と実機3回のコールドブートは公開までの残件です。
