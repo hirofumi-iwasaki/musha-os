@@ -23,7 +23,7 @@ This guide is for people who want to write their own program, not only build the
 
 ### 1. What a program can do in 0.3.0
 
-For the current v0.4.0 console, application start → raw `musha_log` output → exit/fault are consecutive output in the same console. Startup verbosity controls OS events: devices is concise per-device decisions, trace adds transfer/stage/timing detail, and F8/8 selects trace. The ring retains all detail; these display changes do not change the syscall ABI or MAX_LOG_BYTES (4096). The version-specific 0.3.0 behavior below is historical where lifecycle differs.
+For the current v0.4.0 console, required USB-host/boot-media/keyboard discovery → `Musha-OS 0.4.0 ready` → application start → raw `musha_log` output → exit/fault are consecutive output in the same console. Ready level also shows app start/exit/fault/rejection and app bytes. Startup verbosity controls OS events: devices is concise per-device decisions, trace adds transfer/stage/timing detail, and F8/8 selects trace. The ring retains all detail; these display changes do not change the syscall ABI or MAX_LOG_BYTES (4096). The version-specific 0.3.0 behavior below is historical where lifecycle differs.
 
 A program runs at Ring 3 with its own stack and a private memory arena. It can call exactly three operations:
 
@@ -126,7 +126,7 @@ r2 input, files, timers, drawing commands, networking, returning to the viewer w
 
 ## 日本語
 
-現行v0.4.0 consoleではapp開始→生の`musha_log`出力→終了/faultを同じconsoleへ順に表示します。起動levelはOS eventを選別し、devicesは簡潔な機器判断、traceは詳細transfer/stage/timing、F8/8はtraceを選択。ringは全詳細を保持し、syscall ABI・MAX_LOG_BYTES（4096）は変えません。以下の0.3.0固有動作はlifecycleが異なる箇所では過去の説明です。
+現行v0.4.0 consoleでは必須USB host/起動媒体/keyboard探索→`Musha-OS 0.4.0 ready`→app開始→生の`musha_log`出力→終了/faultを同じconsoleへ順に表示します。readyでもapp開始/終了/fault/拒否と生byte出力を表示。起動levelはOS eventを選別し、devicesは簡潔な機器判断、traceは詳細transfer/stage/timing、F8/8はtraceを選択。ringは全詳細を保持し、syscall ABI・MAX_LOG_BYTES（4096）は変えません。以下の0.3.0固有動作はlifecycleが異なる箇所では過去の説明です。
 
 ### 工程4 r2実接続到達点 —2026-10-15
 

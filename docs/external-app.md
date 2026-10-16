@@ -31,7 +31,7 @@ Build the SDK C example using [the SDK instructions](sdk.md) and place the resul
 
 A matching file must be 64 bytes to 16 MiB. The kernel reads at most 4096 bytes per request into its own staging memory, with a **5000 ms deadline**. The size ceiling is not a throughput promise: local tests completed 16 KiB, while 1 MiB and 16 MiB reached the deadline before completion. Start with the 13,312-byte SDK Hello. See [read measurements and memory rationale](external-elf.md). A partial, interrupted or malformed image is never executed.
 
-The sequential log records the detected AUTORUN.ELF metadata and `app: starting <name>` at launch, with the actual ASCII-displayed filename (`AUTORUN.ELF` or the selected catalog name). After reading and verified device shutdown, the kernel checks ELF/NOTE and memory policy, then starts the application. It records OS_READY for the external application, APP_ENTERING before the privilege transition, and APP_RUNNING on the first `query`. It does not mark the static viewer as running for this path.
+The log prints `Musha-OS 0.4.0 ready` after required USB-host, boot-media and keyboard discovery and before any application starts. Ready level also shows app start, exit, fault, rejection and raw log bytes. The sequential log records the detected AUTORUN.ELF metadata and `app: starting <name>` at launch, with the actual ASCII-displayed filename (`AUTORUN.ELF` or the selected catalog name). After reading and verified device shutdown, the kernel checks ELF/NOTE and memory policy, then starts the application. It records OS_READY for the external application, APP_ENTERING before the privilege transition, and APP_RUNNING on the first `query`. It does not mark the static viewer as running for this path.
 
 ### Current shared console and lifecycle
 
@@ -70,7 +70,7 @@ MacBook Pro 2018は現行開発版で起動しますがストレージ未認識�
 
 サイズは64バイト～16MiB、1要求最大4096バイト、読込み期限は**5000ms**です。容量上限と期限内に読める容量は別です。QEMUでは16KiBが完読し、1MiB／16MiBは未完読で期限終了しました。まず13,312バイトのSDK Helloを使用してください。[測定・メモリ配置の根拠](external-elf.md)に詳細を記載しています。不完全・中断・不正なELFは実行しません。
 
-検出metadataと起動時の`app: starting <name>`を逐次logへ追記（nameはAUTORUN.ELF又は選択catalogの実名ASCII表示）し、読込みと機器停止を確認してからELF／NOTE・メモリ検査と実行へ進みます。外部アプリ用のOS_READY、特権遷移前のAPP_ENTERING、最初の`query`でAPP_RUNNINGを記録し、静的ビューアーの起動記録と区別します。
+必須USB host・起動媒体・keyboard探索後、app開始より前に`Musha-OS 0.4.0 ready`を表示。readyでもapp開始/終了/fault/拒否・生log byteを表示します。検出metadataと起動時の`app: starting <name>`を逐次logへ追記（nameはAUTORUN.ELF又は選択catalogの実名ASCII表示）し、読込みと機器停止を確認してからELF／NOTE・メモリ検査と実行へ進みます。外部アプリ用のOS_READY、特権遷移前のAPP_ENTERING、最初の`query`でAPP_RUNNINGを記録し、静的ビューアーの起動記録と区別します。
 
 ### 現行共通consoleとlifecycle
 

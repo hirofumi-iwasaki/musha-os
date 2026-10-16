@@ -30,10 +30,13 @@ The screen during startup is **one text log**: lines appended top to bottom, scr
 
 `quiet` — nothing, except required-phase failures (section 5).
 
-`ready` — a single line when all required devices are discovered:
+`ready` — a single line when all required devices are discovered, **before** any application starts, plus the `app:` lines (start, exit, fault, rejection) and the application's own output, because they concern the user's program:
 
 ```
 Musha-OS 0.4.0 ready
+app: starting AUTORUN.ELF
+Hello Musha-OS!
+app: AUTORUN.ELF exited, status 0
 ```
 
 `phases` — one line per phase, in order of completion:
@@ -47,12 +50,14 @@ storage: boot media ready (28.7 GiB)
 keyboard: ready
 settings: CONFIG.TXT loaded (log=phases)
 lan: not available (no supported controller)
+Musha-OS 0.4.0 ready
 app: starting AUTORUN.ELF
 Hello Musha-OS!
 app: AUTORUN.ELF exited, status 0
 viewer: starting
-Musha-OS 0.4.0 ready
 ```
+
+The `ready` line marks the end of required-device discovery and is printed **before** `app: starting`. Optional devices (LAN, Bluetooth) may report before or after it; the application always starts after it.
 
 `devices` — `phases` plus one concise factual line per recognized device or decision, with timestamps. Repeated discovery of the same USB identity is retained at `trace`, not repeated on the devices screen. Settings/GOP/media/LAN phase summaries are replaced by their fuller single factual line at devices; their original phase records remain in trace and the ring:
 
@@ -73,19 +78,19 @@ Musha-OS 0.4.0 starting
 [  1.611] mouse: logitech m100 at xhci 0 port 3 (046d:c077) boot protocol
 [  1.620] lan: realtek 10ec:8168 rev 15 at 05:00.0, txconfig 0x3c800000
 [  1.621] lan: not available (no driver for 10ec:8168)
+Musha-OS 0.4.0 ready
 [  1.700] app: AUTORUN.ELF 1234 bytes, note r2 permissions 15
 [  1.702] app: starting AUTORUN.ELF
 Hello Musha-OS!
 [  1.790] app: AUTORUN.ELF exited, status 0
 [  1.795] viewer: starting
-Musha-OS 0.4.0 ready
 ```
 
 The exact devices summaries and trace details are defined by the implementation, and every value that the current diagnostic panels show and that a hardware record needs (PCI vendor:device:revision and BDF, USB VID:PID, port and speed, GOP mode, image/arena ranges, media size, marker hash, PM-epoch times) must appear as a line here. Hardware summaries use devices; complete diagnostic evidence uses trace. Values omitted from concise summaries remain in trace and the ring.
 
 `trace` — `devices` plus every low-level stage, control request, transfer result, timing pair and raw diagnostic field formerly shown at devices. This is the detailed hardware-capture level; F8 / digit 8 forces trace. All five display levels retain every record in the same 64 KiB ring. No trace filter deletes ring content.
 
-The first phases/devices/trace line is exactly `Musha-OS 0.4.0 starting`; the startup-ready terminal line is exactly `Musha-OS 0.4.0 ready`, without timestamps or a tag. Device/trace records retain timestamps. Proper names and app bytes preserve case. UEFI and initialization progress belongs in trace; phases folds it into `core: runtime ready`. The USB phase tag is `usb`; display includes the selected dimensions. LAN reports observable availability/link/address or a concrete failure reason, never a development-certification disclaimer.
+The first phases/devices/trace line is exactly `Musha-OS 0.4.0 starting`; the ready line is exactly `Musha-OS 0.4.0 ready`, without timestamps or a tag, and is printed when required-device discovery ends, before the application starts. Device/trace records retain timestamps. Proper names and app bytes preserve case. UEFI and initialization progress belongs in trace; phases folds it into `core: runtime ready`. The USB phase tag is `usb`; display includes the selected dimensions. LAN reports observable availability/link/address or a concrete failure reason, never a development-certification disclaimer.
 
 ### 4. Application output, viewer, return
 
@@ -132,7 +137,7 @@ The implementation keeps a 65,536-byte ring inside the reserved LoadedImage, wit
 
 The console uses a fixed CPU text shadow (384 columns by 128 rows), including 4K and 8K GOP grids under the specified scale. It never reads framebuffer pixels to scroll. Binding writes no pixels; only new cells and changed scroll rows are painted. Viewer pixels retain their existing layout. Selecting an ELF from the viewer clears black once, then appends `app: starting <catalog name>`; the catalog name is copied before scoped handles close (non-ASCII units display as dots without changing identity). App exit/fault lines identify the same name and include status or vector/error/RIP. No framebuffer display syscall or new public ABI is introduced.
 
-Only an existing PAT WC entry may be selected for GOP pages. PAT and MTRRs are never changed; WB RAM and strong-UC MMIO/DMA stay unchanged. Missing WC, or CR0 cache-disable/no-write-through state, selects UC fallback and records the reason. This is a documented fallback, not a claim that WC was enabled on an untested machine. Pixel packing, stride, glyph values and bounds remain unchanged. Architectural references: [Intel SDM, volume 3A, sections 13.5.2.2 and 13.12.4](https://cdrdv2-public.intel.com/868137/325462-089-sdm-vol-1-2abcd-3abcd-4.pdf), and [AMD APM volume 2, section 7.8.5](https://docs.amd.com/api/khub/documents/sD1_QL~h4Afq2_tvzxqqSQ/content). Batch SFENCE drains WC stores; it is not vsync. The old UC full-frame fill and repeated whole-console redraw were code-level cost sources; physical elapsed rendering time has not been measured.
+After ExitBootServices and before constructing OS page tables, the BSP changes PAT entry 1 to WC with exactly one verified IA32_PAT write, preserving the other seven entries. A bounded audit first rejects firmware mappings or paging structures using entry 1, unsupported CPU/cache state, or uninspectable tables. Cache-disable, WBINVD, global TLB invalidation and temporary MTRR disable protect the transition; the original MTRR state is restored. Readback mismatch halts with caches disabled rather than returning into an uncertain mapping. After CR3 installation, every GOP leaf is verified index 1/RW/NX and both DMA regions remain strong-UC/RW/NX before publishing the snapshot. Devices records PAT before/requested/readback, write count and verification. This protocol passed QEMU; physical firmware compatibility remains unverified. Older development EFIs retain their original existing-WC/UC-fallback provenance and are not regenerated by this change. Pixel packing, stride, glyph values and bounds remain unchanged. Architectural references: [Intel SDM, volume 3A, sections 13.5.2.2 and 13.12.4](https://cdrdv2-public.intel.com/868137/325462-089-sdm-vol-1-2abcd-3abcd-4.pdf), and [AMD APM volume 2, section 7.8.5](https://docs.amd.com/api/khub/documents/sD1_QL~h4Afq2_tvzxqqSQ/content). Batch SFENCE drains WC stores; it is not vsync. The old UC full-frame fill and repeated whole-console redraw were code-level cost sources; physical elapsed rendering time has not been measured.
 
 `pci`, `device` and `time` are the additional retained tags: PCI inventory, generic legacy diagnostic fields, and timing records respectively. `xhci` is folded into `usb`, GOP into `display`, and firmware/runtime progress into `core`; the untagged product header replaces `boot`. The complete tag set is `core`, `memory`, `timer`, `usb`, `storage`, `keyboard`, `mouse`, `lan`, `bluetooth`, `display`, `settings`, `app`, `viewer`, `pci`, `device`, `time`. Device/trace kernel events have timestamps; raw app bytes are not rewritten. Mandatory `ERROR` and the product name may contain uppercase letters. The `MUSHA: LOG` / retained `MUSHA: RING` development debug-port capture is the primary QEMU evidence, not an implemented serial output feature.
 
@@ -184,10 +189,13 @@ Actual PCI revisions, safe BAR resource values, Realtek TxConfig40, physical USB
 
 `quiet` — 何も出さない。ただし必須フェーズの失敗（第 5 節）は出す。
 
-`ready` — 必須機器の探索が完了した時点で 1 行：
+`ready` — 必須機器の探索が完了した時点で、**アプリが始まる前に** 1 行。加えて `app:` の行（開始・終了・例外・拒否）とアプリ自身の出力は、利用者のプログラムに関する情報なので表示する：
 
 ```
 Musha-OS 0.4.0 ready
+app: starting AUTORUN.ELF
+Hello Musha-OS!
+app: AUTORUN.ELF exited, status 0
 ```
 
 `phases` — フェーズごとに 1 行、完了順：
@@ -201,12 +209,14 @@ storage: boot media ready (28.7 GiB)
 keyboard: ready
 settings: CONFIG.TXT loaded (log=phases)
 lan: not available (no supported controller)
+Musha-OS 0.4.0 ready
 app: starting AUTORUN.ELF
 Hello Musha-OS!
 app: AUTORUN.ELF exited, status 0
 viewer: starting
-Musha-OS 0.4.0 ready
 ```
+
+`ready` の行は必須機器の探索の終わりを示し、`app: starting` より**前**に出す。任意機器（LAN、Bluetooth）はその前後どちらで報告してもよいが、アプリは常にその後に始まる。
 
 `devices` — 認識した機器と判断ごとに1行、時刻付き。settings／GOP／media／LANのphase重複は対応する詳細1行へ統合し、元phaseはtrace／ringへ保持：
 
@@ -227,19 +237,19 @@ Musha-OS 0.4.0 starting
 [  1.611] mouse: logitech m100 at xhci 0 port 3 (046d:c077) boot protocol
 [  1.620] lan: realtek 10ec:8168 rev 15 at 05:00.0, txconfig 0x3c800000
 [  1.621] lan: not available (no driver for 10ec:8168)
+Musha-OS 0.4.0 ready
 [  1.700] app: AUTORUN.ELF 1234 bytes, note r2 permissions 15
 [  1.702] app: starting AUTORUN.ELF
 Hello Musha-OS!
 [  1.790] app: AUTORUN.ELF exited, status 0
 [  1.795] viewer: starting
-Musha-OS 0.4.0 ready
 ```
 
 devicesは機器又は判断ごとの事実を1行へ要約し、同じUSB identityの反復探索はtraceへ保持します。PCI vendor:device:revision／BDF、USB VID:PID／port／speed、GOP、image／arena、媒体、marker hash、PM時刻を含む全診断値はdevices要約又はtrace詳細へ記録します。機器の要約写真はdevices、完全な診断証拠はtraceで採取します。
 
 `trace` は `devices` に加え、低水準stage・制御転送・transfer結果・計測対・旧診断fieldを全て表示する詳細採取レベルです。F8／数字8はtraceへ強制します。5表示レベルすべてで同じ64KiB ringへ全recordを保持し、trace filterで履歴を削除しません。
 
-phases／devices／traceの先頭はexact `Musha-OS 0.4.0 starting`、起動完了末尾はexact `Musha-OS 0.4.0 ready` とし、この2行にはtimestamp／tagを付けません。機器／trace recordのtimestampは保持し、固有名とapp byteの大文字小文字を変更しません。UEFIと初期化の逐次経過はtraceへ置き、phasesでは `core: runtime ready` に畳みます。USB phase tagはusb、displayは実選択解像度を含みます。LANは実際の可否／link／address又は具体的失敗理由を示し、開発認証の注記を画面へ出しません。
+phases／devices／traceの先頭はexact `Musha-OS 0.4.0 starting`、ready の行はexact `Musha-OS 0.4.0 ready` とし、必須機器の探索が終わった時点（アプリ開始前）に出し、この2行にはtimestamp／tagを付けません。機器／trace recordのtimestampは保持し、固有名とapp byteの大文字小文字を変更しません。UEFIと初期化の逐次経過はtraceへ置き、phasesでは `core: runtime ready` に畳みます。USB phase tagはusb、displayは実選択解像度を含みます。LANは実際の可否／link／address又は具体的失敗理由を示し、開発認証の注記を画面へ出しません。
 
 ### 4. アプリ出力、ビューアー、復帰
 
@@ -286,7 +296,7 @@ Musha-OS halted
 
 コンソールは CPU 側の固定 shadow（384 列 × 128 行）を持ち、規定倍率の 4K／8K GOP を含む。スクロールで framebuffer を読み戻さない。bind は pixel を書かず、新しい cell とスクロールで変わる文字領域だけ描く。viewer の既存配置は保持する。viewer から ELF を選択した時だけ黒消去し、app: starting <catalog name> と続ける。選択catalog名をfile service終了前にコピーし、非ASCII UTF-16 code unitは表示だけドット化してfile identityを変更しない。終了／fault は同じcatalog名と status または vector／error／RIP を記録する。表示 syscall や公開 ABI は追加しない。
 
-GOP には既存 PAT の WC entry だけを使う。PAT／MTRR を変更せず、WB RAM と strong-UC の MMIO／DMA を保持する。WC が無い場合や CR0 cache-disable／no-write-through 状態では UC に fallback し理由を記録する。これは未試験機で WC を有効化したとの主張ではない。根拠は [Intel SDM volume 3A §13.5.2.2／13.12.4](https://cdrdv2-public.intel.com/868137/325462-089-sdm-vol-1-2abcd-3abcd-4.pdf) と [AMD APM volume 2 §7.8.5](https://docs.amd.com/api/khub/documents/sD1_QL~h4Afq2_tvzxqqSQ/content)。pixel 値、stride、glyph、境界は不変で、batch 後 SFENCE は WC store の完了であり vsync ではない。旧 UC 全画面 fill と console 全再描画はコード上の負荷要因だが、実機描画時間は未測定である。
+ExitBootServices 後、新 OS page table 構築前に BSP が PAT entry 1 を WC に変更し、IA32_PAT は他の 7 entry を保持して 1 回だけ書き、読戻しを検証する。先に bounded audit で firmware mapping／paging structure の entry 1 使用、未対応 CPU／cache 状態、監査不能 table を拒否する。cache-disable、WBINVD、global TLB invalidation、MTRR の一時無効化で切替えを保護し、元の MTRR を復元する。読戻し不一致は cache 無効のまま停止し、不確かな mapping へ戻らない。CR3 切替え後、GOP 全 leaf の index 1／RW／NX と両 DMA 領域の strong-UC／RW／NX を検査してから snapshot を公開する。devices は PAT の変更前／要求／読戻し、書込み回数、検証結果を記録する。QEMU では合格したが実機 firmware との適合は未確認である。既存開発 EFI は旧 existing-WC／UC-fallback の来歴を保持し、今回再生成しない。根拠は [Intel SDM volume 3A §13.5.2.2／13.12.4](https://cdrdv2-public.intel.com/868137/325462-089-sdm-vol-1-2abcd-3abcd-4.pdf) と [AMD APM volume 2 §7.8.5](https://docs.amd.com/api/khub/documents/sD1_QL~h4Afq2_tvzxqqSQ/content)。pixel 値、stride、glyph、境界は不変で、batch 後 SFENCE は WC store の完了であり vsync ではない。旧 UC 全画面 fill と console 全再描画はコード上の負荷要因だが、実機描画時間は未測定である。
 
 追加tagはPCI一覧のpci、旧診断fieldのdevice、計測のtimeです。xhciはusb、GOPはdisplay、firmware/runtime経過はcoreへ畳み、bootはtag無し製品見出しへ統合します。全tag集合はcore／memory／timer／usb／storage／keyboard／mouse／lan／bluetooth／display／settings／app／viewer／pci／device／timeです。機器／traceのkernel行はtimestamp付きとし、アプリ生 byte は書換えない。必須 ERROR と製品名の大文字は許す。開発用 debug-port の MUSHA: LOG／MUSHA: RING を QEMU の主証拠とするが、serial 出力実装とは扱わない。
 
