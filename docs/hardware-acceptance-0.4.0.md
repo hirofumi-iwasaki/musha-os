@@ -4,6 +4,30 @@ Status: current (blank acceptance worksheet, 2026-10-15). All gates PENDING; no 
 
 ## Development EFI
 
+### Stage 0 refreshed trace/PAT development EFI — 2026-10-16
+
+#### English
+
+These three **new development-only** binaries come from compile source commit `77184002b07acbcc200520ef8487d2c387c724da` (including the FS/GS correction, single retained console, ready-before-app and verified PAT entry 1 WC transition). Each isolated locked/release build records equal before/after compile-source hashes. Documentation-only working-tree edits are listed separately in the manifests. CONFIG is `log=trace` / `display=max`; CONFIG is a runtime setting, not a feature. The former development EFIs and Parallels artifacts below retain their original hashes and source provenance and are not overwritten. No USB deployment or physical run occurred.
+
+| Purpose | Explicit features | EFI SHA256 | Exact local EFI |
+|---|---|---|---|
+| t2-realtek | `t2-diagnostics,diagnostics-detail` | `8b3fe1ec3bfc2aaf93c644da7f61e1da956d0b646637fb49c816ff7b1fd419fb` | `/Users/hirofumiiwasaki/Github/musha-os/out/stage0-ready-pat/development/t2-realtek/files/EFI/BOOT/BOOTX64.EFI` |
+| i218 | `i218-network,diagnostics-detail` | `3b6e0d1ddb70950805bccaa3c719ba70c5ff43729ca69e3f828841e6e218e157` | `/Users/hirofumiiwasaki/Github/musha-os/out/stage0-ready-pat/development/i218/files/EFI/BOOT/BOOTX64.EFI` |
+| hci-probe | `bluetooth-hci-probe,diagnostics-detail` | `2d82f69fbcaa4f02fd201bd0f8d10426b6fa3d1563793eb53358d49106af1cb5` | `/Users/hirofumiiwasaki/Github/musha-os/out/stage0-ready-pat/development/hci-probe/files/EFI/BOOT/BOOTX64.EFI` |
+
+Registry and full commands: `out/stage0-ready-pat/development/registry.json`, each directory's `manifest.json` and `source-before.json`. Local EFI checks passed 7 QEMU configurations: T2 diagnostic stop 3, I218 normal Hello/return 1, and HCI diagnostic stop 3. Evidence: `out/stage0-ready-pat/development-checks.json` and `check-hci-diagnostic/report.json`. An initial HCI run used the ordinary runtime-terminal observer; the healthy diagnostic-session terminal required the existing dedicated diagnostic observer. This was an observer mismatch, not an HCI hardware result. No AUTORUN is bundled; copy the independently built SDK Hello only when following the owner-run application check. The runtime README marker and offline DOCS/licenses accompany each EFI. Source commit identity remains the build-time identity even if these records are committed later.
+
+NUC5 retest: no #GP; required USB/media/keyboard discovery → exact ready → AUTORUN start/output/exit (when installed); I218 either obtains a real DHCP lease or continues nonfatally with a concrete NVM/budget reason after confirmed stop. UDP echo is checked only after an actual lease. Ryzen captures Realtek identity/BAR/TxConfig40 or explicit safe skip at trace; no revision or TxConfig value is assumed. HCI is an explicit Reset/transport probe, not proof of pairing/HOGP interoperability. Realtek runtime writes remain gated. Physical firmware/PAT compatibility, effective WC and speed, I218/RTL hardware and actual Bluetooth remain PENDING. This refresh does not close any acceptance gate.
+
+#### 日本語
+
+この3本は **新しい開発専用 EFI** で、compile source commit は `77184002b07acbcc200520ef8487d2c387c724da`（FS/GS 修正、単一 retained console、app 前の ready、検証付き PAT entry 1 WC 切替えを含む）。個別 target の locked/release build ごとに compile-source の前後 hash 一致を記録した。文書のみの作業 tree 差分は manifest に分けて記録する。CONFIG は `log=trace`／`display=max` で、runtime 設定であり feature ではない。下記の旧開発 EFI と Parallels artifact は元 hash／来歴を保持し上書きしていない。USB 配備・実機実行はしていない。
+
+上表が実ファイル、feature、SHA256 である。 ローカル EFI 確認は T2 診断停止 3、I218 通常 Hello／復帰 1、HCI 診断停止 3 の計 7 QEMU 構成が合格。証拠は `out/stage0-ready-pat/development-checks.json` と `check-hci-diagnostic/report.json`。HCI 初回は通常 runtime の終端観測器を指定し、正常な診断 session 終了と不一致になったため既存専用 observer で確認した。実 HCI 装置の成功結果ではない。全 command／来歴は `out/stage0-ready-pat/development/registry.json` と各 `manifest.json`／`source-before.json`。AUTORUN は同梱せず、所有者の app 確認時に別 build の SDK Hello をコピーする。runtime README marker、offline DOCS／license を同梱する。後続の文書 commit で build 時の source identity を付け替えない。
+
+NUC5 は #GP 無し、必須 USB／媒体／keyboard 探索→exact ready→AUTORUN 開始／出力／終了（配置した場合）を確認する。I218 は実 DHCP lease 取得、又は停止確認後の具体的 NVM／budget 理由付き非致命継続を確認し、実 lease 後だけ UDP echo を行う。Ryzen は trace で Realtek identity／BAR／TxConfig40 又は安全な skip 理由を採取し、revision／TxConfig 値を仮定しない。HCI は明示 Reset／transport probe であり pairing／HOGP 互換の証明ではない。Realtek runtime 書込み gate は閉じたまま。実機 firmware／PAT 適合、実効 WC／速度、I218／RTL 実機、Bluetooth 実接続は PENDING であり、今回再生成で受入 gate を完了しない。
+
 ### English
 
 Additional corrected detailed T2/Realtek development EFI (2026-10-16): `out/t2-detail-segment-fix-20261016/files/EFI/BOOT/BOOTX64.EFI`, SHA256 `710cf02f0a669631f81a05d0d1c21690c98f51bd8c1c4055c36b6e2dc39c52fb`, source commit `12a4aa0c1395856d8e5a56959fb6b1803107f86c` plus the recorded uncommitted diagnostic-only Ready-stop correction, features `t2-diagnostics,diagnostics-detail`, CONFIG `log=devices`. Includes the committed FS/GS correction. Unlike the older t2-only59a701b1 artifact, it renders/rotates journal detail pages; the old artifact and its origin remain preserved below. RTL-specific values are still physically unmeasured. See [capture instructions](ryzen-realtek-identification.md).

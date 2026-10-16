@@ -1,6 +1,6 @@
 # Documentation index / 文書索引
 
-Status: current (2026-10-15)
+Status: current (2026-10-16)
 
 Current contracts, local validation and physical acceptance are separate. Past records retain their original dates and assertions. A historical plan is not current hardware support. / 現行契約・ローカル検証・実機受入を区別します。過去記録は当時の日付と記述を保持し、過去計画を現在の対応状況としません。
 
@@ -41,6 +41,13 @@ Current contracts, local validation and physical acceptance are separate. Past r
 - [no-shell-policy](no-shell-policy.md)
 
 ## Release records / 版ごとの公開記録
+
+- [v0.4.0 development entry / 開発版入口](releases/0.4.0/README.md)
+- [release-notes-0.4.0 worksheet](release-notes-0.4.0.md)
+- [hardware-acceptance-0.4.0 worksheet](hardware-acceptance-0.4.0.md)
+- [boot-log-ready-pat-0.4.0 local results](boot-log-ready-pat-0.4.0-results.md)
+- [boot-log-trace-0.4.0 local results](boot-log-trace-0.4.0-results.md)
+- [sdk-packaging-0.4.0 local results](sdk-packaging-0.4.0-progress.md)
 
 - [hardware-acceptance-0.2.0](hardware-acceptance-0.2.0.md)
 - [hardware-acceptance-0.3.0](hardware-acceptance-0.3.0.md)

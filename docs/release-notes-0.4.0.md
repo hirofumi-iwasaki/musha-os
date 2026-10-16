@@ -1,6 +1,6 @@
 # Musha-OS v0.4.0
 
-Status: current (unpublished release-note skeleton, 2026-10-15). All release gates PENDING.
+Status: current (unpublished release-note skeleton, 2026-10-16). All release gates PENDING.
 
 ## English
 
@@ -10,13 +10,13 @@ Publication date: PENDING. Source/tag commit: PENDING. Candidate EFI SHA256: PEN
 
 ### Main changes and implementation boundary
 
-Owner-approved display replacement: [boot-log](boot-log.md) defines one full-frame sequential white/black console for startup/device decisions/app output/errors, concise devices-level decisions, trace-level transfer/stage/timing detail, PM timestamps, wrapping/scrolling and an all-detail event ring. F8/8 selects trace. Phases starts with `Musha-OS 0.4.0 starting`; `Musha-OS 0.4.0 ready` follows required USB-host/boot-media/keyboard discovery and precedes app start. Ready level includes app start/exit/fault/rejection and raw output. The PAT entry-1 WC update after EBS and before table construction passed 26 host tests, Devices/Trace QEMU and full-pixel comparison (two each). One PAT write and temporary two-write MTRR restore were verified with installed GOP index-1/RW/NX and DMA UC leaves; audit/CPU prerequisites fail closed. Physical effective WC and speed remain unverified, and old UC-fallback artifacts do not prove this update. It removes diagnostic panels/pages, colored status words, PM footer, startup background fill, red exception band and separate80x24 app console. The viewer keeps its own layout; viewer→app clears the console and app→viewer repaints it. Required failures remain visible at all levels; optional LAN/BT reasons are nonfatal only where cleanup is confirmed. Serial mirroring remains a v0.5.0 goal. Implementation/tests and exact-EFI hardware photographs are required before this contract closes a release gate; older panel-based evidence remains historical.
+Owner-approved display replacement: [boot-log](boot-log.md) defines one full-frame sequential white/black console for startup/device decisions/app output/errors, concise devices-level decisions, trace-level transfer/stage/timing detail, PM timestamps, wrapping/scrolling and an all-detail event ring. F8/8 selects trace. Phases starts with `Musha-OS 0.4.0 starting`; `Musha-OS 0.4.0 ready` follows required USB-host/boot-media/keyboard discovery and precedes app start. Ready level includes app start/exit/fault/rejection and raw output. The PAT entry-1 WC update after EBS and before table construction passed the final workspace suite (438 tests, including the 26 memory tests) and seven startup-level/F8/8 QEMU cases with seven independent full-pixel comparisons. These are one final checkpoint, not added to earlier overlapping runs. One PAT write and temporary two-write MTRR restore were verified with installed GOP index-1/RW/NX and DMA UC leaves; PAT0=WB is required for CR3/nonleaf page walks; audit/CPU prerequisites fail closed. Physical effective WC and speed remain unverified, and old UC-fallback artifacts do not prove this update. It removes diagnostic panels/pages, colored status words, PM footer, startup background fill, red exception band and separate80x24 app console. The viewer keeps its own layout; viewer→app clears the console and app→viewer repaints it. Required failures remain visible at all levels; optional LAN/BT reasons are nonfatal only where cleanup is confirmed. Serial mirroring remains a v0.5.0 goal. Implementation/tests and exact-EFI hardware photographs are required before this contract closes a release gate; older panel-based evidence remains historical.
 
 The v0.4.0 development tree includes configurable startup, an empty shipped SETTINGS directory with bounded OS-owned FAT32 records, reorganized drive assets, experimental r2 TIME/WAIT/INPUT calls, C/Rust samples, relative USB mouse input, and viewer launch/return with device stop and arena cleanup. Local test results remain in the individual stage records and do not pre-fill this candidate's gates.
 
 Stage6 contains USB HCI/LE pairing, stored reconnect and descriptor-driven HOGP keyboard/controller software paths. Implementation and host/software-fixture coverage are distinct from actual adapter, BLE keyboard and Xbox1914 compatibility: physical Bluetooth is unverified; HOGP keyboard hardware acceptance is deferred to v0.5.0. Classic/MagicA3118 is outside the reference LE path. IRK/RPA and unsupported security/descriptor paths remain limited; see the [current stage6 checkpoint](stage6-0.4.0-progress.md).
 
-I218 networking is an opt-in implemented development path with physical link/DHCP/echo pending. Realtek requires exact PCI/revision/TxConfig profile evidence and its separate backend; unsupported profiles are not accepted. T2 has host models and shared input preparation, but live BCE MMIO/DMA/VHCI/internal keyboard integration remains unimplemented. Mac storage cause/repeatability remains a separate hardware gate. Refer to the [device matrix](device-support.md), [scope](release-scope-0.4.0.md) and [work plan](work-plan-0.4.0.md) for exact boundaries; no pending work is described as a completed product feature.
+I218 networking is an opt-in implemented development path with physical link/DHCP/echo pending. Realtek requires exact PCI/revision/TxConfig profile evidence and its separate backend; unsupported profiles are not accepted. T2 has host models and shared input preparation, but live BCE MMIO/DMA/VHCI/internal keyboard integration remains unimplemented. Mac storage cause/repeatability remains a separate hardware gate. Refer to the [device matrix](device-support.md), [scope](release-scope-0.4.0.md) and [work plan](work-plan-0.4.0.md) for exact boundaries; no pending work is described as a completed product feature. The [final ready/PAT record](boot-log-ready-pat-0.4.0-results.md), [trace record](boot-log-trace-0.4.0-results.md) and [SDK packaging record](sdk-packaging-0.4.0-progress.md) provide local evidence, not formal candidate or physical acceptance.
 
 ### Downloads (planned; not uploaded)
 
@@ -60,13 +60,16 @@ Record candidate hashes, exact machine/topology/power conditions, raw photos/log
 
 ## 日本語
 
+[最終ready/PAT記録](boot-log-ready-pat-0.4.0-results.md)、[trace記録](boot-log-trace-0.4.0-results.md)、[SDK配布検証](sdk-packaging-0.4.0-progress.md)はlocal証拠で、正式候補・実機受入とは別です。
+
+
 ### 公開記録
 
 公開日・source/tag commit・候補EFI SHA256・配布manifest・final CIは全てPENDINGです。v0.4.0の公開/実機受入を記録したものではなく、v0.3.0公開物/証拠は不変です。本書は記入用骨組みで、告知や公開承認ではありません。
 
 ### 主な変更と実装境界
 
-所有者承認の表示置換：[bootlog](boot-log.md)で起動/device/app/errorを全画面白黒逐次consoleへ統一し、devicesの簡潔な機器判断、traceの詳細transfer/stage/timing、PM時刻・折返し/scroll・全詳細event ringを使用。F8/8はtraceを選択。phases先頭は`Musha-OS 0.4.0 starting`、必須USB host/起動媒体/keyboard探索後・app開始前に`Musha-OS 0.4.0 ready`を表示。readyにもapp開始/終了/fault/拒否・生出力を表示します。PAT entry 1 WC変更（EBS後・table構築前）はhost26件、Devices/Trace QEMU・全pixel比較各2件に合格。PAT1回書込み・MTRR一時2回書込み復元、導入済GOP index 1/RW/NXとDMA UC leafを確認し、監査/CPU前提不足は安全拒否します。実機実効WC・速度は未確認で、旧UC fallback artifactを今回の証拠にしません。診断panel/page・色status・PM footer・起動背景全fill・赤例外帯・80x24専用app枠は廃止。viewerは従来layoutで、app起動でconsole clear/復帰でviewer再描画。必須失敗は全level、任意LAN/BT理由は停止確認済みの範囲で非致命。serialはv0.5.0。実装/試験/正確なEFI実機写真が揃うまでgateを完了せず、旧panel証拠は過去記録として保持します。
+所有者承認の表示置換：[bootlog](boot-log.md)で起動/device/app/errorを全画面白黒逐次consoleへ統一し、devicesの簡潔な機器判断、traceの詳細transfer/stage/timing、PM時刻・折返し/scroll・全詳細event ringを使用。F8/8はtraceを選択。phases先頭は`Musha-OS 0.4.0 starting`、必須USB host/起動媒体/keyboard探索後・app開始前に`Musha-OS 0.4.0 ready`を表示。readyにもapp開始/終了/fault/拒否・生出力を表示します。PAT entry 1 WC変更（EBS後・table構築前）は最終workspace438件（memory26件を内包）と起動5level/F8/8のQEMU7件・独立全pixel比較7件に合格。単一の最終checkpointで、旧重複試行を加算しません。PAT1回書込み・MTRR一時2回書込み復元、導入済GOP index 1/RW/NXとDMA UC leafを確認し、CR3/nonleaf page walkのためPAT0=WBを必須とし、監査/CPU前提不足は安全拒否します。実機実効WC・速度は未確認で、旧UC fallback artifactを今回の証拠にしません。診断panel/page・色status・PM footer・起動背景全fill・赤例外帯・80x24専用app枠は廃止。viewerは従来layoutで、app起動でconsole clear/復帰でviewer再描画。必須失敗は全level、任意LAN/BT理由は停止確認済みの範囲で非致命。serialはv0.5.0。実装/試験/正確なEFI実機写真が揃うまでgateを完了せず、旧panel証拠は過去記録として保持します。
 
 開発treeには起動設定、空で配布するSETTINGSとOS所有FAT32限定record、配布構成、実験的r2 TIME/WAIT/INPUT、C/Rust sample、USB相対mouse、device停止/arena cleanupを伴うviewer起動/復帰があります。各stageのローカル結果で今回候補gateを先取りしません。
 
