@@ -58,3 +58,18 @@ pub fn plan(t: Transport, interval: u8, rings: [u64; 3], event_only: bool) -> Re
         context_entries: active.iter().map(|e| e.dci).max().ok_or(Error::Invalid)?,
     })
 }
+
+/// Live event TD length: the largest multiple of the interrupt max packet that
+/// does not exceed one HCI event (257 bytes). Devices need not send a ZLP after
+/// an event that fills whole packets, so one TD may continue into the next
+/// events. A TD that ends on a packet boundary can never be offered a packet
+/// longer than its remaining space (Babble); the stream reassembler joins
+/// events split across TDs.
+pub fn event_transfer_bytes(max_packet: u16) -> u32 {
+    let packet = max_packet as u32;
+    if packet == 0 || packet > 257 {
+        257
+    } else {
+        257 - 257 % packet
+    }
+}

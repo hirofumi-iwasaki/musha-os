@@ -40,3 +40,9 @@ IMG_7687はRDSEED strong源とDRBG初期化成功、その後のsession終了を
 Current transfer/budget changes and their limits: [probe/live comparison](bluetooth-transfer-alignment-0.4.0.md).
 
 日本語: 現行の転送・予算変更と制限は[probe/通常経路比較](bluetooth-transfer-alignment-0.4.0.md)を参照してください。
+
+## Pairing-phase classification update (2026-10-17)
+
+The string-prefix rule above is replaced. Unclaimed Transfer Events of the Bluetooth slot (any DCI) are now consumed as `BT TRANSFER FAULT` and isolated like other Bluetooth failures, and only the explicit `CONTROLLER_SAFETY` reasons stop the shared session. A refused Disable Slot quarantines the slot instead of stopping the controller; an unanswered or unconsumed Disable Slot still stops it. A session that does end now shows its reason. Details, the full list and the lines to photograph: [pairing-phase isolation](bluetooth-pairing-isolation-0.4.0.md).
+
+日本語: 上記の前方一致規則を置き換えました。Bluetooth slot の未所有 Transfer Event（全 DCI）は `BT TRANSFER FAULT` として消費し、他の Bluetooth 失敗と同様に分離します。共有セッションを止めるのは明示した `CONTROLLER_SAFETY` の理由だけです。Disable Slot の拒否は controller 停止ではなく slot の隔離保持とし、無応答・未消費の Disable Slot は従来どおり停止します。終了したセッションは理由を表示します。詳細・一覧・撮影すべき行は[ペアリング段階の分離](bluetooth-pairing-isolation-0.4.0.md)を参照してください。

@@ -7,52 +7,57 @@ use musha_fs::settings::{self, Disk};
 struct Image<'a, 'h> {
     host: &'a mut Host<'h>,
     device: &'a mut Device,
+    // First USB transport failure; a pure filesystem refusal leaves it None.
+    transport: Option<&'static str>,
+}
+impl Image<'_, '_> {
+    fn io<T>(&mut self, result: Result<T, &'static str>) -> Result<T, musha_fs::Error> {
+        result.map_err(|reason| {
+            self.transport.get_or_insert(reason);
+            musha_fs::Error::Io
+        })
+    }
 }
 impl Disk for Image<'_, '_> {
     fn read(&mut self, lba: u64, out: &mut [u8]) -> Result<(), musha_fs::Error> {
-        self.device
-            .check_connected(self.host)
-            .map_err(|_| musha_fs::Error::Io)?;
-        self.device
-            .begin_read(self.host, lba)
-            .map_err(|_| musha_fs::Error::Io)?;
-        while !self
-            .device
-            .poll_read(self.host, out)
-            .map_err(|_| musha_fs::Error::Io)?
-        {
+        let connected = self.device.check_connected(self.host);
+        self.io(connected)?;
+        let begun = self.device.begin_read(self.host, lba);
+        self.io(begun)?;
+        loop {
+            let done = self.device.poll_read(self.host, out);
+            if self.io(done)? {
+                return Ok(());
+            }
             core::hint::spin_loop();
         }
-        Ok(())
     }
     fn write(&mut self, lba: u64, b: &[u8]) -> Result<(), musha_fs::Error> {
-        self.device
-            .begin_write(self.host, lba, b)
-            .map_err(|_| musha_fs::Error::Io)?;
+        let begun = self.device.begin_write(self.host, lba, b);
+        self.io(begun)?;
         loop {
-            match self
-                .device
-                .poll_write(self.host)
-                .map_err(|_| musha_fs::Error::Io)?
-            {
+            let done = self.device.poll_write(self.host);
+            match self.io(done)? {
                 Some(true) => return Ok(()),
-                Some(false) => return Err(musha_fs::Error::Io),
+                Some(false) => {
+                    self.transport.get_or_insert("BOT WRITE STATUS");
+                    return Err(musha_fs::Error::Io);
+                }
                 None => core::hint::spin_loop(),
             }
         }
     }
     fn sync(&mut self) -> Result<(), musha_fs::Error> {
-        self.device
-            .begin_sync(self.host)
-            .map_err(|_| musha_fs::Error::Io)?;
+        let begun = self.device.begin_sync(self.host);
+        self.io(begun)?;
         loop {
-            match self
-                .device
-                .poll_write(self.host)
-                .map_err(|_| musha_fs::Error::Io)?
-            {
+            let done = self.device.poll_write(self.host);
+            match self.io(done)? {
                 Some(true) => return Ok(()),
-                Some(false) => return Err(musha_fs::Error::Io),
+                Some(false) => {
+                    self.transport.get_or_insert("BOT SYNC STATUS");
+                    return Err(musha_fs::Error::Io);
+                }
                 None => core::hint::spin_loop(),
             }
         }
@@ -100,10 +105,16 @@ impl Device {
         if self.bot.pending.is_some() {
             return Ok(());
         }
-        let mut image = Image { host, device: self };
+        let mut image = Image {
+            host,
+            device: self,
+            transport: None,
+        };
         let mut record = [0; 4096];
         if !image.device.pairing_checked {
             let loaded = old(&mut image, &mut record);
+            // Unchanged policy: an unreadable old record only refuses reconnect.
+            image.transport = None;
             match loaded {
                 Ok(true) => {
                     if crate::bluetooth::load_record(Some(&record)).is_err() {
@@ -172,7 +183,21 @@ impl Device {
             crate::bluetooth::status(
                 "Bluetooth pairing not published: record persistence unknown.",
             );
-            return Err("BT RECORD PERSISTENCE UNKNOWN");
+            // A USB transport failure leaves this storage device's state unknown and
+            // still ends the session. A filesystem refusal keeps storage usable; the
+            // failed result stops only Bluetooth (BT BOND SAVE UNKNOWN, isolated).
+            if let Some(reason) = image.transport {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!("pairing record transport failure: {}", reason),
+                );
+                return Err("BT RECORD PERSISTENCE UNKNOWN");
+            }
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!("pairing record not written: filesystem refused; storage continues"),
+            );
+            return Ok(());
         }
         crate::debug(b"MUSHA: BT_PAIRING_RECORD_DURABLE\n");
         Ok(())

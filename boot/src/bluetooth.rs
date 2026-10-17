@@ -68,6 +68,7 @@ pub fn begin_attempt() -> bool {
 }
 pub fn stopped() {
     CAPTURE.store(false, Ordering::Relaxed);
+    INPUT_OVERFLOW.store(false, Ordering::Relaxed);
     RECORD_READY.store(false, Ordering::Relaxed);
     unsafe {
         (&mut *STORE.0.get()).clear();
@@ -287,11 +288,20 @@ pub fn key(generation: u64, key: u8, down: bool) {
         }
     }
 }
+/// Overflowed Bluetooth input is dropped and reported to the Bluetooth poller,
+/// which isolates only Bluetooth; stopped() then releases held keys and axes.
+static INPUT_OVERFLOW: AtomicBool = AtomicBool::new(false);
+pub fn take_input_overflow() -> bool {
+    INPUT_OVERFLOW.swap(false, Ordering::Relaxed)
+}
 pub fn drain_keys() -> Result<(u64, [(u8, bool); 32], usize), &'static str> {
     unsafe {
         let s = &mut *KEYS.0.get();
         if s.3 {
-            return Err("BT INPUT OVERFLOW");
+            INPUT_OVERFLOW.store(true, Ordering::Relaxed);
+            s.1 = 0;
+            s.3 = false;
+            return Ok((s.2, s.0, 0));
         }
         let result = (s.2, s.0, s.1);
         s.1 = 0;
@@ -449,7 +459,10 @@ pub fn drain_gamepad(
     unsafe {
         let s = &mut *PAD.0.get();
         if s.2 {
-            return Err("BT GAMEPAD OVERFLOW");
+            INPUT_OVERFLOW.store(true, Ordering::Relaxed);
+            s.1 = 0;
+            s.2 = false;
+            return Ok(());
         }
         for e in &s.0[..s.1] {
             emit(*e);

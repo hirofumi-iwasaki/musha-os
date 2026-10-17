@@ -98,6 +98,7 @@ pub struct Viewer {
     view: View,
     error: Option<Error>,
     ended: bool,
+    ended_reason: Option<&'static str>,
     keyboard_missing: bool,
     bootfile_absent: bool,
     pairing_blocked: bool,
@@ -142,6 +143,7 @@ impl Viewer {
             view: View::Unavailable,
             error: None,
             ended: false,
+            ended_reason: None,
             keyboard_missing: false,
             bootfile_absent: false,
             pairing_blocked: false,
@@ -389,6 +391,11 @@ impl Viewer {
         self.view = View::Unavailable;
         self.repaint();
     }
+    /// Shown with the ended-session line; the reason is a fixed diagnostic string.
+    pub fn session_reason(&mut self, reason: &'static str) {
+        self.ended_reason = Some(reason);
+        self.repaint();
+    }
     /// At most one catalog entry or one bounded read attempt per call, except the
     /// selected-name lookup (at most 128 in-memory entries, no disk access).
     pub fn service(&mut self, files: &mut Files<'_>, now: u64) {
@@ -592,13 +599,23 @@ impl Viewer {
             }
             7 => {
                 let _ = match self.view {
-                    View::Unavailable => out.write_str(if self.keyboard_missing {
-                        "USB keyboard not detected. Connect one, then restart."
-                    } else if self.ended {
-                        "Device session ended. Restart to try again."
-                    } else {
-                        "No supported FAT32/exFAT medium. External USB keyboard required."
-                    }),
+                    View::Unavailable => {
+                        if self.keyboard_missing {
+                            out.write_str("USB keyboard not detected. Connect one, then restart.")
+                        } else if let (true, Some(reason)) = (self.ended, self.ended_reason) {
+                            write!(
+                                out,
+                                "Device session ended: {}. Restart to try again.",
+                                reason
+                            )
+                        } else if self.ended {
+                            out.write_str("Device session ended. Restart to try again.")
+                        } else {
+                            out.write_str(
+                                "No supported FAT32/exFAT medium. External USB keyboard required.",
+                            )
+                        }
+                    }
                     View::Catalog | View::List if self.returned.is_some() => {
                         out.write_str("Select an ELF and press Enter.")
                     }
@@ -1006,6 +1023,11 @@ mod tests {
         assert_eq!(
             v.line(7).as_str(),
             "Device session ended. Restart to try again."
+        );
+        v.session_reason("BAD TRANSFER");
+        assert_eq!(
+            v.line(7).as_str(),
+            "Device session ended: BAD TRANSFER. Restart to try again."
         );
     }
     #[test]

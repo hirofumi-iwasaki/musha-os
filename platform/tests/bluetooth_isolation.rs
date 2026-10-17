@@ -4,7 +4,7 @@
 //! The same orchestration functions used by live prepare/poll, with injected I/O.
 #[path = "../../boot/src/xhci/usb/bluetooth/isolation.rs"]
 mod isolation;
-use isolation::{SlotStop, disable, local_failure, remaining};
+use isolation::{CONTROLLER_SAFETY, Isolation, SlotStop, disable, local_failure, remaining};
 struct Devices {
     calls: Vec<&'static str>,
     fail: Option<&'static str>,
@@ -12,6 +12,8 @@ struct Devices {
     storage: bool,
     dma_reserved: bool,
     detached: bool,
+    quarantined: bool,
+    rejected: bool,
 }
 impl Devices {
     fn new(fail: Option<&'static str>) -> Self {
@@ -22,6 +24,8 @@ impl Devices {
             storage: true,
             dma_reserved: true,
             detached: false,
+            quarantined: false,
+            rejected: false,
         }
     }
     fn call(&mut self, name: &'static str) -> Result<(), &'static str> {
@@ -43,12 +47,21 @@ impl SlotStop for Devices {
     }
     fn disable(&mut self, slot: u8) -> Result<(), &'static str> {
         assert_eq!(slot, 2);
+        if self.rejected {
+            self.calls.push("disable-correlated");
+            return Err("COMMAND REJECTED");
+        }
         self.call("disable-correlated")
     }
     fn detach(&mut self, slot: u8) {
         assert_eq!(slot, 2);
         self.calls.push("detach");
         self.detached = true;
+    }
+    fn quarantine(&mut self, slot: u8) {
+        assert_eq!(slot, 2);
+        self.calls.push("quarantine");
+        self.quarantined = true;
     }
 }
 #[test]
@@ -69,7 +82,7 @@ fn each_bluetooth_failure_keeps_other_services_only_after_correlated_disable() {
     ] {
         assert!(local_failure(error));
         let mut d = Devices::new(None);
-        disable(&mut d, 2).unwrap();
+        assert_eq!(disable(&mut d, 2), Ok(Isolation::Disabled));
         assert_eq!(d.calls, ["retire", "disable-correlated", "detach"]);
         assert!(d.detached && d.dma_reserved);
         assert_eq!(d.service(), (true, true));
@@ -92,7 +105,7 @@ fn shared_controller_ring_and_clock_errors_keep_whole_host_failure() {
         "BAD TRANSFER",
         "BAD COMPLETION",
         "MMIO RANGE",
-        "HOST SYSTEM ERROR",
+        "HOST ERROR",
         "CLOCK OVERFLOW",
         "NO TIMER",
         "BT CONTEXT COMMAND",
@@ -307,4 +320,194 @@ fn drain_rejects_malformed_known_return_lengths_but_records_valid_error_status()
         warmup_event(&[0x0e, 4, 1, 3, 0x0c, 1], 0x0c03, 1000, 1, &mut 0),
         Ok(WarmupEvent::Complete { .. })
     ));
+}
+
+#[test]
+fn pairing_and_connection_failures_on_the_bluetooth_slot_stay_local() {
+    // Faults of the Bluetooth slot captured from any poller, the pairing-record
+    // refusal path, Bluetooth input overflow and EP0/ACL transfer failures.
+    for reason in [
+        "BT TRANSFER FAULT",
+        "BT TRANSFER OWNER",
+        "BT INPUT OVERFLOW",
+        "BT BOND SAVE UNKNOWN",
+        "BT ADVERTISING",
+        "BT EVENT FORMAT",
+        "BT EVENT STATE",
+        "BT EVENT STREAM",
+        "BT ASYNC COMMAND",
+        "BT SYNC COMMAND",
+        "BT CONNECTION IDENTITY",
+        "BT ACL TX TIMEOUT",
+        "BT ACL REASSEMBLY",
+        "BT SC AUTHENTICATION",
+        "BT HOGP SERVICES REJECTED",
+        "BT TRANSFER SIZE",
+        "BT TIME",
+        "BT CLOCK",
+        "TRANSFER TIMEOUT",
+        "TRANSFER RANGE",
+        "SHORT CONTROL WRITE",
+        "SHORT CONTROL READ",
+        "DMA FULL",
+    ] {
+        assert!(local_failure(reason), "{reason}");
+    }
+    for reason in CONTROLLER_SAFETY {
+        assert!(!local_failure(reason), "{reason}");
+    }
+}
+
+#[test]
+fn every_shared_xhci_and_clock_error_literal_is_classified() {
+    // A new controller/ring/clock error must be listed either as a session-ending
+    // safety reason or as a setup-only / Bluetooth-local reason, never by default.
+    const NOT_DURING_BLUETOOTH_SERVICE: [&str; 26] = [
+        "CAPABILITY",
+        "PORT RANGE",
+        "OWNERSHIP",
+        "EXT CAPABILITY",
+        "MEMORY DISABLED",
+        "RESET STATE",
+        "NOT FOUND",
+        "REGISTER OFFSET",
+        "SCRATCHPAD LIMIT",
+        "DMA RANGE",
+        "DMA POOL",
+        "DMA FULL",
+        "COMMAND RING",
+        "EVENT RING",
+        "NESTED STORAGE LOOP",
+        "TIMEOUT",
+        "NO CONTROLLER",
+        "DELAY RANGE",
+        "APP INPUT ERROR",
+        "APP FILE CACHE",
+        "CURSOR",
+        "DMA STILL ENABLED",
+        // Timing span and ACPI discovery labels, not failures.
+        "DISCOVERY",
+        "LIVE",
+        "FADT ABSENT",
+        "TIMER FOUND",
+    ];
+    const BLUETOOTH_LOCAL: [&str; 3] = ["TRANSFER TIMEOUT", "BT TRANSFER FAULT", "EVENT PENDING"];
+    let mut seen = 0;
+    for source in [
+        include_str!("../../boot/src/xhci.rs"),
+        include_str!("../../boot/src/acpi.rs"),
+    ] {
+        // Literals in error position: Err("..."), ok_or("..."), |_| "..." or a
+        // block value such as Err(if .. { "TRANSFER TIMEOUT" } else { .. }).
+        let mut at = 0;
+        while let Some(found) = source[at..].find('"') {
+            let start = at + found;
+            let Some(end) = source[start + 1..].find('"').map(|n| start + 1 + n) else {
+                break;
+            };
+            let literal = &source[start + 1..end];
+            let before = source[..start].trim_end();
+            at = end + 1;
+            let error_position = before.ends_with("Err(")
+                || before.ends_with("ok_or(")
+                || before.ends_with("|_|")
+                || before.ends_with('{');
+            let error_like = !literal.is_empty()
+                && literal
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b' ');
+            if !error_position || !error_like {
+                continue;
+            }
+            seen += 1;
+            assert!(
+                CONTROLLER_SAFETY.contains(&literal)
+                    || NOT_DURING_BLUETOOTH_SERVICE.contains(&literal)
+                    || BLUETOOTH_LOCAL.contains(&literal)
+                    || literal.starts_with("BT "),
+                "unclassified xHCI/clock error literal {literal:?}"
+            );
+        }
+    }
+    assert!(seen > 25, "{seen}");
+}
+
+#[test]
+fn refused_disable_slot_quarantines_without_detaching_a_possibly_enabled_slot() {
+    let mut d = Devices::new(None);
+    d.rejected = true;
+    assert_eq!(disable(&mut d, 2), Ok(Isolation::Quarantined));
+    assert_eq!(d.calls, ["retire", "disable-correlated", "quarantine"]);
+    // DCBAA context stays valid; DMA stays reserved; other services continue.
+    assert!(!d.detached && d.quarantined && d.dma_reserved);
+    assert_eq!(d.service(), (true, true));
+}
+
+#[test]
+fn le_create_connection_answers_with_command_status_not_complete() {
+    use isolation::{Reply, command_reply};
+    // Command Status 00 for LE Create Connection: accepted, still awaiting the
+    // LE Connection Complete meta event.
+    assert_eq!(
+        command_reply(0x0f, &[0, 1, 0x0d, 0x20], Some(0x200d)),
+        Ok(Reply::Accepted {
+            credits: 1,
+            opcode: 0x200d
+        })
+    );
+    assert_eq!(
+        command_reply(0x0f, &[0, 2, 0x19, 0x20], Some(0x2019)),
+        Ok(Reply::Accepted {
+            credits: 2,
+            opcode: 0x2019
+        })
+    );
+    // A Command Complete for an asynchronous command, a Command Status for a
+    // synchronous one, a non-zero status or an uncorrelated opcode are rejected.
+    assert_eq!(
+        command_reply(0x0e, &[1, 0x0d, 0x20, 0], Some(0x200d)),
+        Err("BT ASYNC COMMAND")
+    );
+    assert_eq!(
+        command_reply(0x0f, &[0, 1, 0x02, 0x20], Some(0x2002)),
+        Err("BT SYNC COMMAND")
+    );
+    assert_eq!(
+        command_reply(0x0f, &[0x0c, 1, 0x0d, 0x20], Some(0x200d)),
+        Err("BT COMMAND REJECTED")
+    );
+    assert_eq!(
+        command_reply(0x0f, &[0, 1, 0x0d, 0x20], Some(0x0c01)),
+        Err("BT COMMAND REJECTED")
+    );
+    assert_eq!(
+        command_reply(0x0f, &[0, 1, 0x0d, 0x20], None),
+        Err("BT COMMAND REJECTED")
+    );
+    assert_eq!(
+        command_reply(0x0f, &[0, 1, 0x0d], Some(0x200d)),
+        Err("BT COMMAND STATUS")
+    );
+    // Synchronous Command Complete returns its result for parsing.
+    assert_eq!(
+        command_reply(0x0e, &[1, 0x02, 0x20, 0, 27, 0, 8], Some(0x2002)),
+        Ok(Reply::Complete {
+            credits: 1,
+            opcode: 0x2002,
+            result: &[0, 27, 0, 8]
+        })
+    );
+    // Opcode 0 refreshes credits without touching the pending command.
+    assert_eq!(
+        command_reply(0x0e, &[3, 0, 0], Some(0x200d)),
+        Ok(Reply::Credits(3))
+    );
+    assert_eq!(
+        command_reply(0x0f, &[0, 4, 0, 0], Some(0x200d)),
+        Ok(Reply::Credits(4))
+    );
+    assert_eq!(
+        command_reply(0x0f, &[1, 4, 0, 0], Some(0x200d)),
+        Err("BT COMMAND REJECTED")
+    );
 }

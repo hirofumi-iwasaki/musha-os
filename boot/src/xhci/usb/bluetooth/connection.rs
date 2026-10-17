@@ -81,6 +81,22 @@ impl Device {
         if self.command.is_some() || self.command_credits == 0 {
             return Ok(());
         }
+        if let Some(stage) = match self.phase {
+            1 => Some("set event mask"),
+            2 => Some("LE set event mask"),
+            3 => Some("read BD_ADDR"),
+            4 if self.shared_capacity => Some("read shared ACL buffer size"),
+            4 => Some("LE read buffer size"),
+            5 => Some("LE scan disable"),
+            6 => Some("LE create connection"),
+            8 if self.encrypt.is_some() => Some("LE start encryption"),
+            _ => None,
+        } {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!("connect stage={} phase={}", stage, self.phase),
+            );
+        }
         match self.phase {
             1 => self.send_command(host, now, 0x0c01, &[0x90, 0xe0, 4, 0, 0, 0, 0, 0x20]),
             2 => self.send_command(host, now, 0x2001, &[0x13, 0, 0, 0, 0, 0, 0, 0]),
@@ -125,6 +141,23 @@ impl Device {
     ) -> Result<(), &'static str> {
         match event.code {
             0x10 | 5 => {
+                let p = event.parameters;
+                if event.code == 5 && p.len() == 4 {
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "Disconnection Complete status={:02x} handle={:04x} reason={:02x}",
+                            p[0],
+                            u16::from_le_bytes([p[1], p[2]]),
+                            p[3]
+                        ),
+                    );
+                } else if event.code == 0x10 && p.len() == 1 {
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!("Hardware Error code={:02x}", p[0]),
+                    );
+                }
                 let loss = bt::lifecycle::loss(event, self.handle)
                     .map_err(|_| "BT LOSS IDENTITY")?
                     .ok_or("BT LOSS STATE")?;
@@ -138,37 +171,43 @@ impl Device {
                 });
             }
             0x0e | 0x0f => {
-                let (credits, op, result) = if event.code == 0x0e {
-                    event.complete().map_err(|_| "BT COMMAND COMPLETE")?
-                } else {
-                    let p = event.parameters;
-                    if p.len() != 4 {
-                        return Err("BT COMMAND STATUS");
+                let (op, result) = match isolation::command_reply(
+                    event.code,
+                    event.parameters,
+                    self.command.map(|c| c.0),
+                )? {
+                    isolation::Reply::Credits(credits) => {
+                        self.command_credits = credits;
+                        return Ok(());
                     }
-                    (p[1], u16::from_le_bytes([p[2], p[3]]), &p[..1])
+                    // Command Status: only the controller's acceptance; the
+                    // connection or encryption result arrives as its own event.
+                    isolation::Reply::Accepted { credits, opcode } => {
+                        self.command_credits = credits;
+                        self.command = None;
+                        if opcode == 0x200d {
+                            crate::bootlog::device(
+                                "bluetooth",
+                                format_args!(
+                                    "LE create connection accepted (CS 00); awaiting LE Connection Complete"
+                                ),
+                            );
+                            self.phase = 7;
+                        } else {
+                            self.encryption_started = true;
+                        }
+                        return Ok(());
+                    }
+                    isolation::Reply::Complete {
+                        credits,
+                        opcode,
+                        result,
+                    } => {
+                        self.command_credits = credits;
+                        self.command = None;
+                        (opcode, result)
+                    }
                 };
-                self.command_credits = credits;
-                if op == 0 && result.is_empty() {
-                    return Ok(());
-                }
-                if self.command.map(|c| c.0) != Some(op) || result.first() != Some(&0) {
-                    return Err("BT COMMAND REJECTED");
-                }
-                self.command = None;
-                if matches!(op, 0x200d | 0x2019) {
-                    if event.code != 0x0f {
-                        return Err("BT ASYNC COMMAND");
-                    }
-                    if op == 0x200d {
-                        self.phase = 7;
-                    } else {
-                        self.encryption_started = true;
-                    }
-                    return Ok(());
-                }
-                if event.code != 0x0e {
-                    return Err("BT SYNC COMMAND");
-                }
                 if op == 0x1009 {
                     if result.len() != 7 {
                         return Err("BT ADDRESS");
@@ -181,6 +220,15 @@ impl Device {
                             return Ok(()); // stay at phase4, issue Read Buffer Size.
                         }
                         Some((bytes, packets)) => {
+                            crate::bootlog::device(
+                                "bluetooth",
+                                format_args!(
+                                    "ACL buffer bytes={} packets={} source={}",
+                                    bytes,
+                                    packets,
+                                    if op == 0x2002 { "LE" } else { "shared BR/EDR" }
+                                ),
+                            );
                             self.packet_bytes = bytes;
                             self.packets = packets;
                         }
@@ -193,6 +241,27 @@ impl Device {
             }
             0x3e if event.parameters.first() == Some(&1) => {
                 let p = event.parameters;
+                match bt::stage::connection_complete(p) {
+                    Some(c) => crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "LE Connection Complete status={:02x} handle={:04x} role={} peer=..:{:02x}:{:02x} type={} interval={}x1.25ms latency={} timeout={}x10ms",
+                            c.status,
+                            c.handle,
+                            c.role,
+                            c.peer_tail[0],
+                            c.peer_tail[1],
+                            c.peer_type,
+                            c.interval,
+                            c.latency,
+                            c.timeout
+                        ),
+                    ),
+                    None => crate::bootlog::device(
+                        "bluetooth",
+                        format_args!("LE Connection Complete malformed param-len={}", p.len()),
+                    ),
+                }
                 if self.phase != 7
                     || p.len() != 19
                     || p[1] != 0
@@ -264,6 +333,18 @@ impl Device {
                 .completed(self.generation, event)
                 .map_err(|_| "BT ACL COMPLETION")?,
             8 => {
+                let p = event.parameters;
+                if p.len() == 4 {
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "Encryption Change status={:02x} handle={:04x} enabled={:02x}",
+                            p[0],
+                            u16::from_le_bytes([p[1], p[2]]),
+                            p[3]
+                        ),
+                    );
+                }
                 if !self.encryption_started {
                     return Err("BT ENCRYPTION BEFORE COMMAND ACCEPT");
                 }
@@ -295,6 +376,7 @@ impl Device {
         if self.tx_len != 0 || data.len() > 1024 {
             return Err("BT TX QUEUE FULL");
         }
+        self.log_l2cap("TX", channel, data);
         self.tx[..2].copy_from_slice(&(data.len() as u16).to_le_bytes());
         self.tx[2..4].copy_from_slice(&channel.to_le_bytes());
         self.tx[4..4 + data.len()].copy_from_slice(data);
@@ -302,6 +384,56 @@ impl Device {
         self.tx_at = 0;
         self.tx_deadline = now.checked_add(1000).ok_or("BT TIME")?;
         Ok(())
+    }
+    /// Channel and SMP code only. SMP values (keys, confirm, random, DHKey
+    /// check) are never formatted; Pairing Failed carries a public reason code.
+    fn log_l2cap(&mut self, direction: &str, channel: u16, sdu: &[u8]) {
+        let bit = match channel {
+            4 => 1,
+            6 => 2,
+            _ => 4,
+        };
+        if self.channels_logged & bit == 0 {
+            self.channels_logged |= bit;
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "L2CAP first {} cid={:04x} ({}) length={}",
+                    direction,
+                    channel,
+                    match channel {
+                        4 => "ATT",
+                        6 => "SMP",
+                        _ => "unexpected",
+                    },
+                    sdu.len()
+                ),
+            );
+        }
+        if channel != 6 {
+            return;
+        }
+        let code = sdu.first().copied().unwrap_or(0);
+        if code == 0x05 && sdu.len() == 2 {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "SMP {} Pairing Failed reason={:02x} length=2",
+                    direction, sdu[1]
+                ),
+            );
+        } else {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "SMP {} {} code={:02x} length={}",
+                    direction,
+                    bt::stage::smp_name(code),
+                    code,
+                    sdu.len()
+                ),
+            );
+        }
     }
     fn action(
         &mut self,
@@ -403,6 +535,19 @@ impl Device {
             p[2..4].copy_from_slice(&(n as u16).to_le_bytes());
             p[4..4 + n].copy_from_slice(&self.tx[self.tx_at..self.tx_at + n]);
             self.acl_out.arm(host, self.slot, Some(&p[..4 + n]))?;
+            if !self.acl_logged[0] {
+                self.acl_logged[0] = true;
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "ACL first TX dci={} handle={:04x} PB={:02x} length={}",
+                        self.acl_out.dci,
+                        self.handle,
+                        bits >> 12,
+                        4 + n
+                    ),
+                );
+            }
             self.tx_at += n;
             for b in &mut p {
                 unsafe {
@@ -412,6 +557,13 @@ impl Device {
         }
         self.acl_in.arm(host, self.slot, None)?;
         if let Some(n) = self.acl_in.poll(host, self.slot)? {
+            if !self.acl_logged[1] {
+                self.acl_logged[1] = true;
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!("ACL first RX dci={} length={}", self.acl_in.dci, n),
+                );
+            }
             if n > 1028 {
                 return Err("BT ACL RX SIZE");
             }
@@ -443,6 +595,7 @@ impl Device {
                     .map_err(|_| "BT ACL REASSEMBLY")?;
                 self.acl_stream.release();
                 if length != 0 {
+                    self.log_l2cap("RX", channel, &sdu[..length]);
                     if channel == 6 {
                         let action = self
                             .security

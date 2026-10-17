@@ -13,6 +13,9 @@ pub struct Mailbox {
     pending: [Option<Pending>; 3],
     saved: [Option<[u32; 4]>; 3],
     retired: [Option<(usize, u8, u8)>; 6],
+    owner: Option<u8>,
+    fault: Option<[u32; 4]>,
+    faults: u32,
 }
 impl Mailbox {
     pub const fn new() -> Self {
@@ -20,7 +23,43 @@ impl Mailbox {
             pending: [None; 3],
             saved: [None; 3],
             retired: [None; 6],
+            owner: None,
+            fault: None,
+            faults: 0,
         }
+    }
+    /// Attribute every otherwise-unclaimed Transfer Event of this slot (EP0,
+    /// event, ACL or an unknown DCI) to Bluetooth instead of the shared ring.
+    pub fn own(&mut self, slot: u8) -> Result<(), &'static str> {
+        if !(1..=8).contains(&slot) || self.owner.is_some_and(|s| s != slot) {
+            return Err("BT TRANSFER OWNER");
+        }
+        self.owner = Some(slot);
+        Ok(())
+    }
+    /// Only after a correlated Disable Slot: a reused slot ID belongs to its new owner.
+    pub fn disown(&mut self) {
+        self.owner = None;
+    }
+    /// Consume an unmatched event of the owned slot. The first is kept for the
+    /// Bluetooth poller; later ones are counted. No TD, buffer or DMA is released.
+    pub fn capture_fault(&mut self, words: [u32; 4]) -> bool {
+        if (words[3] >> 10) & 63 != 32 || self.owner != Some((words[3] >> 24) as u8) {
+            return false;
+        }
+        if self.fault.is_none() {
+            self.fault = Some(words);
+        }
+        self.faults = self.faults.saturating_add(1);
+        true
+    }
+    pub fn faulted(&self) -> bool {
+        self.fault.is_some()
+    }
+    pub fn take_fault(&mut self) -> Option<([u32; 4], u32)> {
+        let words = self.fault.take()?;
+        let count = core::mem::take(&mut self.faults);
+        Some((words, count))
     }
     pub fn arm(
         &mut self,
@@ -198,5 +237,55 @@ mod retirement_tests {
         assert!(!m.save(ed));
         assert!(m.retire_slot(3, &[]).is_err()); // no widening to another slot
         assert!(m.pending[0].is_some()); // no reclamation even after retire
+    }
+}
+
+#[cfg(test)]
+mod fault_tests {
+    use super::*;
+    fn event(trb: u32, slot: u8, dci: u8, cc: u32, residual: u32) -> [u32; 4] {
+        [
+            trb,
+            0,
+            (cc << 24) | residual,
+            (32 << 10) | ((dci as u32) << 16) | ((slot as u32) << 24) | 1,
+        ]
+    }
+    #[test]
+    fn owned_slot_error_events_become_bluetooth_faults_without_reclaiming_tds() {
+        let mut m = Mailbox::new();
+        m.own(2).unwrap();
+        m.arm(0, 0x1000, 2, 3, 256, true).unwrap();
+        // Babble (3) on the pending event TD, a STALL (6) on EP0 and an unknown
+        // DCI are all Bluetooth faults, never matched completions.
+        assert!(!m.save(event(0x1000, 2, 3, 3, 0)));
+        assert!(m.capture_fault(event(0x1000, 2, 3, 3, 0)));
+        assert!(m.capture_fault(event(0x3000, 2, 1, 6, 0)));
+        assert!(m.capture_fault(event(0x4000, 2, 7, 1, 0)));
+        assert!(m.faulted());
+        let (first, count) = m.take_fault().unwrap();
+        assert_eq!(first[2] >> 24, 3);
+        assert_eq!(count, 3);
+        assert!(!m.faulted());
+        assert!(m.pending[0].is_some()); // the loan stays pending for retirement
+        // Other slots and non-transfer events remain shared-ring failures.
+        assert!(!m.capture_fault(event(0x1000, 3, 3, 3, 0)));
+        let mut command = event(0x1000, 2, 0, 1, 0);
+        command[3] = (33 << 10) | (2 << 24) | 1;
+        assert!(!m.capture_fault(command));
+    }
+    #[test]
+    fn matched_completions_take_precedence_and_disown_stops_attribution() {
+        let mut m = Mailbox::new();
+        m.own(2).unwrap();
+        assert!(m.own(3).is_err());
+        m.arm(0, 0x1000, 2, 3, 256, true).unwrap();
+        assert!(m.save(event(0x1000, 2, 3, 13, 240)));
+        assert!(!m.faulted());
+        m.retire_slot(2, &[]).unwrap();
+        m.disown();
+        assert!(!m.capture_fault(event(0x5000, 2, 3, 3, 0)));
+        assert!(m.own(3).is_ok());
+        assert_eq!(m.own(0), Err("BT TRANSFER OWNER"));
     }
 }

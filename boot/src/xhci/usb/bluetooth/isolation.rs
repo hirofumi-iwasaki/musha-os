@@ -5,17 +5,136 @@ pub trait SlotStop {
     fn retire(&mut self, slot: u8) -> Result<(), &'static str>;
     fn disable(&mut self, slot: u8) -> Result<(), &'static str>;
     fn detach(&mut self, slot: u8);
+    fn quarantine(&mut self, slot: u8);
 }
-pub fn disable(io: &mut impl SlotStop, slot: u8) -> Result<(), &'static str> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Isolation {
+    /// Disable Slot completed: endpoint DMA stopped and the slot ID is released.
+    Disabled,
+    /// Disable Slot was refused with a consumed, correlated completion. Both rings
+    /// stay consistent; the slot keeps its device context and reserved DMA, is
+    /// never re-armed, and only its exact retired TDs may still complete.
+    Quarantined,
+}
+pub fn disable(io: &mut impl SlotStop, slot: u8) -> Result<Isolation, &'static str> {
     io.retire(slot)?;
-    io.disable(slot).map_err(|_| "BT ISOLATION FAILED")?;
-    io.detach(slot);
-    Ok(())
+    match io.disable(slot) {
+        Ok(()) => {
+            io.detach(slot);
+            Ok(Isolation::Disabled)
+        }
+        Err("COMMAND REJECTED") => {
+            io.quarantine(slot);
+            Ok(Isolation::Quarantined)
+        }
+        // Timeout or unconsumed completion: the command ring or slot DMA state is
+        // unknown, so only the whole-controller stop is safe.
+        Err(_) => Err("BT ISOLATION FAILED"),
+    }
 }
+/// The only reasons that end the USB session while Bluetooth is serviced. Every
+/// other failure raised on the Bluetooth slot (EP0 dci 1, event dci 3, ACL dci
+/// 4/5, or unclaimed events of that slot captured as `BT TRANSFER FAULT`) is
+/// confined to Bluetooth by Disable Slot.
+pub const CONTROLLER_SAFETY: [&str; 25] = [
+    // DMA cannot be shown stopped, or retired TD ownership cannot be recorded.
+    "QUIESCE FAILED",
+    "BT LEASE QUARANTINED",
+    "BT ISOLATION FAILED",
+    "BT RETIRE OWNER",
+    "BT RETIRE TD",
+    "DMA ADDRESS",
+    "DMA ENABLE",
+    "DMA DISABLE",
+    // The shared command ring did not answer, or answered ambiguously.
+    "COMMAND TIMEOUT",
+    "BAD COMPLETION",
+    "COMMAND REJECTED",
+    "BT CONTEXT COMMAND",
+    // The controller or shared event ring is no longer consistent: host error,
+    // an unknown event type, a malformed port event, an unclaimed event of a
+    // non-Bluetooth slot, a duplicate short event, or an out-of-BAR access.
+    "HOST ERROR",
+    "EVENT TYPE",
+    "PORT EVENT",
+    "BAD TRANSFER",
+    "DUPLICATE SHORT EVENT",
+    "MMIO RANGE",
+    // The shared PM clock is inconsistent for every service.
+    "CLOCK OVERFLOW",
+    "CLOCK STALLED",
+    "CLOCK BACKWARD",
+    "NO TIMER",
+    "TIMER WIDTH",
+    "RESCAN DEADLINE",
+    // Deliberate re-pair restart of the whole session, not a failure.
+    "BT REPAIR REQUEST",
+];
 pub fn local_failure(reason: &str) -> bool {
-    // Controller/ring/clock faults are never converted into optional BT failure.
-    (reason.starts_with("BT ") && !matches!(reason, "BT CONTEXT COMMAND" | "BT REPAIR REQUEST"))
-        || matches!(reason, "TRANSFER TIMEOUT" | "SHORT CONTROL WRITE")
+    // Bluetooth-internal deadline arithmetic ("BT TIME", "BT CLOCK", "BT DRAIN
+    // CLOCK") stays local; a real shared-clock fault also reaches other services.
+    !CONTROLLER_SAFETY.contains(&reason)
+}
+
+/// Connection-phase reply to the one outstanding command. Payload is returned
+/// only for the caller's own result parsing and must never be formatted.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Reply<'a> {
+    /// Opcode 0 credit refresh; no command state changes.
+    Credits(u8),
+    /// Asynchronous command accepted by Command Status; a later event completes it.
+    Accepted { credits: u8, opcode: u16 },
+    /// Synchronous Command Complete with status 00 and its return parameters.
+    Complete {
+        credits: u8,
+        opcode: u16,
+        result: &'a [u8],
+    },
+}
+/// LE Create Connection and LE Start Encryption answer with Command Status.
+pub fn asynchronous(opcode: u16) -> bool {
+    matches!(opcode, 0x200d | 0x2019)
+}
+pub fn command_reply<'a>(
+    code: u8,
+    parameters: &'a [u8],
+    pending: Option<u16>,
+) -> Result<Reply<'a>, &'static str> {
+    let (credits, opcode, result) = match code {
+        0x0e => {
+            if parameters.len() < 3 {
+                return Err("BT COMMAND COMPLETE");
+            }
+            (
+                parameters[0],
+                u16::from_le_bytes([parameters[1], parameters[2]]),
+                &parameters[3..],
+            )
+        }
+        0x0f if parameters.len() == 4 => (
+            parameters[1],
+            u16::from_le_bytes([parameters[2], parameters[3]]),
+            &parameters[..1],
+        ),
+        0x0f => return Err("BT COMMAND STATUS"),
+        _ => return Err("BT COMMAND EVENT"),
+    };
+    if opcode == 0 && result.first().is_none_or(|status| *status == 0) {
+        return Ok(Reply::Credits(credits));
+    }
+    if pending != Some(opcode) || result.first() != Some(&0) {
+        return Err("BT COMMAND REJECTED");
+    }
+    match (code, asynchronous(opcode)) {
+        (0x0f, true) => Ok(Reply::Accepted { credits, opcode }),
+        (0x0e, false) => Ok(Reply::Complete {
+            credits,
+            opcode,
+            result,
+        }),
+        (_, true) => Err("BT ASYNC COMMAND"),
+        _ => Err("BT SYNC COMMAND"),
+    }
 }
 pub fn remaining(deadline: u64, now: u64) -> Result<u64, &'static str> {
     deadline

@@ -171,3 +171,12 @@ For the retry, photograph the drain summary, Reset CC, Version CC, Rand CC and a
 初回順序はReset `0c03` → Read Local Version `1001` の一致CC（status0・厳密な返却長）→ LE Rand `2018` 4回です。Version/Rand待ちに妥当な成功Reset CCが来た場合、待っている引数なし命令を **1回だけ再送** しopcode/retryを記録します。元command絶対期限、操作2秒＋隔離最大1秒の総予算は延長しません。2回目の遅着Reset・不正status/credit・期限切れは安全停止します。外枠が妥当な未知イベントは64件上限内で記録破棄し、不正形式・Hardware Errorは拒否します。IMG_7691の2つのReset CCのどちらが古い/今回のものかは断定していません。
 
 再試験ではdrain summary、Reset CC、Version CC、Rand CC、再送行を撮影してください。[実装と限界](bluetooth-reset-synchronization-0.4.0.md)参照。これはソフト期限であり物理firmware/USB/描画の遅延を厳密に保証するものではありません。今回USB更新はしていません。
+
+
+## Pairing-session retry — English (2026-10-17)
+
+IMG_7692 lost the whole USB session during Xbox pairing without a reason. The next normal development EFI shows the reason (`Device session ended: <reason>.` and `usb: session ended: <reason>`) and confines Bluetooth-slot transfer faults, pairing-record refusal and input overflow to Bluetooth. Photograph from P through the failure or success: `LE scan enabled`, each `advertising window`, any `HID advertisement ... ignored`, `HID candidate`, `connect stage=`, `ACL buffer`, `LE create connection accepted`, `LE Connection Complete`, `ACL first TX/RX`, `L2CAP first`, each `SMP TX/RX`, `Encryption Change`, and on failure `transfer fault`, `unavailable:` or `non-local failure:` / `session ended:`. See [pairing-phase isolation](bluetooth-pairing-isolation-0.4.0.md). Values are metadata only; no keys or full addresses are shown.
+
+## 日本語: ペアリング再試験（2026-10-17）
+
+IMG_7692 では Xbox のペアリング中に理由が出ないまま USB セッション全体が終了しました。次の通常開発 EFI は理由（`Device session ended: <reason>.` と `usb: session ended: <reason>`）を表示し、Bluetooth slot の転送 fault・ペアリング記録の拒否・入力あふれを Bluetooth だけに閉じ込めます。P から失敗または成功まで、`LE scan enabled`、各 `advertising window`、`HID advertisement ... ignored`（出た場合）、`HID candidate`、`connect stage=`、`ACL buffer`、`LE create connection accepted`、`LE Connection Complete`、`ACL first TX/RX`、`L2CAP first`、各 `SMP TX/RX`、`Encryption Change`、失敗時は `transfer fault` と `unavailable:` または `non-local failure:` / `session ended:` を撮影してください。[ペアリング段階の分離](bluetooth-pairing-isolation-0.4.0.md)を参照。値はメタデータのみで、鍵や完全なアドレスは出ません。

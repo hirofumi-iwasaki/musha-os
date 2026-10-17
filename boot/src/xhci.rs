@@ -393,10 +393,20 @@ fn live_probe(
     };
     probe(info, info.xhcis.entries[index], index, false, &mut bridge)
 }
+struct SessionEnd(core::cell::UnsafeCell<Option<&'static str>>);
+unsafe impl Sync for SessionEnd {} // BSP only; written after the session, read by its owner.
+static SESSION_END: SessionEnd = SessionEnd(core::cell::UnsafeCell::new(None));
+/// The reason the most recent USB device session ended, if it failed.
+pub(crate) fn session_end_reason() -> Option<&'static str> {
+    unsafe { *SESSION_END.0.get() }
+}
 pub(crate) fn run_session(
     info: &BootInfo,
     tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
+    unsafe {
+        *SESSION_END.0.get() = None;
+    }
     crate::timing::begin_session();
     let controllers = &info.xhcis.entries[..info.xhcis.count];
     crate::diagnostics::controller_limit(info.xhcis.truncated);
@@ -559,6 +569,16 @@ pub(crate) fn run_session(
         "RUN SESSION RESULT {}",
         result.err().unwrap_or("OK")
     ));
+    unsafe {
+        *SESSION_END.0.get() = result.err();
+    }
+    if let Err(reason) = result {
+        crate::bootlog::event(
+            musha_platform::boot_log::Level::Ready,
+            "usb",
+            format_args!("session ended: {}", reason),
+        );
+    }
     if crate::app::VIEWER {
         return result;
     }
@@ -684,6 +704,7 @@ fn event_dispatch(
                 control,
             ];
             let kind = (control >> 10) & 63;
+            let mut fault = false;
             let done = match kind {
                 33 => {
                     let slot = if expected_slot == 255 {
@@ -763,13 +784,19 @@ fn event_dispatch(
                                 musha_xhci::defer_completion(words, mouse, saved)
                             }) || extra.as_deref_mut().is_some_and(|m| m.save(words));
                         if !stored {
-                            crate::diagnostics::transfer_failure(
-                                words,
-                                expected,
-                                expected_slot,
-                                transfer,
-                            );
-                            return Err("BAD TRANSFER");
+                            // Unclaimed events of the Bluetooth slot are consumed as a
+                            // Bluetooth fault; any other slot remains a shared-ring stop.
+                            if extra.as_deref_mut().is_some_and(|m| m.capture_fault(words)) {
+                                fault = transfer != 0 && (words[3] >> 24) as u8 == expected_slot;
+                            } else {
+                                crate::diagnostics::transfer_failure(
+                                    words,
+                                    expected,
+                                    expected_slot,
+                                    transfer,
+                                );
+                                return Err("BAD TRANSFER");
+                            }
                         }
                         false
                     } else {
@@ -790,6 +817,10 @@ fn event_dispatch(
             regs.write(runtime + 0x20, (regs.read(runtime + 0x20)? & !3) | 1)?; // IP ack, IE stays off
             if done {
                 return Ok(words);
+            }
+            // The waiting Bluetooth TD will not complete; stop waiting now.
+            if fault {
+                return Err("BT TRANSFER FAULT");
             }
         }
         if timeout_ms == 0 {

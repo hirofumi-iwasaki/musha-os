@@ -119,6 +119,9 @@ impl Application for Diagnostic {
     fn files_closed(&mut self, _ctx: &mut Context<'_>) {
         if VIEWER {
             self.viewer.closed(false);
+            if let Some(reason) = crate::xhci::session_end_reason() {
+                self.viewer.session_reason(reason);
+            }
         }
     }
     fn init(&mut self, ctx: &mut Context<'_>) -> Result<(), Error> {

@@ -186,7 +186,10 @@ struct Pipe {
     cursor: musha_xhci::Cursor,
     pending: bool,
     bytes: u32,
+    // Per-TD records are bounded; scanning repeats them many times per second.
+    logged: u8,
 }
+const PIPE_LOG_LIMIT: u8 = 6;
 impl Pipe {
     fn arm(
         &mut self,
@@ -239,16 +242,18 @@ impl Pipe {
         self.pending = true;
         host.regs
             .write(host.doorbell + slot as usize * 4, self.dci as u32)?;
-        crate::bootlog::device(
-            "bluetooth",
-            format_args!(
-                "event/ACL queued slot={} dci={} length={} IOC=1 ISP={}",
-                slot,
-                self.dci,
-                bytes,
-                u8::from(data.is_none())
-            ),
-        );
+        if self.logged < PIPE_LOG_LIMIT {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "event/ACL queued slot={} dci={} length={} IOC=1 ISP={}",
+                    slot,
+                    self.dci,
+                    bytes,
+                    u8::from(data.is_none())
+                ),
+            );
+        }
         Ok(())
     }
     fn poll(&mut self, host: &mut Host<'_>, slot: u8) -> Result<Option<usize>, &'static str> {
@@ -288,16 +293,24 @@ impl Pipe {
             }
         };
         let bytes = host.bt_mailbox.complete(self.index, words)?;
-        crate::bootlog::device(
-            "bluetooth",
-            format_args!(
-                "TransferEvent slot={} dci={} cc={} length={}",
-                slot,
-                self.dci,
-                words[2] >> 24,
-                bytes
-            ),
-        );
+        if self.logged < PIPE_LOG_LIMIT {
+            self.logged += 1;
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "TransferEvent slot={} dci={} cc={} length={}{}",
+                    slot,
+                    self.dci,
+                    words[2] >> 24,
+                    bytes,
+                    if self.logged == PIPE_LOG_LIMIT {
+                        "; later TDs of this pipe are not logged individually"
+                    } else {
+                        ""
+                    }
+                ),
+            );
+        }
         self.pending = false;
         self.cursor.advance();
         Ok(Some(bytes))
@@ -359,6 +372,11 @@ pub(in crate::xhci) struct Device {
     generation: u64,
     started: Option<u64>,
     advertisements: usize,
+    advertising: musha_platform::bluetooth::stage::Advertising,
+    scan_logged: bool,
+    unsupported_logged: bool,
+    acl_logged: [bool; 2],
+    channels_logged: u8,
     phase: u8,
     command: Option<(u16, u64)>,
     command_credits: u8,
@@ -440,9 +458,13 @@ pub(super) fn prepare(
     if configuration == 0 {
         return Err("BT CONFIG");
     }
+    // From here every unclaimed Transfer Event of this slot is a Bluetooth fault.
+    host.bt_mailbox.own(slot)?;
     let header = musha_platform::bluetooth::usb_context::plan(transport, interval, [0; 3], false)
         .map_err(|_| "BT CONTEXT PLAN")?;
     let eps = [transport.event, transport.acl_in, transport.acl_out];
+    let event_bytes =
+        musha_platform::bluetooth::usb_context::event_transfer_bytes(transport.event.max_packet);
     let mut pipes = core::array::from_fn(|i| Pipe {
         ring: 0,
         buffer: 0,
@@ -450,7 +472,8 @@ pub(super) fn prepare(
         index: i,
         cursor: musha_xhci::Cursor::new(TRBS - 1).unwrap(),
         pending: false,
-        bytes: if i == 0 { 257 } else { 2048 },
+        bytes: if i == 0 { event_bytes } else { 2048 },
+        logged: 0,
     });
     unsafe {
         core::ptr::write_bytes(input as *mut u8, 0, 4096);
@@ -528,8 +551,8 @@ pub(super) fn prepare(
     crate::bootlog::device(
         "bluetooth",
         format_args!(
-            "HCI initial credits=1; SET_CONFIGURATION={} complete; no SET_INTERFACE",
-            configuration
+            "HCI initial credits=1; SET_CONFIGURATION={} complete; no SET_INTERFACE; event TD={} bytes (maxpacket {})",
+            configuration, event_bytes, transport.event.max_packet
         ),
     );
     let device = unsafe {
@@ -558,6 +581,11 @@ pub(super) fn prepare(
             generation,
             started: None,
             advertisements: 0,
+            advertising: musha_platform::bluetooth::stage::Advertising::new(),
+            scan_logged: false,
+            unsupported_logged: false,
+            acl_logged: [false; 2],
+            channels_logged: 0,
             phase: 0,
             command: None,
             command_credits: 1,
@@ -731,12 +759,26 @@ impl Device {
             if bytes.first() == Some(&0x0e) {
                 self.scan_command = None;
             }
+            if !self.scan_logged
+                && self.scan.state() == musha_platform::bluetooth::scan::State::Scanning
+            {
+                self.scan_logged = true;
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "LE scan enabled: passive 10ms/10ms, duplicates filtered; reports aggregated per second"
+                    ),
+                );
+            }
         }
         let event =
             musha_platform::bluetooth::Event::parse(bytes).map_err(|_| "BT EVENT FORMAT")?;
         if self.phase == 0 && event.code == 0x3e && event.parameters.first() == Some(&2) {
+            self.advertising.event(now);
+            let mut unsupported = None;
             musha_platform::bluetooth::advertisements(event, |advert| {
                 self.advertisements = self.advertisements.saturating_add(1);
+                self.advertising.report(&advert.address);
                 if self.phase == 0 && matches!(advert.event_type, 0 | 1) {
                     if !self.pairing {
                         if crate::bluetooth::stored_connectable(
@@ -766,8 +808,13 @@ impl Device {
                         self.method = match appearance {
                             Some(0x3c1) => musha_platform::bluetooth::sc::Method::DisplayPasskey,
                             Some(0x3c4) => musha_platform::bluetooth::sc::Method::JustWorks,
-                            _ => return,
+                            _ => {
+                                self.advertising.unsupported();
+                                unsupported.get_or_insert((appearance, advert.address));
+                                return;
+                            }
                         };
+                        self.advertising.hid();
                         self.peer = advert.address;
                         self.peer_type = advert.address_type;
                         self.phase = 1;
@@ -776,12 +823,73 @@ impl Device {
             })
             .map_err(|_| "BT ADVERTISING")?;
             crate::debug(b"MUSHA: BT_LE_ADVERTISING_VALIDATED\n");
+            if let Some((appearance, address)) = unsupported.filter(|_| !self.unsupported_logged) {
+                self.unsupported_logged = true;
+                let tail = musha_platform::bluetooth::stage::address_tail(&address);
+                match appearance {
+                    Some(value) => crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "HID advertisement ..:{:02x}:{:02x} ignored: appearance={:04x}; pairing accepts 03c1 keyboard or 03c4 gamepad",
+                            tail[0], tail[1], value
+                        ),
+                    ),
+                    None => crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "HID advertisement ..:{:02x}:{:02x} ignored: no appearance field; pairing accepts 03c1 keyboard or 03c4 gamepad",
+                            tail[0], tail[1]
+                        ),
+                    ),
+                }
+            }
+            if self.phase == 1 {
+                self.log_advertising(now, true);
+                let tail = musha_platform::bluetooth::stage::address_tail(&self.peer);
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "HID candidate ..:{:02x}:{:02x} address-type={} method={}; connecting",
+                        tail[0],
+                        tail[1],
+                        self.peer_type,
+                        match (self.pairing, self.method) {
+                            (false, _) => "stored-reconnect",
+                            (true, musha_platform::bluetooth::sc::Method::JustWorks) => {
+                                "JustWorks gamepad"
+                            }
+                            (true, _) => "DisplayPasskey keyboard",
+                        }
+                    ),
+                );
+            }
         } else if self.phase != 0 {
             self.handle_event(host, now, event)?;
         }
         Ok(())
     }
+    fn log_advertising(&mut self, now: u64, force: bool) {
+        let summary = if force {
+            self.advertising.flush(now)
+        } else {
+            self.advertising.due(now)
+        };
+        if let Some(a) = summary {
+            let (high, low) = a.last.map_or((0, 0), |t| (t[0], t[1]));
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "advertising window events={} reports={} hid-candidates={} hid-unsupported={} last=..:{:02x}:{:02x}",
+                    a.events, a.reports, a.hid, a.unsupported, high, low
+                ),
+            );
+        }
+    }
     fn poll(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        // An unclaimed event of this slot was consumed by another poller.
+        if host.bt_mailbox.faulted() {
+            return Err("BT TRANSFER FAULT");
+        }
         let now = host.clock.now()?;
         self.event_stream
             .check(self.generation, now)
@@ -836,6 +944,9 @@ impl Device {
             }
             return Ok(());
         }
+        if crate::bluetooth::take_input_overflow() {
+            return Err("BT INPUT OVERFLOW");
+        }
         if self.subscribed && crate::bluetooth::take_request() {
             crate::bluetooth::restart_after_stop(true);
             return Err("BT REPAIR REQUEST");
@@ -881,6 +992,7 @@ impl Device {
         }
         self.event.arm(host, self.slot, None)?;
         if self.phase == 0 {
+            self.log_advertising(now, false);
             match self.scan.next(self.generation, now) {
                 Ok(Some(command)) => {
                     let bytes = &command.bytes[..command.length];
@@ -947,7 +1059,34 @@ impl Device {
 }
 pub(super) use isolation::local_failure;
 pub(in crate::xhci) use isolation::remaining;
+/// Completion codes only; transfer buffers are never read for a fault.
+fn log_fault(host: &mut Host<'_>) {
+    if let Some((words, count)) = host.bt_mailbox.take_fault() {
+        let cc = words[2] >> 24;
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "transfer fault slot={} dci={} cc={} ({}) residual={} events={}",
+                words[3] >> 24,
+                (words[3] >> 16) & 31,
+                cc,
+                match cc {
+                    1 => "success on an unknown TD",
+                    3 => "babble",
+                    4 => "USB transaction error",
+                    6 => "stall",
+                    13 => "short packet on an unknown TD",
+                    26 => "stopped",
+                    _ => "other",
+                },
+                words[2] & 0xffffff,
+                count
+            ),
+        );
+    }
+}
 pub(super) fn retire(host: &mut Host<'_>, slot: u8) -> Result<(), &'static str> {
+    log_fault(host);
     let control = host.bt_control_pending.filter(|(s, _, _)| *s == slot);
     let addresses = control.as_ref().map_or(&[][..], |(_, a, n)| &a[..*n]);
     host.bt_mailbox.retire_slot(slot, addresses)
@@ -959,15 +1098,45 @@ pub(super) fn unavailable(reason: &'static str) {
         "bluetooth",
         format_args!("unavailable: {}", reason),
     );
-    crate::bluetooth::status(match reason {
-        "BT ENTROPY COMMAND TIMEOUT" => "Bluetooth unavailable: BT ENTROPY COMMAND TIMEOUT",
-        "BT INITIALIZATION TIMEOUT" => "Bluetooth unavailable: BT INITIALIZATION TIMEOUT",
-        "BT COMMAND TIMEOUT" => "Bluetooth unavailable: BT COMMAND TIMEOUT",
-        "TRANSFER TIMEOUT" => "Bluetooth unavailable: TRANSFER TIMEOUT",
-        "BT COMMAND REJECTED" => "Bluetooth unavailable: BT COMMAND REJECTED",
-        "BT ENTROPY RESET" => "Bluetooth unavailable: BT ENTROPY RESET",
-        _ => reason,
-    });
+    // Viewer status lines are static; the prefix is joined at compile time.
+    macro_rules! prefixed {
+        ($($known:literal),* $(,)?) => {
+            match reason {
+                $($known => concat!("Bluetooth unavailable: ", $known),)*
+                _ => reason,
+            }
+        };
+    }
+    crate::bluetooth::status(prefixed!(
+        "BT ENTROPY COMMAND TIMEOUT",
+        "BT INITIALIZATION TIMEOUT",
+        "BT COMMAND TIMEOUT",
+        "TRANSFER TIMEOUT",
+        "BT COMMAND REJECTED",
+        "BT ENTROPY RESET",
+        "BT TRANSFER FAULT",
+        "BT INPUT OVERFLOW",
+        "BT BOND SAVE UNKNOWN",
+        "BT ADVERTISING",
+        "BT EVENT FORMAT",
+        "BT EVENT STATE",
+        "BT EVENT STREAM",
+        "BT SCAN STATE",
+        "BT COMMAND STATUS",
+        "BT ASYNC COMMAND",
+        "BT SYNC COMMAND",
+        "BT CONNECTION IDENTITY",
+        "BT CONNECTION LOST",
+        "BT HARDWARE ERROR",
+        "BT ACL TX TIMEOUT",
+        "BT ACL REASSEMBLY",
+        "BT SMP TIMEOUT",
+        "BT SC AUTHENTICATION",
+        "BT ENCRYPTION REJECTED",
+        "BT PAIR TIMEOUT",
+        "BT DISCONNECTED",
+        "SHORT CONTROL WRITE",
+    ));
 }
 fn timeout(opcode: u16, elapsed: u64) {
     crate::bootlog::device(
@@ -1022,6 +1191,11 @@ pub(super) fn poll(
             }
         }
         if !local_failure(reason) {
+            log_fault(host);
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!("non-local failure: {}; USB session stops", reason),
+            );
             host.bluetooth = Some(device);
             return Err(reason);
         }
@@ -1029,11 +1203,28 @@ pub(super) fn poll(
         // correlated Disable Slot command drains endpoints. Never reset the
         // shared event cursor or another device's saved completions.
         let slot = device.slot;
-        if let Err(error) = isolation::disable(&mut Stop(host), slot) {
+        let isolated = isolation::disable(&mut Stop(host), slot);
+        if let Err(error) = isolated {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "isolation failed: {} after {}; USB session stops",
+                    error, reason
+                ),
+            );
             host.bluetooth = Some(device);
             return Err(error);
         }
         drop(device); // retires CPU lease; does NOT free lease or DMA allocations.
+        if isolated == Ok(isolation::Isolation::Quarantined) {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "Disable Slot refused; slot={} quarantined with context and DMA retained",
+                    slot
+                ),
+            );
+        }
         unavailable(reason);
         crate::debug(b"MUSHA: BT_ISOLATED USB_SESSION_CONTINUES\n");
         return Ok(());
@@ -1061,10 +1252,17 @@ impl isolation::SlotStop for Stop<'_, '_> {
         }
         self.0.bt_control_pending = None;
         self.0.bt_disabled = true;
+        self.0.bt_mailbox.disown();
+    }
+    fn quarantine(&mut self, _slot: u8) {
+        // The slot may still be enabled: its DCBAA entry must stay valid and the
+        // mailbox keeps absorbing its events. Nothing re-arms its endpoints.
+        self.0.bt_control_pending = None;
+        self.0.bt_disabled = true;
     }
 }
 pub(super) fn disable_failed_prepare(host: &mut Host<'_>, slot: u8) -> Result<(), &'static str> {
-    isolation::disable(&mut Stop(host), slot)
+    isolation::disable(&mut Stop(host), slot).map(|_| ())
 }
 mod isolation;
 
