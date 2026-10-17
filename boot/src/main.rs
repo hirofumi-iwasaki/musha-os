@@ -423,6 +423,7 @@ pub extern "efiapi" fn efi_main(
             ((*bs).stall)(1_000_000);
         }
         bootlog::initialize(fb, settings, fallback);
+        entropy::publish();
         #[cfg(feature = "display-grid-probe")]
         grid_hold("starting");
 

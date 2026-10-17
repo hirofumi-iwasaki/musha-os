@@ -312,6 +312,8 @@ pub(in crate::xhci) unsafe fn release_stopped(owner: u16) -> bool {
     unsafe { (&mut *LEASE.0.get()).stopped(owner) }
 }
 pub(in crate::xhci) struct Device {
+    entropy_samples: musha_platform::bluetooth::sources::HciRand,
+    entropy_reset: bool,
     slot: u8,
     port: usize,
     pub(super) ancestors: [Option<(super::hub::Hub, u8)>; 5],
@@ -483,6 +485,8 @@ pub(super) fn prepare(
     crate::bluetooth::active(true);
     let device = unsafe {
         (&mut *DEVICE.0.get()).write(Device {
+            entropy_samples: musha_platform::bluetooth::sources::HciRand::new(),
+            entropy_reset: false,
             slot,
             port,
             ancestors: [None; 5],
@@ -543,6 +547,61 @@ impl Device {
         now: u64,
         bytes: &[u8],
     ) -> Result<(), &'static str> {
+        if !self.entropy_samples.done() {
+            let event = Event::parse(bytes).map_err(|_| "BT ENTROPY EVENT")?;
+            let (credits, opcode, result) = event.complete().map_err(|_| "BT ENTROPY COMPLETE")?;
+            if self.command.map(|p| p.0) != Some(opcode) || result.is_empty() {
+                return Err("BT ENTROPY COMMAND");
+            }
+            if !self.entropy_reset {
+                crate::bootlog::device(
+                    "entropy",
+                    format_args!(
+                        "HCI initial Reset status={:02x} credits={}",
+                        result[0], credits
+                    ),
+                );
+                if opcode != 0x0c03 || result != [0] || credits == 0 {
+                    return Err("BT ENTROPY RESET");
+                }
+                self.command = None;
+                self.command_credits = credits;
+                self.entropy_reset = true;
+                return Ok(());
+            }
+            if opcode != 0x2018 {
+                return Err("BT ENTROPY OPCODE");
+            }
+            self.command = None;
+            self.command_credits = credits;
+            crate::bootlog::device(
+                "entropy",
+                format_args!(
+                    "HCI LE Rand status={:02x} sample={}/4",
+                    result[0],
+                    self.entropy_samples.count() + 1
+                ),
+            );
+            if credits == 0 {
+                return Err("BT ENTROPY CREDIT");
+            }
+            match self.entropy_samples.complete(result) {
+                Ok(Some(mut bytes)) => {
+                    crate::entropy::hci(&mut bytes);
+                }
+                Ok(None) => {}
+                Err(musha_platform::bluetooth::sources::HciFailure::Health) => {
+                    crate::bootlog::device(
+                        "entropy",
+                        format_args!(
+                            "HCI auxiliary health rejected; existing strong state retained"
+                        ),
+                    )
+                }
+                Err(_) => return Err("BT ENTROPY FORMAT"),
+            }
+            return Ok(());
+        }
         if self.phase == 0 {
             self.scan
                 .event(self.generation, host.clock.now()?, bytes)
@@ -605,6 +664,46 @@ impl Device {
         self.acl_stream
             .check(self.generation, now)
             .map_err(|_| "BT ACL STREAM TIMEOUT")?;
+        if !self.entropy_samples.done() {
+            self.event.arm(host, self.slot, None)?;
+            if let Some((_, deadline)) = self.command {
+                if now >= deadline {
+                    return Err("BT ENTROPY COMMAND TIMEOUT");
+                }
+            } else {
+                self.send_command(
+                    host,
+                    now,
+                    if self.entropy_reset { 0x2018 } else { 0x0c03 },
+                    &[],
+                )?;
+            }
+            if let Some(n) = self.event.poll(host, self.slot)? {
+                let mut bytes = [0; 257];
+                if n > bytes.len() {
+                    return Err("BT ENTROPY EVENT LENGTH");
+                }
+                for (i, b) in bytes[..n].iter_mut().enumerate() {
+                    *b = unsafe { (self.event.buffer as *const u8).add(i).read_volatile() };
+                }
+                let mut input = &bytes[..n];
+                while !input.is_empty() {
+                    let mut packet = [0; 257];
+                    let Some(frame) = self
+                        .event_stream
+                        .next(self.generation, now, &mut input)
+                        .map_err(|_| "BT ENTROPY STREAM")?
+                    else {
+                        break;
+                    };
+                    let length = frame.len();
+                    packet[..length].copy_from_slice(frame);
+                    self.event_stream.release();
+                    self.hci_event(host, now, &packet[..length])?;
+                }
+            }
+            return Ok(());
+        }
         if self.subscribed && crate::bluetooth::take_request() {
             crate::bluetooth::restart_after_stop(true);
             return Err("BT REPAIR REQUEST");

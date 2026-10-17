@@ -54,6 +54,8 @@ Evidence for this continuation: `out/stage6-normal/verification.json`, `source-f
 
 ### Entropy, passkey and secret lifetime
 
+**Superseded entropy paragraph:** the following firmware-only pool description records the earlier implementation. The current 2026-10-17 owner policy and multi-source DRBG are specified in [entropy-sources](entropy-sources-0.4.0.md). Existing earlier test assertions below remain historical evidence.
+
 Before GOP selection/final map/EBS, UEFI RNG fills a CPU-owned **4096-byte** pool using an explicitly requested SP800-90 HASH/HMAC/CTR256 algorithm. No protocol pointer survives EBS. Unsupported/error/stuck output rejects the pool; there is **no default/raw, fixed-seed, clock, RDRAND or weak PRNG fallback**. This trusts the firmware's advertised algorithm, not a certification of its entropy source. QEMU evidence records `BT_ENTROPY UNAVAILABLE`, so actual provider success remains unverified.
 
 At most **8 authorized attempts per boot**; exhaustion may occur earlier. A typical valid-scalar JW attempt needs48 bytes, displayed passkey356 bytes and entered passkey352 bytes; rejected scalars/uniform sampling retries cost more (bounded16 each). Pool bytes are erased as consumed, including failed/canceled attempts, never returned or reseeded after success; restart does not replenish them. Insufficient bytes fail safely. Pool, key/scalar, session nonce/DH/LTK, owned record scratch and secret UI reply cleanup use zeroize/volatile erase. This does not promise erasure of every compiler temporary/register copy.
@@ -127,6 +129,8 @@ Remaining hardware gates: MM-BTUD46 exact USB/revision/firmware behavior and Xbo
 * USB/BT保持キーを別所有としてmergeし、一方の解放で他方の保持を解除しません。検証済み遷移をviewer/既存r2 queueへ渡します。host transcriptは通常版と同じSC/GATT/HOGP/save関数を実行しますが、bootのMMIO/BOT dispatcherはbuild/BT不在確認のみで、無線装置を模擬実行した証拠ではありません。
 
 ### 乱数・パスキー・秘密の寿命
+
+**Current policy / 現行方針:** [entropy-sources](entropy-sources-0.4.0.md) supersedes the earlier firmware-only pool description below (2026-10-17). / 以下の旧firmware限定pool記述は過去の実装記録です。現行は多源DRBGです。
 
 GOP選択/最終map/EBSより前に、UEFI RNGの明示SP800-90 HASH/HMAC/CTR256でCPU所有4096byte poolを確保。firmware pointerをEBS後へ残しません。未対応/error/明らかなstuck出力は拒否し、default/raw・固定seed・時計・RDRAND・弱いPRNGへのfallbackはありません。firmware申告を信頼する設計で、乱数源の認証ではありません。QEMUはBT_ENTROPY UNAVAILABLEで、本番provider成功は未検証です。
 

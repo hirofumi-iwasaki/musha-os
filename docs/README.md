@@ -26,6 +26,7 @@ Current contracts, local validation and physical acceptance are separate. Past r
 - [app-api](app-api.md)
 - [settings](settings.md)
 - [startup-configuration](startup-configuration.md)
+- [entropy-sources-0.4.0](entropy-sources-0.4.0.md)
 - [memory](memory.md)
 - [acpi-timer](acpi-timer.md)
 - [fat32](fat32.md)

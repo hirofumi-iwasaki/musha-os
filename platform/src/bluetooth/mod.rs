@@ -10,6 +10,8 @@ pub mod att;
 pub mod bonding;
 #[cfg(feature = "bluetooth-security")]
 pub mod entropy;
+#[cfg(feature = "bluetooth-security")]
+pub mod drbg;
 #[cfg(feature = "bluetooth-legacy")]
 pub mod hogp;
 #[cfg(feature = "bluetooth-legacy")]
@@ -24,6 +26,8 @@ pub mod sc;
 pub mod sc_crypto;
 pub mod scan;
 pub mod stream;
+#[cfg(feature = "bluetooth-security")]
+pub mod sources;
 pub mod usb;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

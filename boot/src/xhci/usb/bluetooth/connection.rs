@@ -5,7 +5,7 @@
 use super::*;
 use musha_platform::bluetooth::{self as bt, sc::Action};
 impl Device {
-    fn send_command(
+    pub(super) fn send_command(
         &mut self,
         host: &mut Host<'_>,
         now: u64,

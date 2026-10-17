@@ -4,6 +4,8 @@ Status: current
 
 ## English
 
+2026-10-17 entropy update: the original HMAC_DRBG/SHA-256 implementation uses the existing SHA-256 routine and zeroize; no Cargo dependency or vendored package is added. Algorithm and CAVP data provenance, bounds and non-certification limits are recorded in [entropy sources](entropy-sources-0.4.0.md). The NIST COUNT0 fixture is public test material, not production entropy. Existing upstream license files and notices remain unchanged.
+
 Normal boot enables internal bluetooth-security. RustCrypto AES/CMAC/P-256, subtle and zeroize are pinned; no primitive is invented. This is not certification or an audit of the new SMP/runtime. See [stage6 checkpoint](stage6-0.4.0-progress.md).
 
 | Package | Version | Original terms | Selected |
@@ -46,6 +48,8 @@ Primary sources checked2026-10-15: [p2560.13.2](https://docs.rs/crate/p256/0.13.
 [zkSecurity2025-04-07](https://reports.zksecurity.xyz/reports/near-p256/) covers commit32343a78f1522aa5bd856556f114053d4bb938e0, primarily32-bit arithmetic/ECDSA verification. ECDH,64-bit-specific implementation and constant-time analysis were outside its focus. p2560.13.2 is not that exact revision. **Do not claim audited ECDH/x86-64/new SMP.** Public-release security review remains open. SecretKey/SharedSecret Drop and explicit scalar zeroize were inspected locally; this does not guarantee erasure of every compiler temporary/register.
 
 ## 日本語
+
+2026-10-17乱数更新：original HMAC_DRBG/SHA-256実装は既存SHA-256とzeroizeを使い、Cargo依存やvendor packageの追加はありません。方式・CAVP試験値の来歴、上限、非認証の限界は[乱数源](entropy-sources-0.4.0.md)へ記録します。NIST COUNT0 fixtureは公開試験値で本番entropyではありません。既存upstream license/noticeは保持します。
 
 通常bootで内部bluetooth-securityを有効化しました。固定版RustCrypto AES/CMAC/P-256、subtle、zeroizeを利用し暗号primitiveは自作しません。新SMP/runtimeの監査・認証ではありません。[工程6記録](stage6-0.4.0-progress.md)参照。
 

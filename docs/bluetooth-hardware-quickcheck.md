@@ -85,3 +85,8 @@ The owner-supplied 177-byte layout (not a physical raw descriptor dump) has inte
 ### 主interface選択の回帰確認（2026-10-17）
 
 所有者提示の177byte構成（実機raw dumpではありません）はIF0がinterrupt IN `81`/16、bulk OUT `02`・IN `82`/64、IF1はSCO alt0にsize0のisoc2本、alt1〜5にsize9/17/25/33/49を持ちます。旧selectorは後続SCOを第2HCI候補として拒否しました。最初の完全なalt0 HCI interfaceを確定後、後続interface/altのendpoint意味を選択対象から外し、descriptorの構造検査は維持します。主interfaceの不足や主内isocは引き続き拒否します。SCO context、SET_INTERFACE、firmware commandは追加しません。このfixtureは提示構成の再現であり、実7265から同一raw bytesを取得した証拠ではありません。標準識別の再試験後に互換性を判断します。
+
+
+### Entropy policy update / 乱数方針更新 (2026-10-17)
+
+Before interpreting a new pairing result, photograph the actual source/strong/DRBG decisions from the [current entropy implementation](entropy-sources-0.4.0.md). Missing strong material still refuses pairing; no weak fallback is supplied. Earlier firmware-only failure videos are not a test of the new build. / 新pairing結果の前に、現行乱数実装のsource/strong/DRBG判定を撮影してください。強源不足は引き続き拒否し、弱いfallbackは使いません。旧firmware限定版の拒否動画は新版の試験ではありません。

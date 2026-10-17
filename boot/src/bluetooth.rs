@@ -15,7 +15,7 @@ pub fn request() -> Result<(), &'static str> {
         return Err("Bluetooth pairing unavailable: no live USB HCI adapter.");
     }
     if !crate::entropy::available() {
-        return Err("Bluetooth pairing unavailable: secure entropy unavailable.");
+        return Err(crate::entropy::reason());
     }
     CONFIG_REQUEST.store(false, Ordering::Relaxed);
     REQUEST.store(true, Ordering::Relaxed);
