@@ -12,12 +12,14 @@ struct Pending {
 pub struct Mailbox {
     pending: [Option<Pending>; 3],
     saved: [Option<[u32; 4]>; 3],
+    retired: [Option<(usize, u8, u8)>; 6],
 }
 impl Mailbox {
     pub const fn new() -> Self {
         Self {
             pending: [None; 3],
             saved: [None; 3],
+            retired: [None; 6],
         }
     }
     pub fn arm(
@@ -59,7 +61,44 @@ impl Mailbox {
                 && crate::control::endpoint_residual(words, p.trb, p.slot, p.dci, p.bytes)
                     .is_some())
     }
+    /// Retain exact TD identities while Disable Slot is pending and afterwards.
+    /// This consumes only stale completion metadata, never buffers. No allocation
+    /// or CPU lease is released; the outer controller stop still owns reclamation.
+    pub fn retire_slot(&mut self, slot: u8, control: &[usize]) -> Result<(), &'static str> {
+        if !(1..=8).contains(&slot) || control.len() > 3 || self.retired.iter().any(Option::is_some)
+        {
+            return Err("BT RETIRE OWNER");
+        }
+        for (i, pending) in self.pending.iter().enumerate() {
+            if let Some(p) = pending {
+                if p.slot != slot {
+                    return Err("BT RETIRE OWNER");
+                }
+                self.retired[i] = Some((p.trb, slot, p.dci));
+            }
+        }
+        for (i, &trb) in control.iter().enumerate() {
+            if trb == 0 || trb % 16 != 0 {
+                return Err("BT RETIRE TD");
+            }
+            self.retired[3 + i] = Some((trb, slot, 1));
+        }
+        Ok(())
+    }
     pub fn save(&mut self, words: [u32; 4]) -> bool {
+        let address = words[0] as u64 | ((words[1] as u64) << 32);
+        if (words[3] >> 10) & 63 == 32
+            && words[3] & (4 | 0xe00000) == 0
+            && words[2] >> 24 != 0
+            && self.retired.iter().flatten().any(|&(trb, slot, dci)| {
+                address == trb as u64
+                    && (words[3] >> 24) as u8 == slot
+                    && (words[3] >> 16) & 31 == dci as u32
+            })
+        {
+            return true;
+        }
+
         for i in 0..3 {
             if self.pending[i].is_some_and(|p| Self::matches(p, words)) {
                 if self.saved[i].is_some() {
@@ -108,5 +147,42 @@ mod tests {
         assert_eq!(m.complete(0, w), Ok(6));
         assert!(m.arm(0, 0x2000, 2, 3, 257, true).is_ok());
         assert!(!m.save(good));
+    }
+}
+
+#[cfg(test)]
+mod retirement_tests {
+    use super::*;
+    fn event(trb: u32, slot: u8, dci: u8, cc: u32) -> [u32; 4] {
+        [
+            trb,
+            0,
+            cc << 24,
+            (32 << 10) | ((dci as u32) << 16) | ((slot as u32) << 24) | 1,
+        ]
+    }
+    #[test]
+    fn retirement_consumes_only_exact_old_bt_td_and_keeps_other_saved_work() {
+        let mut m = Mailbox::new();
+        m.arm(0, 0x1000, 2, 3, 257, true).unwrap();
+        m.retire_slot(2, &[0x2000, 0x2010, 0x2020]).unwrap();
+        for cc in [1, 6, 13, 26, 27, 28] {
+            assert!(m.save(event(0x1000, 2, 3, cc)));
+            assert!(m.save(event(0x2010, 2, 1, cc)));
+        }
+        for w in [
+            event(0x1010, 2, 3, 26),
+            event(0x1000, 3, 3, 26),
+            event(0x1000, 2, 5, 26),
+            event(0x2030, 2, 1, 26),
+            event(0x1000, 2, 3, 0),
+        ] {
+            assert!(!m.save(w));
+        }
+        let mut ed = event(0x1000, 2, 3, 26);
+        ed[3] |= 4;
+        assert!(!m.save(ed));
+        assert!(m.retire_slot(3, &[]).is_err()); // no widening to another slot
+        assert!(m.pending[0].is_some()); // no reclamation even after retire
     }
 }

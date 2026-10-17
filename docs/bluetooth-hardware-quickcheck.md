@@ -90,3 +90,32 @@ The owner-supplied 177-byte layout (not a physical raw descriptor dump) has inte
 ### Entropy policy update / 乱数方針更新 (2026-10-17)
 
 Before interpreting a new pairing result, photograph the actual source/strong/DRBG decisions from the [current entropy implementation](entropy-sources-0.4.0.md). Missing strong material still refuses pairing; no weak fallback is supplied. Earlier firmware-only failure videos are not a test of the new build. / 新pairing結果の前に、現行乱数実装のsource/strong/DRBG判定を撮影してください。強源不足は引き続き拒否し、弱いfallbackは使いません。旧firmware限定版の拒否動画は新版の試験ではありません。
+
+## Live HCI failure isolation and command inventory (development)
+
+See [Bluetooth failure isolation](bluetooth-isolation-0.4.0.md). Use `log=devices` / `display=max`; trace is unnecessary for the persistent failure reason and HCI metadata. A failure should show `bluetooth: unavailable: <reason>`, preserve keyboard/storage, and make P report no live adapter. Record the CC/CS opcode/status/credits and timeout line before testing pairing again. A controller/Disable Slot safety failure can still end the whole device session. The operation/cleanup budgets are 2 s + at most 1 s; physical timing remains unverified.
+
+| Command | Opcode | Live path / Bluetooth requirement |
+|---|---|---|
+| Reset | `0c03` | Initial warm-up, then scan reset; standard BR/EDR baseline |
+| LE Rand | `2018` | Four auxiliary reads after initial Reset; LE 4.0; unsupported status degrades |
+| Set Event Mask | `0c01` | Scan / connection masks; standard baseline |
+| LE Set Event Mask | `2001` | Advertising / connection events; LE 4.0 |
+| LE Set Scan Parameters / Enable | `200b` / `200c` | Legacy passive scan; LE 4.0 |
+| Read BD_ADDR | `1009` | Connection identity; standard baseline |
+| LE Read Buffer Size / Read Buffer Size | `2002` / `1005` | LE ACL capacity / shared-buffer fallback |
+| LE Create Connection | `200d` | Legacy LE connection; LE 4.0 |
+| LE Start Encryption | `2019` | Host-derived SC LTK; LE 4.0 controller command |
+| LE Set Data Length / LE Read Maximum Data Length | `2022` / `202f` | **Not sent**; no data-length-extension requirement |
+| LE Add Device To Resolving List / LE Set Address Resolution Enable | `2027` / `202d` | **Not sent**; IRK/RPA unsupported |
+| Set Event Mask Page 2 | `0c63` | **Not sent** |
+| Read Local Supported Commands | `1002` | **Not sent**; future capability-gate proposal only |
+| LE Read Local P-256 Public Key / Generate DHKey | `2025` / `2026` | **Not sent**; P-256 is computed by the host |
+
+This inventory does not claim that every older controller accepts the selected event-mask bits. CSR8510 and Intel7265 have responded to the five standard probe commands; that does not prove live scan/pairing or unsupported-command behavior. A future Supported Commands gate would query `1002`, validate returned length and capability bits, then refuse an unavailable mandatory command before sending it; it is not implemented here.
+
+## 日本語: 実行時隔離と送信命令
+
+[BT失敗隔離](bluetooth-isolation-0.4.0.md)を参照してください。`log=devices` / `display=max` でHCIメタデータと保持理由が出るためtraceは不要です。失敗時は `bluetooth: unavailable: <reason>`、キーボードとストレージの継続、Pのlive adapter不在拒否を確認します。CC/CSのopcode・status・creditsとtimeout行を記録してください。Disable Slot等の安全確認に失敗した場合は全session停止を維持します。操作2秒＋隔離最大1秒はソフトウェア予算で、実機時間は未確認です。
+
+上表の通常経路はLE 4.0命令を使います。2022/202f、2027/202d、0c63、1002、2025/2026は送信しません。P-256はhost計算です。古いcontrollerがevent maskの全bitを受理する保証はなく、CSR8510/Intel7265の5本probe成功をscan・pairing成功へ昇格させません。1002を使う機能ゲートは将来案で、返却長と必須bitを検査して送信前拒否する設計候補です。今回実装していません。

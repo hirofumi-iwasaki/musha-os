@@ -31,6 +31,7 @@ impl Device {
             .transport
             .command_setup(&bytes[..3 + parameters.len()], self.composite)
             .map_err(|_| "BT COMMAND SETUP")?;
+        crate::bootlog::device("bluetooth", format_args!("HCI TX opcode={:04x}", opcode));
         self.command = Some((opcode, now.checked_add(1000).ok_or("BT TIME")?));
         self.command_credits -= 1;
         let result = control_write(
@@ -58,8 +59,11 @@ impl Device {
         result
     }
     pub(super) fn drive(&mut self, host: &mut Host<'_>, now: u64) -> Result<(), &'static str> {
-        if self.command.is_some_and(|(_, d)| now >= d) {
-            return Err("BT COMMAND TIMEOUT");
+        if let Some((opcode, deadline)) = self.command {
+            if now >= deadline {
+                timeout(opcode, now.saturating_sub(deadline.saturating_sub(1000)));
+                return Err("BT COMMAND TIMEOUT");
+            }
         }
         if let Some(reconnect) = self.reconnect.as_mut() {
             reconnect

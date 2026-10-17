@@ -11,6 +11,7 @@ struct State {
     busy: bool,
     disconnected: bool,
     modifiers: u16,
+    bt_generation: u64,
     keys: musha_input::merge::Keys,
     stop_info: *const crate::BootInfo,
 }
@@ -24,6 +25,7 @@ static STATE: Shared = Shared(UnsafeCell::new(State {
     busy: false,
     disconnected: false,
     modifiers: 0,
+    bt_generation: 0,
     keys: musha_input::merge::Keys::new(),
     stop_info: core::ptr::null(),
 }));
@@ -48,6 +50,7 @@ pub unsafe fn attach<F: FnMut() -> Result<(), &'static str>>(
         s.stop_info = info;
         s.disconnected = false;
         s.modifiers = 0;
+        s.bt_generation = 0;
         s.keys = musha_input::merge::Keys::new();
     }
 }
@@ -94,7 +97,20 @@ pub fn poll() -> Result<(), i32> {
     }
     #[cfg(feature = "bluetooth-gamepad-probe")]
     crate::bluetooth::gamepad_probe();
-    let (_, keys, count) = crate::bluetooth::drain_keys().map_err(|_| abi::ERR_DISCONNECTED)?;
+    let (generation, keys, count) =
+        crate::bluetooth::drain_keys().map_err(|_| abi::ERR_DISCONNECTED)?;
+    let changed = unsafe {
+        let s = &mut *STATE.0.get();
+        let changed = s.bt_generation != generation;
+        s.bt_generation = generation;
+        changed
+    };
+    if changed {
+        // Release BT's held keys through the existing OR merger; USB keys remain.
+        for code in 0..=255 {
+            source_keys(1, &[(code, false)]);
+        }
+    }
     source_keys(1, &keys[..count]);
     crate::bluetooth::drain_gamepad(|event| unsafe {
         if let Some(q) = (*STATE.0.get()).queue.as_mut() {

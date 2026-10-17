@@ -76,7 +76,21 @@ pub fn stopped() {
         pad.2 = false;
         (&mut *PENDING_SAVE.0.get()).take();
         *SAVED.0.get() = None;
-        *KEYS.0.get() = ([(0, false); 32], 0, 0, false);
+        *KEYS.0.get() = ([(0, false); 32], 0, u64::MAX, false);
+        // Queued old reports are discarded, then only genuine held-state
+        // releases/axis neutralization are delivered to an existing r2 consumer.
+        let (buttons, axes) = *GAMEPAD_HELD.0.get();
+        *GAMEPAD_HELD.0.get() = (0, [0; 6]);
+        for code in 0..32 {
+            if buttons & (1 << code) != 0 {
+                gamepad(musha_input::gamepad::Change::Button(code, false));
+            }
+        }
+        for (code, value) in axes.into_iter().enumerate() {
+            if value != 0 {
+                gamepad(musha_input::gamepad::Change::Axis(code as u8, 0));
+            }
+        }
         (&mut *UI.0.get()).take();
         (&mut *ENTRY.0.get()).take();
         *ACK.0.get() = None;
@@ -386,6 +400,7 @@ static PAD: Shared<([musha_platform::user_io::Event; 64], usize, bool)> =
         0,
         false,
     )));
+static GAMEPAD_HELD: Shared<(u32, [i32; 6])> = Shared(UnsafeCell::new((0, [0; 6])));
 pub fn gamepad(change: musha_input::gamepad::Change) {
     use musha_platform::user_io::{Event, GAMEPAD_AXIS, GAMEPAD_BUTTON};
     let mut event = Event {
@@ -395,11 +410,24 @@ pub fn gamepad(change: musha_input::gamepad::Change) {
     };
     match change {
         musha_input::gamepad::Change::Button(code, down) => {
+            if code < 32 {
+                unsafe {
+                    let held = &mut *GAMEPAD_HELD.0.get();
+                    if down {
+                        held.0 |= 1 << code;
+                    } else {
+                        held.0 &= !(1 << code);
+                    }
+                }
+            }
             event.kind = GAMEPAD_BUTTON;
             event.code = code as u16;
             event.flags = down as u32;
         }
         musha_input::gamepad::Change::Axis(code, value) => {
+            if let Some(axis) = unsafe { (&mut *GAMEPAD_HELD.0.get()).1.get_mut(code as usize) } {
+                *axis = value;
+            }
             event.kind = GAMEPAD_AXIS;
             event.code = code as u16;
             event.values[0] = value;
@@ -474,6 +502,15 @@ pub fn restart_after_stop(force_pair: bool) -> bool {
     RESTART_SAFE.store(false, Ordering::Relaxed);
     RESTART.store(true, Ordering::Relaxed);
     true
+}
+/// A successfully isolated optional adapter must not request a whole USB restart.
+pub fn isolated() {
+    RESTART.store(false, Ordering::Relaxed);
+    RESTART_SAFE.store(false, Ordering::Relaxed);
+    FORCE_NEXT.store(false, Ordering::Relaxed);
+    REQUEST.store(false, Ordering::Relaxed);
+    CONFIG_REQUEST.store(false, Ordering::Relaxed);
+    ACTIVE.store(false, Ordering::Relaxed);
 }
 pub fn wants_restart() -> bool {
     RESTART.load(Ordering::Relaxed)

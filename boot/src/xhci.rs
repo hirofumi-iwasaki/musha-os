@@ -973,6 +973,9 @@ fn command_probe(
             mouse_saved: None,
             bulk_pending: None,
             bulk_saved: None,
+            bt_deadline: None,
+            bt_control_pending: None,
+            dcbaa,
             bt_mailbox: musha_xhci::mailbox::Mailbox::new(),
             bluetooth: None,
         };
@@ -1042,10 +1045,19 @@ struct Host<'a> {
     mouse_saved: Option<[u32; 4]>,
     bulk_pending: Option<(usize, u8, u8)>,
     bulk_saved: Option<[u32; 4]>,
+    bt_deadline: Option<u64>,
+    bt_control_pending: Option<(u8, [usize; 3], usize)>,
+    dcbaa: usize,
     bt_mailbox: musha_xhci::mailbox::Mailbox,
     bluetooth: Option<usb::bluetooth::DeviceRef>,
 }
 impl Host<'_> {
+    fn io_timeout(&mut self) -> Result<u64, &'static str> {
+        match self.bt_deadline {
+            Some(end) => usb::bluetooth::remaining(end, self.clock.now()?),
+            None => Ok(1000),
+        }
+    }
     fn command(
         &mut self,
         parameter: usize,
@@ -1053,6 +1065,7 @@ impl Host<'_> {
         slot: u8,
     ) -> Result<[u32; 4], &'static str> {
         rescan_budget(self.clock)?;
+        let timeout = self.io_timeout()?;
         let address = self.command + self.producer.index * 16;
         if self.producer.index == TRBS - 2 {
             unsafe {
@@ -1092,7 +1105,7 @@ impl Host<'_> {
             self.ports,
             slot,
             0,
-            1000,
+            timeout,
             self.keyboard_pending,
             Some(&mut self.keyboard_saved),
             self.bulk_pending,

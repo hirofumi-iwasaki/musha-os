@@ -254,6 +254,7 @@ fn control_transfer(
     request: u32,
     interface: u16,
 ) -> Result<u32, &'static str> {
+    let timeout = host.io_timeout()?;
     let incoming = request & 0x80 != 0;
     crate::diagnostics::control_request(slot, request, interface, bytes);
     let plan = host.control_cursors[slot as usize].plan(bytes != 0);
@@ -311,6 +312,11 @@ fn control_transfer(
             ],
         );
     }
+    host.bt_control_pending = Some((
+        slot,
+        core::array::from_fn(|i| ring + plan.indices[i] * 16),
+        plan.count,
+    ));
     if !(cfg!(feature = "usb-descriptor-timeout") && request == 0x01000680 && bytes == 18)
         && !(cfg!(feature = "usb-control-out-timeout") && bytes != 0 && !incoming)
     {
@@ -328,7 +334,7 @@ fn control_transfer(
         host.ports,
         slot,
         1,
-        1000,
+        timeout,
         host.keyboard_pending,
         Some(&mut host.keyboard_saved),
         host.bulk_pending,
@@ -343,6 +349,7 @@ fn control_transfer(
         Some(&mut residual),
         Some(&mut host.bt_mailbox),
     )?;
+    host.bt_control_pending = None;
     host.control_cursors[slot as usize] = plan.next;
     if plan.link_cycle.is_some() {
         crate::debug(b"MUSHA: EP0_RING_WRAP_OK\n");
@@ -788,6 +795,10 @@ pub(super) fn enumerate(
         let configured = configure(
             host, pool, slot, input, output, stride, ring, buffer, speed, port, descriptor, tick,
         )?;
+        if matches!(configured, Configured::Disabled) {
+            count += 1;
+            continue;
+        }
         if let Configured::Hub(configuration) = configured {
             let hub = hub::setup(
                 host,
@@ -919,6 +930,9 @@ pub(super) fn enumerate(
             .ok_or("CLOCK OVERFLOW")?;
         while host.clock.now()? < deadline {
             bluetooth::poll(host, tick)?;
+            if host.bluetooth.is_none() {
+                break;
+            }
             if tick(super::AppEvent::Keys(&[]))? {
                 break;
             }
@@ -991,6 +1005,7 @@ struct Keyboard {
     mouse: Option<musha_xhci::mouse::Layout>,
 }
 enum Configured {
+    Disabled,
     Other,
     Storage(storage::Device),
     Bluetooth(bluetooth::DeviceRef),
@@ -1104,7 +1119,8 @@ fn configure(
     }
     if !host.discovery && host.bluetooth.is_none() {
         if let Ok(transport) = musha_platform::bluetooth::usb::select(&bytes[..length]) {
-            return bluetooth::prepare(
+            host.bt_deadline = Some(host.clock.now()?.checked_add(2000).ok_or("BT CLOCK")?);
+            let prepared = bluetooth::prepare(
                 host,
                 pool,
                 slot,
@@ -1118,8 +1134,21 @@ fn configure(
                 bytes[5],
                 descriptor[4] != 0xe0,
                 port,
-            )
-            .map(Configured::Bluetooth);
+            );
+            host.bt_deadline = None;
+            return match prepared {
+                Ok(device) => Ok(Configured::Bluetooth(device)),
+                // An ambiguous command-ring completion cannot be isolated.
+                Err("BT CONTEXT COMMAND") => Err("BT CONTEXT COMMAND"),
+                Err(reason) if bluetooth::local_failure(reason) => {
+                    // Register exact pending EP0 identities before enumeration's
+                    // Disable Slot can encounter late/stopped transfer events.
+                    bluetooth::disable_failed_prepare(host, slot)?;
+                    bluetooth::unavailable(reason);
+                    Ok(Configured::Disabled)
+                }
+                Err(reason) => Err(reason),
+            };
         }
     }
     let keyboard = musha_xhci::keyboard::configuration(&bytes[..length], speed)?;

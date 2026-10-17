@@ -314,6 +314,8 @@ pub(in crate::xhci) unsafe fn release_stopped(owner: u16) -> bool {
 pub(in crate::xhci) struct Device {
     entropy_samples: musha_platform::bluetooth::sources::HciRand,
     entropy_reset: bool,
+    initialize_deadline: u64,
+    scan_command: Option<(u16, u64)>,
     slot: u8,
     port: usize,
     pub(super) ancestors: [Option<(super::hub::Hub, u8)>; 5],
@@ -461,7 +463,8 @@ pub(super) fn prepare(
         }
         core::arch::asm!("mfence", options(nostack));
     }
-    host.command(input, (12 << 10) | ((slot as u32) << 24), slot)?;
+    host.command(input, (12 << 10) | ((slot as u32) << 24), slot)
+        .map_err(|_| "BT CONTEXT COMMAND")?;
     control(
         host,
         slot,
@@ -487,6 +490,8 @@ pub(super) fn prepare(
         (&mut *DEVICE.0.get()).write(Device {
             entropy_samples: musha_platform::bluetooth::sources::HciRand::new(),
             entropy_reset: false,
+            initialize_deadline: host.bt_deadline.ok_or("BT INITIALIZATION DEADLINE")?,
+            scan_command: None,
             slot,
             port,
             ancestors: [None; 5],
@@ -547,6 +552,7 @@ impl Device {
         now: u64,
         bytes: &[u8],
     ) -> Result<(), &'static str> {
+        observe_hci(bytes)?;
         if !self.entropy_samples.done() {
             let event = Event::parse(bytes).map_err(|_| "BT ENTROPY EVENT")?;
             let (credits, opcode, result) = event.complete().map_err(|_| "BT ENTROPY COMPLETE")?;
@@ -606,6 +612,9 @@ impl Device {
             self.scan
                 .event(self.generation, host.clock.now()?, bytes)
                 .map_err(|_| "BT EVENT STATE")?;
+            if bytes.first() == Some(&0x0e) {
+                self.scan_command = None;
+            }
         }
         let event =
             musha_platform::bluetooth::Event::parse(bytes).map_err(|_| "BT EVENT FORMAT")?;
@@ -665,9 +674,11 @@ impl Device {
             .check(self.generation, now)
             .map_err(|_| "BT ACL STREAM TIMEOUT")?;
         if !self.entropy_samples.done() {
+            isolation::remaining(self.initialize_deadline, now)?;
             self.event.arm(host, self.slot, None)?;
-            if let Some((_, deadline)) = self.command {
+            if let Some((opcode, deadline)) = self.command {
                 if now >= deadline {
+                    timeout(opcode, now.saturating_sub(deadline.saturating_sub(1000)));
                     return Err("BT ENTROPY COMMAND TIMEOUT");
                 }
             } else {
@@ -752,6 +763,12 @@ impl Device {
             match self.scan.next(self.generation, now) {
                 Ok(Some(command)) => {
                     let bytes = &command.bytes[..command.length];
+                    let opcode = u16::from_le_bytes([bytes[0], bytes[1]]);
+                    self.scan_command = Some((opcode, now));
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!("HCI TX opcode={:04x}", opcode),
+                    );
                     let setup = self
                         .transport
                         .command_setup(bytes, self.composite)
@@ -767,7 +784,12 @@ impl Device {
                     )?;
                 }
                 Ok(None) | Err(musha_platform::bluetooth::Error::Busy) => {}
-                Err(_) => return Err("BT SCAN STATE"),
+                Err(_) => {
+                    if let Some((opcode, started)) = self.scan_command {
+                        timeout(opcode, now.saturating_sub(started));
+                    }
+                    return Err("BT SCAN STATE");
+                }
             }
         } else {
             self.drive(host, now)?;
@@ -802,17 +824,124 @@ impl Device {
         Ok(())
     }
 }
+pub(super) use isolation::local_failure;
+pub(in crate::xhci) use isolation::remaining;
+pub(super) fn retire(host: &mut Host<'_>, slot: u8) -> Result<(), &'static str> {
+    let control = host.bt_control_pending.filter(|(s, _, _)| *s == slot);
+    let addresses = control.as_ref().map_or(&[][..], |(_, a, n)| &a[..*n]);
+    host.bt_mailbox.retire_slot(slot, addresses)
+}
+pub(super) fn unavailable(reason: &'static str) {
+    crate::bluetooth::isolated();
+    crate::bootlog::event(
+        musha_platform::boot_log::Level::Ready,
+        "bluetooth",
+        format_args!("unavailable: {}", reason),
+    );
+    crate::bluetooth::status(match reason {
+        "BT ENTROPY COMMAND TIMEOUT" => "Bluetooth unavailable: BT ENTROPY COMMAND TIMEOUT",
+        "BT INITIALIZATION TIMEOUT" => "Bluetooth unavailable: BT INITIALIZATION TIMEOUT",
+        "BT COMMAND TIMEOUT" => "Bluetooth unavailable: BT COMMAND TIMEOUT",
+        "TRANSFER TIMEOUT" => "Bluetooth unavailable: TRANSFER TIMEOUT",
+        "BT COMMAND REJECTED" => "Bluetooth unavailable: BT COMMAND REJECTED",
+        "BT ENTROPY RESET" => "Bluetooth unavailable: BT ENTROPY RESET",
+        _ => reason,
+    });
+}
+fn timeout(opcode: u16, elapsed: u64) {
+    crate::bootlog::device(
+        "bluetooth",
+        format_args!("HCI timeout opcode={:04x} after={}ms", opcode, elapsed),
+    );
+}
+fn observe_hci(bytes: &[u8]) -> Result<(), &'static str> {
+    let Some((kind, credits, opcode, status)) = isolation::command_event(bytes)? else {
+        return Ok(());
+    };
+    match status {
+        Some(status) => crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "HCI {} opcode={:04x} status={:02x} credits={}",
+                kind, opcode, status, credits
+            ),
+        ),
+        None => crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "HCI {} opcode={:04x} status=n/a credits={}",
+                kind, opcode, credits
+            ),
+        ),
+    }
+    Ok(())
+}
 pub(super) fn poll(
     host: &mut Host<'_>,
     _tick: &mut super::super::Tick<'_>,
 ) -> Result<(), &'static str> {
-    if let Some(mut device) = host.bluetooth.take() {
-        let result = device.poll(host);
-        host.bluetooth = Some(device);
-        result
-    } else {
-        Ok(())
+    let Some(mut device) = host.bluetooth.take() else {
+        return Ok(());
+    };
+    let initializing = !device.entropy_samples.done();
+    if initializing {
+        host.bt_deadline = Some(device.initialize_deadline);
     }
+    let result = device.poll(host);
+    host.bt_deadline = None;
+    if let Err(reason) = result {
+        if matches!(reason, "TRANSFER TIMEOUT" | "BT INITIALIZATION TIMEOUT") {
+            if let Some((opcode, deadline)) = device.command {
+                timeout(
+                    opcode,
+                    host.clock
+                        .now()?
+                        .saturating_sub(deadline.saturating_sub(1000)),
+                );
+            }
+        }
+        if !local_failure(reason) {
+            host.bluetooth = Some(device);
+            return Err(reason);
+        }
+        // Known allocations remain reserved; exact old TDs may finish while the
+        // correlated Disable Slot command drains endpoints. Never reset the
+        // shared event cursor or another device's saved completions.
+        let slot = device.slot;
+        if let Err(error) = isolation::disable(&mut Stop(host), slot) {
+            host.bluetooth = Some(device);
+            return Err(error);
+        }
+        drop(device); // retires CPU lease; does NOT free lease or DMA allocations.
+        unavailable(reason);
+        crate::debug(b"MUSHA: BT_ISOLATED USB_SESSION_CONTINUES\n");
+        return Ok(());
+    }
+    host.bluetooth = Some(device);
+    Ok(())
 }
 
 mod connection;
+
+struct Stop<'h, 'a>(&'h mut Host<'a>);
+impl isolation::SlotStop for Stop<'_, '_> {
+    fn retire(&mut self, slot: u8) -> Result<(), &'static str> {
+        retire(self.0, slot)
+    }
+    fn disable(&mut self, slot: u8) -> Result<(), &'static str> {
+        self.0
+            .command(0, (10 << 10) | ((slot as u32) << 24), slot)
+            .map(|_| ())
+    }
+    fn detach(&mut self, slot: u8) {
+        unsafe {
+            super::dma_u64(self.0.dcbaa + slot as usize * 8, 0);
+            core::arch::asm!("mfence", options(nostack));
+        }
+        self.0.bt_control_pending = None;
+    }
+}
+pub(super) fn disable_failed_prepare(host: &mut Host<'_>, slot: u8) -> Result<(), &'static str> {
+    isolation::disable(&mut Stop(host), slot)
+}
+mod isolation;
