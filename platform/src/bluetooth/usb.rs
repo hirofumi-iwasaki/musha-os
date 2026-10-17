@@ -16,7 +16,9 @@ pub struct Transport {
     pub acl_out: Endpoint,
 }
 /// Full configuration bytes, no UART H4 prefix, no SCO/ISO support. Composite
-/// devices are accepted only with one unambiguous E0/01/01 alternate-zero interface.
+/// The first complete E0/01/01 alternate-zero HCI interface wins. Later
+/// interfaces/alternates (including SCO) are not activated; descriptor framing
+/// remains validated. An incomplete first HCI interface is an error.
 pub fn select(bytes: &[u8]) -> Result<Transport, Error> {
     if bytes.len() < 9
         || bytes[0] != 9
@@ -55,14 +57,12 @@ pub fn select(bytes: &[u8]) -> Result<Transport, Error> {
                 if active {
                     selected = Some(finish(interface, endpoints)?);
                 }
-                active = d[3] == 0 && d[5..8] == [0xe0, 1, 1];
-                // The following SCO interface has a zero-endpoint alternate 0.
-                // It is not a second primary HCI transport and is never activated.
-                if active && d[4] == 0 && selected.is_some() {
-                    active = false;
-                }
+                // Finalize the primary transport before considering a later
+                // interface. SCO alternate zero may declare zero-sized isochronous
+                // endpoints: it is neither a second HCI candidate nor activated.
+                active = selected.is_none() && d[3] == 0 && d[5..8] == [0xe0, 1, 1];
                 if active {
-                    if selected.is_some() || d[4] != 3 {
+                    if d[4] != 3 {
                         return Err(Error::Invalid);
                     }
                     interface = d[2];

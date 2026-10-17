@@ -56,11 +56,19 @@ fn descriptor_rejects_wrong_class_missing_duplicate_or_invalid_endpoint() {
         b[at] = value;
         assert!(usb::select(&b).is_err(), "{at}");
     }
-    let mut b = config();
-    b.extend_from_slice(&config()[9..]);
-    b[2] = b.len() as u8;
-    assert_eq!(usb::select(&b), Err(Error::Invalid));
 }
+#[test]
+fn completed_primary_wins_over_later_hci_interface() {
+    let mut b = config();
+    let first = usb::select(&b).unwrap();
+    let mut later = config()[9..].to_vec();
+    later[2] = 1;
+    b.extend_from_slice(&later);
+    b[2] = b.len() as u8;
+    b[4] = 2;
+    assert_eq!(usb::select(&b), Ok(first));
+}
+
 #[test]
 fn scan_fixture_from_descriptor_through_commands_to_ad_fields() {
     usb::select(&config()).unwrap();

@@ -76,3 +76,12 @@ SCのP-256公開鍵生成/ECDHはhost側`sc_crypto.rs`と固定版p256で計算�
 所有者決定2026-10-17：**0.4は案A採用**、最初にprepare成功したcontrollerを保持。root/port探索順でdongle優先を普遍保証しません。実選択IDを記録し、内蔵識別はdongleを外して実施。**案Bは0.5候補**でCONFIGの`bt=dongle`・`bt=internal`・`bt=VVVV:PPPP`構文を提案しますが、未実装で現行keyではありません。ID一致・不在・曖昧時処理は未設計です。vendor優先の案Cは採用しません。
 
 一次仕様は上記Bluetooth Core 5.4 Vol4 PartE。試験とEFI来歴は`out/bluetooth-standard-probe/verification.json`へ記録し、実機値は所有者採取まで未確認です。
+
+
+### Primary-interface selection regression (2026-10-17)
+
+The owner-supplied 177-byte layout (not a physical raw descriptor dump) has interface 0 with interrupt IN `81`/16 and bulk OUT `02`, IN `82`/64; interface 1 has SCO alternate 0 with two zero-size isochronous endpoints and alternates 1–5 with sizes 9/17/25/33/49. The previous selector rejected its later SCO interface as a second HCI candidate. Selection now finalizes the first complete alternate-zero HCI interface and ignores later interface/alternate endpoint semantics while still validating descriptor framing. An incomplete primary or isochronous endpoint inside it still fails. No SCO context, SET_INTERFACE or firmware command is added. This fixture demonstrates the proposed layout, not that the physical 7265 has supplied those exact bytes. Re-run standard identification before deciding controller compatibility.
+
+### 主interface選択の回帰確認（2026-10-17）
+
+所有者提示の177byte構成（実機raw dumpではありません）はIF0がinterrupt IN `81`/16、bulk OUT `02`・IN `82`/64、IF1はSCO alt0にsize0のisoc2本、alt1〜5にsize9/17/25/33/49を持ちます。旧selectorは後続SCOを第2HCI候補として拒否しました。最初の完全なalt0 HCI interfaceを確定後、後続interface/altのendpoint意味を選択対象から外し、descriptorの構造検査は維持します。主interfaceの不足や主内isocは引き続き拒否します。SCO context、SET_INTERFACE、firmware commandは追加しません。このfixtureは提示構成の再現であり、実7265から同一raw bytesを取得した証拠ではありません。標準識別の再試験後に互換性を判断します。
