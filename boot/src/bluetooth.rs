@@ -176,6 +176,13 @@ pub fn service(viewer: &mut musha_viewer::Viewer, now: u64) {
         }
     }
 
+    // Stage lines would otherwise stay hidden behind the viewer.
+    static TAIL_SEEN: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+    let seen = TAIL_SEEN.load(Ordering::Relaxed);
+    TAIL_SEEN.store(
+        crate::bootlog::bluetooth_tail(seen, |line| viewer.push_log(line)),
+        Ordering::Relaxed,
+    );
     let message = unsafe { (&mut *UI.0.get()).take() };
     if let Some(message) = message {
         match message {

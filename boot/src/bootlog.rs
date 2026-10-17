@@ -126,6 +126,65 @@ fn event_inner(level: Level, tag: &str, args: fmt::Arguments<'_>, summary: bool)
         text.used += 1;
     }
     emit(level, ms, &text.bytes[..text.used], summary);
+    if level == Level::Devices && tag == "bluetooth" && devices() {
+        retain_bluetooth(ms, args);
+    }
+}
+/// Newest Bluetooth Devices lines for the viewer. These records are the same
+/// metadata-only lines already logged; nothing else is retained here.
+struct Tail {
+    lines: [[u8; 156]; 6],
+    lengths: [usize; 6],
+    count: u64,
+}
+struct TailCell(UnsafeCell<Tail>);
+unsafe impl Sync for TailCell {} // BSP only; accessed under the log lease.
+static TAIL: TailCell = TailCell(UnsafeCell::new(Tail {
+    lines: [[0; 156]; 6],
+    lengths: [0; 6],
+    count: 0,
+}));
+fn retain_bluetooth(ms: u64, args: fmt::Arguments<'_>) {
+    struct Line {
+        bytes: [u8; 156],
+        used: usize,
+    }
+    impl Write for Line {
+        fn write_str(&mut self, value: &str) -> fmt::Result {
+            let n = value.len().min(self.bytes.len() - self.used);
+            self.bytes[self.used..self.used + n].copy_from_slice(&value.as_bytes()[..n]);
+            self.used += n;
+            Ok(())
+        }
+    }
+    let mut line = Line {
+        bytes: [0; 156],
+        used: 0,
+    };
+    let _ = write!(line, "{}.{:03} {}", ms / 1000, ms % 1000, args);
+    let Some(_lease) = lease() else {
+        return;
+    };
+    unsafe {
+        let t = &mut *TAIL.0.get();
+        let slot = (t.count % 6) as usize;
+        t.lines[slot] = line.bytes;
+        t.lengths[slot] = line.used;
+        t.count = t.count.saturating_add(1);
+    }
+}
+/// Calls `f` with each retained line newer than `seen`, oldest first, and
+/// returns the new count. At most the last six lines are available.
+pub fn bluetooth_tail(seen: u64, mut f: impl FnMut(&str)) -> u64 {
+    let Some(_lease) = lease() else {
+        return seen;
+    };
+    let t = unsafe { &*TAIL.0.get() };
+    for n in seen.max(t.count.saturating_sub(6))..t.count {
+        let slot = (n % 6) as usize;
+        f(core::str::from_utf8(&t.lines[slot][..t.lengths[slot]]).unwrap_or("?"));
+    }
+    t.count
 }
 fn emit(level: Level, ms: u64, bytes: &[u8], summary: bool) {
     if level == Level::Error {

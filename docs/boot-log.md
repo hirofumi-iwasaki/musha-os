@@ -159,6 +159,8 @@ All previously diagnostic values feed this same log, including:
 
 Actual PCI revisions, safe BAR resource values, Realtek TxConfig40, physical USB speed/topology, I218 link/NVM behavior and Bluetooth device compatibility still require their machine records. Fixture values are not physical measurements. No field is moved into a hidden secondary panel. Repeated producer events may evict old ring records; the loss counter makes that bounded-history limit explicit.
 
+Viewer Bluetooth tail (2026-10-17): with `log=devices` or `log=trace`, the file viewer shows the six newest `bluetooth:` Devices lines on rows 19–26 (header, then newest last; a long line wraps to at most two rows). These are the same metadata-only records as the boot log, with a seconds.milliseconds prefix; no keys, passkeys, random values or full addresses. A new line repaints only those rows, within the existing 8192-pixel-per-tick budget. The hex page view keeps its own rows and hides the tail. `log=ready` and `log=quiet` never show it.
+
 ## 日本語
 
 状態：**所有者決定、2026-10-16。** 従来の起動時表示（診断パネル、左列の探索表示、`PM ms` の下端行、色付きの状態語、赤い例外帯、別配置のアプリコンソール）を全て置き換える。v0.4.0（目標 6 をこの仕様でやり直す）以降に適用。関連：[v0.4.0 範囲](release-scope-0.4.0.md) 目標 6・7・16、[v0.5.0 範囲](release-scope-0.5.0.md) 目標 11（シリアル複写）、[起動設定](startup-configuration.md)。
@@ -315,3 +317,5 @@ ExitBootServices 後、新 OS page table 構築前に BSP が PAT entry 1 を WC
 | runtime／app／time | startup milestone、PM epoch timestamp と duration、stream identity/cancel、app loading/validation/start/exit/reject/fault、DMA 停止後の scrub/reuse と viewer 再開 |
 
 実 PCI revision／安全な BAR 値／Realtek TxConfig40／物理 USB speed と構成／I218 link と NVM／Bluetooth 対象互換は各実機記録が必要である。fixture 値を実測と扱わない。別 panel へ隠さず、反復イベントで古い記録が追い出された場合は損失数により履歴上限を明示する。
+
+ビューアーの Bluetooth 末尾表示（2026-10-17）: `log=devices` または `log=trace` のとき、ファイルビューアーの 19〜26 行目に最新 6 件の `bluetooth:` Devices 行を表示します（見出しの下に新しいものが最後、長い行は最大 2 行に折返し）。起動ログと同じメタデータのみの記録に秒.ミリ秒を付けたもので、鍵・passkey・乱数値・完全なアドレスは出しません。新しい行が来たときはその行範囲だけを、従来の 1 tick 8192 画素の予算内で再描画します。16 進ページ表示では自身の行を優先し、末尾表示は隠れます。`log=ready` と `log=quiet` では表示しません。

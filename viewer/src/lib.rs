@@ -9,6 +9,11 @@ use musha_api::{
 pub const PAGE: usize = 256;
 pub const READ_TIMEOUT_MS: u64 = 10_000;
 const ROWS: usize = 10;
+// Diagnostic tail: header row, then the newest lines wrapped to two rows max.
+const LOG_FIRST: usize = 19;
+const LOG_LAST: usize = 26;
+const LOG_LINES: usize = 6;
+const LOG_WIDTH: usize = 78;
 const BG: [u8; 3] = [12, 20, 32];
 const FG: [u8; 3] = [218, 228, 238];
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,6 +127,12 @@ pub struct Viewer {
     clear: usize,
     line: usize,
     dirty: bool,
+    // Metadata-only Bluetooth log tail; repainted alone, within the same budget.
+    log: [Text<{ 2 * LOG_WIDTH }>; LOG_LINES],
+    log_count: usize,
+    log_dirty: bool,
+    log_clear: usize,
+    log_row: usize,
 }
 impl Default for Viewer {
     fn default() -> Self {
@@ -166,6 +177,55 @@ impl Viewer {
             clear: 0,
             line: 0,
             dirty: true,
+            log: [const { Text::new() }; LOG_LINES],
+            log_count: 0,
+            log_dirty: false,
+            log_clear: 0,
+            log_row: LOG_FIRST,
+        }
+    }
+    /// Append one diagnostic line (metadata only, ASCII). Longer text is cut at
+    /// two display rows. Only the log rows are repainted, never the whole screen.
+    pub fn push_log(&mut self, line: &str) {
+        let mut text = Text::new();
+        for c in line.chars() {
+            let c = if c.is_ascii_graphic() || c == ' ' {
+                c
+            } else {
+                '?'
+            };
+            if text.write_char(c).is_err() {
+                break;
+            }
+        }
+        self.log[self.log_count % LOG_LINES] = text;
+        self.log_count = self.log_count.saturating_add(1);
+        self.log_dirty = true;
+        self.log_clear = 0;
+        self.log_row = LOG_FIRST;
+    }
+    fn log_shown(&self) -> bool {
+        self.log_count != 0 && self.view != View::Page
+    }
+    fn log_line(&self, row: usize, out: &mut Text<80>) {
+        if row == LOG_FIRST {
+            let _ = out.write_str("Bluetooth log (devices, newest last):");
+            return;
+        }
+        // Fill rows upward from the bottom with the newest lines first.
+        let mut below = LOG_LAST - row;
+        for k in 0..self.log_count.min(LOG_LINES) {
+            let text = self.log[(self.log_count - 1 - k) % LOG_LINES].as_str();
+            let rows = text.len().div_ceil(LOG_WIDTH).max(1);
+            if below < rows {
+                let segment = rows - 1 - below;
+                let start = segment * LOG_WIDTH;
+                let end = (start + LOG_WIDTH).min(text.len());
+                let _ = out.write_str(if segment == 0 { "" } else { "  " });
+                let _ = out.write_str(&text[start..end]);
+                return;
+            }
+            below -= rows;
         }
     }
     /// Set only after the boot-file reader reports State::Absent, never on I/O failure.
@@ -702,6 +762,7 @@ impl Viewer {
                     let _ = out.write_char('|');
                 }
             }
+            LOG_FIRST..=LOG_LAST if self.log_shown() => self.log_line(row, &mut out),
             27 => {
                 let _ =
                     out.write_str("256 bytes/page. Home: first page. Non-ASCII names use \\uXXXX.");
@@ -713,6 +774,9 @@ impl Viewer {
     pub fn render_step(&mut self, ctx: &mut Context<'_>) -> Result<bool, musha_api::Error> {
         self.passkey_tick(ctx.now_ms());
         if !self.dirty {
+            if self.log_dirty && self.log_shown() {
+                self.log_step(ctx)?;
+            }
             return Ok(false);
         }
         let (w, h) = ctx.screen_size();
@@ -748,6 +812,38 @@ impl Viewer {
             return Ok(true);
         }
         Ok(false)
+    }
+}
+impl Viewer {
+    /// Clears the log band in at most 8192-pixel slices, then draws one row
+    /// per call, like the full repaint.
+    fn log_step(&mut self, ctx: &mut Context<'_>) -> Result<(), musha_api::Error> {
+        let (w, h) = ctx.screen_size();
+        let m = musha_framebuffer::metrics::Metrics::viewer(w, h);
+        let top = m.y(musha_framebuffer::metrics::MARGIN + LOG_FIRST).min(h);
+        let bottom = m
+            .y(musha_framebuffer::metrics::MARGIN + LOG_LAST + 1)
+            .min(h);
+        let band = w * (bottom - top);
+        if self.log_clear < band {
+            let x = self.log_clear % w;
+            let y = top + self.log_clear / w;
+            let n = (w - x).min(8192);
+            ctx.rectangle(x, y, n, 1, BG)?;
+            self.log_clear += n;
+            return Ok(());
+        }
+        let text = self.line(self.log_row);
+        let x = m.x(musha_framebuffer::metrics::MARGIN);
+        let y = m.y(musha_framebuffer::metrics::MARGIN + self.log_row);
+        if w > x && y + 8 * m.scale <= h {
+            ctx.text_at(text.as_str(), x, y, FG, m.scale)?;
+        }
+        self.log_row += 1;
+        if self.log_row > LOG_LAST {
+            self.log_dirty = false;
+        }
+        Ok(())
     }
 }
 const _: () = assert!(core::mem::size_of::<Viewer>() < 16 * 1024);
@@ -1067,6 +1163,70 @@ mod tests {
             }
             assert_eq!(&pixels[stride * h..], &[0xdeadbeef; 4]);
         }
+    }
+    #[test]
+    fn bluetooth_log_tail_fills_rows_upward_and_wraps_long_lines() {
+        let mut v = Viewer::new();
+        assert_eq!(v.line(19).as_str(), "");
+        v.push_log("1.000 LE scan enabled");
+        assert_eq!(v.line(19).as_str(), "Bluetooth log (devices, newest last):");
+        assert_eq!(v.line(26).as_str(), "1.000 LE scan enabled");
+        assert_eq!(v.line(25).as_str(), "");
+        let long = std::format!("2.000 {}", "x".repeat(100));
+        v.push_log(&long);
+        assert_eq!(v.line(25).as_str(), &long[..78]);
+        assert_eq!(v.line(26).as_str(), std::format!("  {}", &long[78..]));
+        assert_eq!(v.line(24).as_str(), "1.000 LE scan enabled");
+        // Longer than two rows is cut; control characters are replaced.
+        v.push_log(&std::format!("3.000 \u{1}{}", "y".repeat(300)));
+        assert!(v.line(26).as_str().len() <= 80);
+        assert!(v.line(25).as_str().starts_with("3.000 ?"));
+        // Six lines are retained; the oldest is dropped, newest stays at the bottom.
+        for i in 0..7 {
+            v.push_log(&std::format!("{}.000 stage {}", 10 + i, i));
+        }
+        assert_eq!(v.line(20).as_str(), "");
+        assert_eq!(v.line(21).as_str(), "11.000 stage 1");
+        assert_eq!(v.line(26).as_str(), "16.000 stage 6");
+        // The hex page view keeps its own rows.
+        v.view = View::Page;
+        assert_eq!(v.line(26).as_str(), "");
+    }
+    #[test]
+    fn a_new_log_line_repaints_only_the_log_rows() {
+        let (w, h) = (640, 480);
+        let mut pixels = std::vec![0u32; w * h];
+        let fb = musha_framebuffer::Framebuffer {
+            base: pixels.as_mut_ptr() as usize,
+            bytes: w * h * 4,
+            width: w,
+            height: h,
+            stride: w,
+            format: 0,
+        };
+        let mut arena = [0; 1];
+        let mut ctx = unsafe { Context::new(&mut arena, fb).unwrap() };
+        let mut v = Viewer::new();
+        v.push_log("1.000 first");
+        while !v.painted() || v.log_dirty {
+            v.render_step(&mut ctx).unwrap();
+        }
+        let m = musha_framebuffer::metrics::Metrics::viewer(w, h);
+        let top = m.y(musha_framebuffer::metrics::MARGIN + LOG_FIRST);
+        let bottom = m.y(musha_framebuffer::metrics::MARGIN + LOG_LAST + 1);
+        let before = pixels.clone();
+        v.push_log("2.000 connect stage=LE create connection phase=6");
+        assert!(v.painted() && v.log_dirty);
+        let mut steps = 0;
+        while v.log_dirty {
+            assert!(!v.render_step(&mut ctx).unwrap());
+            steps += 1;
+        }
+        assert!(v.painted());
+        assert!(steps > LOG_LAST - LOG_FIRST);
+        assert_eq!(&pixels[..top * w], &before[..top * w]);
+        assert_eq!(&pixels[bottom * w..], &before[bottom * w..]);
+        assert_ne!(&pixels[top * w..bottom * w], &before[top * w..bottom * w]);
     }
     #[test]
     fn pairing_entry_is_a_visible_refusal_until_runtime_security_is_connected() {
