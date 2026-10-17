@@ -1073,6 +1073,19 @@ fn configure(
     }
     #[cfg(feature = "bluetooth-hci-probe")]
     if let Ok(transport) = musha_platform::bluetooth::usb::select(&bytes[..length]) {
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "probe VID={:04x} PID={:04x} bcdDevice={:04x} interfaces={} HCI-interface={} slot={} port={}",
+                u16::from_le_bytes([descriptor[8], descriptor[9]]),
+                u16::from_le_bytes([descriptor[10], descriptor[11]]),
+                u16::from_le_bytes([descriptor[12], descriptor[13]]),
+                bytes[4],
+                transport.interface,
+                slot,
+                port
+            ),
+        );
         bluetooth::probe(
             host,
             pool,

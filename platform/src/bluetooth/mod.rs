@@ -15,6 +15,7 @@ pub mod hogp;
 #[cfg(feature = "bluetooth-legacy")]
 pub mod legacy;
 pub mod lifecycle;
+pub mod probe;
 #[cfg(feature = "bluetooth-security")]
 pub mod reconnect;
 #[cfg(feature = "bluetooth-security")]

@@ -47,3 +47,32 @@ Physical BT is unverified. HOGP keyboard hardware is deferred to v0.5.0; Magic K
 実BT未検証。HOGP keyboard実機はv0.5.0、Magic A3118 ClassicはLE対象外。[工程6](stage6-0.4.0-progress.md)参照。
 
 Development EFI identity / 開発EFIの識別: [three diagnostic artifacts and original provenance](hardware-acceptance-0.4.0.md#development-efi). Select the purpose-specific artifact and record CONFIG; these are not normal-candidate acceptance. / 用途別artifactとCONFIGを識別し、通常候補受入とは区別してください。
+
+
+## Standard HCI identification round — English (2026-10-17)
+
+Use a development `bluetooth-hci-probe,diagnostics-detail` EFI with `log=devices`, `display=max`, and no `pair=on`. This probe accepts the standard E0/01/01 USB HCI interface regardless of VID. It probes each matched interface during enumeration; the normal stack instead retains the first successfully prepared controller. A label is not controller identity. Record VID/PID, bcdDevice, interface count/HCI interface, physical port and every command status.
+
+1. **Remove the external dongle first**, cold boot the NUC5 with this probe and photograph the internal 7265 identity. The probe sends only Reset `0x0C03`, Read Local Version `0x1001`, Read Local Supported Features `0x1003`, LE Read Local Supported Features `0x2003`, and Read BD_ADDR `0x1009`. Record HCI/LMP versions, revisions, manufacturer, feature masks and address. Reset failure or malformed/transport failure stops that probe; a nonzero status on an information command is recorded and later commands continue. An unsupported LE-feature command alone is not proof of unusable ROM. The COMPLETE marker means the bounded sequence finished, not that every information command succeeded. Fragmented/coalesced or unsolicited events are rejected by this probe; a transport/framing failure alone does not establish ROM incompatibility. Each command has a bounded event wait; there is no firmware download, Intel `0xFC11`/`0xFC05`, patch command, flash programming or pairing in this probe. Standard Reset does change volatile controller state; it is not a passive USB-descriptor read. Unknown/ROM firmware can reject or time out; hardware recovery/power procedures remain owner-controlled.
+2. **Test the external dongle with the normal stack and Xbox1914**, using the existing P → live input-monitor → durable save → cold reconnect procedure above. Record the selected controller identity; an internal adapter may win the present first-arrival selection. Controller selection is not changed by this procedure.
+3. **Only after recording both results, test 7265 pairing separately** using the normal stack and a BLE peer. Identification success is not pairing/HOGP compatibility. Do not claim an untested device or firmware patch is supported.
+
+Secure Connections P-256 public-key generation/ECDH runs in the host (`sc_crypto.rs`, fixed p256 dependency); no LE Read Local P-256 Public Key `0x2025` or LE Generate DHKey `0x2026` command is used. Thus a controller lacking those optional key commands is not rejected for that reason alone. This does not establish controller/peer interoperability or provide an audit claim for the cryptographic library.
+
+Owner decision2026-10-17: **A is adopted for v0.4**, retaining the first controller whose prepare succeeds. Root/port traversal does not universally guarantee dongle-first selection. Record actual selected identity and remove the dongle for built-in identification. **B is a v0.5 candidate**, with proposed CONFIG syntax `bt=dongle`, `bt=internal` or `bt=VVVV:PPPP`; it is unimplemented and not a supported key. Identity matching and absent/ambiguous handling remain design work. C (vendor preference) is not adopted.
+
+Source: [Bluetooth Core 5.4, Vol 4 Part E HCI commands](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html). Test outcomes and exact EFI provenance are recorded under `out/bluetooth-standard-probe/verification.json`; physical values remain uncollected until owner testing.
+
+## 標準HCI識別ラウンド — 日本語（2026-10-17）
+
+開発用 `bluetooth-hci-probe,diagnostics-detail` EFIを使い、`log=devices`、`display=max`、`pair=on`なしとします。標準E0/01/01 USB HCI interfaceをVID制限なしで選び、probe版は列挙中の各適合interfaceを調べます。通常stackは最初にprepare成功したcontrollerを保持します。ラベルを実IDとせず、VID/PID・bcdDevice・interface数/HCI interface・物理port・各command statusを撮影します。
+
+1. **外付けdongleを外して**NUC5をprobe版で冷間起動し、内蔵7265を採取します。送信するのはReset `0x0C03`、Local Version `0x1001`、Local Supported Features `0x1003`、LE Local Supported Features `0x2003`、BD_ADDR `0x1009`だけです。HCI/LMP版・revision・manufacturer・feature mask・addressを記録します。Reset失敗、形式不正、transport失敗はそのprobeを中止。情報commandの非zero statusは表示して後続へ進み、LE feature非対応だけでROM全体が使用不能とは断定しません。COMPLETE markerは試行列の完了で全command成功を意味しません。このprobeは分割/結合/非要求eventを安全拒否し、そのtransport/framing失敗だけでROM非互換と断定しません。待機は有界で、firmware download、Intel `0xFC11`/`0xFC05`、patch、flash program、pairingは行いません。ただし標準Resetは揮発状態を変更し、受動的なUSB descriptor読取りとは異なります。未知/ROM firmwareの拒否・timeoutの可能性があり、電源等の復旧操作は所有者判断です。
+2. **外付けdongle＋通常stack＋Xbox1914**を、上記のP→live input-monitor→永続保存→冷間再接続の順で試します。先着選択で内蔵側が選ばれる可能性があるため実際のcontroller IDを記録します。本手順では選択方式を変更しません。
+3. **両結果の記録後に7265のpairingを別試験**します。識別成功はpairing/HOGP互換性を証明せず、未試験機器やfirmware patch対応を主張しません。
+
+SCのP-256公開鍵生成/ECDHはhost側`sc_crypto.rs`と固定版p256で計算し、controllerのLE P-256 Public Key `0x2025`/Generate DHKey `0x2026`は使いません。この任意commandが無いことだけで拒否しませんが、実機互換性や暗号libraryの監査範囲を保証する意味ではありません。
+
+所有者決定2026-10-17：**0.4は案A採用**、最初にprepare成功したcontrollerを保持。root/port探索順でdongle優先を普遍保証しません。実選択IDを記録し、内蔵識別はdongleを外して実施。**案Bは0.5候補**でCONFIGの`bt=dongle`・`bt=internal`・`bt=VVVV:PPPP`構文を提案しますが、未実装で現行keyではありません。ID一致・不在・曖昧時処理は未設計です。vendor優先の案Cは採用しません。
+
+一次仕様は上記Bluetooth Core 5.4 Vol4 PartE。試験とEFI来歴は`out/bluetooth-standard-probe/verification.json`へ記録し、実機値は所有者採取まで未確認です。

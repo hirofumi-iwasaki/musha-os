@@ -63,64 +63,113 @@ pub(super) fn probe(
         ((configuration as u32) << 16) | 0x0900,
         0,
     )?;
-    // Borrowed command is copied to DMA before submission. No key/secret logging.
-    let command = [3, 12, 0];
-    let setup = transport
-        .command_setup(&command, composite)
-        .map_err(|_| "BT COMMAND")?;
-    control_write(
-        host,
-        slot,
-        control_ring,
-        buffer,
-        &command,
-        u32::from_le_bytes(setup[..4].try_into().unwrap()),
-        u16::from_le_bytes(setup[4..6].try_into().unwrap()),
-    )?;
-    unsafe {
-        core::ptr::write_bytes(receive as *mut u8, 0, 512);
-        publish(
-            ring,
-            [receive as u32, 0, 257, (1 << 10) | (1 << 5) | (1 << 2) | 1],
+    // Five standard commands only, one outstanding command and at most 1s each.
+    // Every command uses a new event-ring TRB; storage is retained until host stop.
+    for (index, opcode) in musha_platform::bluetooth::probe::COMMANDS
+        .into_iter()
+        .enumerate()
+    {
+        let command = [opcode as u8, (opcode >> 8) as u8, 0];
+        let setup = transport
+            .command_setup(&command, composite)
+            .map_err(|_| "BT COMMAND")?;
+        control_write(
+            host,
+            slot,
+            control_ring,
+            buffer,
+            &command,
+            u32::from_le_bytes(setup[..4].try_into().unwrap()),
+            u16::from_le_bytes(setup[4..6].try_into().unwrap()),
+        )?;
+        let trb = ring + index * 16;
+        unsafe {
+            core::ptr::write_bytes(receive as *mut u8, 0, 512);
+            publish(
+                trb,
+                [receive as u32, 0, 257, (1 << 10) | (1 << 5) | (1 << 2) | 1],
+            );
+        }
+        host.regs
+            .write(host.doorbell + slot as usize * 4, dci as u32)?;
+        let mut residual = None;
+        super::super::event_dispatch(
+            host.regs,
+            host.clock,
+            host.events,
+            host.consumer,
+            host.runtime,
+            host.ac64,
+            trb,
+            host.ports,
+            slot,
+            dci,
+            1000,
+            host.keyboard_pending,
+            Some(&mut host.keyboard_saved),
+            host.bulk_pending,
+            Some(&mut host.bulk_saved),
+            host.mouse_pending,
+            Some(&mut host.mouse_saved),
+            Some((trb, 257)),
+            Some(&mut residual),
+            Some(&mut host.bt_mailbox),
+        )?;
+        let actual = 257usize
+            .checked_sub(residual.ok_or("BT EVENT RESIDUAL")? as usize)
+            .ok_or("BT EVENT LENGTH")?;
+        let mut bytes = [0; 257];
+        for (i, byte) in bytes[..actual].iter_mut().enumerate() {
+            *byte = unsafe { (receive as *const u8).add(i).read_volatile() };
+        }
+        let reply = musha_platform::bluetooth::probe::reply(opcode, &bytes[..actual])
+            .map_err(|_| "BT EVENT")?;
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "HCI CC opcode={:04x} status={:02x} credits={}",
+                opcode, reply.status, reply.credits
+            ),
         );
+        if reply.status == 0 {
+            let d = reply.data;
+            match opcode {
+                0x1001 => crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "version HCI={:02x} revision={:04x} LMP={:02x} manufacturer={:04x} subversion={:04x}",
+                        d[0],
+                        u16::from_le_bytes([d[1], d[2]]),
+                        d[3],
+                        u16::from_le_bytes([d[4], d[5]]),
+                        u16::from_le_bytes([d[6], d[7]])
+                    ),
+                ),
+                0x1003 | 0x2003 => crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "{} features={:016x}",
+                        if opcode == 0x1003 { "local" } else { "LE" },
+                        u64::from_le_bytes(d.try_into().unwrap())
+                    ),
+                ),
+                0x1009 => crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "BDADDR={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                        d[5], d[4], d[3], d[2], d[1], d[0]
+                    ),
+                ),
+                _ => crate::debug(b"MUSHA: BT_HCI_RESET_TRANSPORT_OK\n"),
+            }
+        } else if opcode == 0x0c03 {
+            return Err("BT RESET FAILED");
+        }
+        if reply.credits == 0 {
+            return Err("BT COMMAND CREDIT ZERO");
+        }
     }
-    host.regs
-        .write(host.doorbell + slot as usize * 4, dci as u32)?;
-    let mut residual = None;
-    super::super::event_dispatch(
-        host.regs,
-        host.clock,
-        host.events,
-        host.consumer,
-        host.runtime,
-        host.ac64,
-        ring,
-        host.ports,
-        slot,
-        dci,
-        1000,
-        host.keyboard_pending,
-        Some(&mut host.keyboard_saved),
-        host.bulk_pending,
-        Some(&mut host.bulk_saved),
-        host.mouse_pending,
-        Some(&mut host.mouse_saved),
-        Some((ring, 257)),
-        Some(&mut residual),
-        Some(&mut host.bt_mailbox),
-    )?;
-    let actual = 257 - residual.unwrap_or(0) as usize;
-    let mut bytes = [0; 257];
-    for (i, byte) in bytes[..actual].iter_mut().enumerate() {
-        *byte = unsafe { (receive as *const u8).add(i).read_volatile() };
-    }
-    let (credits, opcode, result) = Event::parse(&bytes[..actual])
-        .and_then(|e| e.complete())
-        .map_err(|_| "BT EVENT")?;
-    if credits == 0 || opcode != 0x0c03 || result != [0] {
-        return Err("BT RESET FAILED");
-    }
-    crate::debug(b"MUSHA: BT_HCI_RESET_TRANSPORT_OK\n");
+    crate::debug(b"MUSHA: BT_HCI_STANDARD_PROBE_COMPLETE\n");
     // The caller disables the slot and outer Host confirms halt/BME-off before
     // pool reuse. A timeout propagates outward with the DMA allocation retained.
     Ok(())
