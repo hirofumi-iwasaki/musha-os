@@ -47,6 +47,7 @@ v0.4.0 makes the drive, settings, input (USB and BLE) and the viewer usable as a
 | I2C-HID touchpads | Designware I2C controller and HID over I2C for 2017+ laptops whose touchpad is not PS/2. | After goal 12; needs the reference laptop |
 | UASP storage | USB Attached SCSI for sticks and enclosures without a BOT alternate. | Read-only, same quiesce rules |
 | Generic HID report-descriptor parsing | Beyond the two v0.4.0 reference BLE devices and the USB boot-protocol keyboard/mouse. | Carried from the v0.4.0 exclusion list |
+| Bluetooth firmware download from a user-supplied file | Bluetooth 5 controllers (Realtek RTL8761B, Intel 8265/9260/AX200/AX201 incl. the NUC11TNKi3's AX201, Qualcomm, MediaTek) need a host firmware download before HCI works. The project never redistributes vendor firmware: as on Linux, the user places the vendor file on the drive (location and naming to be decided under the drive naming rule) and the OS loads it at boot (Intel bootloader/SFI, Realtek vendor commands). | Owner decision 2026-10-17: candidate, not a goal; decide at v0.5.0 scoping or v0.6.0 |
 | Realtek RTL8125 (2.5GbE) | If a reference machine with RTL8125 is added. | Not required while the Ryzen 7 machine has RTL8111H |
 
 ### Beyond v0.5.0 (from the games scenario)
@@ -55,7 +56,7 @@ The [games scenario](scenario-games-godot.md) (Godot as the placeholder target, 
 
 ### Explicitly outside v0.5.0 (as of this draft)
 
-A command shell, processes, pipes or terminals (see the [no-shell principle](no-shell-policy.md)); Wi-Fi and built-in Bluetooth (firmware redistribution); vendor-class USB controllers (Xbox over USB / GIP); Apple SPI keyboards (2016–2017 MacBook Pro); AHCI/NVMe/eMMC; SMP; HDMI/DisplayPort audio; Bluetooth audio (A2DP, LE Audio); Mac internal speakers; audio mixing of multiple streams; sample-rate conversion; application file-write API; built-in Intel wireless/Bluetooth; preemption; multiple concurrent applications; ABI freeze; TCP or an application network API.
+A command shell, processes, pipes or terminals (see the [no-shell principle](no-shell-policy.md)); Wi-Fi and built-in Bluetooth that needs a firmware download (the project redistributes no vendor firmware; legacy ROM-mode Intel 7260/7265 is the exception tried in v0.4.0); vendor-class USB controllers (Xbox over USB / GIP); Apple SPI keyboards (2016–2017 MacBook Pro); AHCI/NVMe/eMMC; SMP; HDMI/DisplayPort audio; Bluetooth audio (A2DP, LE Audio); Mac internal speakers; audio mixing of multiple streams; sample-rate conversion; application file-write API; built-in Intel wireless/Bluetooth; preemption; multiple concurrent applications; ABI freeze; TCP or an application network API.
 
 ### Decisions needed from the owner (collected during v0.4.0)
 
@@ -112,6 +113,7 @@ v0.4.0 で USB・設定・入力（USB と BLE）・ビューアーが小さな�
 | I2C-HID タッチパッド | 2017 年以降のタッチパッドが PS/2 でないノート PC 向けの Designware I2C コントローラーと HID over I2C。 | 目標 12 の後。基準ノート PC が必要 |
 | UASP ストレージ | BOT の代替設定を持たない USB メモリー・ケース向けの USB Attached SCSI。 | 読出し専用、同じ機器静止規則 |
 | 汎用 HID レポートディスクリプター解釈 | v0.4.0 の基準 BLE 2 機器と USB boot protocol のキーボード・マウス以外。 | v0.4.0 の除外一覧から持越し |
+| 利用者が置いたファイルからの Bluetooth ファームウェア転送 | Bluetooth 5 のコントローラー（Realtek RTL8761B、Intel 8265/9260/AX200/AX201〔NUC11TNKi3 の AX201 を含む〕、Qualcomm、MediaTek）は HCI が動く前にホストからのファームウェア転送が要る。プロジェクトはベンダーのファームウェアを再配布しない：Linux と同様に利用者がベンダーのファイルを USB に置き（場所と名前は USB 上の命名規則の下で決める）、OS が起動時に転送する（Intel のブートローダー／SFI、Realtek のベンダーコマンド）。 | 所有者決定 2026-10-17：候補であり目標ではない。v0.5.0 の範囲決定時か v0.6.0 で判断 |
 | Realtek RTL8125（2.5GbE） | RTL8125 搭載の基準機を追加した場合。 | Ryzen 7 機が RTL8111H である間は不要 |
 
 ### v0.5.0 より後（ゲーム用途シナリオから）
@@ -120,7 +122,7 @@ v0.4.0 で USB・設定・入力（USB と BLE）・ビューアーが小さな�
 
 ### v0.5.0 に含めないもの（この草案時点）
 
-コマンドシェル・プロセス・パイプ・端末（[シェルを持たない原則](no-shell-policy.md)参照）。Wi-Fi と内蔵 Bluetooth（ファームウェアの再配布）。ベンダークラスの USB コントローラー（USB 接続の Xbox／GIP）。Apple の SPI キーボード（2016〜2017 年 MacBook Pro）。AHCI/NVMe/eMMC。SMP。HDMI/DisplayPort 音声。Bluetooth 音声（A2DP、LE Audio）。Mac 内蔵スピーカー。複数ストリームのミキシング。サンプリング周波数変換。アプリ向けファイル書込み API。内蔵 Intel 無線/Bluetooth。プリエンプション。複数アプリの同時実行。ABI の固定。TCP やアプリ向け通信 API。
+コマンドシェル・プロセス・パイプ・端末（[シェルを持たない原則](no-shell-policy.md)参照）。Wi-Fi と、ファームウェア転送を要する内蔵 Bluetooth（プロジェクトはベンダーのファームウェアを再配布しない。レガシー ROM モードの Intel 7260/7265 は v0.4.0 で試す例外）。ベンダークラスの USB コントローラー（USB 接続の Xbox／GIP）。Apple の SPI キーボード（2016〜2017 年 MacBook Pro）。AHCI/NVMe/eMMC。SMP。HDMI/DisplayPort 音声。Bluetooth 音声（A2DP、LE Audio）。Mac 内蔵スピーカー。複数ストリームのミキシング。サンプリング周波数変換。アプリ向けファイル書込み API。内蔵 Intel 無線/Bluetooth。プリエンプション。複数アプリの同時実行。ABI の固定。TCP やアプリ向け通信 API。
 
 ### 所有者の判断が必要な点（v0.4.0 中に集める）
 
