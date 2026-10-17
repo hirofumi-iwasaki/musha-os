@@ -162,6 +162,20 @@ mod retirement_tests {
         ]
     }
     #[test]
+    fn quiet_pending_in_cannot_be_rearmed_and_retirement_keeps_exact_loan() {
+        let mut m = Mailbox::new();
+        m.arm(0, 0x1000, 2, 3, 257, true).unwrap();
+        // Quiet poll: no completion exists. Neither take nor elapsed time owns
+        // a cancellation; DMA loan remains pending until completion or retire.
+        assert_eq!(m.take(0), None);
+        assert!(m.arm(0, 0x1010, 2, 3, 257, true).is_err());
+        m.retire_slot(2, &[0x2000, 0x2010, 0x2020]).unwrap();
+        assert!(m.pending[0].is_some());
+        assert!(m.save(event(0x1000, 2, 3, 26)));
+        assert!(!m.save(event(0x1010, 2, 3, 26)));
+        assert!(m.arm(0, 0x1010, 2, 3, 257, true).is_err());
+    }
+    #[test]
     fn retirement_consumes_only_exact_old_bt_td_and_keeps_other_saved_work() {
         let mut m = Mailbox::new();
         m.arm(0, 0x1000, 2, 3, 257, true).unwrap();

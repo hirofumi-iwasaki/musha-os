@@ -137,3 +137,174 @@ fn clearing_bluetooth_held_keys_does_not_release_usb_held_keys() {
     keys.key(0, 4, false, |k, d| events.push((k, d)));
     assert_eq!(events, [(5, false), (4, false)]);
 }
+
+#[test]
+fn warmup_waits_for_correlated_complete_without_renewing_deadline() {
+    use isolation::{WarmupEvent, warmup_event};
+    let mut n = 0;
+    for p in [
+        vec![0x13, 5, 1, 5, 0, 1, 0],
+        vec![0x0f, 4, 0, 1, 3, 0x0c],
+        vec![0x0e, 12, 1, 1, 0x10, 0, 6, 0xbb, 0x22, 6, 10, 0, 0xbb, 0x22],
+    ] {
+        assert!(matches!(
+            warmup_event(&p, 0x0c03, 1000, 100, &mut n),
+            Ok(WarmupEvent::Pending(_))
+        ));
+    }
+    assert!(matches!(
+        warmup_event(&[0x0e, 4, 1, 3, 0x0c, 0], 0x0c03, 1000, 999, &mut n),
+        Ok(WarmupEvent::Complete {
+            credits: 1,
+            result: [0]
+        })
+    ));
+    assert!(matches!(
+        warmup_event(&[0x0e, 4, 1, 3, 0x0c, 0], 0x0c03, 1000, 1000, &mut n),
+        Err("BT ENTROPY COMMAND TIMEOUT")
+    ));
+}
+#[test]
+fn warmup_malformed_errors_and_zero_credits_are_rejected() {
+    for p in [
+        vec![],
+        vec![0x13, 1, 0],
+        vec![0x13, 9, 2, 5, 0, 1, 0, 5, 0, 1, 0],
+        vec![0x13, 5, 1],
+        vec![0x13, 5, 1, 0xff, 0xff, 1, 0],
+        vec![0x0f, 3, 0, 1, 3],
+        vec![0x0f, 4, 0, 0, 3, 0x0c],
+        vec![0x0f, 4, 1, 1, 3, 0x0c],
+        vec![0x0f, 4, 0, 1, 1, 0x10],
+        vec![0x0e, 4, 0, 3, 0x0c, 0],
+        vec![0x0e, 3, 1, 3, 0x0c],
+        vec![0x10, 1, 1],
+    ] {
+        assert!(isolation::warmup_event(&p, 0x0c03, 1000, 1, &mut 0).is_err());
+    }
+}
+#[test]
+fn warmup_async_events_have_a_fixed_count_cap() {
+    let mut n = 0;
+    for _ in 0..64 {
+        assert!(
+            isolation::warmup_event(&[0x13, 5, 1, 5, 0, 1, 0], 0x0c03, 1000, 1, &mut n).is_ok()
+        );
+    }
+    assert!(matches!(
+        isolation::warmup_event(&[0x13, 5, 1, 5, 0, 1, 0], 0x0c03, 1000, 1, &mut n),
+        Err("BT ENTROPY EVENT LIMIT")
+    ));
+}
+#[test]
+fn warmup_rand_payload_is_only_consumed_after_matching_complete_and_health_checked() {
+    use isolation::{WarmupEvent, warmup_event};
+    use musha_platform::bluetooth::sources::{HciFailure, HciRand};
+    let mut samples = HciRand::new();
+    let mut n = 0;
+    for index in 0..4u8 {
+        let mut p = vec![0x0e, 12, 1, 0x18, 0x20, 0];
+        p.extend_from_slice(&(u64::from(index) + 17).to_le_bytes());
+        let WarmupEvent::Complete { result, .. } =
+            warmup_event(&p, 0x2018, 1000, 10, &mut n).unwrap()
+        else {
+            panic!()
+        };
+        let ready = samples.complete(result).unwrap();
+        assert_eq!(ready.is_some(), index == 3);
+    }
+    let mut bad = HciRand::new();
+    let p = [0x0e, 12, 1, 0x18, 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let WarmupEvent::Complete { result, .. } = warmup_event(&p, 0x2018, 1000, 10, &mut n).unwrap()
+    else {
+        panic!()
+    };
+    // Existing HciRand health policy, not a diagnostic-only duplicate.
+    let mut outcome = bad.complete(result);
+    for _ in 1..4 {
+        if outcome.is_ok() {
+            outcome = bad.complete(result);
+        }
+    }
+    assert!(matches!(outcome, Err(HciFailure::Health)));
+}
+
+#[test]
+fn drain_quiet_and_hard_deadlines_do_not_clear_pending_in() {
+    let mut d = isolation::Drain::new(100);
+    assert!(!d.finished(149).unwrap());
+    assert!(d.finished(150).unwrap());
+    d.event(140).unwrap();
+    assert!(!d.finished(199).unwrap());
+    assert!(d.finished(200).unwrap());
+    d.event(299).unwrap();
+    assert!(d.finished(300).unwrap());
+    assert!(d.finished(99).is_err());
+}
+#[test]
+fn late_reset_retry_is_once_and_keeps_original_deadline() {
+    use isolation::{WarmupEvent, retry_after_reset, warmup_event};
+    let mut count = 0;
+    let mut used = false;
+    let p = [0x0e, 4, 1, 3, 0x0c, 0];
+    assert!(matches!(
+        warmup_event(&p, 0x1001, 1000, 100, &mut count),
+        Ok(WarmupEvent::LateReset { credits: 1 })
+    ));
+    retry_after_reset(0x1001, 1000, 100, &mut used).unwrap();
+    assert!(retry_after_reset(0x1001, 1000, 101, &mut used).is_err());
+    assert!(retry_after_reset(0x2018, 1000, 1000, &mut false).is_err());
+    assert!(warmup_event(&[0x0e, 4, 1, 3, 0x0c, 1], 0x1001, 1000, 100, &mut count).is_err());
+    assert!(matches!(
+        warmup_event(&[0xff, 0], 0x1001, 1000, 101, &mut count),
+        Ok(WarmupEvent::Pending("unknown-wellformed-discard"))
+    ));
+    assert!(matches!(
+        warmup_event(&p, 0x0c03, 1000, 100, &mut count),
+        Ok(WarmupEvent::Complete { .. })
+    ));
+}
+
+#[test]
+fn drained_old_reset_then_version_barrier_before_rand() {
+    use isolation::{WarmupEvent, warmup_event};
+    let mut n = 0;
+    let reset = [0x0e, 4, 1, 3, 0x0c, 0];
+    // During drain the correlated parser result is deliberately not applied.
+    assert!(matches!(
+        warmup_event(&reset, 0x0c03, 2000, 20, &mut n),
+        Ok(WarmupEvent::Complete { .. })
+    ));
+    assert!(matches!(
+        warmup_event(&[5, 4, 0, 5, 0, 0x13], 0x0c03, 2000, 21, &mut n),
+        Ok(WarmupEvent::Pending(_))
+    ));
+    assert!(matches!(
+        warmup_event(&reset, 0x0c03, 1000, 100, &mut n),
+        Ok(WarmupEvent::Complete { .. })
+    ));
+    assert!(matches!(
+        warmup_event(&reset, 0x1001, 1100, 110, &mut n),
+        Ok(WarmupEvent::LateReset { .. })
+    ));
+    let version = [0x0e, 12, 1, 1, 0x10, 0, 6, 0xbb, 0x22, 6, 10, 0, 0xbb, 0x22];
+    let WarmupEvent::Complete { result, .. } =
+        warmup_event(&version, 0x1001, 1100, 120, &mut n).unwrap()
+    else {
+        panic!()
+    };
+    assert!(isolation::valid_version(result));
+    assert!(!isolation::valid_version(&result[..8]));
+    assert!(!isolation::valid_version(&[1; 9]));
+}
+
+#[test]
+fn drain_rejects_malformed_known_return_lengths_but_records_valid_error_status() {
+    use isolation::{WarmupEvent, warmup_event};
+    assert!(warmup_event(&[0x0e, 5, 1, 3, 0x0c, 0, 0], 0x0c03, 1000, 1, &mut 0).is_err());
+    assert!(warmup_event(&[0x0e, 4, 1, 1, 0x10, 0], 0x0c03, 1000, 1, &mut 0).is_err());
+    assert!(matches!(
+        warmup_event(&[0x0e, 4, 1, 3, 0x0c, 1], 0x0c03, 1000, 1, &mut 0),
+        Ok(WarmupEvent::Complete { .. })
+    ));
+}

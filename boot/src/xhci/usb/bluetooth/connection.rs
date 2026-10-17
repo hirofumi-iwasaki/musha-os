@@ -480,7 +480,18 @@ impl Device {
         action: bt::hogp::DiscoveryAction,
     ) -> Result<(), &'static str> {
         match action {
-            bt::hogp::DiscoveryAction::Send(p, n) => self.queue(4, &p[..n], now)?,
+            bt::hogp::DiscoveryAction::Send(p, n) => {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "ATT queue intent request={:02x} handle={:04x} len={}",
+                        p[0],
+                        u16::from_le_bytes([p[1], p[2]]),
+                        n
+                    ),
+                );
+                self.queue(4, &p[..n], now)?;
+            }
             bt::hogp::DiscoveryAction::Ready(keyboard) => {
                 if self.reused {
                     self.method = if keyboard
@@ -546,12 +557,37 @@ impl Device {
             return Ok(());
         }
         let bond = self.bond.as_ref().ok_or("BT UNAUTHENTICATED ATT")?;
-        let action = self
-            .gatt
-            .as_mut()
-            .ok_or("BT GATT STATE")?
-            .receive(p, bond)
-            .map_err(|_| "BT HOGP DISCOVERY UNSUPPORTED")?;
+        let gatt = self.gatt.as_mut().ok_or("BT GATT STATE")?;
+        let diagnostic = gatt.diagnostic(p);
+        crate::bootlog::device("bluetooth", format_args!("{}", diagnostic));
+        let action = match gatt.receive(p, bond) {
+            Ok(action) => {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!("HOGP stage={} accepted", diagnostic.stage),
+                );
+                action
+            }
+            Err(error) => {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "HOGP stage={} rejected error={:?} reason={}",
+                        diagnostic.stage,
+                        error,
+                        diagnostic.reason(error)
+                    ),
+                );
+                return Err(match diagnostic.stage {
+                    "services" => "BT HOGP SERVICES REJECTED",
+                    "characteristics" => "BT HOGP CHARACTERISTICS REJECTED",
+                    "report-map" => "BT HOGP REPORT MAP REJECTED",
+                    "descriptors" => "BT HOGP DESCRIPTORS REJECTED",
+                    "reference" => "BT HOGP REFERENCE OR MAP BINDING REJECTED",
+                    _ => "BT HOGP DISCOVERY REJECTED",
+                });
+            }
+        };
         self.gatt_action(now, action)
     }
 }

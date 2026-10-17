@@ -124,3 +124,50 @@ This inventory does not claim that every older controller accepts the selected e
 For the next normal development retry, retain Devices logs for the distinct intent/submitted/control-completed/Event/CC stages; see [the comparison](bluetooth-transfer-alignment-0.4.0.md). A TX intent alone is not wire transmission. Warm-up now runs consecutively before other USB enumeration, with painting deferred.
 
 日本語: 次の通常開発版では[比較表](bluetooth-transfer-alignment-0.4.0.md)に従い、意図・実送信・USB control完了・TransferEvent・HCI CCを区別して撮影してください。TX意図だけで実送信と断定しません。warm-upは他USB列挙前に連続実行し、その間の画面描画を延期します。
+
+
+## 2026-10-17 HOGP discovery diagnostics (development, not acceptance)
+
+After successful Reset/Rand, a later `BT HOGP ... REJECTED` is a discovery failure, not proof that the controller lacks Bluetooth support. With `log=devices`, photograph `ATT queue intent` and `HOGP stage=... request=... handle=... response=... len=...` through the `accepted` or `rejected error=<variant> reason=<context>` line. An ATT Error Response adds its requested opcode, handle and error code. Queue intent is not proof of transmission. AttributeNotFound may normally end characteristic/descriptor discovery; only the actual executor result labels it accepted or rejected. Record Map bytes, notification payloads, keys, passkeys and random values are never dumped.
+
+The viewer retains the rejecting stage (services, characteristics, Report Map, descriptors, or reference/map binding). It does not establish the exact missing attribute by itself. Preserve these bounded metadata lines and use the real response to construct a regression fixture before changing compatibility rules. Discovery limits and accepted formats are unchanged. No physical Xbox HOGP acceptance or durable bond save is claimed by the local diagnostics tests.
+
+## 日本語: HOGP探索診断（2026-10-17、開発検証）
+
+Reset/Rand成功後の `BT HOGP ... REJECTED` は探索失敗であり、controllerのBluetooth非対応を意味しません。`log=devices` で `ATT queue intent`、`HOGP stage=... request=... handle=... response=... len=...` から `accepted` または `rejected error=<variant> reason=<context>` まで撮影してください。ATT Error Responseは要求opcode・handle・error codeだけを追加します。queue intentは実送信証明ではありません。AttributeNotFoundはcharacteristic/descriptor探索の正常終端にも使われるため、実探索結果に従ってaccepted/rejectedを表示します。Report Map本文・通知payload・鍵・passkey・乱数値は出しません。
+
+viewerには拒否段階（service、characteristic、Report Map、descriptor、reference/map binding）が残ります。この表示だけでは不足属性を確定できません。公開メタデータを保存し、実応答を回帰fixtureにしてから互換性の修正を判断します。探索上限・受理形式は変更していません。ローカル診断試験は実XboxのHOGP受入やbond永続保存の証明ではありません。
+
+
+## Initial Reset/Rand event correlation — English (2026-10-17)
+
+The normal warm-up waits for Command Complete matching the outstanding Reset (`0c03`) or LE Rand (`2018`) opcode, within the original command deadline and 2-second operation / at most 1-second isolation soft budget. A successful matching Command Status retains the pending command; rejected status or zero credits stops Bluetooth. A structurally valid unrelated Command Complete is recorded but changes neither credits nor command state. At most 64 events are examined across warm-up; waiting never renews deadlines.
+
+Before any connection/ACL submission, valid Number Of Completed Packets (nonzero count, unique valid handles), Disconnection Complete and LE Advertising Reports may be consumed as pre-connection events after their structural checks. Stale packet counts are not credited to a future ACL queue or replayed into a future connection. Controller Hardware Error or malformed events stop Bluetooth; unknown envelope-valid events are now explicitly logged and discarded under the same count/time caps (the Reset synchronization update supersedes the earlier unknown-event rejection) and retain the existing safe slot-isolation boundary. After warm-up the existing connection dispatcher is unchanged. New Devices metadata includes event code and parameter length, plus pending classification and expected opcode; it never includes Rand bytes or other secret payloads. The actual event code in IMG_7690 was not recorded, so this change does not identify that event as Number Of Completed Packets.
+
+**Deployment setting path is `SETTINGS/CONFIG.TXT`**, containing `log=devices`, `display=max`, `lan.echo=off`. Root `CONFIG.TXT` is not read as boot settings. The previous deployment mistakenly added a root file; the video nevertheless directly showed the preserved settings loaded as Devices/Max/pair=false/echo=off. A future authorized USB update must inspect both paths, preserve user data and separately correct that extra root file. No USB repair is part of this source change.
+
+## 日本語: 初回Reset/Randの応答相関（2026-10-17）
+
+通常warm-upは未完了Reset(`0c03`)/LE Rand(`2018`)に一致するCommand Completeを、元のcommand絶対期限と操作2秒＋隔離最大1秒のソフト予算内で待ちます。一致する成功Command StatusではCC待ちを継続し、拒否statusやcredit0ではBTを停止します。構造上正しい別opcode CCは記録するだけでcredit・command状態を変えません。warm-up全体最大64events、待機による期限延長はありません。
+
+接続・ACL送信前では、Number Of Completed Packets（非0件数・重複なしの有効handle）、Disconnection Complete、LE Advertising Reportsを構造検証後に初期化前イベントとして消費できます。古いpacket数を将来のACLへ加算したり将来接続へ再生したりしません。Hardware Error・不正形式はBT停止と既存の安全隔離へ進みます。Reset同期更新後は、外枠が正しい未知イベントだけを分類ログ付き・同じ件数/時間上限で破棄します（旧未知イベント即拒否を置換）。warm-up以後のconnection dispatcherは変更していません。Devicesにevent code/parameter長、待機分類/対象opcodeのみを追加し、Rand等の秘密payloadは出しません。IMG_7690の実event codeは未採取であり、そのイベントをCompleted Packetsと断定していません。
+
+設定の正しい場所は **`SETTINGS/CONFIG.TXT`** です。devices/max/echo offをそこへ配置します。rootのCONFIGは起動設定として読まれません。前回配備では誤ってrootへ追加しましたが、動画では既存設定のDevices/Max/pair=false/echo off読込を直接確認しました。次の承認済みUSB更新時には両pathと利用者データを確認して余分なroot fileを別途訂正します。今回USB修正は行っていません。
+
+
+## Reset synchronization retry — English (2026-10-17)
+
+The normal discovery-only first pass sends no HCI command; the separate `bluetooth-hci-probe` does. USB slot re-enumeration is not a power cycle and does not prove that the controller event FIFO is empty. After SET_CONFIGURATION, the normal path drains events before Reset (target 100 ms, maximum 200 ms, early finish after 50 ms with no events). Every drained event is structurally checked and logged by code/length/count only. A quiet interrupt-IN TD remains owned/pending; neither its DMA buffer, mailbox identity nor ring cursor is reused or cleared by the drain timeout. Exact late completion remains correlated, and failure still requires confirmed slot isolation.
+
+The initial sequence is Reset `0c03` → matching Read Local Version `1001` (status 0, exact return length) → four LE Rand `2018` attempts. A valid successful Reset CC arriving while Version/Rand is pending permits **one retransmission of that pending parameter-free command**, with opcode/retry metadata. Its original absolute command deadline and the overall 2-second operation plus maximum 1-second isolation budget remain unchanged. Further late Reset, invalid status/credit or expired deadline fails safely. Unknown but envelope-valid events may now be logged/discarded within the 64-event cap; malformed/Hardware Error remains fail-closed. This does not establish which of the two Reset CCs seen in IMG_7691 was old or current.
+
+For the retry, photograph the drain summary, Reset CC, Version CC, Rand CC and any `HCI late Reset CC; retry ...` line. See [the implementation and limits](bluetooth-reset-synchronization-0.4.0.md). The operational budget is a software deadline, not an assurance that physical firmware/USB/rendering never adds latency. No USB update is included in this source change.
+
+## 日本語: Reset同期と限定再送（2026-10-17）
+
+通常版discovery専用の初回列挙はHCI命令を送りません。別featureのprobeは送信します。USB再列挙は電源断ではなく、controllerのevent FIFOが空である証明にもなりません。SET_CONFIGURATION後、Reset前にイベントをドレインします（目標100ms、最大200ms、無イベント50msで早期終了）。全イベントを構造検証しcode/長さ/件数だけ記録します。quiet時のinterrupt-IN TDはpending所有を維持し、DMA・mailbox相関・ring cursorを再利用/解除しません。遅着完了も正確に相関し、失敗時の安全隔離は維持します。
+
+初回順序はReset `0c03` → Read Local Version `1001` の一致CC（status0・厳密な返却長）→ LE Rand `2018` 4回です。Version/Rand待ちに妥当な成功Reset CCが来た場合、待っている引数なし命令を **1回だけ再送** しopcode/retryを記録します。元command絶対期限、操作2秒＋隔離最大1秒の総予算は延長しません。2回目の遅着Reset・不正status/credit・期限切れは安全停止します。外枠が妥当な未知イベントは64件上限内で記録破棄し、不正形式・Hardware Errorは拒否します。IMG_7691の2つのReset CCのどちらが古い/今回のものかは断定していません。
+
+再試験ではdrain summary、Reset CC、Version CC、Rand CC、再送行を撮影してください。[実装と限界](bluetooth-reset-synchronization-0.4.0.md)参照。これはソフト期限であり物理firmware/USB/描画の遅延を厳密に保証するものではありません。今回USB更新はしていません。

@@ -290,6 +290,17 @@ fn same_discovery_executor_multiple_report_descriptors_and_blob() {
             ],
             _ => panic!("unexpected request"),
         };
+        let diagnostic = d.diagnostic(&response);
+        assert_eq!(diagnostic.request, p[0]);
+        assert_eq!(diagnostic.request_handle, h);
+        assert_eq!(diagnostic.response, response.first().copied());
+        let text = format!("{}", diagnostic);
+        assert!(text.contains(&format!("request={:02x}", p[0])));
+        if response[0] == 1 {
+            assert_eq!(diagnostic.att_error, Some((p[0], h, 0x0a)));
+            assert!(text.contains("code=0a"));
+        }
+        // In particular, AttributeNotFound ends characteristics/descriptors normally.
         action = d.receive(&response, &bond).unwrap();
     }
 }
@@ -394,4 +405,51 @@ fn directed_empty_ad_reconnect_uses_only_stored_identity_and_authenticated_map()
             .single_kind()
             .is_err()
     );
+}
+
+#[test]
+fn discovery_diagnostics_missing_service_and_malformed_do_not_claim_success() {
+    let bond = verified();
+    for p in [vec![1, 0x10, 1, 0, 0x0a], vec![], vec![1, 0x10]] {
+        let mut d = Discovery::new();
+        let before = d.diagnostic(&p);
+        assert_eq!(before.stage, "services");
+        assert_eq!(before.request, 0x10);
+        assert!(d.receive(&p, &bond).is_err());
+        assert_eq!(d.diagnostic(&[]).stage, "failed");
+        // Saved metadata remains the rejecting stage, even after fail-closed state change.
+        assert_eq!(before.stage, "services");
+        assert!(!format!("{}", before).contains("status=00"));
+    }
+}
+
+#[test]
+fn discovery_map_limit_diagnostic_uses_actual_rejecting_executor() {
+    let bond = verified();
+    let mut d = Discovery::new();
+    for p in [
+        vec![0x11, 6, 1, 0, 32, 0, 0x12, 0x18],
+        vec![
+            9, 7, 2, 0, 2, 3, 0, 0x4b, 0x2a, 4, 0, 0x10, 5, 0, 0x4d, 0x2a,
+        ],
+        vec![1, 8, 6, 0, 0x0a],
+    ] {
+        d.receive(&p, &bond).unwrap();
+    }
+    let mut p = vec![0x0b; 23];
+    d.receive(&p, &bond).unwrap();
+    p[0] = 0x0d;
+    for _ in 1..93 {
+        d.receive(&p, &bond).unwrap();
+    }
+    let diagnostic = d.diagnostic(&p);
+    assert_eq!(diagnostic.stage, "report-map");
+    assert_eq!(diagnostic.map_bytes, 2046);
+    assert_eq!(diagnostic.request_handle, 3);
+    assert_eq!(
+        diagnostic.reason(Error::Length),
+        "map-length-or-response-format"
+    );
+    assert!(matches!(d.receive(&p, &bond), Err(Error::Length)));
+    assert_eq!(d.diagnostic(&[]).stage, "failed");
 }

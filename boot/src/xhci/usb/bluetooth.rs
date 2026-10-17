@@ -337,6 +337,9 @@ pub(in crate::xhci) unsafe fn release_stopped(owner: u16) -> bool {
 pub(in crate::xhci) struct Device {
     entropy_samples: musha_platform::bluetooth::sources::HciRand,
     entropy_reset: bool,
+    entropy_version: bool,
+    entropy_retry: bool,
+    entropy_events: u8,
     initialize_deadline: u64,
     scan_command: Option<(u16, u64)>,
     slot: u8,
@@ -533,6 +536,9 @@ pub(super) fn prepare(
         (&mut *DEVICE.0.get()).write(Device {
             entropy_samples: musha_platform::bluetooth::sources::HciRand::new(),
             entropy_reset: false,
+            entropy_version: false,
+            entropy_retry: false,
+            entropy_events: 0,
             initialize_deadline: host.bt_deadline.ok_or("BT INITIALIZATION DEADLINE")?,
             scan_command: None,
             slot,
@@ -598,10 +604,60 @@ impl Device {
         observe_hci(bytes)?;
         if !self.entropy_samples.done() {
             let event = Event::parse(bytes).map_err(|_| "BT ENTROPY EVENT")?;
-            let (credits, opcode, result) = event.complete().map_err(|_| "BT ENTROPY COMPLETE")?;
-            if self.command.map(|p| p.0) != Some(opcode) || result.is_empty() {
-                return Err("BT ENTROPY COMMAND");
-            }
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "HCI warm-up event code={:02x} param-len={}",
+                    event.code,
+                    event.parameters.len()
+                ),
+            );
+            let (opcode, deadline) = self.command.ok_or("BT ENTROPY NO COMMAND")?;
+            let actual_now = host.clock.now()?;
+            isolation::remaining(self.initialize_deadline, actual_now)?;
+            let (credits, result) = match isolation::warmup_event(
+                bytes,
+                opcode,
+                deadline,
+                actual_now,
+                &mut self.entropy_events,
+            )? {
+                isolation::WarmupEvent::Complete { credits, result } => (credits, result),
+                isolation::WarmupEvent::LateReset { credits } => {
+                    isolation::retry_after_reset(
+                        opcode,
+                        deadline,
+                        actual_now,
+                        &mut self.entropy_retry,
+                    )?;
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "HCI late Reset CC; retry opcode={:04x} retry=1 deadline-unchanged=true",
+                            opcode
+                        ),
+                    );
+                    self.command = None;
+                    self.command_credits = credits;
+                    let outer_deadline = host.bt_deadline;
+                    host.bt_deadline = Some(self.initialize_deadline.min(deadline));
+                    let sent = self.send_command(host, actual_now, opcode, &[]);
+                    host.bt_deadline = outer_deadline;
+                    self.command = Some((opcode, deadline));
+                    sent?;
+                    return Ok(());
+                }
+                isolation::WarmupEvent::Pending(kind) => {
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "HCI warm-up pending={} expected={:04x} events={}/64",
+                            kind, opcode, self.entropy_events
+                        ),
+                    );
+                    return Ok(());
+                }
+            };
             if !self.entropy_reset {
                 crate::bootlog::device(
                     "entropy",
@@ -616,6 +672,23 @@ impl Device {
                 self.command = None;
                 self.command_credits = credits;
                 self.entropy_reset = true;
+                return Ok(());
+            }
+            if !self.entropy_version {
+                if opcode != 0x1001 || !isolation::valid_version(result) || credits == 0 {
+                    return Err("BT INITIAL VERSION REJECTED");
+                }
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "HCI synchronization ReadLocalVersion status=00 HCI={:02x} manufacturer={:04x}",
+                        result[1],
+                        u16::from_le_bytes([result[5], result[6]])
+                    ),
+                );
+                self.command = None;
+                self.command_credits = credits;
+                self.entropy_version = true;
                 return Ok(());
             }
             if opcode != 0x2018 {
@@ -724,12 +797,15 @@ impl Device {
                     return Err("BT ENTROPY COMMAND TIMEOUT");
                 }
             } else {
-                self.send_command(
-                    host,
-                    now,
-                    if self.entropy_reset { 0x2018 } else { 0x0c03 },
-                    &[],
-                )?;
+                self.entropy_retry = false;
+                let opcode = if !self.entropy_reset {
+                    0x0c03
+                } else if !self.entropy_version {
+                    0x1001
+                } else {
+                    0x2018
+                };
+                self.send_command(host, now, opcode, &[])?;
             }
             // Match the proven probe order: finish the EP0 command TD first,
             // then arm the interrupt IN TD. USB device event FIFO retains CC.
@@ -993,6 +1069,71 @@ pub(super) fn disable_failed_prepare(host: &mut Host<'_>, slot: u8) -> Result<()
 mod isolation;
 
 pub(super) fn warm_up(host: &mut Host<'_>, device: &mut DeviceRef) -> Result<(), &'static str> {
+    // Keep a quiet outstanding IN loan armed: EP0 uses a distinct buffer. Never
+    // clear pending/cursor/mailbox on quiet timeout or reuse its DMA storage.
+    let slot = device.slot;
+    let start = host.clock.now()?;
+    let mut drain = isolation::Drain::new(start);
+    let mut stream =
+        musha_platform::bluetooth::stream::Stream::<257>::new(device.generation, false);
+    loop {
+        let now = host.clock.now()?;
+        isolation::remaining(device.initialize_deadline, now)?;
+        if drain.finished(now)? {
+            break;
+        }
+        device.event.arm(host, slot, None)?;
+        if let Some(n) = device.event.poll(host, slot)? {
+            let mut bytes = [0; 257];
+            if n > bytes.len() {
+                return Err("BT DRAIN LENGTH");
+            }
+            for (i, b) in bytes[..n].iter_mut().enumerate() {
+                *b = unsafe { (device.event.buffer as *const u8).add(i).read_volatile() };
+            }
+            let mut input = &bytes[..n];
+            while !input.is_empty() {
+                let Some(frame) = stream
+                    .next(device.generation, now, &mut input)
+                    .map_err(|_| "BT DRAIN STREAM")?
+                else {
+                    break;
+                };
+                let event = Event::parse(frame).map_err(|_| "BT DRAIN EVENT")?;
+                observe_hci(frame)?;
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "HCI drain event code={:02x} param-len={}",
+                        event.code,
+                        event.parameters.len()
+                    ),
+                );
+                // Validate command/known-event forms without changing live command state.
+                let _ = isolation::warmup_event(
+                    frame,
+                    0x0c03,
+                    device.initialize_deadline,
+                    now,
+                    &mut device.entropy_events,
+                )?;
+                drain.event(now)?;
+                stream.release();
+            }
+        }
+        core::hint::spin_loop();
+    }
+    // Preserve any incomplete framed event rather than silently dropping it.
+    device.event_stream = stream;
+    crate::bootlog::device(
+        "bluetooth",
+        format_args!(
+            "HCI drain complete count={} elapsed={}ms pending-IN={}",
+            drain.count(),
+            host.clock.now()?.saturating_sub(start),
+            device.event.pending
+        ),
+    );
     while !device.entropy_samples.done() {
         device.poll(host)?;
     }

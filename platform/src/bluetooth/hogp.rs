@@ -256,6 +256,66 @@ pub enum DiscoveryAction {
     Send([u8; 7], usize),
     Ready(Reports),
 }
+/// Public ATT metadata only: never contains Report Map, report or security payload bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Diagnostic {
+    pub stage: &'static str,
+    pub request: u8,
+    pub response: Option<u8>,
+    pub length: usize,
+    pub cursor: u16,
+    pub request_handle: u16,
+    pub map_bytes: usize,
+    pub pages: u16,
+    pub att_error: Option<(u8, u16, u8)>,
+}
+impl core::fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "HOGP stage={} request={:02x} handle={:04x} response=",
+            self.stage, self.request, self.request_handle
+        )?;
+        match self.response {
+            Some(op) => write!(f, "{:02x}", op)?,
+            None => f.write_str("n/a")?,
+        }
+        write!(
+            f,
+            " len={} map-bytes={} pages={}",
+            self.length, self.map_bytes, self.pages
+        )?;
+        if let Some((op, handle, code)) = self.att_error {
+            write!(
+                f,
+                " ATT-error request={:02x} handle={:04x} code={:02x}",
+                op, handle, code
+            )?;
+        }
+        Ok(())
+    }
+}
+impl Diagnostic {
+    pub fn reason(self, error: Error) -> &'static str {
+        if self.pages >= 224 {
+            return "response-limit";
+        }
+        if self.att_error.is_some() {
+            return "ATT-error-or-required-attribute-missing";
+        }
+        match (self.stage, error) {
+            ("report-map", Error::Length) => "map-length-or-response-format",
+            ("services", Error::Unsupported) => "HID-service-missing-or-service-format",
+            ("characteristics", Error::Unsupported) => "report-map-or-notify-report-missing",
+            ("descriptors", Error::Unsupported) => "reference-CCCD-missing-or-descriptor-format",
+            ("reference", _) => "reference-format-or-report-map-binding",
+            (_, Error::Length) => "bounded-length-or-count",
+            (_, Error::Invalid) => "invalid-format-handle-order-or-duplicate",
+            (_, Error::Stale) => "bond-generation-mismatch",
+            _ => "discovery-rejected",
+        }
+    }
+}
 impl Discovery {
     pub fn new() -> Self {
         Self {
@@ -269,6 +329,36 @@ impl Discovery {
             map: [0; 2048],
             used: 0,
             pages: 0,
+        }
+    }
+    pub fn diagnostic(&self, p: &[u8]) -> Diagnostic {
+        let (stage, request) = match self.stage {
+            0 => ("services", 0x10),
+            1 => ("characteristics", 0x08),
+            2 => ("descriptors", 0x04),
+            3 => ("report-map", if self.used == 0 { 0x0a } else { 0x0c }),
+            4 => ("reference", 0x0a),
+            5 => ("complete", 0),
+            _ => ("failed", 0),
+        };
+        Diagnostic {
+            stage,
+            request,
+            response: p.first().copied(),
+            length: p.len(),
+            request_handle: match self.stage {
+                3 => self.map_handle,
+                4 if self.index < self.count => self.reports[self.index].reference,
+                _ => self.cursor,
+            },
+            cursor: self.cursor,
+            map_bytes: self.used,
+            pages: self.pages,
+            att_error: if p.len() == 5 && p[0] == 1 {
+                Some((p[1], u16::from_le_bytes([p[2], p[3]]), p[4]))
+            } else {
+                None
+            },
         }
     }
     pub fn request(&self) -> DiscoveryAction {
@@ -501,6 +591,41 @@ impl Discovery {
                 }
             }
             _ => Err(Error::Invalid),
+        }
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    #[test]
+    fn stages_limits_and_error_header_are_bounded_public_metadata() {
+        let mut d = Discovery::new();
+        let stages = [
+            (0, "services", 0x10),
+            (1, "characteristics", 8),
+            (2, "descriptors", 4),
+            (3, "report-map", 0x0a),
+            (4, "reference", 0x0a),
+            (5, "complete", 0),
+            (255, "failed", 0),
+        ];
+        for (stage, name, op) in stages {
+            d.stage = stage;
+            let m = d.diagnostic(&[1, 8, 0x34, 0x12, 5]);
+            assert_eq!((m.stage, m.request), (name, op));
+            assert_eq!(m.att_error, Some((8, 0x1234, 5)));
+            assert!(m.reason(Error::Invalid).contains("ATT-error"));
+        }
+        d.stage = 3;
+        d.used = 2048;
+        let m = d.diagnostic(&[0x0d]);
+        assert_eq!(m.request, 0x0c);
+        assert_eq!(m.reason(Error::Length), "map-length-or-response-format");
+        d.pages = 224;
+        assert_eq!(d.diagnostic(&[]).reason(Error::Length), "response-limit");
+        for p in [&[][..], &[1, 8][..], &[1, 8, 0, 0, 5, 0][..]] {
+            assert_eq!(d.diagnostic(p).att_error, None);
         }
     }
 }
