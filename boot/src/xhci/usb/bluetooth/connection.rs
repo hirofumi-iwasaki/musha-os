@@ -31,7 +31,10 @@ impl Device {
             .transport
             .command_setup(&bytes[..3 + parameters.len()], self.composite)
             .map_err(|_| "BT COMMAND SETUP")?;
-        crate::bootlog::device("bluetooth", format_args!("HCI TX opcode={:04x}", opcode));
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!("HCI TX intent opcode={:04x}", opcode),
+        );
         self.command = Some((opcode, now.checked_add(1000).ok_or("BT TIME")?));
         self.command_credits -= 1;
         let result = control_write(

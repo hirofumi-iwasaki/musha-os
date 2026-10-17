@@ -69,3 +69,58 @@ fn malformed_later_descriptor_is_still_rejected() {
     b[39] = 0;
     assert_eq!(usb::select(&b), Err(Error::Length));
 }
+
+#[test]
+fn owner_177_builds_same_event_context_and_keeps_three_live_endpoints() {
+    let t = usb::select(&owner_intel()).unwrap();
+    let live = musha_platform::bluetooth::usb_context::plan(t, 3, [0x1000, 0x2000, 0x3000], false)
+        .unwrap();
+    let probe = musha_platform::bluetooth::usb_context::plan(t, 3, [0x1000, 0, 0], true).unwrap();
+    assert_eq!(live.add_flags, 0x39);
+    assert_eq!(live.context_entries, 5);
+    assert_eq!(live.count, 3);
+    assert_eq!(probe.add_flags, 9);
+    assert_eq!(probe.context_entries, 3);
+    assert_eq!(probe.count, 1);
+    assert_eq!(live.endpoints[0], probe.endpoints[0]);
+    for (i, dci, ty, packet) in [(0, 3, 7, 16), (1, 5, 6, 64), (2, 4, 2, 64)] {
+        let e = live.endpoints[i];
+        assert_eq!(e.dci, dci);
+        assert_eq!((e.words[1] >> 3) & 7, ty);
+        assert_eq!(e.words[1] >> 16, packet);
+        assert_eq!(e.words[1] & 6, 6);
+    }
+    assert_eq!(
+        live.endpoints[0].words,
+        [
+            3 << 16,
+            (16 << 16) | (7 << 3) | 6,
+            0x1001,
+            0,
+            257 | (257 << 16)
+        ]
+    );
+    assert_eq!(
+        t.command_setup(&[3, 12, 0], false).unwrap(),
+        [0x20, 0, 0, 0, 0, 0, 3, 0]
+    );
+}
+#[test]
+fn csr_context_and_owner_sco_endpoints_never_publish_isochronous_contexts() {
+    let mut b = primary();
+    interface(&mut b, 1, 0, 0);
+    interface(&mut b, 1, 1, 2);
+    endpoint(&mut b, 3, 1, 9);
+    endpoint(&mut b, 0x83, 1, 9);
+    header(&mut b);
+    let t = usb::select(&b).unwrap();
+    let p = musha_platform::bluetooth::usb_context::plan(t, 3, [0x1000, 0x2000, 0x3000], false)
+        .unwrap();
+    assert_eq!(p.add_flags, 0x39);
+    assert!(
+        p.endpoints
+            .iter()
+            .all(|e| !matches!((e.words[1] >> 3) & 7, 1 | 5))
+    );
+    assert!(musha_platform::bluetooth::usb_context::plan(t, 3, [0x1001, 0, 0], false).is_err());
+}

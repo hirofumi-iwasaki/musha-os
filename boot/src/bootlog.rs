@@ -334,6 +334,30 @@ pub fn ready(_application: bool) {
         }
     }
 }
+/// Retain all records but postpone framebuffer painting during bounded device I/O.
+pub struct DeferredScreen {
+    visible: Option<bool>,
+}
+pub fn defer_screen() -> DeferredScreen {
+    let visible = lease().map(|_lease| unsafe {
+        let s = &mut *STATE.0.get();
+        let old = s.console.is_visible();
+        s.console.set_visible(false);
+        old
+    });
+    DeferredScreen { visible }
+}
+impl Drop for DeferredScreen {
+    fn drop(&mut self) {
+        if let Some(visible) = self.visible {
+            if let Some(_lease) = lease() {
+                unsafe {
+                    (*STATE.0.get()).console.set_visible(visible);
+                }
+            }
+        }
+    }
+}
 pub fn viewer(hidden: bool) {
     musha_framebuffer::flush_writes();
     let Some(_lease) = lease() else {

@@ -9,9 +9,9 @@ pub mod att;
 #[cfg(feature = "bluetooth-legacy")]
 pub mod bonding;
 #[cfg(feature = "bluetooth-security")]
-pub mod entropy;
-#[cfg(feature = "bluetooth-security")]
 pub mod drbg;
+#[cfg(feature = "bluetooth-security")]
+pub mod entropy;
 #[cfg(feature = "bluetooth-legacy")]
 pub mod hogp;
 #[cfg(feature = "bluetooth-legacy")]
@@ -25,9 +25,9 @@ pub mod sc;
 #[cfg(feature = "bluetooth-security")]
 pub mod sc_crypto;
 pub mod scan;
-pub mod stream;
 #[cfg(feature = "bluetooth-security")]
 pub mod sources;
+pub mod stream;
 pub mod usb;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -220,3 +220,5 @@ impl<'a> Acl<'a> {
         Ok((channel, &self.payload[4..]))
     }
 }
+
+pub mod usb_context;

@@ -254,7 +254,30 @@ fn control_transfer(
     request: u32,
     interface: u16,
 ) -> Result<u32, &'static str> {
-    let timeout = host.io_timeout()?;
+    let hci = request & 0xffff == 0x20 || request & 0xffff == 0x21;
+    let timeout = host.io_timeout().map_err(|reason| {
+        if hci {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!("HCI control not submitted slot={} reason={}", slot, reason),
+            );
+        }
+        reason
+    })?;
+    if hci {
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "HCI setup slot={} request={:02x}/00 value={} index={} length={} wait-cap={}ms",
+                slot,
+                request & 255,
+                request >> 16,
+                interface,
+                bytes,
+                timeout
+            ),
+        );
+    }
     let incoming = request & 0x80 != 0;
     crate::diagnostics::control_request(slot, request, interface, bytes);
     let plan = host.control_cursors[slot as usize].plan(bytes != 0);
@@ -321,9 +344,15 @@ fn control_transfer(
         && !(cfg!(feature = "usb-control-out-timeout") && bytes != 0 && !incoming)
     {
         host.regs.write(host.doorbell + slot as usize * 4, 1)?;
+        if hci {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!("HCI control submitted slot={} dci=1 length={}", slot, bytes),
+            );
+        }
     }
     let mut residual = None;
-    super::event_dispatch(
+    let completion = super::event_dispatch(
         host.regs,
         host.clock,
         host.events,
@@ -348,7 +377,24 @@ fn control_transfer(
         },
         Some(&mut residual),
         Some(&mut host.bt_mailbox),
-    )?;
+    );
+    if hci {
+        match &completion {
+            Ok(words) => crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "HCI control completed slot={} dci=1 cc={}",
+                    slot,
+                    words[2] >> 24
+                ),
+            ),
+            Err(reason) => crate::bootlog::device(
+                "bluetooth",
+                format_args!("HCI control incomplete slot={} reason={}", slot, reason),
+            ),
+        }
+    }
+    completion?;
     host.bt_control_pending = None;
     host.control_cursors[slot as usize] = plan.next;
     if plan.link_cycle.is_some() {
@@ -1117,8 +1163,9 @@ fn configure(
         )?;
         return Ok(Configured::Other);
     }
-    if !host.discovery && host.bluetooth.is_none() {
+    if !host.discovery && host.bluetooth.is_none() && !host.bt_disabled {
         if let Ok(transport) = musha_platform::bluetooth::usb::select(&bytes[..length]) {
+            let _display = crate::bootlog::defer_screen();
             host.bt_deadline = Some(host.clock.now()?.checked_add(2000).ok_or("BT CLOCK")?);
             let prepared = bluetooth::prepare(
                 host,
@@ -1135,6 +1182,12 @@ fn configure(
                 descriptor[4] != 0xe0,
                 port,
             );
+            // Finish the bounded warm-up here; do not charge unrelated USB
+            // enumeration or console painting between preparation and first poll.
+            let prepared = prepared.and_then(|mut device| {
+                bluetooth::warm_up(host, &mut device)?;
+                Ok(device)
+            });
             host.bt_deadline = None;
             return match prepared {
                 Ok(device) => Ok(Configured::Bluetooth(device)),

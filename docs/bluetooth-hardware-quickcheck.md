@@ -119,3 +119,8 @@ This inventory does not claim that every older controller accepts the selected e
 [BT失敗隔離](bluetooth-isolation-0.4.0.md)を参照してください。`log=devices` / `display=max` でHCIメタデータと保持理由が出るためtraceは不要です。失敗時は `bluetooth: unavailable: <reason>`、キーボードとストレージの継続、Pのlive adapter不在拒否を確認します。CC/CSのopcode・status・creditsとtimeout行を記録してください。Disable Slot等の安全確認に失敗した場合は全session停止を維持します。操作2秒＋隔離最大1秒はソフトウェア予算で、実機時間は未確認です。
 
 上表の通常経路はLE 4.0命令を使います。2022/202f、2027/202d、0c63、1002、2025/2026は送信しません。P-256はhost計算です。古いcontrollerがevent maskの全bitを受理する保証はなく、CSR8510/Intel7265の5本probe成功をscan・pairing成功へ昇格させません。1002を使う機能ゲートは将来案で、返却長と必須bitを検査して送信前拒否する設計候補です。今回実装していません。
+
+
+For the next normal development retry, retain Devices logs for the distinct intent/submitted/control-completed/Event/CC stages; see [the comparison](bluetooth-transfer-alignment-0.4.0.md). A TX intent alone is not wire transmission. Warm-up now runs consecutively before other USB enumeration, with painting deferred.
+
+日本語: 次の通常開発版では[比較表](bluetooth-transfer-alignment-0.4.0.md)に従い、意図・実送信・USB control完了・TransferEvent・HCI CCを区別して撮影してください。TX意図だけで実送信と断定しません。warm-upは他USB列挙前に連続実行し、その間の画面描画を延期します。

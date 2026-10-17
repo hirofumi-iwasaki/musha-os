@@ -34,22 +34,25 @@ pub(super) fn probe(
     let ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
     let receive = pool.allocate(512, 512).ok_or("DMA FULL")?;
     let dci = (transport.event.address & 15) * 2 + 1;
+    let plan = musha_platform::bluetooth::usb_context::plan(
+        transport,
+        interval,
+        [ring as u64, 0, 0],
+        true,
+    )
+    .map_err(|_| "BT CONTEXT PLAN")?;
     unsafe {
         core::ptr::write_bytes(input as *mut u8, 0, 4096);
-        dma_word(input + 4, 1 | (1 << dci));
+        dma_word(input + 4, plan.add_flags);
         for i in 0..3 {
             dma_word(input + stride + i * 4, read_word(output + i * 4));
         }
         let old = read_word(input + stride);
         dma_word(input + stride, (old & !(31 << 27)) | ((dci as u32) << 27));
         let ep = input + (dci as usize + 1) * stride;
-        dma_word(ep, (interval as u32) << 16);
-        dma_word(
-            ep + 4,
-            (3 << 1) | (7 << 3) | ((transport.event.max_packet as u32) << 16),
-        );
-        dma_word(ep + 8, ring as u32 | 1);
-        dma_word(ep + 16, 257 | (257 << 16));
+        for (i, word) in plan.endpoints[0].words.into_iter().enumerate() {
+            dma_word(ep + i * 4, word);
+        }
         publish(ring + (TRBS - 1) * 16, [ring as u32, 0, 0, (6 << 10) | 3]);
         core::arch::asm!("mfence", options(nostack));
     }
@@ -236,6 +239,16 @@ impl Pipe {
         self.pending = true;
         host.regs
             .write(host.doorbell + slot as usize * 4, self.dci as u32)?;
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "event/ACL queued slot={} dci={} length={} IOC=1 ISP={}",
+                slot,
+                self.dci,
+                bytes,
+                u8::from(data.is_none())
+            ),
+        );
         Ok(())
     }
     fn poll(&mut self, host: &mut Host<'_>, slot: u8) -> Result<Option<usize>, &'static str> {
@@ -275,6 +288,16 @@ impl Pipe {
             }
         };
         let bytes = host.bt_mailbox.complete(self.index, words)?;
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "TransferEvent slot={} dci={} cc={} length={}",
+                slot,
+                self.dci,
+                words[2] >> 24,
+                bytes
+            ),
+        );
         self.pending = false;
         self.cursor.advance();
         Ok(Some(bytes))
@@ -414,6 +437,8 @@ pub(super) fn prepare(
     if configuration == 0 {
         return Err("BT CONFIG");
     }
+    let header = musha_platform::bluetooth::usb_context::plan(transport, interval, [0; 3], false)
+        .map_err(|_| "BT CONTEXT PLAN")?;
     let eps = [transport.event, transport.acl_in, transport.acl_out];
     let mut pipes = core::array::from_fn(|i| Pipe {
         ring: 0,
@@ -426,36 +451,42 @@ pub(super) fn prepare(
     });
     unsafe {
         core::ptr::write_bytes(input as *mut u8, 0, 4096);
-        dma_word(
-            input + 4,
-            1 | pipes.iter().fold(0, |flags, p| flags | (1 << p.dci)),
-        );
+        dma_word(input + 4, header.add_flags);
         for i in 0..3 {
             dma_word(input + stride + i * 4, read_word(output + i * 4));
         }
         let old = read_word(input + stride);
-        let max = pipes.iter().map(|p| p.dci).max().unwrap();
+        let max = header.context_entries;
         dma_word(input + stride, (old & !(31 << 27)) | ((max as u32) << 27));
         for (i, p) in pipes.iter_mut().enumerate() {
             p.ring = pool.allocate(4096, 4096).ok_or("DMA FULL")?;
             p.buffer = pool.allocate(2048, 2048).ok_or("DMA FULL")?;
             core::ptr::write_bytes(p.ring as *mut u8, 0, 4096);
+            let plan = musha_platform::bluetooth::usb_context::plan(
+                transport,
+                interval,
+                core::array::from_fn(|j| if j == i { p.ring as u64 } else { 0 }),
+                false,
+            )
+            .map_err(|_| "BT CONTEXT PLAN")?;
+            let context = plan.endpoints[i];
             let ep = input + (p.dci as usize + 1) * stride;
-            dma_word(ep, if i == 0 { (interval as u32) << 16 } else { 0 });
-            dma_word(
-                ep + 4,
-                (3 << 1)
-                    | ((if i == 0 {
-                        7
-                    } else if i == 1 {
-                        6
-                    } else {
-                        2
-                    }) << 3)
-                    | ((eps[i].max_packet as u32) << 16),
+            for (j, word) in context.words.into_iter().enumerate() {
+                dma_word(ep + j * 4, word);
+            }
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "endpoint slot={} dci={} type={} maxpacket={} interval={} addflags={:02x} entries={}",
+                    slot,
+                    p.dci,
+                    (context.words[1] >> 3) & 7,
+                    eps[i].max_packet,
+                    interval,
+                    plan.add_flags,
+                    plan.context_entries
+                ),
             );
-            dma_word(ep + 8, p.ring as u32 | 1);
-            dma_word(ep + 16, if i == 0 { 257 | (257 << 16) } else { 512 });
             publish(
                 p.ring + (TRBS - 1) * 16,
                 [p.ring as u32, 0, 0, (6 << 10) | 3],
@@ -463,8 +494,13 @@ pub(super) fn prepare(
         }
         core::arch::asm!("mfence", options(nostack));
     }
-    host.command(input, (12 << 10) | ((slot as u32) << 24), slot)
+    let completion = host
+        .command(input, (12 << 10) | ((slot as u32) << 24), slot)
         .map_err(|_| "BT CONTEXT COMMAND")?;
+    crate::bootlog::device(
+        "bluetooth",
+        format_args!("ConfigureEndpoint slot={} cc={}", slot, completion[2] >> 24),
+    );
     control(
         host,
         slot,
@@ -486,6 +522,13 @@ pub(super) fn prepare(
         return Err("BT STATE LEASE BUSY");
     }
     crate::bluetooth::active(true);
+    crate::bootlog::device(
+        "bluetooth",
+        format_args!(
+            "HCI initial credits=1; SET_CONFIGURATION={} complete; no SET_INTERFACE",
+            configuration
+        ),
+    );
     let device = unsafe {
         (&mut *DEVICE.0.get()).write(Device {
             entropy_samples: musha_platform::bluetooth::sources::HciRand::new(),
@@ -675,7 +718,6 @@ impl Device {
             .map_err(|_| "BT ACL STREAM TIMEOUT")?;
         if !self.entropy_samples.done() {
             isolation::remaining(self.initialize_deadline, now)?;
-            self.event.arm(host, self.slot, None)?;
             if let Some((opcode, deadline)) = self.command {
                 if now >= deadline {
                     timeout(opcode, now.saturating_sub(deadline.saturating_sub(1000)));
@@ -689,6 +731,9 @@ impl Device {
                     &[],
                 )?;
             }
+            // Match the proven probe order: finish the EP0 command TD first,
+            // then arm the interrupt IN TD. USB device event FIFO retains CC.
+            self.event.arm(host, self.slot, None)?;
             if let Some(n) = self.event.poll(host, self.slot)? {
                 let mut bytes = [0; 257];
                 if n > bytes.len() {
@@ -939,9 +984,17 @@ impl isolation::SlotStop for Stop<'_, '_> {
             core::arch::asm!("mfence", options(nostack));
         }
         self.0.bt_control_pending = None;
+        self.0.bt_disabled = true;
     }
 }
 pub(super) fn disable_failed_prepare(host: &mut Host<'_>, slot: u8) -> Result<(), &'static str> {
     isolation::disable(&mut Stop(host), slot)
 }
 mod isolation;
+
+pub(super) fn warm_up(host: &mut Host<'_>, device: &mut DeviceRef) -> Result<(), &'static str> {
+    while !device.entropy_samples.done() {
+        device.poll(host)?;
+    }
+    Ok(())
+}
