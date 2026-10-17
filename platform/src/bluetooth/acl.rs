@@ -70,7 +70,8 @@ impl Reassembly {
             }
             let expected = word(acl.payload) as usize;
             let channel = word(&acl.payload[2..4]);
-            if expected == 0 || expected > MAX_SDU || !matches!(channel, 4 | 6) {
+            // ATT, LE signaling and SMP fixed channels only.
+            if expected == 0 || expected > MAX_SDU || !matches!(channel, 4 | 5 | 6) {
                 return Err(Error::Unsupported);
             }
             self.expected = expected;

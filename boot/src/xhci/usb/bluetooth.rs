@@ -393,6 +393,10 @@ pub(in crate::xhci) struct Device {
     security: Option<musha_platform::bluetooth::sc::Central>,
     tx: [u8; 1028],
     tx_len: usize,
+    // Short SDUs (signaling, SMP, ATT) queued while `tx` is in flight, in order.
+    deferred: [Option<(u16, [u8; 72], usize)>; 2],
+    signaling: musha_platform::bluetooth::signaling::Signaling,
+    update: Option<musha_platform::bluetooth::signaling::Parameters>,
     tx_at: usize,
     tx_deadline: u64,
     encrypt: Option<[u8; 16]>,
@@ -417,6 +421,13 @@ impl Drop for Device {
         for b in &mut self.tx {
             unsafe {
                 core::ptr::write_volatile(b, 0);
+            }
+        }
+        for (_, bytes, _) in self.deferred.iter_mut().flatten() {
+            for b in bytes {
+                unsafe {
+                    core::ptr::write_volatile(b, 0);
+                }
             }
         }
         if let Some(key) = self.encrypt.as_mut() {
@@ -602,6 +613,9 @@ pub(super) fn prepare(
             security: None,
             tx: [0; 1028],
             tx_len: 0,
+            deferred: [None; 2],
+            signaling: musha_platform::bluetooth::signaling::Signaling::new(),
+            update: None,
             tx_at: 0,
             tx_deadline: 0,
             encrypt: None,

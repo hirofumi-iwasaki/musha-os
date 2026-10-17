@@ -25,6 +25,7 @@ pub mod sc;
 #[cfg(feature = "bluetooth-security")]
 pub mod sc_crypto;
 pub mod scan;
+pub mod signaling;
 #[cfg(feature = "bluetooth-security")]
 pub mod sources;
 pub mod stage;

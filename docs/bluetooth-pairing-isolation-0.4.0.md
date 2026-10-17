@@ -85,3 +85,27 @@ TD ごとの `event/ACL queued` / `TransferEvent` は pipe ごとに 6 件まで
 ## 限界
 
 host 試験は本番の判定関数、mailbox の fault 捕捉、命令応答の相関、TD 長、Advertising/ACL/SMP のフレーミングを合成バイトで実行します。QEMU には Bluetooth controller が無く、Bluetooth 不在 3 構成は既存 USB 機能に影響が無いことだけを示します。実 CSR8510/Intel 7265 のスキャン・ペアリング・HOGP と、IMG_7692 の実際の理由は未確認です。
+
+## LE signaling channel (CID 5) — English (2026-10-17)
+
+IMG_7693 (`5d9443d`) kept the USB session and showed `Bluetooth unavailable: BT ACL REASSEMBLY` right after pairing started. `Reassembly` accepted only CID 4 (ATT) and 6 (SMP). HID peripherals commonly send an L2CAP Connection Parameter Update Request on CID 5 just after connecting; with a CSR8510 whose LE features lack the Connection Parameters Request procedure, this is the peripheral's only way to negotiate. The first ACL is consistent with that request, but the photographed lines did not show its CID.
+
+- CID 5 is reassembled. A Connection Parameter Update Request (0x12) is range-checked (interval 6–3200 with min ≤ max, latency ≤ 499, timeout 10–3200 and longer than (1 + latency) × max × 2). If valid, the host answers accepted (0x13, result 0) and then issues HCI LE Connection Update (0x2013), which completes with Command Status and LE Connection Update Complete. An out-of-range request is answered rejected (result 1), and the connection is kept.
+- Other requests get Command Reject (not understood). Responses, Command Reject and indications are never answered. A repeated identifier is answered only once. A malformed envelope or identifier 0 stops Bluetooth only (`BT L2CAP SIGNALING`).
+- A refused LE Connection Update (non-zero Command Status) is logged and the connection is kept.
+- The LE event mask now also enables LE Connection Update Complete (0x17 instead of 0x13).
+- Up to two short SDUs (signaling, SMP, ATT; at most 72 bytes) are deferred in order while an L2CAP frame is in flight, so a signaling reply cannot cause `BT TX QUEUE FULL`.
+
+New Devices lines: `L2CAP first RX cid=0005 (LE signaling)`, `LE signaling Connection Parameter Update Request id= interval=a-bx1.25ms latency= timeout= accepted|rejected`, `connect stage=LE connection update`, `LE connection update accepted (CS 00)` or `refused CS status=`, and `connection update status= handle= interval= latency= timeout=`. Parameter values are synthetic host fixtures; no Xbox trace was measured.
+
+## 日本語: LE シグナリングチャネル（CID 5、2026-10-17）
+
+IMG_7693（`5d9443d`）では USB セッションを維持したまま、ペアリング開始直後に `Bluetooth unavailable: BT ACL REASSEMBLY` が出ました。`Reassembly` は CID 4（ATT）と 6（SMP）しか受理していませんでした。HID 周辺機器は接続直後に CID 5 で L2CAP Connection Parameter Update Request を送るのが普通です。CSR8510 の LE features に Connection Parameters Request 手続きが無いこの構成では、周辺機器が交渉できる手段はこれだけです。最初の ACL がこの要求だったと考えると整合しますが、撮影した行からは CID を確認できていません。
+
+- CID 5 を再構成します。Connection Parameter Update Request（0x12）は値域を検査します（interval 6〜3200 かつ min ≤ max、latency ≤ 499、timeout 10〜3200 かつ (1 + latency) × max × 2 より長い）。値域内なら accepted（0x13、result 0）で応答し、続けて HCI LE Connection Update（0x2013）を送ります。これは Command Status と LE Connection Update Complete で完了します。値域外は rejected（result 1）で応答し、接続は維持します。
+- その他の要求には Command Reject（not understood）を返します。応答・Command Reject・indication には応答しません。同じ identifier の再送には 1 回だけ応答します。外枠の不正や identifier 0 は Bluetooth だけを止めます（`BT L2CAP SIGNALING`）。
+- LE Connection Update が拒否された場合（Command Status が非 0）は記録だけして接続を維持します。
+- LE event mask に LE Connection Update Complete を追加しました（0x13 → 0x17）。
+- L2CAP フレームの送信中は、短い SDU（シグナリング・SMP・ATT、72 バイト以下）を 2 件まで順序どおりに保留します。シグナリング応答で `BT TX QUEUE FULL` にはなりません。
+
+追加した Devices 行: `L2CAP first RX cid=0005 (LE signaling)`、`LE signaling Connection Parameter Update Request id= interval=a-bx1.25ms latency= timeout= accepted|rejected`、`connect stage=LE connection update`、`LE connection update accepted (CS 00)` または `refused CS status=`、`connection update status= handle= interval= latency= timeout=`。パラメーター値は合成の host fixture で、Xbox の実測ではありません。

@@ -456,6 +456,17 @@ fn le_create_connection_answers_with_command_status_not_complete() {
         })
     );
     assert_eq!(
+        command_reply(0x0f, &[0, 1, 0x13, 0x20], Some(0x2013)),
+        Ok(Reply::Accepted {
+            credits: 1,
+            opcode: 0x2013
+        })
+    );
+    assert_eq!(
+        command_reply(0x0e, &[1, 0x13, 0x20, 0], Some(0x2013)),
+        Err("BT ASYNC COMMAND")
+    );
+    assert_eq!(
         command_reply(0x0f, &[0, 2, 0x19, 0x20], Some(0x2019)),
         Ok(Reply::Accepted {
             credits: 2,

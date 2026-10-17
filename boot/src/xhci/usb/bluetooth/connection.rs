@@ -90,6 +90,7 @@ impl Device {
             5 => Some("LE scan disable"),
             6 => Some("LE create connection"),
             8 if self.encrypt.is_some() => Some("LE start encryption"),
+            8 if self.update.is_some() && self.tx_len == 0 => Some("LE connection update"),
             _ => None,
         } {
             crate::bootlog::device(
@@ -99,7 +100,9 @@ impl Device {
         }
         match self.phase {
             1 => self.send_command(host, now, 0x0c01, &[0x90, 0xe0, 4, 0, 0, 0, 0, 0x20]),
-            2 => self.send_command(host, now, 0x2001, &[0x13, 0, 0, 0, 0, 0, 0, 0]),
+            // Connection Complete, Advertising Report, Connection Update
+            // Complete and Long Term Key Request.
+            2 => self.send_command(host, now, 0x2001, &[0x17, 0, 0, 0, 0, 0, 0, 0]),
             3 => self.send_command(host, now, 0x1009, &[]),
             4 => self.send_command(
                 host,
@@ -129,6 +132,11 @@ impl Device {
                     }
                 }
                 result
+            }
+            // After the accepted signaling response has left the TX slot.
+            8 if self.update.is_some() && self.tx_len == 0 => {
+                let parameters = self.update.take().unwrap();
+                self.send_command(host, now, 0x2013, &parameters.command(self.handle))
             }
             _ => Ok(()),
         }
@@ -171,6 +179,25 @@ impl Device {
                 });
             }
             0x0e | 0x0f => {
+                let p = event.parameters;
+                // A refused LE Connection Update keeps the current parameters.
+                if event.code == 0x0f
+                    && p.len() == 4
+                    && p[0] != 0
+                    && self.command.map(|c| c.0) == Some(0x2013)
+                    && u16::from_le_bytes([p[2], p[3]]) == 0x2013
+                {
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "LE connection update refused CS status={:02x}; connection kept",
+                            p[0]
+                        ),
+                    );
+                    self.command_credits = p[1];
+                    self.command = None;
+                    return Ok(());
+                }
                 let (op, result) = match isolation::command_reply(
                     event.code,
                     event.parameters,
@@ -185,16 +212,23 @@ impl Device {
                     isolation::Reply::Accepted { credits, opcode } => {
                         self.command_credits = credits;
                         self.command = None;
-                        if opcode == 0x200d {
-                            crate::bootlog::device(
+                        match opcode {
+                            0x200d => {
+                                crate::bootlog::device(
+                                    "bluetooth",
+                                    format_args!(
+                                        "LE create connection accepted (CS 00); awaiting LE Connection Complete"
+                                    ),
+                                );
+                                self.phase = 7;
+                            }
+                            0x2013 => crate::bootlog::device(
                                 "bluetooth",
                                 format_args!(
-                                    "LE create connection accepted (CS 00); awaiting LE Connection Complete"
+                                    "LE connection update accepted (CS 00); awaiting update complete"
                                 ),
-                            );
-                            self.phase = 7;
-                        } else {
-                            self.encryption_started = true;
+                            ),
+                            _ => self.encryption_started = true,
                         }
                         return Ok(());
                     }
@@ -364,6 +398,25 @@ impl Device {
                 };
                 self.action(host, now, action)?;
             }
+            0x3e if event.parameters.first() == Some(&3) => {
+                // Metadata only; a failed update keeps the existing connection.
+                match bt::signaling::update_complete(event.parameters) {
+                    Some(u) => crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "connection update status={:02x} handle={:04x} interval={}x1.25ms latency={} timeout={}x10ms",
+                            u.status, u.handle, u.interval, u.latency, u.timeout
+                        ),
+                    ),
+                    None => crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "connection update malformed param-len={}",
+                            event.parameters.len()
+                        ),
+                    ),
+                }
+            }
             0x3e => {} // Unsupported LE meta events never grant authentication.
             _ => {}
         }
@@ -373,10 +426,26 @@ impl Device {
         if data.is_empty() {
             return Ok(());
         }
-        if self.tx_len != 0 || data.len() > 1024 {
+        if data.len() > 1024 {
             return Err("BT TX QUEUE FULL");
         }
         self.log_l2cap("TX", channel, data);
+        if self.tx_len != 0 || self.deferred[0].is_some() {
+            // Signaling can interleave with SMP/ATT; keep their order.
+            let slot = self
+                .deferred
+                .iter_mut()
+                .find(|d| d.is_none())
+                .filter(|_| data.len() <= 72)
+                .ok_or("BT TX QUEUE FULL")?;
+            let mut bytes = [0; 72];
+            bytes[..data.len()].copy_from_slice(data);
+            *slot = Some((channel, bytes, data.len()));
+            return Ok(());
+        }
+        self.load(channel, data, now)
+    }
+    fn load(&mut self, channel: u16, data: &[u8], now: u64) -> Result<(), &'static str> {
         self.tx[..2].copy_from_slice(&(data.len() as u16).to_le_bytes());
         self.tx[2..4].copy_from_slice(&channel.to_le_bytes());
         self.tx[4..4 + data.len()].copy_from_slice(data);
@@ -391,6 +460,7 @@ impl Device {
         let bit = match channel {
             4 => 1,
             6 => 2,
+            5 => 8,
             _ => 4,
         };
         if self.channels_logged & bit == 0 {
@@ -403,6 +473,7 @@ impl Device {
                     channel,
                     match channel {
                         4 => "ATT",
+                        5 => "LE signaling",
                         6 => "SMP",
                         _ => "unexpected",
                     },
@@ -434,6 +505,80 @@ impl Device {
                 ),
             );
         }
+    }
+    /// LE signaling (CID 5): answer Connection Parameter Update, reject other
+    /// requests, never answer responses. The connection is kept either way.
+    fn l2cap_signal(&mut self, now: u64, sdu: &[u8]) -> Result<(), &'static str> {
+        let signal = self
+            .signaling
+            .receive(sdu)
+            .map_err(|_| "BT L2CAP SIGNALING")?;
+        match signal {
+            bt::signaling::Signal::Update {
+                identifier,
+                parameters: p,
+                response,
+            }
+            | bt::signaling::Signal::Rejected {
+                identifier,
+                parameters: p,
+                response,
+            } => {
+                let accepted = matches!(signal, bt::signaling::Signal::Update { .. });
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "LE signaling Connection Parameter Update Request id={:02x} interval={}-{}x1.25ms latency={} timeout={}x10ms {}",
+                        identifier,
+                        p.min,
+                        p.max,
+                        p.latency,
+                        p.timeout,
+                        if accepted {
+                            "accepted"
+                        } else {
+                            "rejected (out of range)"
+                        }
+                    ),
+                );
+                self.queue(bt::signaling::CHANNEL, &response, now)?;
+                if accepted {
+                    self.update = Some(p);
+                }
+            }
+            bt::signaling::Signal::Reject {
+                identifier,
+                code,
+                response,
+            } => {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "LE signaling code={:02x} id={:02x} unsupported; Command Reject sent",
+                        code, identifier
+                    ),
+                );
+                self.queue(bt::signaling::CHANNEL, &response, now)?;
+            }
+            bt::signaling::Signal::Ignore {
+                identifier,
+                code,
+                duplicate,
+            } => crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "LE signaling code={:02x} id={:02x} ignored{}",
+                    code,
+                    identifier,
+                    if duplicate {
+                        " (repeated identifier)"
+                    } else {
+                        ""
+                    }
+                ),
+            ),
+        }
+        Ok(())
     }
     fn action(
         &mut self,
@@ -512,6 +657,18 @@ impl Device {
                 }
                 self.tx_len = 0;
                 self.tx_at = 0;
+            }
+        }
+        if self.tx_len == 0 {
+            if let Some((channel, mut bytes, n)) = self.deferred[0].take() {
+                self.deferred[0] = self.deferred[1].take();
+                let loaded = self.load(channel, &bytes[..n], now);
+                for b in &mut bytes {
+                    unsafe {
+                        core::ptr::write_volatile(b, 0);
+                    }
+                }
+                loaded?;
             }
         }
         if self.tx_len != 0 && !self.acl_out.pending {
@@ -611,6 +768,8 @@ impl Device {
                         self.action(host, now, action)?;
                     } else if channel == 4 {
                         self.att(now, &sdu[..length])?;
+                    } else if channel == bt::signaling::CHANNEL {
+                        self.l2cap_signal(now, &sdu[..length])?;
                     }
                 }
                 for b in sdu.iter_mut() {

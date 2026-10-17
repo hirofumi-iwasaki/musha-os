@@ -91,9 +91,10 @@ pub enum Reply<'a> {
         result: &'a [u8],
     },
 }
-/// LE Create Connection and LE Start Encryption answer with Command Status.
+/// LE Create Connection, LE Connection Update and LE Start Encryption answer
+/// with Command Status.
 pub fn asynchronous(opcode: u16) -> bool {
-    matches!(opcode, 0x200d | 0x2019)
+    matches!(opcode, 0x200d | 0x2013 | 0x2019)
 }
 pub fn command_reply<'a>(
     code: u8,
