@@ -251,10 +251,17 @@ pub struct Discovery {
     map: [u8; 2048],
     used: usize,
     pages: u16,
+    skipped: u16,
 }
+/// Notifications/indications or other non-responses skipped during discovery.
+pub const MAX_SKIPPED: u16 = 256;
 pub enum DiscoveryAction {
     Send([u8; 7], usize),
     Ready(Reports),
+    /// A non-response PDU was skipped; nothing is sent and no state changes.
+    Ignore,
+    /// An indication was skipped; send Handle Value Confirmation (0x1e).
+    Confirm,
 }
 /// Public ATT metadata only: never contains Report Map, report or security payload bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -329,6 +336,33 @@ impl Discovery {
             map: [0; 2048],
             used: 0,
             pages: 0,
+            skipped: 0,
+        }
+    }
+    pub fn skipped(&self) -> u16 {
+        self.skipped
+    }
+    /// The response opcode the outstanding request expects (Error Response aside).
+    fn expected(&self) -> u8 {
+        match self.stage {
+            0 => 0x11,
+            1 => 0x09,
+            2 => 0x05,
+            3 if self.used != 0 => 0x0d,
+            3 | 4 => 0x0b,
+            _ => 0,
+        }
+    }
+    /// Stage name for public diagnostics.
+    pub fn stage_name(&self) -> &'static str {
+        match self.stage {
+            0 => "services",
+            1 => "characteristics",
+            2 => "descriptors",
+            3 => "report-map",
+            4 => "reference",
+            5 => "complete",
+            _ => "failed",
         }
     }
     pub fn diagnostic(&self, p: &[u8]) -> Diagnostic {
@@ -403,6 +437,23 @@ impl Discovery {
         result
     }
     fn receive_inner(&mut self, p: &[u8], bond: &VerifiedBond) -> Result<DiscoveryAction, Error> {
+        // Peripherals may notify before their CCCD is written (game controllers
+        // commonly do). Skip anything that is neither the awaited response nor an
+        // Error Response, without counting it as a discovery page.
+        if let Some(&opcode) = p.first()
+            && opcode != 0x01
+            && opcode != self.expected()
+        {
+            self.skipped = self.skipped.checked_add(1).ok_or(Error::Length)?;
+            if self.skipped > MAX_SKIPPED {
+                return Err(Error::Length);
+            }
+            return Ok(if opcode == 0x1d {
+                DiscoveryAction::Confirm
+            } else {
+                DiscoveryAction::Ignore
+            });
+        }
         self.pages = self.pages.checked_add(1).ok_or(Error::Length)?;
         if self.pages > 224 {
             return Err(Error::Length);

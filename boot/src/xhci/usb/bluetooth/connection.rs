@@ -804,6 +804,8 @@ impl Device {
                 );
                 self.queue(4, &p[..n], now)?;
             }
+            bt::hogp::DiscoveryAction::Ignore => {}
+            bt::hogp::DiscoveryAction::Confirm => self.queue(4, &[0x1e], now)?,
             bt::hogp::DiscoveryAction::Ready(keyboard) => {
                 if self.reused {
                     self.method = if keyboard
@@ -834,7 +836,55 @@ impl Device {
         }
         Ok(())
     }
+    /// Phase name for skipped-PDU diagnostics.
+    fn att_phase(&self) -> &'static str {
+        if let Some(gatt) = self.gatt.as_ref() {
+            gatt.stage_name()
+        } else if self.bond.is_none() && self.keyboard.is_none() {
+            "pairing"
+        } else if !self.subscribed {
+            "subscription"
+        } else {
+            "connected"
+        }
+    }
+    /// First skipped PDU is logged with its opcode and length; later ones are
+    /// only counted. Report contents are never formatted.
+    fn att_skip(&mut self, what: &str, p: &[u8]) {
+        self.att_skipped = self.att_skipped.saturating_add(1);
+        if self.att_skipped == 1 {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "ATT {} opcode={:02x} len={} during stage={}",
+                    what,
+                    p.first().copied().unwrap_or(0),
+                    p.len(),
+                    self.att_phase()
+                ),
+            );
+        }
+    }
     fn att(&mut self, now: u64, p: &[u8]) -> Result<(), &'static str> {
+        // A peer request needs an answer in every phase, or it times out and
+        // disconnects. This central has no GATT database.
+        if let Some((reply, n)) = bt::att::peer_request_reply(p) {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "ATT peer request opcode={:02x} answered opcode={:02x} during stage={}",
+                    p[0],
+                    reply[0],
+                    self.att_phase()
+                ),
+            );
+            return self.queue(4, &reply[..n], now);
+        }
+        // Indications are confirmed and never delivered as input.
+        if p.first() == Some(&0x1d) {
+            self.att_skip("indication confirmed", p);
+            return self.queue(4, &[0x1e], now);
+        }
         if self.subscribed {
             self.keyboard
                 .as_mut()
@@ -855,6 +905,12 @@ impl Device {
                 .map_err(|_| "BT INPUT REJECTED")?;
             return Ok(());
         }
+        // Notifications before discovery (SMP/encryption) or while CCCDs are
+        // being written are dropped; discovery skips its own below.
+        if p.first() == Some(&0x1b) && self.gatt.is_none() {
+            self.att_skip("ignored", p);
+            return Ok(());
+        }
         if self.saved && p == [0x13] {
             self.cccd_index += 1;
             if let Some(next) = self.keyboard.as_ref().and_then(|r| r.cccd(self.cccd_index)) {
@@ -864,6 +920,13 @@ impl Device {
                 self.queue(4, &bytes, now)?;
             } else {
                 self.subscribed = true;
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "HID subscribed; ATT PDUs skipped before input={}",
+                        self.att_skipped
+                    ),
+                );
                 crate::bluetooth::status("Bluetooth HID connected; stored record validated.");
             }
             return Ok(());
@@ -871,9 +934,15 @@ impl Device {
         let bond = self.bond.as_ref().ok_or("BT UNAUTHENTICATED ATT")?;
         let gatt = self.gatt.as_mut().ok_or("BT GATT STATE")?;
         let diagnostic = gatt.diagnostic(p);
-        crate::bootlog::device("bluetooth", format_args!("{}", diagnostic));
         let action = match gatt.receive(p, bond) {
+            Ok(
+                action @ (bt::hogp::DiscoveryAction::Ignore | bt::hogp::DiscoveryAction::Confirm),
+            ) => {
+                self.att_skip("ignored", p);
+                return self.gatt_action(now, action);
+            }
             Ok(action) => {
+                crate::bootlog::device("bluetooth", format_args!("{}", diagnostic));
                 crate::bootlog::device(
                     "bluetooth",
                     format_args!("HOGP stage={} accepted", diagnostic.stage),
@@ -881,6 +950,7 @@ impl Device {
                 action
             }
             Err(error) => {
+                crate::bootlog::device("bluetooth", format_args!("{}", diagnostic));
                 crate::bootlog::device(
                     "bluetooth",
                     format_args!(

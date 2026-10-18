@@ -127,3 +127,25 @@ impl InputReport {
         Ok((self.id, &p[3..]))
     }
 }
+
+/// This central exposes no GATT database. A peer *request* must still be
+/// answered, or the peer's ATT transaction times out and it disconnects.
+/// Returns the reply for a request opcode; `None` for responses, notifications,
+/// indications and commands (nothing is sent for those).
+pub fn peer_request_reply(p: &[u8]) -> Option<([u8; 5], usize)> {
+    let opcode = *p.first()?;
+    let handle = if p.len() >= 3 { word(&p[1..]) } else { 0 };
+    let error = |code: u8| {
+        let h = handle.to_le_bytes();
+        Some(([0x01, opcode, h[0], h[1], code], 5))
+    };
+    match opcode {
+        // Exchange MTU: keep the default 23-byte MTU.
+        0x02 => Some(([0x03, 23, 0, 0, 0], 3)),
+        // Find Information, Find By Type Value, Read By Type, Read By Group Type.
+        0x04 | 0x06 | 0x08 | 0x10 => error(0x0a),
+        // Other requests (reads, writes, prepare/execute): Request Not Supported.
+        0x0a | 0x0c | 0x0e | 0x12 | 0x16 | 0x18 | 0x20 => error(0x06),
+        _ => None,
+    }
+}
