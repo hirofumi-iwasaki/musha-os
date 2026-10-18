@@ -77,6 +77,7 @@ pub fn stopped() {
         pad.2 = false;
         (&mut *PENDING_SAVE.0.get()).take();
         *SAVED.0.get() = None;
+        *SAVE_FAILURE.0.get() = "BT BOND SAVE UNKNOWN";
         *KEYS.0.get() = ([(0, false); 32], 0, u64::MAX, false);
         // Queued old reports are discarded, then only genuine held-state
         // releases/axis neutralization are delivered to an existing r2 consumer.
@@ -268,6 +269,16 @@ pub fn save_result(
     unsafe {
         *SAVED.0.get() = Some((generation, ok));
     }
+}
+/// Why the last bond save failed; the Bluetooth poller reports it on isolation.
+static SAVE_FAILURE: Shared<&'static str> = Shared(UnsafeCell::new("BT BOND SAVE UNKNOWN"));
+pub fn save_failed(reason: &'static str) {
+    unsafe {
+        *SAVE_FAILURE.0.get() = reason;
+    }
+}
+pub fn save_failure() -> &'static str {
+    unsafe { *SAVE_FAILURE.0.get() }
 }
 pub fn saved(generation: u64) -> Option<bool> {
     unsafe {

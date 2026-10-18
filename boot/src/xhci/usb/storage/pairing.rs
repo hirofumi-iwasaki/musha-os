@@ -69,28 +69,78 @@ impl Disk for Image<'_, '_> {
 struct Shared(core::cell::UnsafeCell<settings::Workspace>);
 unsafe impl Sync for Shared {} // BSP; called only with exclusive idle Device/Host.
 static WORK: Shared = Shared(core::cell::UnsafeCell::new(settings::Workspace::new()));
-fn old(image: &mut Image<'_, '_>, out: &mut [u8; 4096]) -> Result<bool, &'static str> {
+/// A refused or failed record access, for diagnostics. Never key material.
+#[derive(Clone, Copy)]
+enum Failure {
+    Refused(settings::Refusal),
+    Write(settings::WriteError),
+    Range,
+    Unowned,
+    Io,
+}
+impl Failure {
+    /// Bluetooth failure reason; distinct per kind so the viewer shows it.
+    fn reason(self) -> &'static str {
+        use settings::{Refusal as R, WriteError as W};
+        match self {
+            Self::Refused(r) | Self::Write(W::Refused(r)) => match r {
+                R::Layout => "BT BOND SAVE LAYOUT",
+                R::Budget => "BT BOND SAVE BUDGET",
+                R::MissingDirectory => "BT BOND SAVE NO SETTINGS",
+                R::FullDirectory => "BT BOND SAVE SETTINGS FULL",
+                R::NoSpace => "BT BOND SAVE NO SPACE",
+                R::Protected => "BT BOND SAVE PROTECTED",
+                R::Capacity => "BT BOND SAVE CAPACITY",
+                R::Name => "BT BOND SAVE NAME",
+                R::Filesystem(_) => "BT BOND SAVE FILESYSTEM",
+            },
+            Self::Write(W::Unowned) | Self::Unowned => "BT BOND SAVE UNOWNED",
+            Self::Write(W::Io(_)) | Self::Io => "BT BOND SAVE IO",
+            Self::Write(W::RecoveryRequired) => "BT BOND SAVE RECOVERY REQUIRED",
+            Self::Range => "BT BOND SAVE RANGE",
+        }
+    }
+}
+impl core::fmt::Debug for Failure {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Refused(r) => write!(f, "{:?}", r),
+            Self::Write(w) => write!(f, "{:?}", w),
+            Self::Range => f.write_str("Range"),
+            Self::Unowned => f.write_str("Unowned"),
+            Self::Io => f.write_str("Io"),
+        }
+    }
+}
+fn old(
+    image: &mut Image<'_, '_>,
+    out: &mut [u8; 4096],
+    t: &mut settings::Trace,
+) -> Result<bool, Failure> {
     let size = image.device.size as usize;
     let blocks = image.device.blocks;
-    let plan = settings::preflight(
+    let plan = settings::preflight_traced(
         blocks,
         size,
         settings::OWNED_NAME,
         4096,
         false,
         &mut |l, b| image.read(l, b),
+        t,
     )
-    .map_err(|_| "BT SETTINGS PREFLIGHT")?;
+    .map_err(Failure::Refused)?;
     if plan.created {
         return Ok(false);
     }
+    t.step = "read-old";
     for (i, b) in out.chunks_mut(size).enumerate() {
         image
-            .read(plan.data_sector(i).ok_or("BT SETTINGS RANGE")?, b)
-            .map_err(|_| "BT SETTINGS READ")?;
+            .read(plan.data_sector(i).ok_or(Failure::Range)?, b)
+            .map_err(|_| Failure::Io)?;
     }
     if !musha_platform::pairing::recognized(out) {
-        return Err("BT SETTINGS UNOWNED");
+        t.detail = "existing PAIRING.DAT not an OS record";
+        return Err(Failure::Unowned);
     }
     Ok(true)
 }
@@ -112,7 +162,17 @@ impl Device {
         };
         let mut record = [0; 4096];
         if !image.device.pairing_checked {
-            let loaded = old(&mut image, &mut record);
+            let mut trace = settings::Trace::default();
+            let loaded = old(&mut image, &mut record, &mut trace);
+            if let Err(failure) = loaded {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "pairing record not loaded reason={:?} step={} detail={} value=0x{:x}",
+                        failure, trace.step, trace.detail, trace.value
+                    ),
+                );
+            }
             // Unchanged policy: an unreadable old record only refuses reconnect.
             image.transport = None;
             match loaded {
@@ -141,7 +201,11 @@ impl Device {
         let Some((generation, bond)) = crate::bluetooth::pending_save() else {
             return Ok(());
         };
-        let loaded = old(&mut image, &mut record);
+        let started = crate::bootstate::epoch_now().unwrap_or(0);
+        let mut old_trace = settings::Trace::default();
+        let mut trace = settings::Trace::default();
+        let mut failure = None;
+        let loaded = old(&mut image, &mut record, &mut old_trace);
         let mut records = 0;
         let result = match loaded {
             Ok(exists) => bond.save(
@@ -151,7 +215,7 @@ impl Device {
                     records = musha_platform::pairing::bond_count(bytes).unwrap_or(0);
                     let blocks = image.device.blocks;
                     let size = image.device.size as usize;
-                    settings::write_owned(
+                    settings::write_owned_traced(
                         &mut image,
                         blocks,
                         size,
@@ -159,13 +223,28 @@ impl Device {
                         bytes,
                         musha_platform::pairing::recognized,
                         unsafe { &mut *WORK.0.get() },
+                        &mut trace,
                     )
                     .map(|_| ())
-                    .map_err(|_| musha_platform::bluetooth::Error::Invalid)
+                    .map_err(|e| {
+                        failure = Some(Failure::Write(e));
+                        musha_platform::bluetooth::Error::Invalid
+                    })
                 },
             ),
-            Err(_) => Err(musha_platform::bluetooth::bonding::SaveError::PersistenceUnknown),
+            Err(e) => {
+                failure = Some(e);
+                trace = old_trace;
+                trace.step = match trace.step {
+                    "preflight" => "old-preflight",
+                    step => step,
+                };
+                Err(musha_platform::bluetooth::bonding::SaveError::PersistenceUnknown)
+            }
         };
+        let elapsed = crate::bootstate::epoch_now()
+            .unwrap_or(started)
+            .saturating_sub(started);
         for b in &mut record {
             unsafe {
                 core::ptr::write_volatile(b, 0);
@@ -180,25 +259,55 @@ impl Device {
             }
         }
         let ok = result.is_ok();
-        match &result {
-            Ok(_) => {
+        match (&result, failure) {
+            (Ok(_), _) => {
                 let (free, mapped) = crate::cpu::stack_headroom().unwrap_or((0, 0));
                 crate::bootlog::device(
                     "bluetooth",
                     format_args!(
-                        "bond saved record={} file=SETTINGS/PAIRING.DAT; stack never-touched {} of {} bytes",
-                        records, free, mapped
+                        "bond saved record={} file=SETTINGS/PAIRING.DAT reads old={} preflight={} audit={} elapsed={}ms; stack never-touched {} of {} bytes",
+                        records,
+                        old_trace.preflight_reads,
+                        trace.preflight_reads,
+                        trace.audit_reads,
+                        elapsed,
+                        free,
+                        mapped
                     ),
                 )
             }
-            Err(e) => crate::bootlog::device(
-                "bluetooth",
-                format_args!(
-                    "bond save failed reason={:?} transport={}",
-                    e,
-                    image.transport.unwrap_or("ok")
-                ),
-            ),
+            (Err(_), Some(f)) => {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "bond save failed reason={:?} step={} detail={} value=0x{:x} reads old={} preflight={} audit={} elapsed={}ms transport={}",
+                        f,
+                        trace.step,
+                        trace.detail,
+                        trace.value,
+                        old_trace.preflight_reads,
+                        trace.preflight_reads,
+                        trace.audit_reads,
+                        elapsed,
+                        image.transport.unwrap_or("ok")
+                    ),
+                );
+                crate::bluetooth::save_failed(f.reason());
+            }
+            // Refused by the bond merge itself (full store, weaker key, record).
+            (Err(e), None) => {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!("bond save failed reason={:?} step=merge", e),
+                );
+                crate::bluetooth::save_failed(match e {
+                    musha_platform::bluetooth::bonding::SaveError::Full => "BT BOND SAVE FULL",
+                    musha_platform::bluetooth::bonding::SaveError::Security => {
+                        "BT BOND SAVE WEAKER KEY"
+                    }
+                    _ => "BT BOND SAVE RECORD",
+                });
+            }
         }
         crate::bluetooth::save_result(generation, result);
         if !ok {

@@ -627,7 +627,7 @@ impl Device {
         if !self.saved && self.keyboard.is_some() {
             if let Some(ok) = crate::bluetooth::saved(self.generation) {
                 if !ok {
-                    return Err("BT BOND SAVE UNKNOWN");
+                    return Err(crate::bluetooth::save_failure());
                 }
                 self.saved = true;
                 let mut p = [0x12, 0, 0, 1, 0];
