@@ -112,9 +112,11 @@ impl Device {
                         crate::bootlog::device(
                             "bluetooth",
                             format_args!(
-                                "no Pairing Response after {}ms and {} attempts; waiting for the SMP timeout",
+                                "no Pairing Response after {}ms and {} attempts; waiting for the SMP timeout; completed-packets={} ignored-events={}",
                                 waited,
-                                self.retry.attempts()
+                                self.retry.attempts(),
+                                self.completed_packets,
+                                self.ignored_events
                             ),
                         );
                         crate::bluetooth::status(bt::stage::PAIRING_NO_REPLY);
@@ -193,7 +195,7 @@ impl Device {
         crate::bootlog::device(
             "bluetooth",
             format_args!(
-                "{} (attempt {}/{}); disconnecting ..:{:02x}:{:02x} and deferring it for {}ms",
+                "{} (attempt {}/{}); completed-packets={} ignored-events={}; disconnecting ..:{:02x}:{:02x} and deferring it for {}ms",
                 if self.security_request {
                     "SMP Security Request: the controller holds an old bond"
                 } else {
@@ -201,6 +203,8 @@ impl Device {
                 },
                 self.retry.attempts() + 1,
                 bt::retry::MAX_ATTEMPTS,
+                self.completed_packets,
+                self.ignored_events,
                 tail[0],
                 tail[1],
                 bt::retry::DEFER_MS
@@ -246,6 +250,8 @@ impl Device {
         self.acl_logged = [false; 2];
         self.channels_logged = 0;
         self.smp_hinted = false;
+        self.completed_packets = 0;
+        self.ignored_events = 0;
         crate::bluetooth::set_peer(None);
     }
     pub(super) fn handle_event(
@@ -521,12 +527,24 @@ impl Device {
                     b"MUSHA: BT_STORED_RECONNECT_BEGIN\n"
                 });
             }
-            0x13 => self
-                .credits
-                .as_mut()
-                .ok_or("BT ACL CREDITS")?
-                .completed(self.generation, event)
-                .map_err(|_| "BT ACL COMPLETION")?,
+            0x13 => {
+                self.credits
+                    .as_mut()
+                    .ok_or("BT ACL CREDITS")?
+                    .completed(self.generation, event)
+                    .map_err(|_| "BT ACL COMPLETION")?;
+                let done = bt::stage::completed_packets(event.parameters, self.handle);
+                if done != 0 && self.completed_packets == 0 {
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "ACL sent and acknowledged: Number of Completed Packets handle={:04x} count={}",
+                            self.handle, done
+                        ),
+                    );
+                }
+                self.completed_packets = self.completed_packets.saturating_add(done);
+            }
             8 => {
                 let p = event.parameters;
                 if p.len() == 4 {
@@ -578,8 +596,28 @@ impl Device {
                     ),
                 }
             }
-            0x3e => {} // Unsupported LE meta events never grant authentication.
-            _ => {}
+            // Unsupported LE meta events never grant authentication. Name the
+            // first few per connection: a peer that never answers pairing may
+            // be waiting on a procedure this host does not run.
+            code => {
+                self.ignored_events = self.ignored_events.saturating_add(1);
+                if self.ignored_events <= 4 {
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "HCI event ignored code={:02x} sub={:02x} len={} phase={}",
+                            code,
+                            if code == 0x3e {
+                                event.parameters.first().copied().unwrap_or(0)
+                            } else {
+                                0
+                            },
+                            event.parameters.len(),
+                            self.phase
+                        ),
+                    );
+                }
+            }
         }
         Ok(())
     }

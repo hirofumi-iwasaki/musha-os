@@ -216,3 +216,20 @@ From this version each new pairing uses a new random static own address (`own ad
 ## 日本語: 自分のランダムアドレス（2026-10-18）
 
 この版から、新規ペアリングごとに新しいランダム静的の自アドレスを使います（`own address random static ..:xx:yy (new for this pairing)`）。状態行の下の行には `...; own random ..:xx:yy` が出ます。このホストとの古いボンドを持ち続けるコントローラーも、Mac での回復手順なしで Pairing Request に応答するはずです。期待する行は `connect stage=LE set random address`、`LE random address set (CC 00)`、その後に通常の Create Connection、Pairing Response、`HOGP bound`、`bond saved record=1 ...` です。再起動後の再接続は保存した自アドレスを使います（新しい `own address` 行は出ず、`own random ..:xx:yy` は同じ値）。
+
+
+## Silent peer diagnostics — English (2026-10-18)
+
+When the controller does not answer the Pairing Request, two lines tell where the request stopped:
+
+- `ACL sent and acknowledged: Number of Completed Packets handle=xxxx count=N` appears once per connection when the dongle reports our packet done. For LE this means the controller's link layer acknowledged it, so the request reached the controller and its host side ignored it. If this line never appears, the dongle did not get the packet across.
+- `HCI event ignored code=xx sub=yy len=N phase=P` names up to four events per connection that this driver does not handle; a silent peer may be waiting on one of them.
+- The give-up lines end with `completed-packets=N ignored-events=M` for each attempt.
+
+## 日本語: 無応答の相手の診断（2026-10-18）
+
+コントローラーが Pairing Request に応答しないとき、次の行で要求がどこで止まったかが分かります。
+
+- `ACL sent and acknowledged: Number of Completed Packets handle=xxxx count=N` は、ドングルがこちらのパケットの完了を報告したとき、接続ごとに 1 回出ます。LE ではコントローラーのリンク層が受信を確認したことを意味するので、要求はコントローラーに届き、その上位層が無視したことになります。この行が出なければ、ドングルはパケットを相手へ届けられていません。
+- `HCI event ignored code=xx sub=yy len=N phase=P` は、このドライバーが扱わないイベントを接続ごとに最大 4 件示します。無応答の相手がそのどれかを待っている可能性があります。
+- 打ち切りの行の末尾に、試行ごとの `completed-packets=N ignored-events=M` が出ます。

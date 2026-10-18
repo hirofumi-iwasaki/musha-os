@@ -313,3 +313,17 @@ fn own_random_static_address_and_create_connection_layout() {
     assert_eq!(&random[13..17], &[0x18, 0, 0x28, 0]);
     assert_eq!(&random[19..21], &[0xf4, 1]);
 }
+
+#[test]
+fn completed_packets_counts_only_our_handle_and_rejects_malformed_blocks() {
+    use musha_platform::bluetooth::stage::completed_packets;
+    // Two handles: 0x0048 completed 1, 0x0047 completed 3.
+    let p = [2, 0x48, 0x00, 1, 0, 0x47, 0x00, 3, 0];
+    assert_eq!(completed_packets(&p, 0x0048), 1);
+    assert_eq!(completed_packets(&p, 0x0047), 3);
+    assert_eq!(completed_packets(&p, 0x0049), 0);
+    // Flag bits above the 12-bit handle are ignored.
+    assert_eq!(completed_packets(&[1, 0x48, 0x20, 2, 0], 0x0048), 2);
+    assert_eq!(completed_packets(&[], 0x0048), 0);
+    assert_eq!(completed_packets(&[2, 0x48, 0x00, 1, 0], 0x0048), 0);
+}

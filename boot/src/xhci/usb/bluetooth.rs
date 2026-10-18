@@ -381,6 +381,10 @@ pub(in crate::xhci) struct Device {
     // Pairing Request time, and whether the no-reply guidance was shown.
     smp_started: u64,
     smp_hinted: bool,
+    // Per connection: packets the controller reported done for our handle
+    // (Number of Completed Packets) and HCI events this driver ignores.
+    completed_packets: u16,
+    ignored_events: u16,
     directed_logged: bool,
     retry: musha_platform::bluetooth::retry::Retry,
     security_request: bool,
@@ -614,6 +618,8 @@ pub(super) fn prepare(
             att_skipped: 0,
             smp_started: 0,
             smp_hinted: false,
+            completed_packets: 0,
+            ignored_events: 0,
             directed_logged: false,
             retry: musha_platform::bluetooth::retry::Retry::new(),
             security_request: false,

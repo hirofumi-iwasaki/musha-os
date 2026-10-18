@@ -25,6 +25,24 @@ pub fn smp_name(code: u8) -> &'static str {
     }
 }
 
+/// Packets of `handle` reported done by a Number of Completed Packets event
+/// (0x13) parameter block; 0 when the handle is absent or the block is
+/// malformed. For LE the controller reports a packet once the link layer has
+/// had it acknowledged by the peer, so it shows the data left the dongle.
+pub fn completed_packets(parameters: &[u8], handle: u16) -> u16 {
+    let Some((&n, rest)) = parameters.split_first() else {
+        return 0;
+    };
+    if rest.len() != n as usize * 4 {
+        return 0;
+    }
+    rest.chunks_exact(4)
+        .filter(|b| u16::from_le_bytes([b[0], b[1]]) & 0x0fff == handle)
+        .fold(0u16, |sum, b| {
+            sum.saturating_add(u16::from_le_bytes([b[2], b[3]]))
+        })
+}
+
 /// Lowest two address octets in display order (HCI order is little-endian).
 pub fn address_tail(address: &[u8; 6]) -> [u8; 2] {
     [address[1], address[0]]
