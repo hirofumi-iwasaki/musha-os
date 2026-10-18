@@ -23,6 +23,21 @@ fn e(key: &[u8; 16], input: &[u8; 16]) -> [u8; 16] {
     b.reverse();
     b
 }
+/// Random address hash ah (Core Vol 3 Part H 2.2.2), little-endian wire order:
+/// `irk` as distributed in Identity Information, `prand` the upper three octets
+/// of an HCI-order resolvable private address. Returns its lower three octets.
+pub fn ah(irk: &[u8; 16], prand: &[u8; 3]) -> [u8; 3] {
+    let mut input = [0; 16];
+    input[..3].copy_from_slice(prand);
+    let out = e(irk, &input);
+    [out[0], out[1], out[2]]
+}
+/// True for a resolvable private address (HCI order) generated from `irk`.
+pub fn resolves(irk: &[u8; 16], address: &[u8; 6]) -> bool {
+    *irk != [0; 16]
+        && address[5] & 0xc0 == 0x40
+        && bool::from(ah(irk, address[3..6].try_into().unwrap())[..].ct_eq(&address[..3]))
+}
 pub fn c1(
     tk: &[u8; 16],
     r: &[u8; 16],
@@ -316,6 +331,7 @@ impl Legacy {
                     ediv: u16::from_le_bytes([p[1], p[2]]),
                     random: p[3..].try_into().unwrap(),
                     ltk: self.ltk,
+                    irk: [0; 16],
                 };
                 self.ltk.zeroize();
                 self.state = State::Complete;

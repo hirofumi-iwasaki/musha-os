@@ -903,6 +903,7 @@ fn settings_probe(
                 ediv: 0,
                 random: [0; 8],
                 ltk: [3; 16],
+                irk: [0; 16],
             }; musha_platform::pairing::MAX_BONDS];
             for (i, bond) in bonds.iter_mut().enumerate() {
                 bond.address[0] = i as u8;

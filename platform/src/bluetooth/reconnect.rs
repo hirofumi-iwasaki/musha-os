@@ -1,7 +1,8 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 //! Stored SC key reuse. Codec CRC recognizes structure, not hostile-media
-//! authenticity. No IRK/RPA resolution and no automatic downgrade or re-pair.
+//! authenticity. A resolvable private address is resolved on the host with the
+//! stored IRK (no controller resolving list). No automatic downgrade or re-pair.
 use super::{Error, Event, legacy::VerifiedBond};
 use crate::pairing::{self, Bond, MAX_BONDS};
 use zeroize::Zeroize;
@@ -13,6 +14,7 @@ const EMPTY: Bond = Bond {
     ediv: 0,
     random: [0; 8],
     ltk: [0; 16],
+    irk: [0; 16],
 };
 pub struct Store {
     bonds: [Bond; MAX_BONDS],
@@ -28,6 +30,7 @@ impl Store {
     pub fn clear(&mut self) {
         for b in &mut self.bonds {
             b.ltk.zeroize();
+            b.irk.zeroize();
             *b = EMPTY;
         }
         self.count = 0;
@@ -54,10 +57,24 @@ impl Store {
     pub fn any(&self) -> bool {
         self.bonds[..self.count].iter().any(Self::acceptable)
     }
+    /// The stored identity itself, or a random resolvable private address
+    /// generated from the bond's IRK.
+    fn owns(b: &Bond, kind: u8, address: &[u8; 6]) -> bool {
+        Self::acceptable(b)
+            && ((b.address_type == kind && &b.address == address)
+                || (kind == 1 && super::legacy::resolves(&b.irk, address)))
+    }
     pub fn matches(&self, kind: u8, address: &[u8; 6]) -> bool {
         self.bonds[..self.count]
             .iter()
-            .any(|b| Self::acceptable(b) && b.address_type == kind && &b.address == address)
+            .any(|b| Self::owns(b, kind, address))
+    }
+    /// True only when the address matched through an IRK, not the identity.
+    pub fn resolved(&self, kind: u8, address: &[u8; 6]) -> bool {
+        kind == 1
+            && self.bonds[..self.count]
+                .iter()
+                .any(|b| Self::acceptable(b) && super::legacy::resolves(&b.irk, address))
     }
     /// Reconnect can use directed advertising with empty AD data. Only the
     /// stored public/static identity and connectable event type authorize it.
@@ -78,7 +95,7 @@ impl Store {
         }
         let bond = self.bonds[..self.count]
             .iter()
-            .find(|b| Self::acceptable(b) && b.address_type == kind && b.address == address)
+            .find(|b| Self::owns(b, kind, &address))
             .ok_or(Error::Unsupported)?;
         Ok(Pending {
             bond: *bond,
@@ -121,6 +138,7 @@ pub struct Pending {
 impl Drop for Pending {
     fn drop(&mut self) {
         self.bond.ltk.zeroize();
+        self.bond.irk.zeroize();
     }
 }
 impl Pending {
@@ -149,6 +167,7 @@ impl Pending {
     pub fn cancel(&mut self) {
         self.finished = true;
         self.bond.ltk.zeroize();
+        self.bond.irk.zeroize();
     }
     pub fn encryption(
         &mut self,

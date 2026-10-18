@@ -18,6 +18,7 @@ fn bond() -> Bond {
         ediv: 0,
         random: [0; 8],
         ltk: [7; 16],
+        irk: [0; 16],
     }
 }
 fn record(b: Bond) -> [u8; 4096] {

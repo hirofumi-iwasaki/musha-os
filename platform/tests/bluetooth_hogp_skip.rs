@@ -21,6 +21,7 @@ fn verified() -> musha_platform::bluetooth::legacy::VerifiedBond {
         ediv: 0,
         random: [0; 8],
         ltk: [7; 16],
+        irk: [0; 16],
     };
     let mut r = [0; 4096];
     pairing::encode_state(&[bond], None, &mut r).unwrap();

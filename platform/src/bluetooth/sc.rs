@@ -1,6 +1,8 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-//! Bounded SC-only central SMP. No OOB, Numeric Comparison, CTKD, IRK or CSRK.
+//! Bounded SC-only central SMP. No OOB, Numeric Comparison, CTKD or CSRK. The
+//! responder's identity (IRK and identity address) is requested for reconnects
+//! from resolvable private addresses; this central distributes no keys.
 //! Caller selects a deliberate association model, supplies one-use entropy and
 //! correlates the controller's Encryption Change before obtaining VerifiedBond.
 use super::{
@@ -34,9 +36,12 @@ enum State {
     Random,
     DhCheck,
     Encryption,
+    Keys,
     Complete,
     Failed,
 }
+/// Responder key distribution requested: IdKey only (EncKey is unused in SC).
+const ID_KEY: u8 = 0x02;
 pub struct Central {
     key: Option<Key>,
     state: State,
@@ -58,6 +63,8 @@ pub struct Central {
     ltk: [u8; 16],
     a1: [u8; 7],
     a2: [u8; 7],
+    irk: Option<[u8; 16]>,
+    identity: Option<(u8, [u8; 6])>,
 }
 impl Drop for Central {
     fn drop(&mut self) {
@@ -110,7 +117,7 @@ impl Central {
                 if method == Method::JustWorks { 9 } else { 13 },
                 16,
                 0,
-                0,
+                ID_KEY,
             ],
             response: [0; 7],
             peer: [0; 64],
@@ -122,6 +129,8 @@ impl Central {
             ltk: [0; 16],
             a1,
             a2,
+            irk: None,
+            identity: None,
         })
     }
     fn wipe(&mut self) {
@@ -133,6 +142,9 @@ impl Central {
         self.confirm.zeroize();
         self.mac.zeroize();
         self.ltk.zeroize();
+        if let Some(irk) = self.irk.as_mut() {
+            irk.zeroize();
+        }
     }
     pub fn request(&self) -> [u8; 7] {
         self.request
@@ -255,7 +267,8 @@ impl Central {
                 if p.len() != 7 || p[0] != 2 {
                     return Err(Error::Length);
                 }
-                // Reject legacy/downgrade, OOB, short keys, unsupported distribution.
+                // Reject legacy/downgrade, OOB, short keys, and any distribution
+                // beyond what was requested (none from us, IdKey from the peer).
                 if p[1] > 4
                     || p[2] != 0
                     || p[3] & 0x08 == 0
@@ -263,7 +276,7 @@ impl Central {
                     || p[3] & 3 > 1
                     || p[4] != 16
                     || p[5] != 0
-                    || p[6] != 0
+                    || p[6] & !ID_KEY != 0
                 {
                     return Err(Error::Unsupported);
                 }
@@ -390,8 +403,61 @@ impl Central {
                 key.reverse();
                 Ok(Action::Encrypt(key))
             }
+            // The peer distributes keys once the link is encrypted; they may be
+            // read before the controller's Encryption Change event.
+            State::Encryption | State::Keys if self.response[6] & ID_KEY != 0 => {
+                match (p.first(), p.len()) {
+                    (Some(8), 17) if self.irk.is_none() => {
+                        self.irk = Some(p[1..].try_into().unwrap());
+                    }
+                    (Some(9), 8) if self.irk.is_some() && self.identity.is_none() => {
+                        self.identity = Some((p[1], p[2..8].try_into().unwrap()));
+                    }
+                    _ => return Err(Error::Invalid),
+                }
+                if self.state == State::Keys && self.identity.is_some() {
+                    return Ok(self.bond());
+                }
+                Ok(Action::Send([0; 65], 0))
+            }
             _ => Err(Error::Invalid),
         }
+    }
+    /// Identity address: a public or static random identity from Identity
+    /// Address Information, otherwise the address used for pairing.
+    fn bond(&mut self) -> Action {
+        let mut address: [u8; 6] = self.a2[1..].try_into().unwrap();
+        address.reverse();
+        let mut address_type = self.a2[0];
+        if let Some((kind, identity)) = self.identity {
+            if identity != [0; 6] && (kind == 0 || (kind == 1 && identity[5] & 0xc0 == 0xc0)) {
+                address_type = kind;
+                address = identity;
+            }
+        }
+        let mut ltk = self.ltk;
+        ltk.reverse();
+        let bond = Bond {
+            address_type,
+            address,
+            key_size: 16,
+            flags: if self.method == Method::JustWorks {
+                2
+            } else {
+                3
+            },
+            ediv: 0,
+            random: [0; 8],
+            ltk,
+            irk: self.irk.unwrap_or([0; 16]),
+        };
+        self.state = State::Complete;
+        self.wipe();
+        Action::Bond(VerifiedBond {
+            bond,
+            generation: self.generation,
+            handle: self.handle,
+        })
     }
     /// No public boolean can authorize notifications: only a matching raw HCI
     /// Encryption Change with status=0 and enabled=1 produces VerifiedBond.
@@ -413,30 +479,16 @@ impl Central {
             self.fail();
             return Err(Error::Invalid);
         }
-        let mut address: [u8; 6] = self.a2[1..].try_into().unwrap();
-        address.reverse();
-        let mut ltk = self.ltk;
-        ltk.reverse();
-        let bond = Bond {
-            address_type: self.a2[0],
-            address,
-            key_size: 16,
-            flags: if self.method == Method::JustWorks {
-                2
-            } else {
-                3
-            },
-            ediv: 0,
-            random: [0; 8],
-            ltk,
-        };
-        self.state = State::Complete;
-        self.wipe();
-        Ok(Action::Bond(VerifiedBond {
-            bond,
-            generation: self.generation,
-            handle: self.handle,
-        }))
+        // Requested identity keys still to come: wait in Keys (SMP timeout).
+        if self.response[6] & ID_KEY != 0 && self.identity.is_none() {
+            self.state = State::Keys;
+            return Ok(Action::Send([0; 65], 0));
+        }
+        Ok(self.bond())
+    }
+    /// Whether the peer agreed to distribute its identity keys.
+    pub fn identity_requested(&self) -> bool {
+        self.response[6] & ID_KEY != 0
     }
 }
 fn reversed(mut value: [u8; 16]) -> [u8; 16] {

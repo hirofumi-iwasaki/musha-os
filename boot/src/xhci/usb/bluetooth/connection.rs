@@ -598,6 +598,19 @@ impl Device {
             }
             Action::Encrypt(key) => self.encrypt = Some(key),
             Action::Bond(bond) => {
+                let b = bond.bond();
+                let tail = bt::stage::address_tail(&b.address);
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "bond identity addr-type={} ({}) ..:{:02x}:{:02x} irk={}",
+                        b.address_type,
+                        super::address_class(b.address_type, &b.address),
+                        tail[0],
+                        tail[1],
+                        if b.irk == [0; 16] { "no" } else { "yes" }
+                    ),
+                );
                 self.bond = Some(bond);
                 self.security = None;
                 crate::bluetooth::status("Bluetooth encrypted; discovering HID service.");

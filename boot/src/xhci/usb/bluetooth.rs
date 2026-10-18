@@ -865,10 +865,18 @@ impl Device {
                 crate::bootlog::device(
                     "bluetooth",
                     format_args!(
-                        "HID candidate ..:{:02x}:{:02x} address-type={} method={}; connecting",
+                        "HID candidate ..:{:02x}:{:02x} addr-type={} ({}{}) method={}; connecting",
                         tail[0],
                         tail[1],
                         self.peer_type,
+                        address_class(self.peer_type, &self.peer),
+                        if !self.pairing
+                            && crate::bluetooth::stored_resolved(self.peer_type, &self.peer)
+                        {
+                            ", stored bond via IRK"
+                        } else {
+                            ""
+                        },
                         match (self.pairing, self.method) {
                             (false, _) => "stored-reconnect",
                             (true, musha_platform::bluetooth::sc::Method::JustWorks) => {
@@ -1075,6 +1083,15 @@ impl Device {
 }
 pub(super) use isolation::local_failure;
 pub(in crate::xhci) use isolation::remaining;
+/// LE address class from the type and the two top bits (HCI order).
+fn address_class(kind: u8, address: &[u8; 6]) -> &'static str {
+    match (kind, address[5] >> 6) {
+        (0, _) => "public",
+        (_, 3) => "random static",
+        (_, 1) => "resolvable private",
+        _ => "non-resolvable private",
+    }
+}
 /// Completion codes only; transfer buffers are never read for a fault.
 fn log_fault(host: &mut Host<'_>) {
     if let Some((words, count)) = host.bt_mailbox.take_fault() {

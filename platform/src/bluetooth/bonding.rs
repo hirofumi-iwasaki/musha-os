@@ -13,6 +13,7 @@ const EMPTY: Bond = Bond {
     ediv: 0,
     random: [0; 8],
     ltk: [0; 16],
+    irk: [0; 16],
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SaveError {
@@ -67,6 +68,7 @@ impl VerifiedBond {
         })();
         for bond in &mut bonds {
             bond.ltk.zeroize();
+            bond.irk.zeroize();
         }
         result
     }
@@ -74,5 +76,6 @@ impl VerifiedBond {
 impl Drop for VerifiedBond {
     fn drop(&mut self) {
         self.bond.ltk.zeroize();
+        self.bond.irk.zeroize();
     }
 }

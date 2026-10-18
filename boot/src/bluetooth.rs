@@ -385,6 +385,10 @@ pub fn stored_any() -> bool {
 pub fn stored_matches(kind: u8, address: &[u8; 6]) -> bool {
     unsafe { (&*STORE.0.get()).matches(kind, address) }
 }
+/// True when the stored bond matched through its IRK, not its identity.
+pub fn stored_resolved(kind: u8, address: &[u8; 6]) -> bool {
+    unsafe { (&*STORE.0.get()).resolved(kind, address) }
+}
 pub fn stored_connectable(event_type: u8, kind: u8, address: &[u8; 6]) -> bool {
     unsafe { (&*STORE.0.get()).connectable(event_type, kind, address) }
 }

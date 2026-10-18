@@ -6,7 +6,10 @@
 pub const CAPACITY: usize = 4096;
 pub const MAX_BONDS: usize = 8;
 const HEADER: usize = 64;
-const RECORD: usize = 40;
+// Version 1: 40-byte records. Version 2 appends the peer IRK (56 bytes) and is
+// written only when a bond carries one, so IRK-less files stay version 1.
+const RECORD_V1: usize = 40;
+const RECORD_V2: usize = 56;
 const MAGIC: &[u8; 8] = b"MUSHALTK";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -26,6 +29,8 @@ pub struct Bond {
     pub ediv: u16,
     pub random: [u8; 8],
     pub ltk: [u8; 16],
+    /// Peer Identity Resolving Key, SMP wire order; all zero when not distributed.
+    pub irk: [u8; 16],
 }
 impl core::fmt::Debug for Bond {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -77,18 +82,26 @@ pub fn encode_state(
             return Err(Error::Duplicate);
         }
     }
+    let (version, record) = if bonds.iter().any(|b| b.irk != [0; 16]) {
+        (2u16, RECORD_V2)
+    } else {
+        (1u16, RECORD_V1)
+    };
     out.fill(0);
     out[..8].copy_from_slice(MAGIC);
-    out[8..10].copy_from_slice(&1u16.to_le_bytes());
+    out[8..10].copy_from_slice(&version.to_le_bytes());
     out[10..12].copy_from_slice(&(HEADER as u16).to_le_bytes());
     out[12..14].copy_from_slice(&(bonds.len() as u16).to_le_bytes());
-    out[14..16].copy_from_slice(&(RECORD as u16).to_le_bytes());
-    out[16..20].copy_from_slice(&((bonds.len() * RECORD) as u32).to_le_bytes());
+    out[14..16].copy_from_slice(&(record as u16).to_le_bytes());
+    out[16..20].copy_from_slice(&((bonds.len() * record) as u32).to_le_bytes());
     if let Some(hash) = consumed {
         out[24..28].copy_from_slice(&1u32.to_le_bytes());
         out[28..60].copy_from_slice(&hash);
     }
-    for (bond, b) in bonds.iter().zip(out[HEADER..].chunks_exact_mut(RECORD)) {
+    for (bond, b) in bonds.iter().zip(out[HEADER..].chunks_exact_mut(record)) {
+        if version == 2 {
+            b[40..56].copy_from_slice(&bond.irk);
+        }
         b[0] = bond.address_type;
         b[1] = bond.key_size;
         b[2] = bond.flags;
@@ -111,9 +124,11 @@ pub fn decode_state(bytes: &[u8], out: &mut [Bond]) -> Result<(usize, Option<[u8
     if &bytes[..8] != MAGIC {
         return Err(Error::Corrupt);
     }
-    if bytes[8..10] != 1u16.to_le_bytes() {
-        return Err(Error::Version);
-    }
+    let record = match u16::from_le_bytes([bytes[8], bytes[9]]) {
+        1 => RECORD_V1,
+        2 => RECORD_V2,
+        _ => return Err(Error::Version),
+    };
     let consumed = match u32::from_le_bytes(bytes[24..28].try_into().unwrap()) {
         0 if bytes[28..60] == [0; 32] => None,
         1 => Some(bytes[28..60].try_into().unwrap()),
@@ -126,10 +141,10 @@ pub fn decode_state(bytes: &[u8], out: &mut [Bond]) -> Result<(usize, Option<[u8
     if count > MAX_BONDS || out.len() < count {
         return Err(Error::Bounds);
     }
-    let length = HEADER + count * RECORD;
+    let length = HEADER + count * record;
     if bytes[10..12] != (HEADER as u16).to_le_bytes()
-        || bytes[14..16] != (RECORD as u16).to_le_bytes()
-        || bytes[16..20] != ((count * RECORD) as u32).to_le_bytes()
+        || bytes[14..16] != (record as u16).to_le_bytes()
+        || bytes[16..20] != ((count * record) as u32).to_le_bytes()
         || bytes[length..].iter().any(|b| *b != 0)
     {
         return Err(Error::Corrupt);
@@ -141,20 +156,29 @@ pub fn decode_state(bytes: &[u8], out: &mut [Bond]) -> Result<(usize, Option<[u8
         return Err(Error::Corrupt);
     }
     // Validate the complete input before exposing even the first key.
-    for (i, b) in bytes[HEADER..length].chunks_exact(RECORD).enumerate() {
-        let bond = Bond {
-            address_type: b[0],
-            key_size: b[1],
-            flags: b[2],
-            address: b[4..10].try_into().unwrap(),
-            ediv: u16::from_le_bytes([b[10], b[11]]),
-            random: b[12..20].try_into().unwrap(),
-            ltk: b[20..36].try_into().unwrap(),
-        };
-        if !valid(&bond) || b[3] != 0 || b[36..].iter().any(|b| *b != 0) {
+    let parse = |b: &[u8]| Bond {
+        address_type: b[0],
+        key_size: b[1],
+        flags: b[2],
+        address: b[4..10].try_into().unwrap(),
+        ediv: u16::from_le_bytes([b[10], b[11]]),
+        random: b[12..20].try_into().unwrap(),
+        ltk: b[20..36].try_into().unwrap(),
+        irk: if record == RECORD_V2 {
+            b[40..56].try_into().unwrap()
+        } else {
+            [0; 16]
+        },
+    };
+    for (i, b) in bytes[HEADER..length].chunks_exact(record).enumerate() {
+        let mut bond = parse(b);
+        let bad = !valid(&bond) || b[3] != 0 || b[36..40].iter().any(|b| *b != 0);
+        bond.ltk.fill(0);
+        bond.irk.fill(0);
+        if bad {
             return Err(Error::Corrupt);
         }
-        for previous in bytes[HEADER..HEADER + i * RECORD].chunks_exact(RECORD) {
+        for previous in bytes[HEADER..HEADER + i * record].chunks_exact(record) {
             if previous[0] == b[0] && previous[4..10] == b[4..10] {
                 return Err(Error::Duplicate);
             }
@@ -162,17 +186,9 @@ pub fn decode_state(bytes: &[u8], out: &mut [Bond]) -> Result<(usize, Option<[u8
     }
     for (slot, b) in out
         .iter_mut()
-        .zip(bytes[HEADER..length].chunks_exact(RECORD))
+        .zip(bytes[HEADER..length].chunks_exact(record))
     {
-        *slot = Bond {
-            address_type: b[0],
-            key_size: b[1],
-            flags: b[2],
-            address: b[4..10].try_into().unwrap(),
-            ediv: u16::from_le_bytes([b[10], b[11]]),
-            random: b[12..20].try_into().unwrap(),
-            ltk: b[20..36].try_into().unwrap(),
-        };
+        *slot = parse(b);
     }
     Ok((count, consumed))
 }
@@ -186,6 +202,7 @@ pub fn recognized(bytes: &[u8]) -> bool {
         ediv: 0,
         random: [0; 8],
         ltk: [0; 16],
+        irk: [0; 16],
     }; MAX_BONDS];
     let valid = decode_state(bytes, &mut bonds).is_ok();
     clear_keys(&mut bonds);
@@ -193,7 +210,7 @@ pub fn recognized(bytes: &[u8]) -> bool {
 }
 fn clear_keys(bonds: &mut [Bond]) {
     for bond in bonds {
-        for byte in &mut bond.ltk {
+        for byte in bond.ltk.iter_mut().chain(bond.irk.iter_mut()) {
             unsafe {
                 core::ptr::write_volatile(byte, 0);
             }
@@ -211,6 +228,7 @@ pub fn consumed_config_hash(bytes: &[u8]) -> Result<Option<[u8; 32]>, Error> {
         ediv: 0,
         random: [0; 8],
         ltk: [0; 16],
+        irk: [0; 16],
     }; MAX_BONDS];
     let result = decode_state(bytes, &mut bonds).map(|(_, hash)| hash);
     clear_keys(&mut bonds);
@@ -226,6 +244,7 @@ pub fn bond_count(bytes: &[u8]) -> Result<usize, Error> {
         ediv: 0,
         random: [0; 8],
         ltk: [0; 16],
+        irk: [0; 16],
     }; MAX_BONDS];
     let result = decode_state(bytes, &mut bonds).map(|(n, _)| n);
     clear_keys(&mut bonds);
@@ -262,6 +281,7 @@ mod tests {
         ediv: 7,
         random: [2; 8],
         ltk: [3; 16],
+        irk: [0; 16],
     };
     #[test]
     fn roundtrip_empty_and_limit() {
@@ -303,6 +323,31 @@ mod tests {
         encode_state(&[B], saved, &mut bytes).unwrap();
         assert_eq!(decode_state(&bytes, &mut [B; MAX_BONDS]), Ok((1, saved)));
         assert!(recognized(&bytes));
+    }
+    #[test]
+    fn irk_records_use_version_2_and_irkless_files_stay_version_1() {
+        let mut bytes = [0; CAPACITY];
+        encode(&[B], &mut bytes).unwrap();
+        assert_eq!(&bytes[8..10], &1u16.to_le_bytes());
+        let mut with = B;
+        with.address[0] = 9;
+        with.irk = [5; 16];
+        encode(&[B, with], &mut bytes).unwrap();
+        assert_eq!(&bytes[8..10], &2u16.to_le_bytes());
+        assert_eq!(&bytes[14..16], &56u16.to_le_bytes());
+        let mut out = [B; MAX_BONDS];
+        assert_eq!(decode(&bytes, &mut out), Ok(2));
+        assert_eq!(out[0].irk, [0; 16]);
+        assert_eq!(out[1].irk, [5; 16]);
+        assert!(recognized(&bytes));
+        assert_eq!(bond_count(&bytes), Ok(2));
+        for i in 0..HEADER + 2 * RECORD_V2 {
+            let mut bad = bytes;
+            bad[i] ^= 1;
+            assert!(decode(&bad, &mut [B; MAX_BONDS]).is_err(), "byte {i}");
+        }
+        bytes[8] = 3;
+        assert_eq!(decode(&bytes, &mut out), Err(Error::Version));
     }
     #[test]
     fn corruption_is_rejected_before_output() {
