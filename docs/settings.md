@@ -49,3 +49,33 @@ firmware readerは上限付きparseとclose成功後、CONFIGの正確なraw byt
 ### 失敗時の限界
 
 writerは両FAT・directory上限・primary/backup FSInfo・容量・cross-linkを事前検査します。BOT WRITE(10)・SYNCHRONIZE CACHE(10)・保護/sense検査を使います。回復可能metadata失敗ではrollbackを試みますが、永続故障やmetadata公開中の取外しではrollbackも失敗し、要回復状態を返します。停電原子性は保証しません。使い捨て像のfsck・変更外領域検査は試験した境界の証拠で、任意取外しの安全性を証明しません。実USB冷間起動/読戻し・Windows chkdsk・実Bluetoothは未確認です。
+
+## Write preflight rules — English (owner decision 2026-10-18)
+
+| Check | Rule |
+|---|---|
+| FAT layout | Two FATs, mirroring on (ExtFlags 0); refused otherwise |
+| FAT integrity | Only the FAT sectors holding the record's clusters (existing chain or newly selected free clusters) are mirror-compared and audited for incoming references. No whole-FAT check, at save or at boot |
+| Free clusters | Searched from the FSInfo next-free hint, wrapping once; the read budget (20,000 per step) ends the search as `Budget` |
+| Primary FSInfo | Signature required; free count and next-free hint must be in range |
+| Backup FSInfo | Missing or invalid signature: continue with the primary only and log a warning |
+| `SETTINGS` entry | Directory bit 0x10 required; VOLUME_ID 0x08 refused; ARCHIVE, HIDDEN, SYSTEM and READ_ONLY ignored; a long name is accepted when the short name is `SETTINGS   ` |
+| `PAIRING.DAT` entry | Short name only, no attribute bits, at most 4096 bytes, recognized OS record |
+| FSInfo update | Free count decremented as a hint, or set unknown (0xFFFFFFFF) when it cannot cover the allocation |
+
+The OS still writes only `SETTINGS/PAIRING.DAT`; these rules do not widen what is written.
+
+## 書込み事前検査の規則 — 日本語（所有者決定 2026-10-18）
+
+| 検査 | 規則 |
+|---|---|
+| FAT の構成 | FAT 2 本・ミラー有効（ExtFlags 0）。それ以外は拒否 |
+| FAT の整合性 | 記録のクラスター（既存チェーンまたは新たに選んだ空き）を含む FAT セクターだけをミラー比較し、入参照を監査。保存時・起動時とも FAT 全体の検査は行わない |
+| 空きクラスター | FSInfo の next-free ヒントから探し、1 周で打ち切る。読出し予算（各段階 20,000）で尽きたら `Budget` |
+| 主 FSInfo | 署名必須。空き数と next-free ヒントは範囲内であること |
+| バックアップ FSInfo | 欠落・署名不正なら主 FSInfo だけで続行し、警告を記録 |
+| `SETTINGS` エントリー | ディレクトリービット 0x10 必須。VOLUME_ID 0x08 は拒否。ARCHIVE・HIDDEN・SYSTEM・READ_ONLY は無視。短い名前が `SETTINGS   ` なら長い名前付きも可 |
+| `PAIRING.DAT` エントリー | 短い名前のみ、属性ビットなし、4096 バイト以下、OS が認識できる記録 |
+| FSInfo の更新 | 空き数はヒントとして減算。確保分に足りなければ不明（0xFFFFFFFF） |
+
+OS が書くのは引き続き `SETTINGS/PAIRING.DAT` だけで、これらの規則は書き込む対象を広げません。

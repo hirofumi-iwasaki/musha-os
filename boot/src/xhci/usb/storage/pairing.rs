@@ -245,6 +245,11 @@ impl Device {
         let elapsed = crate::bootstate::epoch_now()
             .unwrap_or(started)
             .saturating_sub(started);
+        for warning in [old_trace.warning, trace.warning] {
+            if !warning.is_empty() {
+                crate::bootlog::device("bluetooth", format_args!("SETTINGS warning: {}", warning));
+            }
+        }
         for b in &mut record {
             unsafe {
                 core::ptr::write_volatile(b, 0);

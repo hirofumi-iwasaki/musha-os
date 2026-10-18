@@ -142,3 +142,12 @@ asset名はv無し。像はQEMU専用で大容量実USBへraw copyしません�
 | 承認公開後downloadのbyte/hash照合 | PENDING | — |
 
 status更新前に候補hash・実機/接続/電源条件・原写真/log・時間・所有者reviewを記録。[実機様式](hardware-acceptance-0.4.0.md)へrun毎証拠を保存。像内文書/license変更は像bytesを変え条件2の再受入が必要。像外文書だけでも必要runtime全member一致が条件です。
+
+
+## SETTINGS writer and Bluetooth bond save — English (2026-10-18 development update)
+
+The SETTINGS writer (only `SETTINGS/PAIRING.DAT`) now reads only the FAT sectors a save needs, so a save on a 30.8 GB, 16 KiB-cluster FAT32 stick takes tens of sector reads instead of ~29,400 (IMG_7741 exceeded the 20,000-read budget). By owner decision it no longer runs a whole-FAT integrity check; it accepts a SETTINGS directory with ARCHIVE/HIDDEN/SYSTEM/READ_ONLY bits or a long name, and a missing or invalid backup FSInfo (primary only, with a warning). Volume labels, a non-directory SETTINGS and an invalid primary FSInfo are still refused. Every refusal is logged with its step, check, reads and time, and the viewer names the kind. Pairing now requests the peer identity key (IRK) and resolves private addresses on reconnect. Physical bond save, reconnect and Xbox key distribution remain unverified. Rules: [SETTINGS files](settings.md).
+
+## SETTINGS書込みとBluetoothボンド保存 — 日本語（2026-10-18開発更新）
+
+SETTINGS writer（対象は`SETTINGS/PAIRING.DAT`のみ）は保存に必要なFATセクターだけを読むようになり、30.8 GB・16 KiBクラスターのFAT32媒体でも約29,400回ではなく数十回の読出しで済みます（IMG_7741は20,000回の予算を超過）。所有者決定により、FAT全体の整合性検査は行いません。ARCHIVE/HIDDEN/SYSTEM/READ_ONLY付きや長い名前付きのSETTINGS、バックアップFSInfoの欠落・不正（主FSInfoのみで続行し警告）を受け付けます。ボリュームラベル、ディレクトリーでないSETTINGS、主FSInfoの不正は従来どおり拒否します。拒否は段階・検査・読出し数・時間とともに記録し、ビューアーに種別を出します。ペアリングで相手のidentity鍵（IRK）を要求し、再接続でprivate addressを解決します。実機のボンド保存・再接続・Xboxの鍵配布は未確認です。規則は[SETTINGSファイル](settings.md)を参照してください。

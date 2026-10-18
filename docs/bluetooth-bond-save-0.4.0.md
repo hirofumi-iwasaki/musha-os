@@ -69,3 +69,9 @@ host で同じ検査を再現するため、次の提供をお願いします（
   - ルートディレクトリーと `SETTINGS` の先頭クラスター
 
 それまでは、次回の実機の `detail=` 行で拒否した検査が分かります。
+
+## Decisions — English (2026-10-18)
+
+The owner approved all four items above: no whole-FAT check (the bounded check is the method, also not at boot); SETTINGS accepted when bit 0x10 is set (VOLUME_ID refused, other bits ignored); long-name SETTINGS accepted when the short name matches; missing or invalid backup FSInfo tolerated with a warning (an invalid primary is refused). Implemented in the SETTINGS writer; rules in [SETTINGS files](settings.md).
+
+日本語: 上記 4 項目はすべて所有者が承認しました。FAT 全体の検査は行わない（限定検査を正式な方式とし、起動時にも行わない）、0x10 ビットがあれば SETTINGS を受け付ける（VOLUME_ID は拒否、他のビットは無視）、短い名前が一致すれば長い名前付きの SETTINGS も受け付ける、バックアップ FSInfo の欠落・不正は警告付きで許容（主 FSInfo の不正は拒否）。SETTINGS writer に実装し、規則は[SETTINGS ファイル](settings.md)にあります。

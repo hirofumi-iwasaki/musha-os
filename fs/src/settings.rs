@@ -29,6 +29,8 @@ pub struct Trace {
     pub value: u32,
     pub preflight_reads: u32,
     pub audit_reads: u32,
+    /// A tolerated irregularity (for example, no usable backup FSInfo).
+    pub warning: &'static str,
 }
 impl Trace {
     fn layout(&mut self, detail: &'static str, value: u32) -> Refusal {
@@ -91,6 +93,7 @@ pub struct Plan {
     count: usize,
     fatsize: u64,
     info: [u64; 2],
+    info_count: usize,
 }
 impl Plan {
     pub fn clusters(&self) -> &[u32] {
@@ -122,8 +125,9 @@ impl Plan {
             self.volume.fat + self.fatsize + relative,
         ]
     }
-    pub fn fsinfo_sectors(&self) -> [u64; 2] {
-        self.info
+    /// Primary FSInfo, then the backup when it is present and valid.
+    pub fn fsinfo_sectors(&self) -> &[u64] {
+        &self.info[..self.info_count]
     }
 }
 struct Entry {
@@ -290,7 +294,8 @@ fn scan<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     let v = discover_volume(r).inspect_err(|_| t.detail = "volume")?;
     let mut b = [0; 4096];
     r.sector(v.start, &mut b)?;
-    // Require mirrored two-FAT layout and valid primary + backup FSInfo.
+    // Require a mirrored two-FAT layout and a valid primary FSInfo. A missing or
+    // invalid backup FSInfo is tolerated with a warning (owner decision).
     if b[16] != 2 {
         return Err(t.layout("FAT count", b[16] as u32));
     }
@@ -304,17 +309,26 @@ fn scan<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     if info == 0 || info >= reserved {
         return Err(t.layout("FSInfo sector", info as u32));
     }
-    if backup == 0 || backup + info >= reserved {
-        return Err(t.layout("backup boot sector", backup as u32));
+    let mut info = [v.start + info, 0];
+    let mut info_count = 1;
+    if backup == 0 || backup + info[0] - v.start >= reserved {
+        t.warning = "no backup FSInfo; primary only";
+    } else {
+        info[1] = v.start + backup + info[0] - v.start;
+        info_count = 2;
     }
-    let info = [v.start + info, v.start + backup + info];
     let mut hint = None;
-    for (which, lba) in info.into_iter().enumerate() {
-        r.sector(lba, &mut b)?;
+    for which in 0..info_count {
+        r.sector(info[which], &mut b)?;
         if u32le(&b, 0) != 0x41615252
             || u32le(&b, 484) != 0x61417272
             || u32le(&b, 508) != 0xaa550000
         {
+            if which == 1 {
+                t.warning = "backup FSInfo signature invalid; primary only";
+                info_count = 1;
+                break;
+            }
             return Err(t.layout("FSInfo signature (0 primary, 1 backup)", which as u32));
         }
         let free = u32le(&b, 488);
@@ -331,10 +345,10 @@ fn scan<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
     }
     let (settings, _) = entry(r, v, v.root, b"SETTINGS   ", t)?;
     let settings = settings.ok_or_else(|| t.refuse(Refusal::MissingDirectory, "SETTINGS"))?;
-    if settings.lfn {
-        return Err(t.layout("SETTINGS has a long name", 0));
-    }
-    if settings.bytes[11] & 0x3f != 0x10 {
+    // Owner decision: a long name is accepted when the short name matches, and
+    // ARCHIVE/HIDDEN/SYSTEM/READ_ONLY are ignored. It must still be a directory
+    // and never a volume label. The OS writes only its own file inside it.
+    if settings.bytes[11] & 0x10 == 0 || settings.bytes[11] & 0x08 != 0 {
         return Err(t.layout("SETTINGS attribute", settings.bytes[11] as u32));
     }
     let settings_cluster = first(&settings.bytes);
@@ -355,6 +369,7 @@ fn scan<F: FnMut(u64, &mut [u8]) -> Result<(), Error>>(
         count: 0,
         fatsize,
         info,
+        info_count,
     };
     if let Some(file) = file {
         if file.lfn {
@@ -616,7 +631,7 @@ mod media_tests {
         let p = d.plan().unwrap();
         assert!(!p.created);
         assert_eq!(p.clusters(), &[4, 6, 8, 10, 12, 14, 16, 18]);
-        assert_eq!(p.fsinfo_sectors(), [1, 7]);
+        assert_eq!(p.fsinfo_sectors(), &[1, 7]);
         assert_eq!(p.fat_sectors(4), [32, 544]);
         assert_eq!(p.directory_sector(), 1057);
     }
@@ -908,7 +923,7 @@ pub fn write_owned_traced(
                 patch.new[off..off + 4].copy_from_slice(&((raw & 0xf0000000) | next).to_le_bytes());
             }
         }
-        for lba in p.info {
+        for &lba in p.fsinfo_sectors() {
             let patch = workspace.patch(disk, lba, size)?;
             // The free count is no longer verified by a whole-FAT scan: keep it
             // as a decremented hint, or mark it unknown when it cannot cover
@@ -1493,6 +1508,8 @@ mod large_media_tests {
         lfn: bool,
         fats: u8,
         backup_signature: bool,
+        primary_signature: bool,
+        backup_sector: u16,
         full_until: u64,
         reads: usize,
     }
@@ -1505,6 +1522,8 @@ mod large_media_tests {
                 lfn: false,
                 fats: 2,
                 backup_signature: true,
+                primary_signature: true,
+                backup_sector: 6,
                 full_until: 0,
                 reads: 0,
             }
@@ -1555,11 +1574,11 @@ mod large_media_tests {
                     put32(b, 36, self.fat as u32);
                     put32(b, 44, 2);
                     put16(b, 48, 1);
-                    put16(b, 50, 6);
+                    put16(b, 50, self.backup_sector);
                     b[510..512].copy_from_slice(&[0x55, 0xaa]);
                 }
                 1 | 7 => {
-                    if l == 1 || self.backup_signature {
+                    if (l == 1 && self.primary_signature) || (l == 7 && self.backup_signature) {
                         put32(b, 0, 0x41615252);
                         put32(b, 484, 0x61417272);
                         put32(b, 508, 0xaa550000);
@@ -1640,25 +1659,53 @@ mod large_media_tests {
         assert!(d.sectors.is_empty());
     }
     #[test]
-    fn layout_refusals_name_the_failing_check() {
-        for (setup, refusal, detail, value) in [
+    fn approved_settings_and_fsinfo_tolerances_save_with_warnings() {
+        // Owner decision 2026-10-18: SETTINGS with ARCHIVE/HIDDEN bits or a long
+        // name, and a missing or invalid backup FSInfo, are accepted.
+        for (setup, warning) in [
+            ((|d: &mut Large| d.attribute = 0x30) as fn(&mut Large), ""),
+            (|d: &mut Large| d.attribute = 0x12, ""),
+            (|d: &mut Large| d.lfn = true, ""),
             (
-                (|d: &mut Large| d.attribute = 0x30) as fn(&mut Large),
-                Refusal::Layout,
-                "SETTINGS attribute",
-                0x30,
-            ),
-            (
-                |d: &mut Large| d.lfn = true,
-                Refusal::Layout,
-                "SETTINGS has a long name",
-                0,
+                |d: &mut Large| d.backup_sector = 0,
+                "no backup FSInfo; primary only",
             ),
             (
                 |d: &mut Large| d.backup_signature = false,
+                "backup FSInfo signature invalid; primary only",
+            ),
+        ] {
+            let mut d = Large::new();
+            setup(&mut d);
+            let mut t = Trace::default();
+            assert_eq!(d.run(&mut t), Ok(true), "{t:?}");
+            assert_eq!(t.warning, warning);
+            if !warning.is_empty() {
+                // Only the primary FSInfo is updated; the backup sector stays.
+                assert!(d.sectors.contains_key(&1) && !d.sectors.contains_key(&7));
+            }
+        }
+    }
+    #[test]
+    fn layout_refusals_name_the_failing_check() {
+        for (setup, refusal, detail, value) in [
+            (
+                (|d: &mut Large| d.attribute = 0x18) as fn(&mut Large),
+                Refusal::Layout,
+                "SETTINGS attribute",
+                0x18,
+            ),
+            (
+                |d: &mut Large| d.attribute = 0x20,
+                Refusal::Layout,
+                "SETTINGS attribute",
+                0x20,
+            ),
+            (
+                |d: &mut Large| d.primary_signature = false,
                 Refusal::Layout,
                 "FSInfo signature (0 primary, 1 backup)",
-                1,
+                0,
             ),
             // One FAT changes the data start; the volume parser refuses first.
             (
