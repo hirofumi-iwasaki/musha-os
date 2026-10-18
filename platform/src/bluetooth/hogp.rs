@@ -92,6 +92,10 @@ struct Binding {
 pub struct Reports {
     bindings: [Option<Binding>; MAX_REPORTS],
     count: usize,
+    // Input reports neither decoder maps (e.g. battery): not subscribed, and a
+    // notification on them is accepted without events.
+    unmapped: [u16; MAX_REPORTS],
+    unmapped_count: usize,
     keyboard: Option<musha_input::hid::Decoder>,
     gamepad: Option<musha_input::gamepad::Decoder>,
     active: bool,
@@ -118,6 +122,8 @@ impl Reports {
         };
         let mut bindings = core::array::from_fn(|_| None);
         let mut count = 0;
+        let mut unmapped = [0; MAX_REPORTS];
+        let mut unmapped_count = 0;
         for s in specs.iter().filter(|s| s.kind == 1) {
             if s.cccd == 0 || s.reference == 0 || s.value >= s.cccd || s.cccd > s.end {
                 return Err(Error::Invalid);
@@ -131,6 +137,11 @@ impl Reports {
             let (bytes, pad) = match (kb, gp) {
                 (Some(n), None) => (n, false),
                 (None, Some(n)) => (n, true),
+                (None, None) => {
+                    unmapped[unmapped_count] = s.value;
+                    unmapped_count += 1;
+                    continue;
+                }
                 _ => return Err(Error::Unsupported),
             };
             if specs
@@ -162,6 +173,8 @@ impl Reports {
         Ok(Self {
             bindings,
             count,
+            unmapped,
+            unmapped_count,
             keyboard: keyboard.map(musha_input::hid::Decoder::new),
             gamepad: gamepad.map(musha_input::gamepad::Decoder::new),
             active: true,
@@ -169,6 +182,10 @@ impl Reports {
     }
     pub fn count(&self) -> usize {
         self.count
+    }
+    /// Input reports discovered but not mapped by either decoder.
+    pub fn unmapped(&self) -> usize {
+        self.unmapped_count
     }
     pub fn cccd(&self, index: usize) -> Option<u16> {
         self.bindings.get(index)?.as_ref().map(|b| b.cccd)
@@ -202,6 +219,9 @@ impl Reports {
             return Err(Error::Length);
         }
         let value = u16::from_le_bytes([p[1], p[2]]);
+        if p[0] == 0x1b && self.unmapped[..self.unmapped_count].contains(&value) {
+            return Ok(());
+        }
         let b = self.bindings[..self.count]
             .iter()
             .flatten()

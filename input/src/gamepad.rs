@@ -266,16 +266,19 @@ impl Layout {
                                         (false, (usage - 0x30) as u8)
                                     } else if page == 2 && matches!(usage, 0xc4 | 0xc5) {
                                         (false, (usage - 0xc4 + 10) as u8)
-                                    } else if page == 0x0c
-                                        && usage == 0xb2
-                                        && g.size == 1
+                                    } else if value == 2
                                         && g.min == 0
-                                        && g.max == 1
-                                        && value == 2
+                                        && ((page == 0x0c
+                                            && matches!(usage, 0xb2 | 0x223)
+                                            && g.size == 1
+                                            && g.max == 1)
+                                            || (page == 6 && usage == 0x20 && g.size <= 8))
                                     {
-                                        // Xbox BLE Share/Consumer Record is a known one-bit
-                                        // field with no existing gamepad-button ABI mapping.
-                                        // Preserve its bit offset but emit no invented event.
+                                        // Known Xbox BLE fields with no gamepad ABI mapping:
+                                        // Share/Consumer Record (0x0c:0xb2) and AC Home
+                                        // (0x0c:0x223) one-bit fields, and Battery Strength
+                                        // (0x06:0x20). Preserve their bit offsets but emit no
+                                        // invented event.
                                         continue;
                                     } else {
                                         return Err(Error::Unsupported);

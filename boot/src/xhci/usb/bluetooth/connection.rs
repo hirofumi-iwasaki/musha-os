@@ -931,6 +931,19 @@ impl Device {
             }
             return Ok(());
         }
+        // An Error Response while a CCCD write is pending: name the refusal.
+        if self.saved && !self.subscribed && p.len() == 5 && p[0] == 0x01 {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "CCCD write rejected request={:02x} handle={:04x} code={:02x}",
+                    p[1],
+                    u16::from_le_bytes([p[2], p[3]]),
+                    p[4]
+                ),
+            );
+            return Err("BT CCCD WRITE REJECTED");
+        }
         let bond = self.bond.as_ref().ok_or("BT UNAUTHENTICATED ATT")?;
         let gatt = self.gatt.as_mut().ok_or("BT GATT STATE")?;
         let diagnostic = gatt.diagnostic(p);

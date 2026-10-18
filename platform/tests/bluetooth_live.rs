@@ -257,6 +257,7 @@ mod legacy {
         let mut decoded = [*bond().bond(); 8];
         let (n, consumed) = musha_platform::pairing::decode_state(&record, &mut decoded).unwrap();
         assert_eq!(n, 1);
+        assert_eq!(musha_platform::pairing::bond_count(&record), Ok(1));
         assert_eq!(consumed, Some(hash));
         assert!(!musha_platform::pairing::requested(
             true,

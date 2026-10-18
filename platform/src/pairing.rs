@@ -216,6 +216,21 @@ pub fn consumed_config_hash(bytes: &[u8]) -> Result<Option<[u8; 32]>, Error> {
     clear_keys(&mut bonds);
     result
 }
+/// Number of bonds in a fully validated record; key copies are wiped.
+pub fn bond_count(bytes: &[u8]) -> Result<usize, Error> {
+    let mut bonds = [Bond {
+        address_type: 0,
+        address: [0; 6],
+        key_size: 0,
+        flags: 0,
+        ediv: 0,
+        random: [0; 8],
+        ltk: [0; 16],
+    }; MAX_BONDS];
+    let result = decode_state(bytes, &mut bonds).map(|(n, _)| n);
+    clear_keys(&mut bonds);
+    result
+}
 /// Only exact raw CONFIG bytes are compared. Re-saving identical content does not
 /// rearm pairing. Missing/malformed CONFIG never supplies a hash to this policy.
 pub fn requested(pair: bool, raw: Option<[u8; 32]>, consumed: Option<[u8; 32]>) -> bool {

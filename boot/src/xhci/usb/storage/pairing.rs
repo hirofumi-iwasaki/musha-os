@@ -142,11 +142,13 @@ impl Device {
             return Ok(());
         };
         let loaded = old(&mut image, &mut record);
+        let mut records = 0;
         let result = match loaded {
             Ok(exists) => bond.save(
                 if exists { Some(&record) } else { None },
                 crate::settings::pairing_config_hash(),
                 |bytes| {
+                    records = musha_platform::pairing::bond_count(bytes).unwrap_or(0);
                     let blocks = image.device.blocks;
                     let size = image.device.size as usize;
                     settings::write_owned(
@@ -178,6 +180,20 @@ impl Device {
             }
         }
         let ok = result.is_ok();
+        match &result {
+            Ok(_) => crate::bootlog::device(
+                "bluetooth",
+                format_args!("bond saved record={} file=SETTINGS/PAIRING.DAT", records),
+            ),
+            Err(e) => crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "bond save failed reason={:?} transport={}",
+                    e,
+                    image.transport.unwrap_or("ok")
+                ),
+            ),
+        }
         crate::bluetooth::save_result(generation, result);
         if !ok {
             crate::bluetooth::status(
