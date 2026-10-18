@@ -266,3 +266,27 @@ fn first_acl_exchange_carries_smp_pairing_pdus_with_credit_return() {
         assert_eq!(stage::smp_name(code), name);
     }
 }
+
+#[test]
+fn pairing_failed_codes_and_guidance_fit_the_viewer() {
+    for (code, reason) in [
+        (0x01, "BT PAIRING FAILED PASSKEY ENTRY"),
+        (0x05, "BT PAIRING FAILED NOT SUPPORTED"),
+        (0x08, "BT PAIRING FAILED UNSPECIFIED"),
+        (0x09, "BT PAIRING FAILED REPEATED ATTEMPTS"),
+        (0x0f, "BT PAIRING FAILED KEY REJECTED"),
+        (0x10, "BT PAIRING FAILED OTHER"),
+        (0xff, "BT PAIRING FAILED OTHER"),
+    ] {
+        assert_eq!(stage::pairing_failed(code), reason);
+    }
+    // Viewer rows hold 80 ASCII characters; its font has no other glyphs.
+    for code in 0..=0x10 {
+        let line = format!("Bluetooth unavailable: {}", stage::pairing_failed(code));
+        assert!(line.len() <= 80 && line.is_ascii(), "{line}");
+    }
+    for text in [stage::PAIRING_NO_REPLY, stage::PAIRING_TIMED_OUT] {
+        assert!(text.len() <= 80 && text.is_ascii(), "{text}");
+        assert!(text.contains("pair button"));
+    }
+}

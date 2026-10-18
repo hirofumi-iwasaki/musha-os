@@ -74,9 +74,29 @@ impl Device {
                 .map_err(|_| "BT RECONNECT TIMEOUT")?;
         }
         if let Some(security) = self.security.as_mut() {
-            security
-                .check(self.generation, now)
-                .map_err(|_| "BT SMP TIMEOUT")?;
+            let awaiting = security.awaiting_response();
+            security.check(self.generation, now).map_err(|_| {
+                if awaiting {
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!("SMP timeout with no Pairing Response"),
+                    );
+                    "BT PAIRING NO RESPONSE"
+                } else {
+                    "BT SMP TIMEOUT"
+                }
+            })?;
+            if awaiting && !self.smp_hinted && now.saturating_sub(self.smp_started) >= 5000 {
+                self.smp_hinted = true;
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "no Pairing Response after {}ms; the controller may hold an old bond",
+                        now.saturating_sub(self.smp_started)
+                    ),
+                );
+                crate::bluetooth::status(bt::stage::PAIRING_NO_REPLY);
+            }
         }
         if self.command.is_some() || self.command_credits == 0 {
             return Ok(());
@@ -335,6 +355,8 @@ impl Device {
                     .map_err(|_| "BT SC INIT")?;
                     let request = security.request();
                     self.security = Some(security);
+                    self.smp_started = now;
+                    self.smp_hinted = false;
                     self.phase = 8;
                     self.queue(6, &request, now)?;
                 } else {
@@ -777,7 +799,13 @@ impl Device {
                                 &sdu[..length],
                                 &mut crate::entropy::BootRandom,
                             )
-                            .map_err(|_| "BT SC AUTHENTICATION")?;
+                            .map_err(|e| match e {
+                                // Pairing Failed from the peer: name its reason code.
+                                bt::Error::Controller(code) if sdu[0] == 0x05 => {
+                                    bt::stage::pairing_failed(code)
+                                }
+                                _ => "BT SC AUTHENTICATION",
+                            })?;
                         self.action(host, now, action)?;
                     } else if channel == 4 {
                         self.att(now, &sdu[..length])?;

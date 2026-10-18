@@ -486,6 +486,10 @@ impl Central {
         }
         Ok(self.bond())
     }
+    /// Still waiting for the peer's Pairing Response to our Pairing Request.
+    pub fn awaiting_response(&self) -> bool {
+        self.state == State::Response
+    }
     /// Whether the peer agreed to distribute its identity keys.
     pub fn identity_requested(&self) -> bool {
         self.response[6] & ID_KEY != 0

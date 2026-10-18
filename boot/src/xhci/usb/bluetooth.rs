@@ -378,6 +378,10 @@ pub(in crate::xhci) struct Device {
     acl_logged: [bool; 2],
     channels_logged: u8,
     att_skipped: u32,
+    // Pairing Request time, and whether the no-reply guidance was shown.
+    smp_started: u64,
+    smp_hinted: bool,
+    directed_logged: bool,
     phase: u8,
     command: Option<(u16, u64)>,
     command_credits: u8,
@@ -599,6 +603,9 @@ pub(super) fn prepare(
             acl_logged: [false; 2],
             channels_logged: 0,
             att_skipped: 0,
+            smp_started: 0,
+            smp_hinted: false,
+            directed_logged: false,
             phase: 0,
             command: None,
             command_credits: 1,
@@ -792,9 +799,15 @@ impl Device {
         if self.phase == 0 && event.code == 0x3e && event.parameters.first() == Some(&2) {
             self.advertising.event(now);
             let mut unsupported = None;
+            let mut directed = None;
             musha_platform::bluetooth::advertisements(event, |advert| {
                 self.advertisements = self.advertisements.saturating_add(1);
                 self.advertising.report(&advert.address);
+                // A controller that still holds a bond reconnects with directed
+                // advertising and no HID data; new pairing needs pairing mode.
+                if self.pairing && advert.event_type == 1 {
+                    directed.get_or_insert(advert.address);
+                }
                 if self.phase == 0 && matches!(advert.event_type, 0 | 1) {
                     if !self.pairing {
                         if crate::bluetooth::stored_connectable(
@@ -839,6 +852,17 @@ impl Device {
             })
             .map_err(|_| "BT ADVERTISING")?;
             crate::debug(b"MUSHA: BT_LE_ADVERTISING_VALIDATED\n");
+            if let Some(address) = directed.filter(|_| !self.directed_logged) {
+                self.directed_logged = true;
+                let tail = musha_platform::bluetooth::stage::address_tail(&address);
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "directed advertising ..:{:02x}:{:02x} ignored for new pairing; the controller may hold an old bond (use its pair button)",
+                        tail[0], tail[1]
+                    ),
+                );
+            }
             if let Some((appearance, address)) = unsupported.filter(|_| !self.unsupported_logged) {
                 self.unsupported_logged = true;
                 let tail = musha_platform::bluetooth::stage::address_tail(&address);
@@ -1140,6 +1164,12 @@ pub(super) fn unavailable(reason: &'static str) {
             }
         };
     }
+    match reason {
+        "BT PAIRING NO RESPONSE" => {
+            return crate::bluetooth::status(musha_platform::bluetooth::stage::PAIRING_TIMED_OUT);
+        }
+        _ => {}
+    }
     crate::bluetooth::status(prefixed!(
         "BT ENTROPY COMMAND TIMEOUT",
         "BT INITIALIZATION TIMEOUT",
@@ -1182,6 +1212,22 @@ pub(super) fn unavailable(reason: &'static str) {
         "BT ENCRYPTION REJECTED",
         "BT PAIR TIMEOUT",
         "BT CCCD WRITE REJECTED",
+        "BT PAIRING FAILED PASSKEY ENTRY",
+        "BT PAIRING FAILED OOB NOT AVAILABLE",
+        "BT PAIRING FAILED AUTHENTICATION REQUIREMENTS",
+        "BT PAIRING FAILED CONFIRM VALUE",
+        "BT PAIRING FAILED NOT SUPPORTED",
+        "BT PAIRING FAILED ENCRYPTION KEY SIZE",
+        "BT PAIRING FAILED COMMAND NOT SUPPORTED",
+        "BT PAIRING FAILED UNSPECIFIED",
+        "BT PAIRING FAILED REPEATED ATTEMPTS",
+        "BT PAIRING FAILED INVALID PARAMETERS",
+        "BT PAIRING FAILED DHKEY CHECK",
+        "BT PAIRING FAILED NUMERIC COMPARISON",
+        "BT PAIRING FAILED BR/EDR IN PROGRESS",
+        "BT PAIRING FAILED CROSS-TRANSPORT KEY",
+        "BT PAIRING FAILED KEY REJECTED",
+        "BT PAIRING FAILED OTHER",
         "BT HOGP SERVICES REJECTED",
         "BT HOGP CHARACTERISTICS REJECTED",
         "BT HOGP REPORT MAP REJECTED",

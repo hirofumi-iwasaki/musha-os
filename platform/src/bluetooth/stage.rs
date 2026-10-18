@@ -137,3 +137,32 @@ pub fn connection_complete(p: &[u8]) -> Option<ConnectionComplete> {
         timeout: word(16),
     })
 }
+
+/// Bluetooth failure reason for an SMP Pairing Failed code (Core Vol 3 Part H
+/// 3.5.5). The code is public; the reason is shown on the viewer status line.
+pub fn pairing_failed(code: u8) -> &'static str {
+    match code {
+        0x01 => "BT PAIRING FAILED PASSKEY ENTRY",
+        0x02 => "BT PAIRING FAILED OOB NOT AVAILABLE",
+        0x03 => "BT PAIRING FAILED AUTHENTICATION REQUIREMENTS",
+        0x04 => "BT PAIRING FAILED CONFIRM VALUE",
+        0x05 => "BT PAIRING FAILED NOT SUPPORTED",
+        0x06 => "BT PAIRING FAILED ENCRYPTION KEY SIZE",
+        0x07 => "BT PAIRING FAILED COMMAND NOT SUPPORTED",
+        0x08 => "BT PAIRING FAILED UNSPECIFIED",
+        0x09 => "BT PAIRING FAILED REPEATED ATTEMPTS",
+        0x0a => "BT PAIRING FAILED INVALID PARAMETERS",
+        0x0b => "BT PAIRING FAILED DHKEY CHECK",
+        0x0c => "BT PAIRING FAILED NUMERIC COMPARISON",
+        0x0d => "BT PAIRING FAILED BR/EDR IN PROGRESS",
+        0x0e => "BT PAIRING FAILED CROSS-TRANSPORT KEY",
+        0x0f => "BT PAIRING FAILED KEY REJECTED",
+        _ => "BT PAIRING FAILED OTHER",
+    }
+}
+/// Viewer guidance when a controller does not answer a Pairing Request: it may
+/// still hold a bond this host failed to save. ASCII only (viewer font).
+pub const PAIRING_NO_REPLY: &str =
+    "No pairing reply: hold the controller pair button until it blinks fast.";
+pub const PAIRING_TIMED_OUT: &str =
+    "Pairing timed out: hold the controller pair button until it blinks fast.";

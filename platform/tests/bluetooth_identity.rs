@@ -228,3 +228,43 @@ fn stored_irk_resolves_a_reconnect_from_a_private_address() {
     assert!(store.begin(9, 5, 0, 1, RPA).is_ok());
     assert!(store.begin(9, 5, 0, 1, other).is_err());
 }
+
+#[test]
+fn without_a_stored_bond_directed_or_known_addresses_never_reconnect() {
+    // The host failed to save (or never had) a bond while the controller kept
+    // one: its directed advertising must not start a reconnect, so only a new
+    // pairing (pairing mode, HID advertising) can proceed.
+    let empty = Store::new();
+    assert!(!empty.any());
+    for (event, kind, address) in [(1, 0, PUBLIC), (0, 0, PUBLIC), (1, 1, RPA)] {
+        assert!(!empty.connectable(event, kind, &address));
+        assert!(!empty.resolved(kind, &address));
+        assert!(empty.begin(9, 5, 0, kind, address).is_err());
+    }
+    // A bond for another controller does not adopt this one either.
+    let other = Bond {
+        address_type: 0,
+        address: [9; 6],
+        key_size: 16,
+        flags: 2,
+        ediv: 0,
+        random: [0; 8],
+        ltk: [7; 16],
+        irk: [0; 16],
+    };
+    let mut record = [0; 4096];
+    pairing::encode_state(&[other], None, &mut record).unwrap();
+    let mut store = Store::new();
+    store.load(&record).unwrap();
+    assert!(!store.connectable(1, 0, &PUBLIC));
+    assert!(!store.connectable(1, 1, &RPA));
+}
+
+#[test]
+fn awaiting_response_ends_when_the_peer_answers() {
+    let mut rng = Fixed([1; 32]);
+    let mut c = Central::new(3, 5, 0, Method::JustWorks, 0, [1; 6], 0, RA, &mut rng).unwrap();
+    assert!(c.awaiting_response());
+    c.receive(3, 1, &[2, 0, 0, 9, 16, 0, 2], &mut rng).unwrap();
+    assert!(!c.awaiting_response());
+}

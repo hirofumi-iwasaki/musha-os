@@ -189,3 +189,12 @@ IRK/RPA resolution is now implemented; the "public/static addresses only" note a
 ## 日本語: HOGP と再接続の再試験（2026-10-18）
 
 IRK/RPA の解決を実装しました。上記の「public/static address のみ」と Resolving List の行は、controller については引き続き正しい（Resolving List は使わない）ものの、ホストについては当てはまりません。P から `ATT ignored opcode=1b`、各 `HOGP stage=` から `accepted`、`SMP RX Identity Information`／`Identity Address Information`、`bond identity addr-type=`、`bond saved record=`、`HID subscribed`、入力までを撮影してください。再起動後は `HID candidate ... addr-type=`（private なら `stored bond via IRK`）、`LE start encryption`、`Encryption Change`。[HOGP 探索の堅牢化と相手の identity](bluetooth-hogp-identity-0.4.0.md)を参照してください。
+
+
+## Retry after a host-side save failure — English (2026-10-18)
+
+If pairing completed but the host failed to save (`bond save failed ...` or `BT BOND SAVE ...`), the controller keeps its bond while the host has none. On the next attempt it may reconnect with directed advertising (`directed advertising ... ignored for new pairing`) or not answer the Pairing Request; after 5 s the viewer shows `No pairing reply: hold the controller pair button until it blinks fast.`, and after 30 s `Pairing timed out: ...`. Turn the controller off, start the viewer, press P, then hold the controller's pair button for about 3 s until the light blinks fast. A refusal from the controller appears as `BT PAIRING FAILED <reason>` (for example REPEATED ATTEMPTS); wait a minute before retrying in that case.
+
+## 日本語: ホスト側の保存失敗後のやり直し（2026-10-18）
+
+ペアリングは完了したのにホスト側の保存に失敗した場合（`bond save failed ...` や `BT BOND SAVE ...`）、コントローラーはボンドを保持し、ホストは持たない状態になります。次の試行でコントローラーが directed advertising で再接続しようとしたり（`directed advertising ... ignored for new pairing`）、Pairing Request に応答しなかったりすることがあります。5 秒後にビューアーへ `No pairing reply: hold the controller pair button until it blinks fast.`、30 秒後に `Pairing timed out: ...` が出ます。コントローラーの電源を切り、ビューアーを起動して P を押し、コントローラーのペアボタンを約 3 秒、ライトが速く点滅するまで長押ししてください。コントローラーが拒否した場合は `BT PAIRING FAILED <理由>`（例：REPEATED ATTEMPTS）が出ます。その場合は 1 分ほど待ってからやり直してください。ビューアーのフォントは ASCII のみのため、画面の案内は英語です。
