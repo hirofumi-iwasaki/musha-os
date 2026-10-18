@@ -456,6 +456,13 @@ fn le_create_connection_answers_with_command_status_not_complete() {
         })
     );
     assert_eq!(
+        command_reply(0x0f, &[0, 1, 0x06, 0x04], Some(0x0406)),
+        Ok(Reply::Accepted {
+            credits: 1,
+            opcode: 0x0406
+        })
+    );
+    assert_eq!(
         command_reply(0x0f, &[0, 1, 0x13, 0x20], Some(0x2013)),
         Ok(Reply::Accepted {
             credits: 1,

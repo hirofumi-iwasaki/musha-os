@@ -37,6 +37,7 @@ pub struct AdvertisingSummary {
     pub reports: u32,
     pub hid: u32,
     pub unsupported: u32,
+    pub deferred: u32,
     pub last: Option<[u8; 2]>,
 }
 /// One-second advertising aggregation; individual reports are never emitted.
@@ -46,6 +47,7 @@ pub struct Advertising {
     reports: u32,
     hid: u32,
     unsupported: u32,
+    deferred: u32,
     last: Option<[u8; 2]>,
 }
 impl Default for Advertising {
@@ -61,6 +63,7 @@ impl Advertising {
             reports: 0,
             hid: 0,
             unsupported: 0,
+            deferred: 0,
             last: None,
         }
     }
@@ -75,6 +78,10 @@ impl Advertising {
     /// HID service advertised and accepted as a keyboard/gamepad candidate.
     pub fn hid(&mut self) {
         self.hid = self.hid.saturating_add(1);
+    }
+    /// A candidate skipped because its address is deferred after a disconnect.
+    pub fn deferred(&mut self) {
+        self.deferred = self.deferred.saturating_add(1);
     }
     /// HID service advertised with an appearance this host does not pair.
     pub fn unsupported(&mut self) {
@@ -100,6 +107,7 @@ impl Advertising {
             reports: self.reports,
             hid: self.hid,
             unsupported: self.unsupported,
+            deferred: self.deferred,
             last: self.last,
         };
         *self = Self::new();

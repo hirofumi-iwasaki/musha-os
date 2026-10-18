@@ -127,6 +127,8 @@ pub struct Viewer {
     clear: usize,
     line: usize,
     dirty: bool,
+    // Bluetooth peer being connected (row 8); empty when none.
+    peer: Text<80>,
     // Metadata-only Bluetooth log tail; repainted alone, within the same budget.
     log: [Text<{ 2 * LOG_WIDTH }>; LOG_LINES],
     log_count: usize,
@@ -177,6 +179,7 @@ impl Viewer {
             clear: 0,
             line: 0,
             dirty: true,
+            peer: Text::new(),
             log: [const { Text::new() }; LOG_LINES],
             log_count: 0,
             log_dirty: false,
@@ -203,6 +206,25 @@ impl Viewer {
         self.log_dirty = true;
         self.log_clear = 0;
         self.log_row = LOG_FIRST;
+    }
+    /// Pinned connection line under the status line; ASCII only.
+    pub fn set_peer(&mut self, line: &str) {
+        if self.peer.as_str() == line {
+            return;
+        }
+        let mut text = Text::new();
+        for c in line.chars() {
+            let c = if c.is_ascii_graphic() || c == ' ' {
+                c
+            } else {
+                '?'
+            };
+            if text.write_char(c).is_err() {
+                break;
+            }
+        }
+        self.peer = text;
+        self.repaint();
     }
     fn log_shown(&self) -> bool {
         self.log_count != 0 && self.view != View::Page
@@ -762,6 +784,9 @@ impl Viewer {
                     let _ = out.write_char('|');
                 }
             }
+            8 => {
+                let _ = out.write_str(self.peer.as_str());
+            }
             LOG_FIRST..=LOG_LAST if self.log_shown() => self.log_line(row, &mut out),
             27 => {
                 let _ =
@@ -1191,6 +1216,20 @@ mod tests {
         // The hex page view keeps its own rows.
         v.view = View::Page;
         assert_eq!(v.line(26).as_str(), "");
+    }
+    #[test]
+    fn connection_peer_is_pinned_on_row_eight() {
+        let mut v = Viewer::new();
+        assert_eq!(v.line(8).as_str(), "");
+        v.dirty = false;
+        v.set_peer("BT peer ..:9e:a9 addr-type=0 (public)");
+        assert!(v.dirty);
+        assert_eq!(v.line(8).as_str(), "BT peer ..:9e:a9 addr-type=0 (public)");
+        v.dirty = false;
+        v.set_peer("BT peer ..:9e:a9 addr-type=0 (public)");
+        assert!(!v.dirty); // unchanged text does not repaint
+        v.set_peer("");
+        assert_eq!(v.line(8).as_str(), "");
     }
     #[test]
     fn a_new_log_line_repaints_only_the_log_rows() {

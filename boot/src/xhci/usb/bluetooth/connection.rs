@@ -86,20 +86,41 @@ impl Device {
                     "BT SMP TIMEOUT"
                 }
             })?;
-            if awaiting && !self.smp_hinted && now.saturating_sub(self.smp_started) >= 5000 {
-                self.smp_hinted = true;
-                crate::bootlog::device(
-                    "bluetooth",
-                    format_args!(
-                        "no Pairing Response after {}ms; the controller may hold an old bond",
-                        now.saturating_sub(self.smp_started)
-                    ),
-                );
-                crate::bluetooth::status(bt::stage::PAIRING_NO_REPLY);
-            }
+        }
+        // Our own Disconnect must complete within 1 s, or only Bluetooth stops.
+        if self.phase == 9 && now >= self.disconnect_deadline {
+            return Err("BT DISCONNECT TIMEOUT");
         }
         if self.command.is_some() || self.command_credits == 0 {
             return Ok(());
+        }
+        // A silent connection to a controller that keeps an old bond: give up
+        // on it after 5 s (or at once on a Security Request) and rescan.
+        if self.phase == 8
+            && self
+                .security
+                .as_ref()
+                .is_some_and(|s| s.awaiting_response())
+        {
+            let waited = now.saturating_sub(self.smp_started);
+            match self.retry.decide(waited, self.security_request) {
+                bt::retry::Decision::Wait => {}
+                bt::retry::Decision::Disconnect => return self.give_up_connection(host, now),
+                bt::retry::Decision::Exhausted => {
+                    if !self.smp_hinted {
+                        self.smp_hinted = true;
+                        crate::bootlog::device(
+                            "bluetooth",
+                            format_args!(
+                                "no Pairing Response after {}ms and {} attempts; waiting for the SMP timeout",
+                                waited,
+                                self.retry.attempts()
+                            ),
+                        );
+                        crate::bluetooth::status(bt::stage::PAIRING_NO_REPLY);
+                    }
+                }
+            }
         }
         if let Some(stage) = match self.phase {
             1 => Some("set event mask"),
@@ -111,6 +132,7 @@ impl Device {
             6 => Some("LE create connection"),
             8 if self.encrypt.is_some() => Some("LE start encryption"),
             8 if self.update.is_some() && self.tx_len == 0 => Some("LE connection update"),
+            10 => Some("LE scan re-enable"),
             _ => None,
         } {
             crate::bootlog::device(
@@ -158,8 +180,72 @@ impl Device {
                 let parameters = self.update.take().unwrap();
                 self.send_command(host, now, 0x2013, &parameters.command(self.handle))
             }
+            // Disconnected by us: scanning resumes with the pairing request kept.
+            10 => self.send_command(host, now, 0x200c, &[1, 1]),
             _ => Ok(()),
         }
+    }
+    /// HCI Disconnect (reason 0x13, remote user terminated) of a connection
+    /// whose peer does not answer pairing; its address is deferred for 10 s.
+    fn give_up_connection(&mut self, host: &mut Host<'_>, now: u64) -> Result<(), &'static str> {
+        let tail = bt::stage::address_tail(&self.peer);
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "{} (attempt {}/{}); disconnecting ..:{:02x}:{:02x} and deferring it for {}ms",
+                if self.security_request {
+                    "SMP Security Request: the controller holds an old bond"
+                } else {
+                    "no Pairing Response after 5000ms; the controller may hold an old bond"
+                },
+                self.retry.attempts() + 1,
+                bt::retry::MAX_ATTEMPTS,
+                tail[0],
+                tail[1],
+                bt::retry::DEFER_MS
+            ),
+        );
+        crate::bluetooth::status(bt::stage::PAIRING_NO_REPLY);
+        let mut p = [0; 3];
+        p[..2].copy_from_slice(&self.handle.to_le_bytes());
+        p[2] = 0x13;
+        self.send_command(host, now, 0x0406, &p)?;
+        self.retry.disconnected(self.peer, now);
+        // The SMP attempt ends with the link; its 30 s timer must not fire.
+        self.security = None;
+        self.phase = 9;
+        self.disconnect_deadline = now.checked_add(1000).ok_or("BT TIME")?;
+        Ok(())
+    }
+    /// Release per-connection state after our own Disconnect completed.
+    fn reset_connection(&mut self) {
+        for b in &mut self.tx {
+            unsafe {
+                core::ptr::write_volatile(b, 0);
+            }
+        }
+        for (_, bytes, _) in self.deferred.iter_mut().flatten() {
+            for b in bytes {
+                unsafe {
+                    core::ptr::write_volatile(b, 0);
+                }
+            }
+        }
+        self.deferred = [None; 2];
+        self.tx_len = 0;
+        self.tx_at = 0;
+        self.handle = 0;
+        self.credits = None;
+        self.reassembly = None;
+        self.acl_stream = bt::stream::Stream::new(self.generation, true);
+        self.security = None;
+        self.security_request = false;
+        self.update = None;
+        self.signaling = bt::signaling::Signaling::new();
+        self.acl_logged = [false; 2];
+        self.channels_logged = 0;
+        self.smp_hinted = false;
+        crate::bluetooth::set_peer(None);
     }
     pub(super) fn handle_event(
         &mut self,
@@ -168,6 +254,25 @@ impl Device {
         event: Event<'_>,
     ) -> Result<(), &'static str> {
         match event.code {
+            // Completion of our own Disconnect: release the link and rescan.
+            5 if self.phase == 9 => {
+                let p = event.parameters;
+                if p.len() != 4 || u16::from_le_bytes([p[1], p[2]]) != self.handle {
+                    return Err("BT DISCONNECT IDENTITY");
+                }
+                if p[0] != 0 {
+                    return Err("BT DISCONNECT FAILED");
+                }
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "Disconnection Complete status=00 handle={:04x} reason={:02x}; rescanning",
+                        self.handle, p[3]
+                    ),
+                );
+                self.reset_connection();
+                self.phase = 10;
+            }
             0x10 | 5 => {
                 let p = event.parameters;
                 if event.code == 5 && p.len() == 4 {
@@ -248,6 +353,12 @@ impl Device {
                                     "LE connection update accepted (CS 00); awaiting update complete"
                                 ),
                             ),
+                            0x0406 => crate::bootlog::device(
+                                "bluetooth",
+                                format_args!(
+                                    "disconnect accepted (CS 00); awaiting Disconnection Complete"
+                                ),
+                            ),
                             _ => self.encryption_started = true,
                         }
                         return Ok(());
@@ -262,6 +373,17 @@ impl Device {
                         (opcode, result)
                     }
                 };
+                if op == 0x200c && self.phase == 10 {
+                    if result.len() != 1 {
+                        return Err("BT COMMAND LENGTH");
+                    }
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!("LE scan re-enabled; pairing request kept"),
+                    );
+                    self.phase = 0;
+                    return Ok(());
+                }
                 if op == 0x1009 {
                     if result.len() != 7 {
                         return Err("BT ADDRESS");
@@ -357,6 +479,7 @@ impl Device {
                     self.security = Some(security);
                     self.smp_started = now;
                     self.smp_hinted = false;
+                    self.security_request = false;
                     self.phase = 8;
                     self.queue(6, &request, now)?;
                 } else {
@@ -788,7 +911,18 @@ impl Device {
                 self.acl_stream.release();
                 if length != 0 {
                     self.log_l2cap("RX", channel, &sdu[..length]);
-                    if channel == 6 {
+                    if channel == 6
+                        && sdu[0] == 0x0b
+                        && self
+                            .security
+                            .as_ref()
+                            .is_some_and(|s| s.awaiting_response())
+                    {
+                        // The peer believes it is bonded; this host has no bond for
+                        // it. Not an error: show the guidance and give up at once.
+                        self.security_request = true;
+                        crate::bluetooth::status(bt::stage::PAIRING_NO_REPLY);
+                    } else if channel == 6 {
                         let action = self
                             .security
                             .as_mut()

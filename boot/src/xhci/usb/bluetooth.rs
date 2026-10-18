@@ -382,6 +382,9 @@ pub(in crate::xhci) struct Device {
     smp_started: u64,
     smp_hinted: bool,
     directed_logged: bool,
+    retry: musha_platform::bluetooth::retry::Retry,
+    security_request: bool,
+    disconnect_deadline: u64,
     phase: u8,
     command: Option<(u16, u64)>,
     command_credits: u8,
@@ -606,6 +609,9 @@ pub(super) fn prepare(
             smp_started: 0,
             smp_hinted: false,
             directed_logged: false,
+            retry: musha_platform::bluetooth::retry::Retry::new(),
+            security_request: false,
+            disconnect_deadline: 0,
             phase: 0,
             command: None,
             command_credits: 1,
@@ -843,6 +849,10 @@ impl Device {
                                 return;
                             }
                         };
+                        if !self.retry.admits(&advert.address, now) {
+                            self.advertising.deferred();
+                            return;
+                        }
                         self.advertising.hid();
                         self.peer = advert.address;
                         self.peer_type = advert.address_type;
@@ -886,6 +896,13 @@ impl Device {
             if self.phase == 1 {
                 self.log_advertising(now, true);
                 let tail = musha_platform::bluetooth::stage::address_tail(&self.peer);
+                crate::bluetooth::set_peer(Some(format_args!(
+                    "BT peer ..:{:02x}:{:02x} addr-type={} ({})",
+                    tail[0],
+                    tail[1],
+                    self.peer_type,
+                    address_class(self.peer_type, &self.peer)
+                )));
                 crate::bootlog::device(
                     "bluetooth",
                     format_args!(
@@ -927,8 +944,8 @@ impl Device {
             crate::bootlog::device(
                 "bluetooth",
                 format_args!(
-                    "advertising window events={} reports={} hid-candidates={} hid-unsupported={} last=..:{:02x}:{:02x}",
-                    a.events, a.reports, a.hid, a.unsupported, high, low
+                    "advertising window events={} reports={} hid-candidates={} hid-unsupported={} deferred={} last=..:{:02x}:{:02x}",
+                    a.events, a.reports, a.hid, a.unsupported, a.deferred, high, low
                 ),
             );
         }
@@ -1099,7 +1116,8 @@ impl Device {
                 self.hci_event(host, now, &packet[..length])?;
             }
         }
-        if self.phase >= 8 {
+        // Phases 9/10 are our own disconnect and rescan: no ACL is serviced.
+        if self.phase == 8 {
             self.poll_acl(host, now)?;
         }
         Ok(())
@@ -1211,6 +1229,8 @@ pub(super) fn unavailable(reason: &'static str) {
         "BT SC AUTHENTICATION",
         "BT ENCRYPTION REJECTED",
         "BT PAIR TIMEOUT",
+        "BT DISCONNECT TIMEOUT",
+        "BT DISCONNECT FAILED",
         "BT CCCD WRITE REJECTED",
         "BT PAIRING FAILED PASSKEY ENTRY",
         "BT PAIRING FAILED OOB NOT AVAILABLE",

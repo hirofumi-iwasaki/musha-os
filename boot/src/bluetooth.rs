@@ -69,6 +69,7 @@ pub fn begin_attempt() -> bool {
 pub fn stopped() {
     CAPTURE.store(false, Ordering::Relaxed);
     INPUT_OVERFLOW.store(false, Ordering::Relaxed);
+    set_peer(None);
     RECORD_READY.store(false, Ordering::Relaxed);
     unsafe {
         (&mut *STORE.0.get()).clear();
@@ -184,6 +185,13 @@ pub fn service(viewer: &mut musha_viewer::Viewer, now: u64) {
         crate::bootlog::bluetooth_tail(seen, |line| viewer.push_log(line)),
         Ordering::Relaxed,
     );
+    unsafe {
+        let p = &mut *PEER.0.get();
+        if p.2 {
+            p.2 = false;
+            viewer.set_peer(core::str::from_utf8(&p.0[..p.1]).unwrap_or(""));
+        }
+    }
     let message = unsafe { (&mut *UI.0.get()).take() };
     if let Some(message) = message {
         match message {
@@ -268,6 +276,29 @@ pub fn save_result(
     }
     unsafe {
         *SAVED.0.get() = Some((generation, ok));
+    }
+}
+/// Connected peer shown on its own viewer row while connecting (metadata only:
+/// two address octets and the address class). None clears the row.
+static PEER: Shared<([u8; 80], usize, bool)> = Shared(UnsafeCell::new(([0; 80], 0, false)));
+pub fn set_peer(line: Option<core::fmt::Arguments<'_>>) {
+    struct Line<'a>(&'a mut [u8; 80], usize);
+    impl core::fmt::Write for Line<'_> {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            let n = s.len().min(self.0.len() - self.1);
+            self.0[self.1..self.1 + n].copy_from_slice(&s.as_bytes()[..n]);
+            self.1 += n;
+            Ok(())
+        }
+    }
+    unsafe {
+        let p = &mut *PEER.0.get();
+        let mut out = Line(&mut p.0, 0);
+        if let Some(args) = line {
+            let _ = core::fmt::write(&mut out, args);
+        }
+        p.1 = out.1;
+        p.2 = true;
     }
 }
 /// Why the last bond save failed; the Bluetooth poller reports it on isolation.

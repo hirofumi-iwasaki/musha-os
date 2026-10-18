@@ -288,3 +288,64 @@ fn observed_xbox_sequence_reaches_the_report_reference_and_binds() {
     let reports = slot.expect("reports bound in place");
     assert_eq!((reports.count(), reports.cccd(0)), (1, Some(0x1f)));
 }
+
+/// Desk check of a reboot reconnect: the saved record supplies LTK, IRK and
+/// identity; a resolvable private advertiser is resolved on the host; the
+/// connection is encrypted with the stored LTK (LE Start Encryption, no
+/// Pairing Request); HOGP discovery then runs again and binds.
+#[test]
+fn saved_bond_reconnects_from_a_private_address_and_rebinds() {
+    let mut irk: [u8; 16] = core::array::from_fn(|i| {
+        u8::from_str_radix(&"ec0234a357c8ad05341010a60a397d9b"[i * 2..i * 2 + 2], 16).unwrap()
+    });
+    irk.reverse();
+    let rpa = [0xaa, 0xfb, 0x0d, 0x94, 0x81, 0x70];
+    let identity = [0x31, 0x32, 0x33, 0x34, 0x35, 0x36];
+    let bond = Bond {
+        address_type: 0,
+        address: identity,
+        key_size: 16,
+        flags: 2,
+        ediv: 0,
+        random: [0; 8],
+        ltk: [0x5c; 16],
+        irk,
+    };
+    let mut record = [0; 4096];
+    pairing::encode_state(&[bond], Some([4; 32]), &mut record).unwrap();
+    let mut store = Store::new();
+    store.load(&record).unwrap();
+    for (kind, address, via_irk) in [(1, rpa, true), (0, identity, false)] {
+        assert!(store.connectable(0, kind, &address));
+        assert_eq!(store.resolved(kind, &address), via_irk);
+        let mut pending = store.begin(11, 0x48, 0, kind, address).unwrap();
+        let key = pending.command_key(11, 1).unwrap();
+        key.use_with(|k| assert_eq!(*k, [0x5c; 16]));
+        let verified = pending
+            .encryption(11, 2, Event::parse(&[8, 4, 0, 0x48, 0, 1]).unwrap())
+            .unwrap();
+        assert_eq!(verified.bond().address, identity);
+        let map = observed_map();
+        let mut d = Discovery::new();
+        let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
+        let mut action = d.request();
+        let mut log = vec![];
+        for _ in 0..60 {
+            match action {
+                DiscoveryAction::Send(p, n) => {
+                    action = d
+                        .receive_into(
+                            &respond_observed(&p[..n], &map, &mut log),
+                            &verified,
+                            &mut slot,
+                        )
+                        .unwrap();
+                }
+                DiscoveryAction::Ready => break,
+                _ => panic!("skip action escaped"),
+            }
+        }
+        assert!(matches!(action, DiscoveryAction::Ready));
+        assert_eq!(slot.unwrap().count(), 1);
+    }
+}

@@ -20,6 +20,7 @@ pub mod lifecycle;
 pub mod probe;
 #[cfg(feature = "bluetooth-security")]
 pub mod reconnect;
+pub mod retry;
 #[cfg(feature = "bluetooth-security")]
 pub mod sc;
 #[cfg(feature = "bluetooth-security")]

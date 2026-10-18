@@ -198,3 +198,12 @@ If pairing completed but the host failed to save (`bond save failed ...` or `BT 
 ## 日本語: ホスト側の保存失敗後のやり直し（2026-10-18）
 
 ペアリングは完了したのにホスト側の保存に失敗した場合（`bond save failed ...` や `BT BOND SAVE ...`）、コントローラーはボンドを保持し、ホストは持たない状態になります。次の試行でコントローラーが directed advertising で再接続しようとしたり（`directed advertising ... ignored for new pairing`）、Pairing Request に応答しなかったりすることがあります。5 秒後にビューアーへ `No pairing reply: hold the controller pair button until it blinks fast.`、30 秒後に `Pairing timed out: ...` が出ます。コントローラーの電源を切り、ビューアーを起動して P を押し、コントローラーのペアボタンを約 3 秒、ライトが速く点滅するまで長押ししてください。コントローラーが拒否した場合は `BT PAIRING FAILED <理由>`（例：REPEATED ATTEMPTS）が出ます。その場合は 1 分ほど待ってからやり直してください。ビューアーのフォントは ASCII のみのため、画面の案内は英語です。
+
+
+## Recovering a controller after a host-side save failure — English (2026-10-18)
+
+When a controller still holds a bond this host never saved (IMG_7743/7744), it reconnects as soon as it powers on and ignores the Pairing Request. The host now gives up on such a connection after 5 s (or at once if the controller sends an SMP Security Request), disconnects, skips that controller for 10 s (`deferred=N` in the advertising window) and scans again, up to three times. Recovery: pair the controller with another host (for example a Mac) and remove it there, so its old bond is replaced; then start the NUC5 viewer, press P, and **first** hold the controller's pair button until the light blinks fast before it reconnects. The row under the status line shows `BT peer ..:xx:yy addr-type=N (<class>)` while connecting.
+
+## 日本語: ホスト側の保存失敗後のコントローラー回復（2026-10-18）
+
+このホストが保存できなかったボンドをコントローラーが保持している場合（IMG_7743/7744）、コントローラーは電源を入れるとすぐに再接続し、Pairing Request に応答しません。ホストはそのような接続を 5 秒で（コントローラーが SMP Security Request を送ってきたら即座に）諦めて切断し、そのコントローラーを 10 秒間除外して（Advertising の集計に `deferred=N`）再スキャンします。これを最大 3 回繰り返します。回復手順：コントローラーを別のホスト（例：Mac）とペアリングし、そちらで削除して古いボンドを上書きします。次に NUC5 でビューアーを起動して P を押し、コントローラーが再接続する前に、**先に**ペアボタンをライトが速く点滅するまで長押ししてください。接続中は状態行の下の行に `BT peer ..:xx:yy addr-type=N (<種別>)` が出ます。
