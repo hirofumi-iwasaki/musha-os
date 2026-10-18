@@ -284,6 +284,15 @@ fn untouched(info: &BootInfo) -> usize {
     }
     n
 }
+/// Runtime stack low-water mark for diagnostics: (never written, mapped bytes).
+pub(crate) fn stack_headroom() -> Option<(usize, usize)> {
+    let info = INFO.load(Ordering::Acquire);
+    if info.is_null() {
+        return None;
+    }
+    let info = unsafe { &*info };
+    Some((untouched(info), info.stack_bytes - 4096))
+}
 /// True when a ring-3 #PF frame lies on the dedicated #PF IST stack.
 pub(crate) fn on_page_fault_stack(frame: usize) -> bool {
     let info = INFO.load(Ordering::Acquire);

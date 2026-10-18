@@ -181,10 +181,16 @@ impl Device {
         }
         let ok = result.is_ok();
         match &result {
-            Ok(_) => crate::bootlog::device(
-                "bluetooth",
-                format_args!("bond saved record={} file=SETTINGS/PAIRING.DAT", records),
-            ),
+            Ok(_) => {
+                let (free, mapped) = crate::cpu::stack_headroom().unwrap_or((0, 0));
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "bond saved record={} file=SETTINGS/PAIRING.DAT; stack never-touched {} of {} bytes",
+                        records, free, mapped
+                    ),
+                )
+            }
             Err(e) => crate::bootlog::device(
                 "bluetooth",
                 format_args!(

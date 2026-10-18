@@ -66,8 +66,11 @@ use r_efi::{
     protocols::{graphics_output as gop, loaded_image},
 };
 
-// Diagnostic formatting and GPT file reads share this guarded runtime stack.
-const STACK_PAGES: usize = 32;
+// Diagnostic formatting, GPT file reads and Bluetooth HOGP binding share this
+// guarded runtime stack (first page unmapped). 32 pages overflowed on hardware
+// while binding an Xbox Report Map (IMG_7740). 64 doubles the space; the
+// low-water mark is logged after HOGP binding and bond save.
+const STACK_PAGES: usize = 64;
 /// Fill pattern for the stack low-water mark reported on fatal errors.
 pub(crate) const STACK_FILL: u64 = 0x4b4d_5245_5441_5753;
 const MAP_PAGES: usize = 32;

@@ -272,6 +272,7 @@ fn sc_jw_passkey_and_encryption_authority_transcripts() {
         // Exercise the exact discovery/binding code linked into normal runtime.
         use musha_platform::bluetooth::hogp::{Discovery, DiscoveryAction};
         let mut discovery = Discovery::new();
+        let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
         assert!(matches!(discovery.request(), DiscoveryAction::Send(_, 7)));
         for response in [
             vec![0x11, 6, 1, 0, 32, 0, 0x12, 0x18],
@@ -281,7 +282,7 @@ fn sc_jw_passkey_and_encryption_authority_transcripts() {
             vec![1, 8, 6, 0, 0x0a],
         ] {
             assert!(matches!(
-                discovery.receive(&response, &bond).unwrap(),
+                discovery.receive_into(&response, &bond, &mut slot).unwrap(),
                 DiscoveryAction::Send(_, _)
             ));
         }
@@ -292,20 +293,25 @@ fn sc_jw_passkey_and_encryption_authority_transcripts() {
         let mut first = vec![0x0b];
         first.extend_from_slice(&map[..22]);
         assert!(matches!(
-            discovery.receive(&first, &bond).unwrap(),
+            discovery.receive_into(&first, &bond, &mut slot).unwrap(),
             DiscoveryAction::Send(_, 5)
         ));
         let mut rest = vec![0x0d];
         rest.extend_from_slice(&map[22..]);
-        discovery.receive(&rest, &bond).unwrap();
+        discovery.receive_into(&rest, &bond, &mut slot).unwrap();
         discovery
-            .receive(&[5, 1, 6, 0, 2, 0x29, 7, 0, 8, 0x29], &bond)
+            .receive_into(&[5, 1, 6, 0, 2, 0x29, 7, 0, 8, 0x29], &bond, &mut slot)
             .unwrap();
-        discovery.receive(&[1, 4, 8, 0, 0x0a], &bond).unwrap();
-        let DiscoveryAction::Ready(mut keyboard) = discovery.receive(&[0x0b, 2, 1], &bond).unwrap()
+        discovery
+            .receive_into(&[1, 4, 8, 0, 0x0a], &bond, &mut slot)
+            .unwrap();
+        let DiscoveryAction::Ready = discovery
+            .receive_into(&[0x0b, 2, 1], &bond, &mut slot)
+            .unwrap()
         else {
             panic!()
         };
+        let mut keyboard = slot.take().unwrap();
         assert_eq!(keyboard.cccd(0), Some(6));
         let mut keys = vec![];
         keyboard

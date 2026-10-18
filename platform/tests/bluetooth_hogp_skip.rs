@@ -67,13 +67,14 @@ fn notifications_before_the_service_response_are_skipped() {
     let bond = verified();
     for extra in 1..=3 {
         let mut d = Discovery::new();
+        let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
         let DiscoveryAction::Send(request, _) = d.request() else {
             unreachable!()
         };
         assert_eq!(request[0], 0x10);
         for _ in 0..extra {
             assert!(matches!(
-                d.receive(&notification(), &bond),
+                d.receive_into(&notification(), &bond, &mut slot),
                 Ok(DiscoveryAction::Ignore)
             ));
         }
@@ -82,7 +83,7 @@ fn notifications_before_the_service_response_are_skipped() {
         assert_eq!(d.diagnostic(&[]).pages, 0);
         assert_eq!(d.stage_name(), "services");
         let Ok(DiscoveryAction::Send(next, _)) =
-            d.receive(&[0x11, 6, 1, 0, 16, 0, 0x12, 0x18], &bond)
+            d.receive_into(&[0x11, 6, 1, 0, 16, 0, 0x12, 0x18], &bond, &mut slot)
         else {
             panic!("service response not accepted")
         };
@@ -94,13 +95,15 @@ fn notifications_before_the_service_response_are_skipped() {
 fn indication_is_confirmed_and_error_response_is_still_handled() {
     let bond = verified();
     let mut d = Discovery::new();
+    let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
     assert!(matches!(
-        d.receive(&[0x1d, 0x1e, 0, 1], &bond),
+        d.receive_into(&[0x1d, 0x1e, 0, 1], &bond, &mut slot),
         Ok(DiscoveryAction::Confirm)
     ));
     // A real Error Response for the awaited request keeps its meaning.
     assert_eq!(
-        d.receive(&[1, 0x10, 1, 0, 0x0a], &bond).err(),
+        d.receive_into(&[1, 0x10, 1, 0, 0x0a], &bond, &mut slot)
+            .err(),
         Some(Error::Unsupported)
     );
 }
@@ -108,27 +111,33 @@ fn indication_is_confirmed_and_error_response_is_still_handled() {
 fn skipping_is_bounded() {
     let bond = verified();
     let mut d = Discovery::new();
+    let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
     for _ in 0..MAX_SKIPPED {
-        assert!(d.receive(&notification(), &bond).is_ok());
+        assert!(d.receive_into(&notification(), &bond, &mut slot).is_ok());
     }
-    assert_eq!(d.receive(&notification(), &bond).err(), Some(Error::Length));
+    assert_eq!(
+        d.receive_into(&notification(), &bond, &mut slot).err(),
+        Some(Error::Length)
+    );
     assert_eq!(d.stage_name(), "failed");
 }
 #[test]
 fn full_discovery_completes_with_notifications_between_every_response() {
     let bond = verified();
     let mut d = Discovery::new();
+    let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
     let mut action = d.request();
     for _ in 0..40 {
         match action {
             DiscoveryAction::Send(p, n) => {
                 assert!(matches!(
-                    d.receive(&notification(), &bond),
+                    d.receive_into(&notification(), &bond, &mut slot),
                     Ok(DiscoveryAction::Ignore)
                 ));
-                action = d.receive(&respond(&p[..n]), &bond).unwrap();
+                action = d.receive_into(&respond(&p[..n]), &bond, &mut slot).unwrap();
             }
-            DiscoveryAction::Ready(reports) => {
+            DiscoveryAction::Ready => {
+                let reports = slot.take().unwrap();
                 assert_eq!(reports.count(), 1);
                 assert_eq!(reports.cccd(0), Some(6));
                 assert!(d.skipped() >= 5);

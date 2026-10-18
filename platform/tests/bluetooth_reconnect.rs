@@ -232,14 +232,16 @@ fn report_id_handle_reference_and_descriptor_negatives() {
 fn same_discovery_executor_multiple_report_descriptors_and_blob() {
     let bond = verified();
     let mut d = Discovery::new();
+    let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
     let mut action = d.request();
     let map = map();
     let mut steps = 0;
     loop {
         let DiscoveryAction::Send(p, n) = action else {
-            let DiscoveryAction::Ready(mut reports) = action else {
+            let DiscoveryAction::Ready = action else {
                 unreachable!()
             };
+            let mut reports = slot.take().unwrap();
             assert_eq!(reports.count(), 3);
             let mut e = vec![];
             reports
@@ -302,7 +304,7 @@ fn same_discovery_executor_multiple_report_descriptors_and_blob() {
             assert!(text.contains("code=0a"));
         }
         // In particular, AttributeNotFound ends characteristics/descriptors normally.
-        action = d.receive(&response, &bond).unwrap();
+        action = d.receive_into(&response, &bond, &mut slot).unwrap();
     }
 }
 #[test]
@@ -354,8 +356,15 @@ fn sizes_ranges_stack_and_unknown_fields_fail_closed() {
     }
     let b = verified();
     let mut d = Discovery::new();
-    assert!(d.receive(&[1, 0x10, 2, 0, 0x0a], &b).is_err());
-    assert!(d.receive(&[0x11, 6, 1, 0, 32, 0, 0x12, 0x18], &b).is_err());
+    let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
+    assert!(
+        d.receive_into(&[1, 0x10, 2, 0, 0x0a], &b, &mut slot)
+            .is_err()
+    );
+    assert!(
+        d.receive_into(&[0x11, 6, 1, 0, 32, 0, 0x12, 0x18], &b, &mut slot)
+            .is_err()
+    );
 }
 #[test]
 fn directed_empty_ad_reconnect_uses_only_stored_identity_and_authenticated_map() {
@@ -413,10 +422,11 @@ fn discovery_diagnostics_missing_service_and_malformed_do_not_claim_success() {
     let bond = verified();
     for p in [vec![1, 0x10, 1, 0, 0x0a], vec![], vec![1, 0x10]] {
         let mut d = Discovery::new();
+        let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
         let before = d.diagnostic(&p);
         assert_eq!(before.stage, "services");
         assert_eq!(before.request, 0x10);
-        assert!(d.receive(&p, &bond).is_err());
+        assert!(d.receive_into(&p, &bond, &mut slot).is_err());
         assert_eq!(d.diagnostic(&[]).stage, "failed");
         // Saved metadata remains the rejecting stage, even after fail-closed state change.
         assert_eq!(before.stage, "services");
@@ -428,6 +438,7 @@ fn discovery_diagnostics_missing_service_and_malformed_do_not_claim_success() {
 fn discovery_map_limit_diagnostic_uses_actual_rejecting_executor() {
     let bond = verified();
     let mut d = Discovery::new();
+    let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
     for p in [
         vec![0x11, 6, 1, 0, 32, 0, 0x12, 0x18],
         vec![
@@ -435,13 +446,13 @@ fn discovery_map_limit_diagnostic_uses_actual_rejecting_executor() {
         ],
         vec![1, 8, 6, 0, 0x0a],
     ] {
-        d.receive(&p, &bond).unwrap();
+        d.receive_into(&p, &bond, &mut slot).unwrap();
     }
     let mut p = vec![0x0b; 23];
-    d.receive(&p, &bond).unwrap();
+    d.receive_into(&p, &bond, &mut slot).unwrap();
     p[0] = 0x0d;
     for _ in 1..93 {
-        d.receive(&p, &bond).unwrap();
+        d.receive_into(&p, &bond, &mut slot).unwrap();
     }
     let diagnostic = d.diagnostic(&p);
     assert_eq!(diagnostic.stage, "report-map");
@@ -451,6 +462,9 @@ fn discovery_map_limit_diagnostic_uses_actual_rejecting_executor() {
         diagnostic.reason(Error::Length),
         "map-length-or-response-format"
     );
-    assert!(matches!(d.receive(&p, &bond), Err(Error::Length)));
+    assert!(matches!(
+        d.receive_into(&p, &bond, &mut slot),
+        Err(Error::Length)
+    ));
     assert_eq!(d.diagnostic(&[]).stage, "failed");
 }

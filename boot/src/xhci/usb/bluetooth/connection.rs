@@ -819,7 +819,9 @@ impl Device {
             }
             bt::hogp::DiscoveryAction::Ignore => {}
             bt::hogp::DiscoveryAction::Confirm => self.queue(4, &[0x1e], now)?,
-            bt::hogp::DiscoveryAction::Ready(keyboard) => {
+            // Discovery already bound the reports into self.keyboard in place.
+            bt::hogp::DiscoveryAction::Ready => {
+                let keyboard = self.keyboard.as_ref().ok_or("BT INPUT STATE")?;
                 if self.reused {
                     self.method = if keyboard
                         .single_kind()
@@ -832,8 +834,18 @@ impl Device {
                 } else if !keyboard.supports(self.method == bt::sc::Method::JustWorks) {
                     return Err("BT DEVICE KIND MISMATCH");
                 }
+                let (free, mapped) = crate::cpu::stack_headroom().unwrap_or((0, 0));
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "HOGP bound input-reports={} unmapped={}; stack never-touched {} of {} bytes",
+                        keyboard.count(),
+                        keyboard.unmapped(),
+                        free,
+                        mapped
+                    ),
+                );
                 self.cccd = keyboard.cccd(0).ok_or("BT CCCD MISSING")?;
-                self.keyboard = Some(keyboard);
                 self.gatt = None;
                 if self.reused {
                     self.bond.take();
@@ -960,7 +972,7 @@ impl Device {
         let bond = self.bond.as_ref().ok_or("BT UNAUTHENTICATED ATT")?;
         let gatt = self.gatt.as_mut().ok_or("BT GATT STATE")?;
         let diagnostic = gatt.diagnostic(p);
-        let action = match gatt.receive(p, bond) {
+        let action = match gatt.receive_into(p, bond, &mut self.keyboard) {
             Ok(
                 action @ (bt::hogp::DiscoveryAction::Ignore | bt::hogp::DiscoveryAction::Confirm),
             ) => {

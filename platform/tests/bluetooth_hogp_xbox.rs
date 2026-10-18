@@ -145,6 +145,7 @@ fn xbox_shaped_map_is_read_by_blob_and_binds_only_the_gamepad_report() {
     assert!((280..=340).contains(&map.len()), "{}", map.len());
     let bond = verified();
     let mut d = Discovery::new();
+    let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
     let mut action = d.request();
     let mut requests = vec![];
     let mut reports = None;
@@ -155,15 +156,15 @@ fn xbox_shaped_map_is_read_by_blob_and_binds_only_the_gamepad_report() {
                 let mut early = vec![0x1b, 5, 0];
                 early.extend([0; 16]);
                 assert!(matches!(
-                    d.receive(&early, &bond),
+                    d.receive_into(&early, &bond, &mut slot),
                     Ok(DiscoveryAction::Ignore)
                 ));
                 action = d
-                    .receive(&respond(&p[..n], &map, &mut requests), &bond)
+                    .receive_into(&respond(&p[..n], &map, &mut requests), &bond, &mut slot)
                     .unwrap();
             }
-            DiscoveryAction::Ready(r) => {
-                reports = Some(r);
+            DiscoveryAction::Ready => {
+                reports = slot.take();
                 break;
             }
             _ => panic!("skip action escaped"),
@@ -204,4 +205,86 @@ fn unknown_fields_inside_the_gamepad_report_are_still_refused() {
     let at = m.windows(3).position(|w| w == [0x0a, 0x23, 2]).unwrap();
     m[at + 1] = 0x24;
     assert!(musha_input::gamepad::Layout::parse(&m).is_err());
+}
+
+/// The IMG_7740 request sequence: HID service from 0x0012, characteristic
+/// discovery at 0x0016/0x001d then Attribute Not Found at 0x0023, Report Map at
+/// 0x001c (283 bytes), descriptors at 0x001f (one 10-byte response) and the
+/// Report Reference read at 0x0020. Handles mirror the log; bytes are synthetic.
+fn observed_map() -> Vec<u8> {
+    let mut m = map();
+    // Drop AC Home, one rumble field and the hat's Physical Maximum to 283 bytes.
+    let home = m.windows(2).position(|w| w == [0x85, 2]).unwrap();
+    m.drain(home..home + 27);
+    let rumble = m.windows(2).position(|w| w == [9, 0x7c]).unwrap();
+    m.drain(rumble..rumble + 13);
+    let physical = m.windows(3).position(|w| w == [0x46, 0x3b, 1]).unwrap();
+    m.drain(physical..physical + 3);
+    // Same unit, one-byte form.
+    let unit = m.windows(3).position(|w| w == [0x66, 0x14, 0]).unwrap();
+    m.splice(unit..unit + 3, [0x65, 0x14]);
+    m
+}
+fn respond_observed(p: &[u8], map: &[u8], log: &mut Vec<(u8, u16)>) -> Vec<u8> {
+    let h = u16::from_le_bytes([p[1], p[2]]);
+    log.push((p[0], h));
+    let chars = |entries: &[(u16, u8, u16, u16)]| {
+        let mut r = vec![9, 7];
+        for &(d, props, v, uuid) in entries {
+            r.extend(d.to_le_bytes());
+            r.push(props);
+            r.extend(v.to_le_bytes());
+            r.extend(uuid.to_le_bytes());
+        }
+        r
+    };
+    match (p[0], h) {
+        (0x10, 1) => vec![
+            0x11, 6, 1, 0, 0x11, 0, 0x01, 0x18, 0x12, 0, 0x26, 0, 0x12, 0x18,
+        ],
+        (0x08, 0x12) => chars(&[(0x14, 0x02, 0x15, 0x2a4a)]),
+        (0x08, 0x16) => chars(&[
+            (0x17, 0x04, 0x18, 0x2a4c),
+            (0x19, 0x06, 0x1a, 0x2a4e),
+            (0x1b, 0x02, 0x1c, 0x2a4b),
+        ]),
+        (0x08, 0x1d) => chars(&[(0x1d, 0x12, 0x1e, 0x2a4d), (0x21, 0x0e, 0x22, 0x2a4d)]),
+        (0x08, 0x23) => vec![1, 0x08, 0x23, 0, 0x0a],
+        (0x0a, 0x1c) => [&[0x0b][..], &map[..22]].concat(),
+        (0x0c, 0x1c) => {
+            let at = u16::from_le_bytes([p[3], p[4]]) as usize;
+            [&[0x0d][..], &map[at..map.len().min(at + 22)]].concat()
+        }
+        (0x04, 0x1f) => vec![5, 1, 0x1f, 0, 2, 0x29, 0x20, 0, 8, 0x29],
+        (0x0a, 0x20) => vec![0x0b, 1, 1],
+        _ => panic!("unexpected request {:02x} handle {h:04x}", p[0]),
+    }
+}
+#[test]
+fn observed_xbox_sequence_reaches_the_report_reference_and_binds() {
+    let map = observed_map();
+    assert_eq!(map.len(), 283);
+    let bond = verified();
+    let mut d = Discovery::new();
+    let mut slot: Option<musha_platform::bluetooth::hogp::Reports> = None;
+    let mut action = d.request();
+    let mut log = vec![];
+    for _ in 0..60 {
+        match action {
+            DiscoveryAction::Send(p, n) => {
+                action = d
+                    .receive_into(&respond_observed(&p[..n], &map, &mut log), &bond, &mut slot)
+                    .unwrap();
+            }
+            DiscoveryAction::Ready => break,
+            _ => panic!("skip action escaped"),
+        }
+    }
+    assert!(matches!(action, DiscoveryAction::Ready));
+    let chars: Vec<u16> = log.iter().filter(|r| r.0 == 0x08).map(|r| r.1).collect();
+    assert_eq!(chars, [0x12, 0x16, 0x1d, 0x23]);
+    assert_eq!(log.iter().filter(|r| r.0 == 0x0c).count(), 12);
+    assert_eq!(&log[log.len() - 2..], &[(0x04, 0x1f), (0x0a, 0x20)]);
+    let reports = slot.expect("reports bound in place");
+    assert_eq!((reports.count(), reports.cccd(0)), (1, Some(0x1f)));
 }

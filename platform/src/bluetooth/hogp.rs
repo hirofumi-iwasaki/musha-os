@@ -277,7 +277,9 @@ pub struct Discovery {
 pub const MAX_SKIPPED: u16 = 256;
 pub enum DiscoveryAction {
     Send([u8; 7], usize),
-    Ready(Reports),
+    /// Discovery finished; the bound reports were written to the caller's slot.
+    /// Kept payload-free: a 13 KB variant would be copied through every frame.
+    Ready,
     /// A non-response PDU was skipped; nothing is sent and no state changes.
     Ignore,
     /// An indication was skipped; send Handle Value Confirmation (0x1e).
@@ -446,17 +448,29 @@ impl Discovery {
         }
         Ok(Self::range(4, self.cursor, s.end, None))
     }
-    pub fn receive(&mut self, p: &[u8], bond: &VerifiedBond) -> Result<DiscoveryAction, Error> {
+    /// `reports` receives the bound reports when `Ready` is returned; pass a
+    /// long-lived slot so the large value is not moved through stack frames.
+    pub fn receive_into(
+        &mut self,
+        p: &[u8],
+        bond: &VerifiedBond,
+        reports: &mut Option<Reports>,
+    ) -> Result<DiscoveryAction, Error> {
         if self.stage == 255 {
             return Err(Error::Invalid);
         }
-        let result = self.receive_inner(p, bond);
+        let result = self.receive_inner(p, bond, reports);
         if result.is_err() {
             self.stage = 255;
         }
         result
     }
-    fn receive_inner(&mut self, p: &[u8], bond: &VerifiedBond) -> Result<DiscoveryAction, Error> {
+    fn receive_inner(
+        &mut self,
+        p: &[u8],
+        bond: &VerifiedBond,
+        out: &mut Option<Reports>,
+    ) -> Result<DiscoveryAction, Error> {
         // Peripherals may notify before their CCCD is written (game controllers
         // commonly do). Skip anything that is neither the awaited response nor an
         // Error Response, without counting it as a discovery page.
@@ -655,10 +669,13 @@ impl Discovery {
                     self.stage = 2;
                     self.descriptor()
                 } else {
-                    let reports =
-                        Reports::bind(bond, &self.map[..self.used], &self.reports[..self.count])?;
+                    *out = Some(Reports::bind(
+                        bond,
+                        &self.map[..self.used],
+                        &self.reports[..self.count],
+                    )?);
                     self.stage = 5;
-                    Ok(DiscoveryAction::Ready(reports))
+                    Ok(DiscoveryAction::Ready)
                 }
             }
             _ => Err(Error::Invalid),
