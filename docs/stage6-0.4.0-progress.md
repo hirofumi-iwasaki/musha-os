@@ -185,3 +185,9 @@ cold bootでは既存storage readerが認識済みSC recordを読み、`stored_a
 今回の最終ローカル検証は **QEMU13/13構成合格**。先行monitor試行と重複し、P/config2、passkey submit/cancel/timeout3、viewer再開1、live monitor1、r2 mouse1、r2 loan再開1、r1 LAN3連続1、DHCP77協調1、通常pixel1、OUT stall1です。初回r1は診断featureの取り違えで、exit/scrub成功後のVIEWER_FRAME trace不足でした。既存viewer probe featureへ修正し、厳密な3連続/LAN条件で再試験合格。過去の全QEMU matrixと実機試験は今回再実施していません。通常EFI SHA256は `out/remaining-040/verification.json` に記録します。
 
 実機gateはMM-BTUD46のUSB/revision/firmware挙動、Xbox1914実Report Map/firmware、両機種でのpair/save/reboot/reconnectです。IRK/RPA解決、複数peer同時、任意BLE mouse、Share配信は未対応。BLE keyboardは実装/host検証済みですがv0.4.0では調達/実機検証しません。Magic Keyboard A3118はClassicでv0.5.0へ延期。実電波成功や工程6実機完了は主張しません。
+
+## Update 2026-10-18 — English
+
+The IRK/RPA limitation above is superseded: pairing now requests the responder identity key, PAIRING.DAT version 2 stores the IRK, and stored reconnect resolves resolvable private addresses on the host. HOGP discovery skips unsolicited notifications and answers peer ATT requests. Details and remaining hardware gates: [HOGP discovery robustness and peer identity](bluetooth-hogp-identity-0.4.0.md). NRPA, multiple simultaneous peers and Share delivery remain unsupported.
+
+日本語: 上記の IRK/RPA 未実装の記述は置き換わりました。ペアリングで相手の identity 鍵を要求し、PAIRING.DAT version 2 に IRK を保存し、保存鍵の再接続で resolvable private address をホスト側で照合します。HOGP 探索は要求していない通知を読み飛ばし、相手の ATT 要求に応答します。詳細と残る実機確認は[HOGP 探索の堅牢化と相手の identity](bluetooth-hogp-identity-0.4.0.md)を参照してください。NRPA、複数 peer の同時接続、Share の配信は引き続き未対応です。

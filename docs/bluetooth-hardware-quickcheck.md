@@ -180,3 +180,12 @@ IMG_7692 lost the whole USB session during Xbox pairing without a reason. The ne
 ## 日本語: ペアリング再試験（2026-10-17）
 
 IMG_7692 では Xbox のペアリング中に理由が出ないまま USB セッション全体が終了しました。次の通常開発 EFI は理由（`Device session ended: <reason>.` と `usb: session ended: <reason>`）を表示し、Bluetooth slot の転送 fault・ペアリング記録の拒否・入力あふれを Bluetooth だけに閉じ込めます。P から失敗または成功まで、`LE scan enabled`、各 `advertising window`、`HID advertisement ... ignored`（出た場合）、`HID candidate`、`connect stage=`、`ACL buffer`、`LE create connection accepted`、`LE Connection Complete`、`ACL first TX/RX`、`L2CAP first`、各 `SMP TX/RX`、`Encryption Change`、失敗時は `transfer fault` と `unavailable:` または `non-local failure:` / `session ended:` を撮影してください。[ペアリング段階の分離](bluetooth-pairing-isolation-0.4.0.md)を参照。値はメタデータのみで、鍵や完全なアドレスは出ません。
+
+
+## HOGP and reconnect retry — English (2026-10-18)
+
+IRK/RPA resolution is now implemented; the "public/static addresses only" note and the resolving-list row above still hold for the controller (no resolving list is used) but no longer for the host. Photograph from P: `ATT ignored opcode=1b`, each `HOGP stage=` through `accepted`, `SMP RX Identity Information` / `Identity Address Information`, `bond identity addr-type=`, `bond saved record=`, `HID subscribed`, then input. After a reboot: `HID candidate ... addr-type=` (and `stored bond via IRK` if private), `LE start encryption`, `Encryption Change`. See [HOGP discovery robustness and peer identity](bluetooth-hogp-identity-0.4.0.md).
+
+## 日本語: HOGP と再接続の再試験（2026-10-18）
+
+IRK/RPA の解決を実装しました。上記の「public/static address のみ」と Resolving List の行は、controller については引き続き正しい（Resolving List は使わない）ものの、ホストについては当てはまりません。P から `ATT ignored opcode=1b`、各 `HOGP stage=` から `accepted`、`SMP RX Identity Information`／`Identity Address Information`、`bond identity addr-type=`、`bond saved record=`、`HID subscribed`、入力までを撮影してください。再起動後は `HID candidate ... addr-type=`（private なら `stored bond via IRK`）、`LE start encryption`、`Encryption Change`。[HOGP 探索の堅牢化と相手の identity](bluetooth-hogp-identity-0.4.0.md)を参照してください。
