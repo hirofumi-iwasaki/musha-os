@@ -49,3 +49,17 @@ Devices 行: `HID candidate ..:xx:yy addr-type=N (<種別>[, stored bond via IRK
 ## 限界
 
 host 試験は合成バイト、Core 仕様の `ah` ベクター（OpenSSL の AES-128 で照合）、独自に作成した Xbox 型 Report Map を使います。複製や実測の記述子ではありません。QEMU には Bluetooth controller がありません。実 Xbox の Report Map、CCCD の受理、ボンド保存、再起動後の再接続、内蔵 7265 は実機で未確認です。
+
+## Runtime stack overflow at the Report Reference read — English (2026-10-18)
+
+IMG_7740 (`0e743cf`) passed every HOGP stage up to `ATT queue intent request=0a handle=0020`, then halted with `#DF (vector 8) ... rip 0x140093907 cr2 0x0`. A linker map from a rebuild of `0e743cf` (byte-identical, SHA-256 `f09b8df3…`) places `rip` at `__rust_probestack+0x17` (`test [rsp+8], rsp`): a frame-size probe touched the unmapped guard page. The #PF could not be pushed on the exhausted stack and became #DF. `cr2 0x0` was a reporting gap: CR2 was printed only for vector 14. The deep frames were `Reports::bind` 47,880 bytes, `Device::att` 26,952, USB enumeration 21,528 and the runtime loop 23,832, against 31 usable pages (124 KiB).
+
+- Fix (`192096a`): the runtime stack is 64 pages (252 KiB usable). Discovery writes the bound reports into the caller's slot, so the 13 KB value is no longer moved through `action`/`gatt_action`. A host fixture of the IMG_7740 sequence reaches binding without errors. Devices logs `HOGP bound ...; stack never-touched N of M bytes` and the same after `bond saved`.
+- Diagnostics (`5999cac`): #PF runs on its own IST stack, so an overflow is a #PF with CR2. CR2 is shown for #DF too. A kernel fault adds `cpu: rip image+0x... rsp 0x... stack used U of M bytes, never touched N` and `cpu: stack image addresses image+0x...` (at most eight image addresses above RSP; nothing outside the image is printed). The `fault-overflow` QEMU case forces a real probestack overflow and checks these lines.
+
+## 日本語: Report Reference 読出し時のランタイムスタック溢れ（2026-10-18）
+
+IMG_7740（`0e743cf`）は `ATT queue intent request=0a handle=0020` まで HOGP の全段階を通過した後、`#DF (vector 8) ... rip 0x140093907 cr2 0x0` で停止しました。`0e743cf` をバイト一致（SHA-256 `f09b8df3…`）で再ビルドしたリンカーマップでは、`rip` は `__rust_probestack+0x17`（`test [rsp+8], rsp`）です。フレーム確保前のページ確認が、マップされていないガードページに触れました。尽きたスタックへ #PF を積めずに #DF になっています。`cr2 0x0` は表示の欠落で、CR2 はベクター 14 の時しか出していませんでした。大きなフレームは `Reports::bind` 47,880 バイト、`Device::att` 26,952、USB 列挙 21,528、ランタイムのループ 23,832 で、使用可能な 31 ページ（124 KiB）を超えました。
+
+- 修正（`192096a`）: ランタイムスタックを 64 ページ（使用可能 252 KiB）にしました。探索は結合したレポートを呼出し側の領域へ直接書き、13 KB の値を `action`／`gatt_action` 経由で移しません。IMG_7740 の手順を模した host fixture はエラー無しで結合に到達します。Devices に `HOGP bound ...; stack never-touched N of M bytes` を出し、`bond saved` の後にも同様に出します。
+- 診断（`5999cac`）: #PF を専用の IST スタックで動かし、溢れは CR2 付きの #PF として報告します。#DF でも CR2 を表示します。カーネル側の例外では `cpu: rip image+0x... rsp 0x... stack used U of M bytes, never touched N` と `cpu: stack image addresses image+0x...`（RSP より上の像内アドレスを最大 8 個、像外の値は出さない）を追加します。QEMU の `fault-overflow` ケースは実際に probestack で溢れさせ、これらの行を確認します。
