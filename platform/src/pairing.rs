@@ -8,8 +8,11 @@ pub const MAX_BONDS: usize = 8;
 const HEADER: usize = 64;
 // Version 1: 40-byte records. Version 2 appends the peer IRK (56 bytes) and is
 // written only when a bond carries one, so IRK-less files stay version 1.
+// Version 3 (64 bytes) adds this host's own address for the bond and is
+// written only when a bond uses a random static own address.
 const RECORD_V1: usize = 40;
 const RECORD_V2: usize = 56;
+const RECORD_V3: usize = 64;
 const MAGIC: &[u8; 8] = b"MUSHALTK";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -31,6 +34,17 @@ pub struct Bond {
     pub ltk: [u8; 16],
     /// Peer Identity Resolving Key, SMP wire order; all zero when not distributed.
     pub irk: [u8; 16],
+    /// This host's own address for the bond: 0 = the controller's public
+    /// address (`own_address` all zero), 1 = a random static address (HCI order).
+    pub own_address_type: u8,
+    pub own_address: [u8; 6],
+}
+/// A random static address: top two bits 11 and a random part (46 bits) that
+/// is neither all zero nor all one (Core Vol 6 Part B 1.3.2.1).
+pub fn random_static(address: &[u8; 6]) -> bool {
+    let mut part = *address;
+    part[5] &= 0x3f;
+    address[5] & 0xc0 == 0xc0 && part != [0; 6] && part != [0xff, 0xff, 0xff, 0xff, 0xff, 0x3f]
 }
 impl core::fmt::Debug for Bond {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -58,6 +72,11 @@ fn valid(b: &Bond) -> bool {
         && b.flags & !3 == 0
         && b.address != [0; 6]
         && b.ltk != [0; 16]
+        && match b.own_address_type {
+            0 => b.own_address == [0; 6],
+            1 => random_static(&b.own_address),
+            _ => false,
+        }
 }
 /// Always writes a complete fixed-capacity file; unused bytes are zero and checked.
 pub fn encode(bonds: &[Bond], out: &mut [u8]) -> Result<(), Error> {
@@ -82,7 +101,9 @@ pub fn encode_state(
             return Err(Error::Duplicate);
         }
     }
-    let (version, record) = if bonds.iter().any(|b| b.irk != [0; 16]) {
+    let (version, record) = if bonds.iter().any(|b| b.own_address_type != 0) {
+        (3u16, RECORD_V3)
+    } else if bonds.iter().any(|b| b.irk != [0; 16]) {
         (2u16, RECORD_V2)
     } else {
         (1u16, RECORD_V1)
@@ -99,8 +120,12 @@ pub fn encode_state(
         out[28..60].copy_from_slice(&hash);
     }
     for (bond, b) in bonds.iter().zip(out[HEADER..].chunks_exact_mut(record)) {
-        if version == 2 {
+        if version >= 2 {
             b[40..56].copy_from_slice(&bond.irk);
+        }
+        if version == 3 {
+            b[56] = bond.own_address_type;
+            b[57..63].copy_from_slice(&bond.own_address);
         }
         b[0] = bond.address_type;
         b[1] = bond.key_size;
@@ -127,6 +152,7 @@ pub fn decode_state(bytes: &[u8], out: &mut [Bond]) -> Result<(usize, Option<[u8
     let record = match u16::from_le_bytes([bytes[8], bytes[9]]) {
         1 => RECORD_V1,
         2 => RECORD_V2,
+        3 => RECORD_V3,
         _ => return Err(Error::Version),
     };
     let consumed = match u32::from_le_bytes(bytes[24..28].try_into().unwrap()) {
@@ -164,15 +190,24 @@ pub fn decode_state(bytes: &[u8], out: &mut [Bond]) -> Result<(usize, Option<[u8
         ediv: u16::from_le_bytes([b[10], b[11]]),
         random: b[12..20].try_into().unwrap(),
         ltk: b[20..36].try_into().unwrap(),
-        irk: if record == RECORD_V2 {
+        irk: if record >= RECORD_V2 {
             b[40..56].try_into().unwrap()
         } else {
             [0; 16]
         },
+        own_address_type: if record == RECORD_V3 { b[56] } else { 0 },
+        own_address: if record == RECORD_V3 {
+            b[57..63].try_into().unwrap()
+        } else {
+            [0; 6]
+        },
     };
     for (i, b) in bytes[HEADER..length].chunks_exact(record).enumerate() {
         let mut bond = parse(b);
-        let bad = !valid(&bond) || b[3] != 0 || b[36..40].iter().any(|b| *b != 0);
+        let bad = !valid(&bond)
+            || b[3] != 0
+            || b[36..40].iter().any(|b| *b != 0)
+            || (record == RECORD_V3 && b[63] != 0);
         bond.ltk.fill(0);
         bond.irk.fill(0);
         if bad {
@@ -203,6 +238,8 @@ pub fn recognized(bytes: &[u8]) -> bool {
         random: [0; 8],
         ltk: [0; 16],
         irk: [0; 16],
+        own_address_type: 0,
+        own_address: [0; 6],
     }; MAX_BONDS];
     let valid = decode_state(bytes, &mut bonds).is_ok();
     clear_keys(&mut bonds);
@@ -229,6 +266,8 @@ pub fn consumed_config_hash(bytes: &[u8]) -> Result<Option<[u8; 32]>, Error> {
         random: [0; 8],
         ltk: [0; 16],
         irk: [0; 16],
+        own_address_type: 0,
+        own_address: [0; 6],
     }; MAX_BONDS];
     let result = decode_state(bytes, &mut bonds).map(|(_, hash)| hash);
     clear_keys(&mut bonds);
@@ -245,6 +284,8 @@ pub fn bond_count(bytes: &[u8]) -> Result<usize, Error> {
         random: [0; 8],
         ltk: [0; 16],
         irk: [0; 16],
+        own_address_type: 0,
+        own_address: [0; 6],
     }; MAX_BONDS];
     let result = decode_state(bytes, &mut bonds).map(|(n, _)| n);
     clear_keys(&mut bonds);
@@ -282,6 +323,8 @@ mod tests {
         random: [2; 8],
         ltk: [3; 16],
         irk: [0; 16],
+        own_address_type: 0,
+        own_address: [0; 6],
     };
     #[test]
     fn roundtrip_empty_and_limit() {
@@ -346,8 +389,53 @@ mod tests {
             bad[i] ^= 1;
             assert!(decode(&bad, &mut [B; MAX_BONDS]).is_err(), "byte {i}");
         }
-        bytes[8] = 3;
+        bytes[8] = 4; // version 3 is now defined; 4 is unknown
         assert_eq!(decode(&bytes, &mut out), Err(Error::Version));
+    }
+    #[test]
+    fn own_random_address_uses_version_3_and_older_files_read_as_public() {
+        let mut bytes = [0; CAPACITY];
+        let mut own = B;
+        own.address[0] = 8;
+        own.own_address_type = 1;
+        own.own_address = [1, 2, 3, 4, 5, 0xc6];
+        let mut irk = B;
+        irk.address[0] = 9;
+        irk.irk = [5; 16];
+        encode(&[B, irk, own], &mut bytes).unwrap();
+        assert_eq!(&bytes[8..10], &3u16.to_le_bytes());
+        assert_eq!(&bytes[14..16], &64u16.to_le_bytes());
+        let mut out = [B; MAX_BONDS];
+        assert_eq!(decode(&bytes, &mut out), Ok(3));
+        assert_eq!((out[0].own_address_type, out[0].own_address), (0, [0; 6]));
+        assert_eq!(out[1].irk, [5; 16]);
+        assert_eq!(
+            (out[2].own_address_type, out[2].own_address),
+            (1, [1, 2, 3, 4, 5, 0xc6])
+        );
+        assert!(recognized(&bytes));
+        // Older versions carry no own address: public.
+        encode(&[irk], &mut bytes).unwrap();
+        assert_eq!(&bytes[8..10], &2u16.to_le_bytes());
+        assert_eq!(decode(&bytes, &mut out), Ok(1));
+        assert_eq!(out[0].own_address_type, 0);
+        // Only random static own addresses are valid; public carries no bytes.
+        for (kind, address) in [
+            (1, [1, 2, 3, 4, 5, 0x46]),
+            (1, [0, 0, 0, 0, 0, 0xc0]),
+            (1, [0xff, 0xff, 0xff, 0xff, 0xff, 0xff]),
+            (0, [1, 0, 0, 0, 0, 0]),
+            (2, [1, 2, 3, 4, 5, 0xc6]),
+        ] {
+            let mut bad = own;
+            bad.own_address_type = kind;
+            bad.own_address = address;
+            assert_eq!(
+                encode(&[bad], &mut bytes),
+                Err(Error::Corrupt),
+                "{kind} {address:?}"
+            );
+        }
     }
     #[test]
     fn corruption_is_rejected_before_output() {

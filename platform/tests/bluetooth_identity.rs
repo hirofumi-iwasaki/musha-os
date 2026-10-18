@@ -213,6 +213,8 @@ fn stored_irk_resolves_a_reconnect_from_a_private_address() {
         random: [0; 8],
         ltk: [7; 16],
         irk: irk(),
+        own_address_type: 0,
+        own_address: [0; 6],
     };
     let mut record = [0; 4096];
     pairing::encode_state(&[bond], None, &mut record).unwrap();
@@ -251,6 +253,8 @@ fn without_a_stored_bond_directed_or_known_addresses_never_reconnect() {
         random: [0; 8],
         ltk: [7; 16],
         irk: [0; 16],
+        own_address_type: 0,
+        own_address: [0; 6],
     };
     let mut record = [0; 4096];
     pairing::encode_state(&[other], None, &mut record).unwrap();
@@ -267,4 +271,55 @@ fn awaiting_response_ends_when_the_peer_answers() {
     assert!(c.awaiting_response());
     c.receive(3, 1, &[2, 0, 0, 9, 16, 0, 2], &mut rng).unwrap();
     assert!(!c.awaiting_response());
+}
+
+/// Just Works with a random static initiator address (iat = 1): the bond
+/// records that own address, is saved as version 3 and is found again for the
+/// reconnect, which must use the same own address.
+#[test]
+fn bond_made_with_a_random_own_address_keeps_it_for_reconnect() {
+    let own = [0x05, 0xc6, 0x11, 0x22, 0x33, 0xd4];
+    let mut rng = Fixed([1; 32]);
+    let mut c = Central::new(3, 5, 0, Method::JustWorks, 1, own, 0, RA, &mut rng).unwrap();
+    let resp = [2, 0, 0, 9, 16, 0, 0];
+    let public = sent(c.receive(3, 1, &resp, &mut rng).unwrap());
+    let local: [u8; 64] = public[1..].try_into().unwrap();
+    let peer = Key::generate(&mut Fixed([2; 32])).unwrap();
+    let wire = peer.public_wire();
+    let mut packet = vec![12];
+    packet.extend_from_slice(&wire);
+    c.receive(3, 2, &packet, &mut rng).unwrap();
+    let (na, nb) = ([1; 16], [4; 16]);
+    let confirm = f4(&x(&wire), &x(&local), &nb, 0);
+    c.receive(3, 3, &wire16(3, confirm), &mut rng).unwrap();
+    c.receive(3, 4, &wire16(4, nb), &mut rng).unwrap();
+    let mut a1 = [1u8; 7];
+    a1[1..].copy_from_slice(&own);
+    a1[1..].reverse();
+    let a2 = [0, 12, 11, 10, 9, 8, 7];
+    let (mac, _) = f5(&peer.dh(&local).unwrap(), &na, &nb, &a1, &a2);
+    let eb = f6(&mac, &nb, &na, &[0; 16], &[9, 0, 0], &a2, &a1);
+    assert!(matches!(
+        c.receive(3, 5, &wire16(13, eb), &mut rng).unwrap(),
+        Action::Encrypt(_)
+    ));
+    let Action::Bond(bond) = encrypted(&mut c, 6).unwrap() else {
+        panic!("no bond")
+    };
+    let b = *bond.bond();
+    assert_eq!((b.own_address_type, b.own_address), (1, own));
+    let mut record = [0; 4096];
+    pairing::encode_state(&[b], None, &mut record).unwrap();
+    assert_eq!(&record[8..10], &3u16.to_le_bytes());
+    let mut store = Store::new();
+    store.load(&record).unwrap();
+    assert_eq!(store.own_address(0, &RA), Some((1, own)));
+    assert_eq!(store.own_address(0, &PUBLIC), None);
+    // A bond from an older record has the controller's public address.
+    let mut older = b;
+    older.own_address_type = 0;
+    older.own_address = [0; 6];
+    pairing::encode_state(&[older], None, &mut record).unwrap();
+    store.load(&record).unwrap();
+    assert_eq!(store.own_address(0, &RA), Some((0, [0; 6])));
 }

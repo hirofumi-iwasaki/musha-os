@@ -129,6 +129,7 @@ impl Device {
             4 if self.shared_capacity => Some("read shared ACL buffer size"),
             4 => Some("LE read buffer size"),
             5 => Some("LE scan disable"),
+            6 if self.own_type == 1 && !self.random_set => Some("LE set random address"),
             6 => Some("LE create connection"),
             8 if self.encrypt.is_some() => Some("LE start encryption"),
             8 if self.update.is_some() && self.tx_len == 0 => Some("LE connection update"),
@@ -153,13 +154,13 @@ impl Device {
                 &[],
             ),
             5 => self.send_command(host, now, 0x200c, &[0, 0]),
+            // Scanning is off here, so the random address may be changed.
+            6 if self.own_type == 1 && !self.random_set => {
+                let address = self.own_random;
+                self.send_command(host, now, 0x2005, &address)
+            }
             6 => {
-                let mut p = [0; 25];
-                p[..4].copy_from_slice(&[0x10, 0, 0x10, 0]);
-                p[5] = self.peer_type;
-                p[6..12].copy_from_slice(&self.peer);
-                p[13..17].copy_from_slice(&[0x18, 0, 0x28, 0]);
-                p[19..21].copy_from_slice(&[0xf4, 1]);
+                let p = bt::stage::create_connection(self.peer_type, &self.peer, self.own_type);
                 self.send_command(host, now, 0x200d, &p)
             }
             8 if self.encrypt.is_some() => {
@@ -373,6 +374,17 @@ impl Device {
                         (opcode, result)
                     }
                 };
+                if op == 0x2005 {
+                    if result.len() != 1 {
+                        return Err("BT COMMAND LENGTH");
+                    }
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!("LE random address set (CC 00)"),
+                    );
+                    self.random_set = true;
+                    return Ok(());
+                }
                 if op == 0x200c && self.phase == 10 {
                     if result.len() != 1 {
                         return Err("BT COMMAND LENGTH");
@@ -468,8 +480,12 @@ impl Device {
                         self.handle,
                         now,
                         self.method,
-                        0,
-                        self.own,
+                        self.own_type,
+                        if self.own_type == 1 {
+                            self.own_random
+                        } else {
+                            self.own
+                        },
                         self.peer_type,
                         self.peer,
                         &mut crate::entropy::BootRandom,

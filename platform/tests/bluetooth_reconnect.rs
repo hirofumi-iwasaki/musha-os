@@ -19,6 +19,8 @@ fn bond() -> Bond {
         random: [0; 8],
         ltk: [7; 16],
         irk: [0; 16],
+        own_address_type: 0,
+        own_address: [0; 6],
     }
 }
 fn record(b: Bond) -> [u8; 4096] {

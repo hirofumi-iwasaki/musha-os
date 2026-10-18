@@ -44,6 +44,7 @@ Adding networking does not change the model: it adds one more untrusted parser.
 | 7 | **Release authenticity**: reproducible builds and `SHA256SUMS` (done); detached signatures (minisign or OpenSSH signatures) on `SHA256SUMS` with the public key published in the repository and README | release | v0.5.0 candidate |
 | 8 | **Disclosure**: `SECURITY.md` with a contact, the scope above, and the expectation of a response time; fixes are released as a patch version with a release note entry | repo | standing (file added now) |
 | 9 | **Entropy for pairing keys** (owner decision 2026-10-17): keys and nonces for Bluetooth SMP come only from an HMAC-SHA-256 DRBG seeded from every available source — firmware `EFI_RNG_PROTOCOL` (any algorithm it offers, recorded), CPU **RDSEED** (RDRAND as a secondary input), and the controller's `HCI_LE_Rand` — mixed together; at least one strong source (firmware RNG or RDSEED) is required or pairing is refused with a logged reason. Clock, timer and fixed values are never seeds. Health checks reject all-zero and repeated output. The `devices` log names the sources that contributed, so hardware records show them. Replaces the earlier firmware-only rule, which left machines without `EFI_RNG_PROTOCOL` (NUC5 Visual BIOS) unable to pair | kernel | v0.4.0 |
+| 10 | **Own Bluetooth address** (owner decision 2026-10-18): each new pairing uses a fresh random static own address drawn from the same DRBG (never a fixed or time-derived value), set with `LE_Set_Random_Address` before connecting and saved with that bond in `PAIRING.DAT` (record version 3); reconnects reuse the bond's address. A controller that kept an old bond with this host therefore sees an unknown host and answers pairing. Bonds from older records keep the controller's public address | Bluetooth | v0.4.0 |
 
 ### Secure Boot
 
@@ -99,6 +100,7 @@ Two ways exist to boot Musha-OS with Secure Boot enabled. They differ in cost an
 | 7 | **公開物の真正性**：再現可能ビルドと `SHA256SUMS`（済）。`SHA256SUMS` への分離署名（minisign または OpenSSH 署名）と、公開鍵のリポジトリ・README への掲載 | 公開 | v0.5.0 候補 |
 | 8 | **報告窓口**：`SECURITY.md` に連絡先、上記の範囲、応答の目安を書く。修正はパッチ版として公開しリリースノートに記載 | リポジトリ | 常時（ファイルは今回追加） |
 | 9 | **ペアリング鍵の乱数**（所有者決定 2026-10-17）：Bluetooth SMP の鍵とナンスは、利用可能な全ての源——ファームウェアの `EFI_RNG_PROTOCOL`（公開されているどのアルゴリズムでも可。記録する）、CPU の **RDSEED**（RDRAND は補助入力）、コントローラーの `HCI_LE_Rand`——を混ぜて種にした HMAC-SHA-256 DRBG からのみ取る。強い源（ファームウェア RNG か RDSEED）が最低 1 つ無ければ理由をログに出してペアリングを拒否する。時計・タイマー・固定値は決して種にしない。健全性検査で全ゼロと同値連続を弾く。`devices` ログに寄与した源を出し、実機記録に残す。`EFI_RNG_PROTOCOL` の無い機体（NUC5 の Visual BIOS）でペアリングできなかった従来のファームウェア限定規則を置き換える | カーネル | v0.4.0 |
+| 10 | **自分の Bluetooth アドレス**（所有者決定 2026-10-18）：新規ペアリングごとに、同じ DRBG から引いた新しいランダム静的アドレスを使う（固定値や時刻由来の値は使わない）。接続前に `LE_Set_Random_Address` で設定し、そのボンドと一緒に `PAIRING.DAT`（記録 version 3）へ保存する。再接続はボンドのアドレスを再利用する。これにより、このホストとの古いボンドを持ち続けるコントローラーにも未知のホストとして見え、ペアリングに応答する。旧形式の記録のボンドはコントローラーの public アドレスのまま | Bluetooth | v0.4.0 |
 
 ### Secure Boot
 

@@ -174,3 +174,24 @@ pub const PAIRING_NO_REPLY: &str =
     "No pairing reply: hold the controller pair button until it blinks fast.";
 pub const PAIRING_TIMED_OUT: &str =
     "Pairing timed out: hold the controller pair button until it blinks fast.";
+
+/// A random static own address from six DRBG bytes (HCI order): the top two
+/// bits are set to 11. None when the 46 random bits are all zero or all one;
+/// the caller draws again.
+pub fn random_static_from(mut bytes: [u8; 6]) -> Option<[u8; 6]> {
+    bytes[5] |= 0xc0;
+    crate::pairing::random_static(&bytes).then_some(bytes)
+}
+/// HCI LE Create Connection parameters: 10 ms scan interval/window, no filter
+/// list, the given peer, own address type (0 public, 1 random), 30–50 ms
+/// connection interval, latency 0, 5 s supervision timeout.
+pub fn create_connection(peer_type: u8, peer: &[u8; 6], own_type: u8) -> [u8; 25] {
+    let mut p = [0; 25];
+    p[..4].copy_from_slice(&[0x10, 0, 0x10, 0]);
+    p[5] = peer_type;
+    p[6..12].copy_from_slice(peer);
+    p[12] = own_type;
+    p[13..17].copy_from_slice(&[0x18, 0, 0x28, 0]);
+    p[19..21].copy_from_slice(&[0xf4, 1]);
+    p
+}

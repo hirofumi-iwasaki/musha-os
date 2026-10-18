@@ -14,6 +14,8 @@ const EMPTY: Bond = Bond {
     random: [0; 8],
     ltk: [0; 16],
     irk: [0; 16],
+    own_address_type: 0,
+    own_address: [0; 6],
 };
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SaveError {

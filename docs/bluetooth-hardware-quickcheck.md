@@ -207,3 +207,12 @@ When a controller still holds a bond this host never saved (IMG_7743/7744), it r
 ## 日本語: ホスト側の保存失敗後のコントローラー回復（2026-10-18）
 
 このホストが保存できなかったボンドをコントローラーが保持している場合（IMG_7743/7744）、コントローラーは電源を入れるとすぐに再接続し、Pairing Request に応答しません。ホストはそのような接続を 5 秒で（コントローラーが SMP Security Request を送ってきたら即座に）諦めて切断し、そのコントローラーを 10 秒間除外して（Advertising の集計に `deferred=N`）再スキャンします。これを最大 3 回繰り返します。回復手順：コントローラーを別のホスト（例：Mac）とペアリングし、そちらで削除して古いボンドを上書きします。次に NUC5 でビューアーを起動して P を押し、コントローラーが再接続する前に、**先に**ペアボタンをライトが速く点滅するまで長押ししてください。接続中は状態行の下の行に `BT peer ..:xx:yy addr-type=N (<種別>)` が出ます。
+
+
+## Own random address — English (2026-10-18)
+
+From this version each new pairing uses a new random static own address (`own address random static ..:xx:yy (new for this pairing)`), and the row under the status line shows `...; own random ..:xx:yy`. A controller that kept an old bond with this host should now answer the Pairing Request without the Mac recovery step. Expected lines: `connect stage=LE set random address`, `LE random address set (CC 00)`, then the usual Create Connection, Pairing Response, `HOGP bound` and `bond saved record=1 ...`. After a reboot the reconnect uses the saved own address (no new `own address` line, `own random ..:xx:yy` with the same value).
+
+## 日本語: 自分のランダムアドレス（2026-10-18）
+
+この版から、新規ペアリングごとに新しいランダム静的の自アドレスを使います（`own address random static ..:xx:yy (new for this pairing)`）。状態行の下の行には `...; own random ..:xx:yy` が出ます。このホストとの古いボンドを持ち続けるコントローラーも、Mac での回復手順なしで Pairing Request に応答するはずです。期待する行は `connect stage=LE set random address`、`LE random address set (CC 00)`、その後に通常の Create Connection、Pairing Response、`HOGP bound`、`bond saved record=1 ...` です。再起動後の再接続は保存した自アドレスを使います（新しい `own address` 行は出ず、`own random ..:xx:yy` は同じ値）。

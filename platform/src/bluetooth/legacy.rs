@@ -332,6 +332,8 @@ impl Legacy {
                     random: p[3..].try_into().unwrap(),
                     ltk: self.ltk,
                     irk: [0; 16],
+                    own_address_type: 0,
+                    own_address: [0; 6],
                 };
                 self.ltk.zeroize();
                 self.state = State::Complete;

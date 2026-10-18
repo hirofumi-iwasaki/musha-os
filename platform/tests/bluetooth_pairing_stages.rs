@@ -290,3 +290,26 @@ fn pairing_failed_codes_and_guidance_fit_the_viewer() {
         assert!(text.contains("pair button"));
     }
 }
+
+#[test]
+fn own_random_static_address_and_create_connection_layout() {
+    // Top bits forced to 11; all-zero or all-one random parts are redrawn.
+    assert_eq!(
+        stage::random_static_from([1, 2, 3, 4, 5, 6]),
+        Some([1, 2, 3, 4, 5, 0xc6])
+    );
+    assert_eq!(stage::random_static_from([0; 6]), None);
+    assert_eq!(stage::random_static_from([0xff; 6]), None);
+    assert_eq!(
+        stage::random_static_from([0xff, 0xff, 0xff, 0xff, 0xff, 0x3e]),
+        Some([0xff, 0xff, 0xff, 0xff, 0xff, 0xfe])
+    );
+    let peer = [0x73, 0xdf, 3, 4, 5, 6];
+    let random = stage::create_connection(0, &peer, 1);
+    let public = stage::create_connection(0, &peer, 0);
+    assert_eq!((random[5], &random[6..12], random[12]), (0, &peer[..], 1));
+    assert_eq!(public[12], 0);
+    assert_eq!(&random[..4], &[0x10, 0, 0x10, 0]);
+    assert_eq!(&random[13..17], &[0x18, 0, 0x28, 0]);
+    assert_eq!(&random[19..21], &[0xf4, 1]);
+}

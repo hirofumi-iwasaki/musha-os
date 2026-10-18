@@ -385,6 +385,12 @@ pub(in crate::xhci) struct Device {
     retry: musha_platform::bluetooth::retry::Retry,
     security_request: bool,
     disconnect_deadline: u64,
+    // Own address for the current attempt: 0 = controller public, 1 = random
+    // static (fresh per new pairing, or the stored bond's on reconnect), and
+    // whether LE_Set_Random_Address has applied it.
+    own_type: u8,
+    own_random: [u8; 6],
+    random_set: bool,
     phase: u8,
     command: Option<(u16, u64)>,
     command_credits: u8,
@@ -612,6 +618,9 @@ pub(super) fn prepare(
             retry: musha_platform::bluetooth::retry::Retry::new(),
             security_request: false,
             disconnect_deadline: 0,
+            own_type: 0,
+            own_random: [0; 6],
+            random_set: false,
             phase: 0,
             command: None,
             command_credits: 1,
@@ -823,6 +832,15 @@ impl Device {
                         ) {
                             self.peer = advert.address;
                             self.peer_type = advert.address_type;
+                            // Reconnect with the own address the bond was made with.
+                            let (kind, own) = crate::bluetooth::stored_own_address(
+                                advert.address_type,
+                                &advert.address,
+                            )
+                            .unwrap_or((0, [0; 6]));
+                            self.own_type = kind;
+                            self.own_random = own;
+                            self.random_set = false;
                             self.phase = 1;
                         }
                         return;
@@ -896,13 +914,19 @@ impl Device {
             if self.phase == 1 {
                 self.log_advertising(now, true);
                 let tail = musha_platform::bluetooth::stage::address_tail(&self.peer);
-                crate::bluetooth::set_peer(Some(format_args!(
-                    "BT peer ..:{:02x}:{:02x} addr-type={} ({})",
-                    tail[0],
-                    tail[1],
-                    self.peer_type,
-                    address_class(self.peer_type, &self.peer)
-                )));
+                let own = musha_platform::bluetooth::stage::address_tail(&self.own_random);
+                let class = address_class(self.peer_type, &self.peer);
+                if self.own_type == 1 {
+                    crate::bluetooth::set_peer(Some(format_args!(
+                        "BT peer ..:{:02x}:{:02x} addr-type={} ({}); own random ..:{:02x}:{:02x}",
+                        tail[0], tail[1], self.peer_type, class, own[0], own[1]
+                    )));
+                } else {
+                    crate::bluetooth::set_peer(Some(format_args!(
+                        "BT peer ..:{:02x}:{:02x} addr-type={} ({}); own public",
+                        tail[0], tail[1], self.peer_type, class
+                    )));
+                }
                 crate::bootlog::device(
                     "bluetooth",
                     format_args!(
@@ -932,6 +956,32 @@ impl Device {
             self.handle_event(host, now, event)?;
         }
         Ok(())
+    }
+    /// A fresh random static own address from the DRBG for a new pairing, so a
+    /// controller that kept an old bond with this host sees an unknown host.
+    fn new_own_address(&mut self) -> Result<(), &'static str> {
+        use musha_platform::bluetooth::entropy::Random;
+        for _ in 0..4 {
+            let mut bytes = [0; 6];
+            crate::entropy::BootRandom
+                .fill(&mut bytes)
+                .map_err(|_| "BT OWN ADDRESS ENTROPY")?;
+            if let Some(address) = musha_platform::bluetooth::stage::random_static_from(bytes) {
+                let tail = musha_platform::bluetooth::stage::address_tail(&address);
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "own address random static ..:{:02x}:{:02x} (new for this pairing)",
+                        tail[0], tail[1]
+                    ),
+                );
+                self.own_type = 1;
+                self.own_random = address;
+                self.random_set = false;
+                return Ok(());
+            }
+        }
+        Err("BT OWN ADDRESS")
     }
     fn log_advertising(&mut self, now: u64, force: bool) {
         let summary = if force {
@@ -1032,6 +1082,9 @@ impl Device {
                 return Ok(());
             }
             self.started = Some(now);
+            if self.pairing {
+                self.new_own_address()?;
+            }
             crate::debug(b"MUSHA: BT_LE_SCAN_BEGIN\n");
         }
         let op = (host.regs.read(0)? & 255) as usize;
@@ -1230,6 +1283,8 @@ pub(super) fn unavailable(reason: &'static str) {
         "BT ENCRYPTION REJECTED",
         "BT PAIR TIMEOUT",
         "BT DISCONNECT TIMEOUT",
+        "BT OWN ADDRESS",
+        "BT OWN ADDRESS ENTROPY",
         "BT DISCONNECT FAILED",
         "BT CCCD WRITE REJECTED",
         "BT PAIRING FAILED PASSKEY ENTRY",

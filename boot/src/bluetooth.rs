@@ -427,6 +427,10 @@ pub fn stored_any() -> bool {
 pub fn stored_matches(kind: u8, address: &[u8; 6]) -> bool {
     unsafe { (&*STORE.0.get()).matches(kind, address) }
 }
+/// Own address used with the stored bond for this advertiser.
+pub fn stored_own_address(kind: u8, address: &[u8; 6]) -> Option<(u8, [u8; 6])> {
+    unsafe { (&*STORE.0.get()).own_address(kind, address) }
+}
 /// True when the stored bond matched through its IRK, not its identity.
 pub fn stored_resolved(kind: u8, address: &[u8; 6]) -> bool {
     unsafe { (&*STORE.0.get()).resolved(kind, address) }

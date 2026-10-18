@@ -15,6 +15,8 @@ const EMPTY: Bond = Bond {
     random: [0; 8],
     ltk: [0; 16],
     irk: [0; 16],
+    own_address_type: 0,
+    own_address: [0; 6],
 };
 pub struct Store {
     bonds: [Bond; MAX_BONDS],
@@ -68,6 +70,14 @@ impl Store {
         self.bonds[..self.count]
             .iter()
             .any(|b| Self::owns(b, kind, address))
+    }
+    /// The own address this host used with the bond matching the advertiser:
+    /// (0, zero) for the controller's public address, (1, address) for random.
+    pub fn own_address(&self, kind: u8, address: &[u8; 6]) -> Option<(u8, [u8; 6])> {
+        self.bonds[..self.count]
+            .iter()
+            .find(|b| Self::owns(b, kind, address))
+            .map(|b| (b.own_address_type, b.own_address))
     }
     /// True only when the address matched through an IRK, not the identity.
     pub fn resolved(&self, kind: u8, address: &[u8; 6]) -> bool {

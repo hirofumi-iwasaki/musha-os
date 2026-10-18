@@ -450,6 +450,15 @@ impl Central {
             random: [0; 8],
             ltk,
             irk: self.irk.unwrap_or([0; 16]),
+            // The address this host used for pairing; reconnects reuse it.
+            own_address_type: self.a1[0],
+            own_address: if self.a1[0] == 1 {
+                let mut own: [u8; 6] = self.a1[1..].try_into().unwrap();
+                own.reverse();
+                own
+            } else {
+                [0; 6]
+            },
         };
         self.state = State::Complete;
         self.wipe();

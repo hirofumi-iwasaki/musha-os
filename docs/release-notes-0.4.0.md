@@ -151,3 +151,12 @@ The SETTINGS writer (only `SETTINGS/PAIRING.DAT`) now reads only the FAT sectors
 ## SETTINGS書込みとBluetoothボンド保存 — 日本語（2026-10-18開発更新）
 
 SETTINGS writer（対象は`SETTINGS/PAIRING.DAT`のみ）は保存に必要なFATセクターだけを読むようになり、30.8 GB・16 KiBクラスターのFAT32媒体でも約29,400回ではなく数十回の読出しで済みます（IMG_7741は20,000回の予算を超過）。所有者決定により、FAT全体の整合性検査は行いません。ARCHIVE/HIDDEN/SYSTEM/READ_ONLY付きや長い名前付きのSETTINGS、バックアップFSInfoの欠落・不正（主FSInfoのみで続行し警告）を受け付けます。ボリュームラベル、ディレクトリーでないSETTINGS、主FSInfoの不正は従来どおり拒否します。拒否は段階・検査・読出し数・時間とともに記録し、ビューアーに種別を出します。ペアリングで相手のidentity鍵（IRK）を要求し、再接続でprivate addressを解決します。実機のボンド保存・再接続・Xboxの鍵配布は未確認です。規則は[SETTINGSファイル](settings.md)を参照してください。
+
+
+## Bluetooth own address per bond — English (2026-10-18 development update)
+
+Each new pairing now uses a fresh random static own address from the pairing DRBG, set before connecting and saved with that bond (`PAIRING.DAT` version 3); reconnects reuse it. This lets pairing recover without another device when a controller kept an old bond that this host lost (IMG_7743–7745), and keeps working when the dongle is replaced or the built-in adapter is used. Bonds in older records keep the controller's public address. A peer that stays silent is disconnected after 5 s, deferred for 10 s and retried up to three times. Physical pairing, save and reconnect remain unverified.
+
+## Bluetoothの自アドレスをボンドごとに — 日本語（2026-10-18開発更新）
+
+新規ペアリングごとに、ペアリング用DRBGから新しいランダム静的アドレスを作り、接続前に設定してそのボンドと一緒に保存します（`PAIRING.DAT` version 3）。再接続はそのアドレスを再利用します。このホストが失ったボンドをコントローラーが保持し続けている場合（IMG_7743〜7745）でも、他の機器を使わずにペアリングをやり直せます。ドングルを交換しても、内蔵アダプターを使っても有効です。旧形式の記録のボンドはコントローラーのpublicアドレスのままです。応答しない相手は5秒で切断し、10秒除外して最大3回やり直します。実機のペアリング・保存・再接続は未確認です。
