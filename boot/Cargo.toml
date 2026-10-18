@@ -49,6 +49,8 @@ fault-pf = ["qemu-debug"]
 fault-ro = ["qemu-debug"]
 fault-nx = ["qemu-debug"]
 fault-guard = ["qemu-debug"]
+# Recursive frames overflow the runtime stack through __rust_probestack.
+fault-overflow = ["qemu-debug"]
 
 xhci-timeout = ["qemu-debug"]
 

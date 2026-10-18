@@ -341,7 +341,7 @@ pub unsafe fn initialize<'a>(info: &'a BootInfo) -> Result<&'a mut [u8], Error> 
             Range::new(info.stack_base, info.stack_bytes)?,
             Range::new(info.map_base, 128 * 1024)?,
             Range::new(info as *const BootInfo as usize, PAGE)?,
-            Range::new(info.emergency_base, 32768)?,
+            Range::new(info.emergency_base, 49152)?,
             Range::new(info.table_base, info.table_bytes)?,
             Range::new(info.framebuffer.base, info.framebuffer.bytes)?.aligned()?,
             Range::new(info.dma_base, info.dma_bytes)?,

@@ -332,6 +332,14 @@ extern "win64" fn dispatch(frame: &mut Frame) {
 
 /// CPU faults originating at CPL3 must land on the dedicated TSS.RSP0 stack.
 pub fn verify_fault_stack(frame: usize, cs: u64, vector: u64) {
+    // #PF is delivered on its own IST stack (see cpu::initialize).
+    if cs & 3 == 3 && vector == 14 {
+        if !crate::cpu::on_page_fault_stack(frame) {
+            failed(b"FAULT_STACK");
+        }
+        crate::debug(b"MUSHA: RING3_FAULT_IST_STACK_OK\n");
+        return;
+    }
     if cs & 3 == 3 && !matches!(vector, 1 | 2 | 8 | 18) {
         unsafe {
             if frame < KERNEL_TOP - 16 * PAGE

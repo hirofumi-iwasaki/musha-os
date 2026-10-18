@@ -95,6 +95,9 @@ pub unsafe fn initialize(info: *const BootInfo) {
             (4, boot.stack_base + boot.stack_bytes),
             (36, boot.emergency_base + 16384),
             (44, boot.emergency_base + 32768),
+            // IST3: #PF, so a runtime stack overflow is reported as #PF with
+            // CR2 instead of escalating to #DF while delivering on that stack.
+            (52, boot.emergency_base + 49152),
         ] {
             core::ptr::copy_nonoverlapping(
                 (value as u64).to_le_bytes().as_ptr(),
@@ -125,6 +128,8 @@ pub unsafe fn initialize(info: *const BootInfo) {
                 1
             } else if vector == 2 || matches!(vector, 1 | 18) {
                 2
+            } else if vector == 14 {
+                3
             } else {
                 0
             };
@@ -266,6 +271,99 @@ extern "win64" fn common() -> ! {
         ".if {recover}","fninit","mov dword ptr [rsp],0x1f80","ldmxcsr [rsp]",".endif",
         "call {handler}","ud2",handler=sym fatal,recover=const cfg!(any(feature="ring3-lifecycle-probe", external_app)) as usize);
 }
+/// Bytes at the bottom of the runtime stack never written since entry (the
+/// low-water mark). Reads only mapped stack pages.
+fn untouched(info: &BootInfo) -> usize {
+    let base = info.stack_base + 4096;
+    let top = info.stack_base + info.stack_bytes;
+    let mut n = 0usize;
+    while base + n + 8 <= top
+        && unsafe { ((base + n) as *const u64).read_volatile() } == crate::STACK_FILL
+    {
+        n += 8;
+    }
+    n
+}
+/// True when a ring-3 #PF frame lies on the dedicated #PF IST stack.
+pub(crate) fn on_page_fault_stack(frame: usize) -> bool {
+    let info = INFO.load(Ordering::Acquire);
+    if info.is_null() {
+        return false;
+    }
+    let low = unsafe { (*info).emergency_base } + 32768;
+    frame >= low && frame.checked_add(56).is_some_and(|end| end <= low + 16384)
+}
+/// Kernel-mode fatal context: interrupted RSP, runtime stack use and low-water
+/// mark, image-relative RIP, and up to eight image addresses found on the
+/// stack (return-address candidates). Only mapped stack pages are read; values
+/// outside the image are never printed, so no data or key material appears.
+unsafe fn stack_report(info: &BootInfo, rip: u64, rsp: u64) {
+    let base = info.stack_base + 4096; // first page is the unmapped guard
+    let top = info.stack_base + info.stack_bytes;
+    let image = info.image_base as u64..(info.image_base + info.image_bytes) as u64;
+    let rsp = rsp as usize;
+    let untouched = untouched(info);
+    let offset = |v: u64| v.wrapping_sub(info.image_base as u64);
+    if (info.stack_base..top).contains(&rsp) {
+        crate::bootlog::event(
+            musha_platform::boot_log::Level::Error,
+            "ERROR",
+            format_args!(
+                "cpu: rip image+0x{:x} rsp 0x{:x} stack used {} of {} bytes, never touched {}",
+                offset(rip),
+                rsp,
+                top - rsp,
+                top - base,
+                untouched
+            ),
+        );
+    } else {
+        crate::bootlog::event(
+            musha_platform::boot_log::Level::Error,
+            "ERROR",
+            format_args!(
+                "cpu: rip image+0x{:x} rsp 0x{:x} outside runtime stack; never touched {}",
+                offset(rip),
+                rsp,
+                untouched
+            ),
+        );
+        return;
+    }
+    let mut found = [0u64; 8];
+    let mut count = 0;
+    let mut at = rsp.max(base) & !7;
+    while at + 8 <= top && count < found.len() && at < rsp.max(base) + 16384 {
+        let value = unsafe { (at as *const u64).read_volatile() };
+        if image.contains(&value) {
+            found[count] = offset(value);
+            count += 1;
+        }
+        at += 8;
+    }
+    let mut text = [0u8; 8 * 25];
+    let mut used = 0;
+    for v in &found[..count] {
+        for b in b" image+0x" {
+            text[used] = *b;
+            used += 1;
+        }
+        let digits = hex(*v);
+        let first = digits.iter().position(|d| *d != b'0').unwrap_or(15);
+        for d in &digits[first..] {
+            text[used] = d.to_ascii_lowercase();
+            used += 1;
+        }
+    }
+    crate::bootlog::event(
+        musha_platform::boot_log::Level::Error,
+        "ERROR",
+        format_args!(
+            "cpu: stack image addresses{}",
+            core::str::from_utf8(&text[..used]).unwrap_or("")
+        ),
+    );
+}
 pub(crate) fn hex(value: u64) -> [u8; 16] {
     let mut bytes = [b'0'; 16];
     for (i, ch) in bytes.iter_mut().enumerate() {
@@ -299,10 +397,15 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
     unsafe {
         let frame = &*frame;
         let ist2 = frame.vector == 2 || matches!(frame.vector, 1 | 18);
-        if frame.vector == 8 || ist2 {
+        if frame.vector == 8 || ist2 || frame.vector == 14 {
             let rsp: usize;
             asm!("mov {}, rsp",out(reg) rsp,options(nomem,nostack,preserves_flags));
-            let low = (*info).emergency_base + if ist2 { 16384 } else { 0 };
+            let low = (*info).emergency_base
+                + match frame.vector {
+                    8 => 0,
+                    14 => 32768,
+                    _ => 16384,
+                };
             if rsp < low || rsp >= low + 16384 {
                 stop();
             }
@@ -320,8 +423,10 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
             crate::debug(&hex(frame.rsp));
             crate::debug(b"\n");
         }
+        // #DF commonly follows a #PF whose delivery failed; CR2 then still
+        // holds that first fault address, so report it for both vectors.
         let mut cr2 = 0u64;
-        if frame.vector == 14 {
+        if matches!(frame.vector, 8 | 14) {
             asm!("mov {}, cr2",out(reg) cr2,options(nomem,nostack,preserves_flags));
         }
         let name = match frame.vector {
@@ -367,6 +472,9 @@ extern "win64" fn fatal(frame: *const FaultFrame) -> ! {
                     name, frame.vector, frame.rip, cr2
                 ),
             );
+        }
+        if frame.cs & 3 == 0 {
+            stack_report(&*info, frame.rip, frame.rsp);
         }
         #[cfg(external_app)]
         if frame.cs & 3 == 3 {

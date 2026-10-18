@@ -75,7 +75,8 @@ try:
                 else:
                     vector, error = (13, 0) if case == 'privileged' else (14, {'ro':7, 'nx':21, 'guard':4, 'supervisor':5}[case])
                     assert f'EXCEPTION VECTOR={vector:016X} ERROR={error:016X}' in text, text
-                    assert 'RING3_FAULT_KERNEL_STACK_OK' in text, text
+                    # #PF is delivered on its IST3 stack; #GP stays on the kernel stack.
+                    assert ('RING3_FAULT_IST_STACK_OK' if vector == 14 else 'RING3_FAULT_KERNEL_STACK_OK') in text, text
                     assert 'RING3_FAULT CS=0000000000000033' in text and 'RING3_EXIT_OK' not in text, text
                 report['cases'].append({'case': case, 'passed': True, 'efi_sha256': hashlib.sha256(efi.read_bytes()).hexdigest()})
                 print('PASS Ring3 ' + case, flush=True)

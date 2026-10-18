@@ -405,7 +405,9 @@ def main():
                         vector=14 if name=='fault-pf' else 6
                         assert f'ELF faulted: vector {vector}.' in screen,screen
                         if not a.normal:
-                            assert 'RING3_FAULT_KERNEL_STACK_OK' in text and 'C3_APP_FAULT VECTOR='+format(vector,'016X') in text,text
+                            # #PF is delivered on its IST3 stack; #UD stays on the kernel stack.
+                            stack='RING3_FAULT_IST_STACK_OK' if vector==14 else 'RING3_FAULT_KERNEL_STACK_OK'
+                            assert stack in text and 'C3_APP_FAULT VECTOR='+format(vector,'016X') in text,text
                             assert 'APP_RECOVERED KIND=0000000000000001 DETAIL='+format(vector,'016X') in text,text
                     elif kind in ('reject','disconnect'):
                         assert 'RING3_ELF_ENTERING' not in text,screen+text

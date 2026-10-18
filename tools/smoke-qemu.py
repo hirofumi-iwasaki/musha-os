@@ -10,7 +10,7 @@ parser.add_argument('--output',type=pathlib.Path,help='Directory for local smoke
 parser.add_argument('--qemu',default='qemu-system-x86_64')
 parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--keyboard-usb-version',type=int,choices=[1,2],default=2)
-parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'],default='normal')
+parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','overflow','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'],default='normal')
 parser.add_argument('--no-keyboard-input',action='store_true')
 parser.add_argument('--expect-t2-diagnostics',action='store_true',help='Require read-only T2-D1 evidence on the QEMU machine (no BCE device)')
 parser.add_argument('--keyboard-exit',action='store_true')
@@ -153,6 +153,7 @@ with (out/'qemu.log').open('w') as err:
    'ud':'MUSHA: EXCEPTION VECTOR=0000000000000006 ERROR=0000000000000000',
    'df':'MUSHA: EXCEPTION VECTOR=0000000000000008 ERROR=0000000000000000',
    'guard':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000002',
+   'overflow':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000000',
    'pf':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000002',
    'ro':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000003',
    'nx':'MUSHA: EXCEPTION VECTOR=000000000000000E ERROR=0000000000000011',
@@ -224,7 +225,7 @@ with (out/'qemu.log').open('w') as err:
     if args.case not in ['normal','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt']:
      if 'Musha-OS halted' not in text or text.rfind('MUSHA: RING_END') < text.rfind('Musha-OS halted'):
       time.sleep(.02);continue
-     names={'ud':('#UD',6),'df':('#DF',8),'gp':('#GP',13),'pf':('#PF',14),'ro':('#PF',14),'nx':('#PF',14),'guard':('#PF',14)}
+     names={'ud':('#UD',6),'df':('#DF',8),'gp':('#GP',13),'pf':('#PF',14),'ro':('#PF',14),'nx':('#PF',14),'guard':('#PF',14),'overflow':('#PF',14)}
      name,vector=names[args.case]
      expected=f'ERROR: cpu: exception {name} (vector {vector}) error '
      assert expected in text, 'Sequential exception record missing'
@@ -234,7 +235,16 @@ with (out/'qemu.log').open('w') as err:
      match=re.search(r'RIP=([0-9A-F]{16}) CR2=([0-9A-F]{16})',text)
      if not match or (args.case!='nx' and int(match.group(1),16)==0):raise RuntimeError('Invalid exception frame: '+text)
      if args.case=='pf' and int(match.group(2),16)!=0:raise RuntimeError('Unexpected CR2')
-     if args.case in ['ro','nx','guard'] and int(match.group(2),16)==0:raise RuntimeError('Missing fault address')
+     if args.case in ['ro','nx','guard','overflow'] and int(match.group(2),16)==0:raise RuntimeError('Missing fault address')
+     if args.case!='nx' and not re.search(r'ERROR: cpu: rip image\+0x[0-9a-f]+ rsp 0x[0-9a-f]+ ',text):raise RuntimeError('Stack context line missing: '+text)
+     if args.case=='overflow':
+      # An overflow must stay a #PF on its IST stack: CR2 and RSP are in the
+      # guard page, so the reported use exceeds the mapped stack. The probe only
+      # reads, so less than one 16 KiB frame below RSP stays unwritten.
+      used=re.search(r'stack used (\d+) of (\d+) bytes, never touched (\d+)',text)
+      if not used or int(used.group(1))<int(used.group(2)) or int(used.group(3))>=32768:raise RuntimeError('Overflow stack report: '+text)
+      if '#DF' in text:raise RuntimeError('Overflow escalated to #DF')
+      if 'cpu: stack image addresses image+0x' not in text:raise RuntimeError('Backtrace candidates missing: '+text)
     if args.case in ['xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'] and ('Musha-OS halted' not in text or text.rfind('MUSHA: RING_END') < text.rfind('Musha-OS halted')):
      time.sleep(0.1);continue
     if args.case in ['xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'] and 'MUSHA: XHCI_QUIESCED DMA_DISABLED' not in text:raise RuntimeError('DMA cleanup missing: '+text)

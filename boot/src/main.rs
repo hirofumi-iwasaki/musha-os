@@ -47,6 +47,7 @@ const _: () = assert!(
         + (cfg!(feature = "fault-ro") as usize)
         + (cfg!(feature = "fault-nx") as usize)
         + (cfg!(feature = "fault-guard") as usize)
+        + (cfg!(feature = "fault-overflow") as usize)
         + (cfg!(feature = "xhci-timeout") as usize)
         + (cfg!(feature = "xhci-command-timeout") as usize)
         + (cfg!(feature = "usb-descriptor-timeout") as usize)
@@ -67,6 +68,8 @@ use r_efi::{
 
 // Diagnostic formatting and GPT file reads share this guarded runtime stack.
 const STACK_PAGES: usize = 32;
+/// Fill pattern for the stack low-water mark reported on fatal errors.
+pub(crate) const STACK_FILL: u64 = 0x4b4d_5245_5441_5753;
 const MAP_PAGES: usize = 32;
 #[repr(C)]
 struct BootInfo {
@@ -133,8 +136,15 @@ fn diagnostic_capture(_info: &BootInfo) -> ! {
 // maintain 16-byte call alignment. runtime never returns to the old stack.
 #[unsafe(naked)]
 unsafe extern "win64" fn enter_runtime(_info: *const BootInfo, _stack_top: usize) -> ! {
-    naked_asm!("cli", "cld", "mov rsp, rdx", "and rsp, -16", "sub rsp, 32",
-        "call {entry}", "ud2", entry = sym runtime);
+    // Pre-fill every mapped stack page except the top 256 bytes, so a fatal
+    // error can report the deepest use (low-water mark). No secret is involved.
+    naked_asm!("cli", "cld", "mov r8, rcx", "mov r9, rdx",
+        "lea rdi, [rdx - {fill}]", "mov rcx, {qwords}", "mov rax, {pattern}", "rep stosq",
+        "mov rcx, r8", "mov rsp, r9", "and rsp, -16", "sub rsp, 32",
+        "call {entry}", "ud2", entry = sym runtime,
+        fill = const (STACK_PAGES - 1) * 4096,
+        qwords = const ((STACK_PAGES - 1) * 4096 - 256) / 8,
+        pattern = const STACK_FILL);
 }
 #[cfg_attr(feature = "ring3-probe", allow(unreachable_code))]
 extern "win64" fn runtime(info: *const BootInfo) -> ! {
@@ -312,6 +322,19 @@ extern "win64" fn runtime(info: *const BootInfo) -> ! {
     unsafe {
         asm!("mov byte ptr [{address}], 1",address=in(reg) info.stack_base,options(nostack));
     }
+    #[cfg(feature = "fault-overflow")]
+    {
+        // Genuine overflow through __rust_probestack into the guard page.
+        #[allow(unconditional_recursion)]
+        #[inline(never)]
+        fn deeper(depth: u64) -> u64 {
+            let mut frame = [0u8; 16384];
+            core::hint::black_box(&mut frame);
+            frame[0] = depth as u8;
+            deeper(depth + 1).wrapping_add(core::hint::black_box(frame[1]) as u64)
+        }
+        core::hint::black_box(deeper(0));
+    }
     #[cfg(feature = "fault-ro")]
     unsafe {
         asm!("mov byte ptr [{address}], 1",address=in(reg) runtime as *const () as usize,options(nostack));
@@ -455,7 +478,7 @@ pub extern "efiapi" fn efi_main(
             STACK_PAGES,
             MAP_PAGES,
             1,
-            8,
+            12, // emergency IST stacks: #DF, NMI/#DB/#MC, #PF (16 KiB each)
             256,
             256 * xhcis.count.max(1),
             16,
