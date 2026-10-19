@@ -1,7 +1,7 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
 //! One bounded BOT command, advanced without waiting or accessing DMA.
-use super::{Command, cbw, csw};
+use super::{cbw, csw, Command};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Phase {
     Command,
@@ -152,6 +152,8 @@ mod tests {
             Command::Ready,
             Command::Sense,
             Command::ModeSense,
+            Command::CachingModeSense { allocation: 4 },
+            Command::CachingModeSense { allocation: 24 },
             Command::Capacity,
             Command::SynchronizeCache,
             Command::Write {

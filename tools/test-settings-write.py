@@ -142,7 +142,7 @@ def qemu(a, out, boot, data, readonly=False):
     log.write_text('')
     sock = ROOT / 'out' / ('sw-' + hashlib.sha256(str(out).encode()).hexdigest()[:12] + '.sock')
     sock.unlink(missing_ok=True)
-    cmd = [a.qemu, '-machine', 'q35,accel=tcg', '-m', '256M', '-drive', f'if=pflash,format=raw,readonly=on,file={fw}/edk2-x86_64-code.fd', '-drive', f'if=pflash,format=raw,file={out}/vars.fd', '-drive', f'if=ide,format=raw,snapshot=on,file={boot}', '-drive', f"if=none,id=data,format=raw,readonly={('on' if readonly else 'off')},file={data}", '-device', 'qemu-xhci,id=x', '-device', f'usb-storage,id=storage,drive=data,bus=x.0,port=1,logical_block_size={a.sector_size},physical_block_size={a.sector_size}', '-device', 'usb-kbd,bus=x.0', '-display', 'none', '-debugcon', f'file:{log}', '-global', 'isa-debugcon.iobase=0xe9', '-qmp', f'unix:{sock},server=on,wait=off', '-no-reboot']
+    cmd = [a.qemu, '-machine', 'q35,accel=tcg', '-m', '256M', '-drive', f'if=pflash,format=raw,readonly=on,file={fw}/edk2-x86_64-code.fd', '-drive', f'if=pflash,format=raw,file={out}/vars.fd', '-drive', f'if=ide,format=raw,snapshot=on,file={boot}', '-drive', f"if=none,id=data,format=raw,readonly={('on' if readonly else 'off')},cache={('writeback' if a.case == 'cache-enabled' else 'writethrough')},file={data}", '-device', 'qemu-xhci,id=x', '-device', f'usb-storage,id=storage,drive=data,bus=x.0,port=1,logical_block_size={a.sector_size},physical_block_size={a.sector_size}', '-device', 'usb-kbd,bus=x.0', '-display', 'none', '-debugcon', f'file:{log}', '-global', 'isa-debugcon.iobase=0xe9', '-qmp', f'unix:{sock},server=on,wait=off', '-no-reboot']
     (out / 'command.json').write_text(json.dumps(cmd, indent=2))
     with (out / 'qemu.log').open('w') as err:
         p = subprocess.Popen(cmd, stdout=err, stderr=err)
@@ -162,10 +162,15 @@ def qemu(a, out, boot, data, readonly=False):
                             while 'return' not in json.loads(s.readline()):
                                 pass
                     removed = True
+                if a.case == 'cache-enabled' and 'SETTINGS_CACHE_REFUSED' in text and 'XHCI_QUIESCED DMA_DISABLED' in text:
+                    break
                 if 'SETTINGS_WRITE_BEGIN' in text and text.rfind('XHCI_QUIESCED DMA_DISABLED') > text.index('SETTINGS_WRITE_BEGIN'):
                     break
                 assert p.poll() is None and time.monotonic() < deadline, text[-5000:]
                 time.sleep(0.01)
+            if a.case == 'cache-enabled':
+                assert 'SETTINGS_CACHE_REFUSED' in text and 'SETTINGS_WRITE_DATA_PENDING' not in text, text
+                return
             assert 'CONFIG_WRITE_REFUSED' in text, text
             if a.bounds:
                 for marker in ['SETTINGS_ZERO_PAYLOAD_OK', 'SETTINGS_MAX_BONDS_OK', 'SETTINGS_OVERFLOW_REFUSED']:
@@ -191,7 +196,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--efi', type=pathlib.Path, required=True)
     p.add_argument('--output', type=pathlib.Path, required=True)
-    p.add_argument('--case', choices=['create', 'protected', 'missing', 'unowned', 'full', 'no-space', 'fragmented', 'timeout', 'removal', 'exfat', 'cancel', 'config'], default='create')
+    p.add_argument('--case', choices=['create', 'protected', 'missing', 'unowned', 'full', 'no-space', 'fragmented', 'timeout', 'removal', 'exfat', 'cancel', 'config', 'cache-enabled'], default='create')
     p.add_argument('--sector-size', type=int, choices=[512, 4096], default=512)
     p.add_argument('--sectors-per-cluster', type=int, choices=[1, 2, 4, 8, 16, 32, 64, 128], default=1)
     p.add_argument('--bounds', action='store_true', help='Require zero/maximum/overflow probe evidence')

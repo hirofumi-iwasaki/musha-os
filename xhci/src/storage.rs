@@ -129,6 +129,7 @@ pub enum Command {
     Ready,
     Sense,
     ModeSense,
+    CachingModeSense { allocation: u8 },
     Capacity,
     Read { lba: u32, sector_bytes: u32 },
     Write { lba: u32, sector_bytes: u32 },
@@ -165,6 +166,17 @@ pub fn cbw(tag: u32, command: Command) -> Option<([u8; 31], usize)> {
             b[17] = 0x3f;
             b[19] = 4;
             4
+        }
+        Command::CachingModeSense { allocation } => {
+            if allocation < 4 {
+                return None;
+            }
+            b[14] = 6;
+            b[15] = 0x1a;
+            b[16] = 8;
+            b[17] = 8;
+            b[19] = allocation;
+            allocation as usize
         }
         Command::Capacity => {
             b[14] = 10;
@@ -209,6 +221,38 @@ pub fn csw(b: &[u8], tag: u32) -> Option<bool> {
         return None;
     }
     Some(b[12] == 0)
+}
+/// Metadata of a failed settings WRITE or cache synchronization. No payload.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WriteFailure {
+    pub opcode: u8,
+    pub lba: Option<u32>,
+    pub bytes: u32,
+    pub tag: u32,
+    pub csw_status: u8,
+    pub residue: u32,
+    pub sense: Option<Sense>,
+}
+/// Snapshot before REQUEST SENSE reuses the BOT command/status buffers. Uses
+/// exactly the production CSW validator; does not relax residue/tag policy.
+pub fn write_failure(command: Command, status: &[u8], tag: u32) -> Option<WriteFailure> {
+    if csw(status, tag) != Some(false) {
+        return None;
+    }
+    let (opcode, lba, bytes) = match command {
+        Command::Write { lba, sector_bytes } => (0x2a, Some(lba), sector_bytes),
+        Command::SynchronizeCache => (0x35, None, 0),
+        _ => return None,
+    };
+    Some(WriteFailure {
+        opcode,
+        lba,
+        bytes,
+        tag,
+        csw_status: status[12],
+        residue: u32::from_le_bytes(status[8..12].try_into().ok()?),
+        sense: None,
+    })
 }
 /// Fixed-format REQUEST SENSE response. Additional length must cover ASC/ASCQ.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -333,16 +377,14 @@ mod tests {
             assert_eq!(&b[17..21], &0x12345678u32.to_be_bytes());
             assert_eq!(&b[22..24], &[0, 1]);
         }
-        assert!(
-            cbw(
-                2,
-                Command::Write {
-                    lba: 0,
-                    sector_bytes: 1024
-                }
-            )
-            .is_none()
-        );
+        assert!(cbw(
+            2,
+            Command::Write {
+                lba: 0,
+                sector_bytes: 1024
+            }
+        )
+        .is_none());
         let (b, n) = cbw(3, Command::SynchronizeCache).unwrap();
         assert_eq!((n, b[12], b[14], b[15]), (0, 0, 10, 0x35));
     }
@@ -384,5 +426,234 @@ mod tests {
         d[26] = 48;
         d[28] = 1;
         assert!(configuration(&d, Speed::Super).is_err());
+    }
+}
+
+#[cfg(test)]
+mod write_diagnostic_tests {
+    use super::*;
+    fn failed(tag: u32) -> [u8; 13] {
+        let mut s = [0; 13];
+        s[..4].copy_from_slice(&0x53425355u32.to_le_bytes());
+        s[4..8].copy_from_slice(&tag.to_le_bytes());
+        s[12] = 1;
+        s
+    }
+    #[test]
+    fn production_write10_encodes_out_one_sector_and_big_endian_lba() {
+        for lba in [0, 1, 0x12345678, u32::MAX] {
+            for sector_bytes in [512, 4096] {
+                let (b, n) = cbw(0x12345678, Command::Write { lba, sector_bytes }).unwrap();
+                assert_eq!(n, sector_bytes as usize);
+                assert_eq!(b[12], 0);
+                assert_eq!(b[13], 0);
+                assert_eq!(b[14], 10);
+                assert_eq!(
+                    &b[15..25],
+                    &[
+                        0x2a,
+                        0,
+                        lba.to_be_bytes()[0],
+                        lba.to_be_bytes()[1],
+                        lba.to_be_bytes()[2],
+                        lba.to_be_bytes()[3],
+                        0,
+                        0,
+                        1,
+                        0
+                    ]
+                );
+                assert_eq!(
+                    u32::from_le_bytes(b[8..12].try_into().unwrap()),
+                    sector_bytes
+                );
+                assert_eq!(u32::from_le_bytes(b[4..8].try_into().unwrap()), 0x12345678);
+            }
+        }
+    }
+    #[test]
+    fn failure_snapshot_keeps_original_write_or_sync_identity_and_strict_csw_validation() {
+        let s = failed(7);
+        let write = Command::Write {
+            lba: 0x12345678,
+            sector_bytes: 512,
+        };
+        let w = write_failure(write, &s, 7).unwrap();
+        assert_eq!(
+            (
+                w.opcode,
+                w.lba,
+                w.bytes,
+                w.tag,
+                w.csw_status,
+                w.residue,
+                w.sense
+            ),
+            (0x2a, Some(0x12345678), 512, 7, 1, 0, None)
+        );
+        let sync = write_failure(Command::SynchronizeCache, &s, 7).unwrap();
+        assert_eq!((sync.opcode, sync.lba, sync.bytes), (0x35, None, 0));
+        assert!(write_failure(write, &s, 8).is_none());
+        assert!(write_failure(Command::Sense, &s, 7).is_none());
+        let mut invalid = s;
+        invalid[8] = 1;
+        assert!(write_failure(write, &invalid, 7).is_none());
+        invalid = s;
+        invalid[12] = 0;
+        assert!(write_failure(write, &invalid, 7).is_none());
+        invalid = s;
+        invalid[12] = 2;
+        assert!(write_failure(write, &invalid, 7).is_none());
+        assert!(write_failure(write, &s[..12], 7).is_none());
+    }
+    #[test]
+    fn sense_metadata_preserves_non_protect_and_protect_causes() {
+        for (key, asc, ascq) in [(6, 0x29, 0), (3, 0x0c, 2), (7, 0x27, 0)] {
+            let mut b = [0; 18];
+            b[0] = 0x70;
+            b[2] = key;
+            b[7] = 10;
+            b[12] = asc;
+            b[13] = ascq;
+            let decoded = sense(&b).unwrap();
+            let mut w = write_failure(Command::SynchronizeCache, &failed(1), 1).unwrap();
+            w.sense = Some(decoded);
+            assert_eq!(w.sense, Some(Sense { key, asc, ascq }));
+            assert_eq!(decoded.write_protected(), key == 7 && asc == 0x27);
+        }
+    }
+}
+
+/// Exact current MODE SENSE(6) header: no padded/truncated reply is accepted.
+pub fn caching_mode_length(header: &[u8]) -> Option<usize> {
+    if header.len() != 4 {
+        return None;
+    }
+    let length = header[0] as usize + 1;
+    let descriptors = header[3] as usize;
+    if !(6..=255).contains(&length) || descriptors % 8 != 0 || 4 + descriptors + 2 > length {
+        return None;
+    }
+    Some(length)
+}
+/// WCE is known only from the complete requested current caching page (08/00).
+/// Header equality also rejects a capability/protection change between queries.
+pub fn caching_write_through(header: &[u8], reply: &[u8]) -> Option<bool> {
+    let length = caching_mode_length(header)?;
+    if reply.len() != length || reply.get(..4)? != header {
+        return None;
+    }
+    let offset = 4 + header[3] as usize;
+    let page = reply.get(offset..)?;
+    if page.len() < 20 || page[0] & 0x7f != 8 || page[1] as usize + 2 != page.len() {
+        return None;
+    }
+    Some(page[2] & 4 == 0)
+}
+
+#[cfg(test)]
+mod caching_tests {
+    extern crate std;
+    use self::std::{vec, vec::Vec};
+    use super::*;
+    fn reply(descriptors: usize, wce: bool) -> Vec<u8> {
+        let mut b = vec![0; 24 + descriptors];
+        b[0] = (b.len() - 1) as u8;
+        b[3] = descriptors as u8;
+        b[4 + descriptors] = 8;
+        b[5 + descriptors] = 18;
+        b[6 + descriptors] = if wce { 4 } else { 0 };
+        b
+    }
+    #[test]
+    fn production_current_page_cdb_and_policy() {
+        for allocation in [4, 24, 32, 255] {
+            let (b, n) = cbw(7, Command::CachingModeSense { allocation }).unwrap();
+            assert_eq!(n, allocation as usize);
+            assert_eq!(&b[14..21], &[6, 0x1a, 8, 8, 0, allocation, 0]);
+            assert_eq!(b[12], 128);
+        }
+        assert!(cbw(1, Command::CachingModeSense { allocation: 3 }).is_none());
+        for descriptors in [0, 8, 16] {
+            for wce in [false, true] {
+                let b = reply(descriptors, wce);
+                assert_eq!(caching_write_through(&b[..4], &b), Some(!wce));
+            }
+        }
+    }
+    #[test]
+    fn missing_truncated_wrong_pages_and_changed_headers_are_unknown() {
+        let b = reply(0, false);
+        for n in 0..b.len() {
+            assert_eq!(caching_write_through(&b[..4], &b[..n]), None);
+        }
+        for (at, value) in [
+            (0, 22),
+            (1, 1),
+            (2, 128),
+            (3, 8),
+            (4, 9),
+            (4, 0x48),
+            (5, 17),
+            (5, 19),
+        ] {
+            let mut bad = b.clone();
+            bad[at] = value;
+            assert_eq!(caching_write_through(&b[..4], &bad), None);
+        }
+        let mut b = reply(0, false);
+        b.push(0);
+        assert_eq!(caching_write_through(&b[..4], &b), None);
+        for h in [[0, 0, 0, 0], [255, 0, 0, 0], [23, 0, 0, 1], [23, 0, 0, 24]] {
+            assert_eq!(caching_mode_length(&h), None);
+        }
+        let mut b = reply(0, false);
+        b[5] = 0;
+        b.truncate(6);
+        b[0] = 5;
+        assert_eq!(caching_write_through(&b[..4], &b), None);
+    }
+}
+
+/// One logical barrier completion, only after a confirmed write-through gate.
+#[derive(Default)]
+pub struct WriteThroughBarrier {
+    pending: bool,
+}
+impl WriteThroughBarrier {
+    pub const fn new() -> Self {
+        Self { pending: false }
+    }
+    pub fn arm(&mut self, write_through: bool, bot_busy: bool) -> bool {
+        self.pending = write_through && !bot_busy;
+        self.pending
+    }
+    pub fn take(&mut self) -> bool {
+        core::mem::take(&mut self.pending)
+    }
+    pub fn clear(&mut self) {
+        self.pending = false;
+    }
+}
+#[cfg(test)]
+mod barrier_tests {
+    use super::*;
+    #[test]
+    fn only_explicit_allowed_idle_barrier_completes_once() {
+        let mut b = WriteThroughBarrier::new();
+        assert!(!b.take());
+        for allowed in [false, true] {
+            for busy in [false, true] {
+                assert_eq!(b.arm(allowed, busy), allowed && !busy);
+                assert_eq!(b.take(), allowed && !busy);
+                assert!(!b.take());
+            }
+        }
+        assert!(b.arm(true, false));
+        b.clear();
+        assert!(!b.take());
+        assert!(b.arm(true, false));
+        assert!(!b.arm(true, true));
+        assert!(!b.take());
     }
 }

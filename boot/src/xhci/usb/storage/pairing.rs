@@ -9,11 +9,24 @@ struct Image<'a, 'h> {
     device: &'a mut Device,
     // First USB transport failure; a pure filesystem refusal leaves it None.
     transport: Option<&'static str>,
+    writes_completed: u32,
+    logical_barriers_completed: u32,
 }
 impl Image<'_, '_> {
     fn io<T>(&mut self, result: Result<T, &'static str>) -> Result<T, musha_fs::Error> {
         result.map_err(|reason| {
+            let first = self.transport.is_none();
             self.transport.get_or_insert(reason);
+            if first {
+                if let Some(f) = self.device.write_failure {
+                    crate::bootlog::device("bluetooth",format_args!("bond storage failure opcode={:02x} lba={:?} bytes={} tag={} CSW-status={} residue={}", f.opcode,f.lba,f.bytes,f.tag,f.csw_status,f.residue));
+                    if let Some(sense) = f.sense {
+                        crate::bootlog::device("bluetooth",format_args!("bond storage sense key={:02x} ASC={:02x} ASCQ={:02x}; completed writes={} logical-barriers={}; SCSI sync omitted; no retry",sense.key,sense.asc,sense.ascq,self.writes_completed,self.logical_barriers_completed));
+                    } else {
+                        crate::bootlog::device("bluetooth",format_args!("bond storage sense unavailable; completed writes={} logical-barriers={}; SCSI sync omitted; no retry",self.writes_completed,self.logical_barriers_completed));
+                    }
+                }
+            }
             musha_fs::Error::Io
         })
     }
@@ -38,7 +51,10 @@ impl Disk for Image<'_, '_> {
         loop {
             let done = self.device.poll_write(self.host);
             match self.io(done)? {
-                Some(true) => return Ok(()),
+                Some(true) => {
+                    self.writes_completed = self.writes_completed.saturating_add(1);
+                    return Ok(());
+                }
                 Some(false) => {
                     self.transport.get_or_insert("BOT WRITE STATUS");
                     return Err(musha_fs::Error::Io);
@@ -53,7 +69,11 @@ impl Disk for Image<'_, '_> {
         loop {
             let done = self.device.poll_write(self.host);
             match self.io(done)? {
-                Some(true) => return Ok(()),
+                Some(true) => {
+                    self.logical_barriers_completed =
+                        self.logical_barriers_completed.saturating_add(1);
+                    return Ok(());
+                }
                 Some(false) => {
                     self.transport.get_or_insert("BOT SYNC STATUS");
                     return Err(musha_fs::Error::Io);
@@ -159,6 +179,8 @@ impl Device {
             host,
             device: self,
             transport: None,
+            writes_completed: 0,
+            logical_barriers_completed: 0,
         };
         let mut record = [0; 4096];
         if !image.device.pairing_checked {

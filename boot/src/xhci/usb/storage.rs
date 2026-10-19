@@ -1,6 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-use super::{Host, TRBS, control, dma_word, publish, read_word};
+use super::{control, dma_word, publish, read_word, Host, TRBS};
 use musha_xhci::storage::transaction::{Phase, Progress, Transaction};
 use musha_xhci::storage::{self, Command, Endpoint, Storage};
 struct Pipe {
@@ -261,6 +261,49 @@ impl Bot {
             }
             core::hint::spin_loop();
         }
+    }
+    // Read current caching capability before any write; exact bounded transfers.
+    fn require_write_through(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        let result = (|| {
+            if !self.command(host, Command::CachingModeSense { allocation: 4 })? {
+                return Err("CACHE MODE UNKNOWN");
+            }
+            let mut header = [0; 4];
+            copy(self.data, &mut header);
+            let length = storage::caching_mode_length(&header).ok_or("CACHE MODE UNKNOWN")?;
+            if header[2] & 0x80 != 0 {
+                return Err("MEDIA READ ONLY");
+            }
+            if !self.command(
+                host,
+                Command::CachingModeSense {
+                    allocation: length as u8,
+                },
+            )? {
+                return Err("CACHE MODE UNKNOWN");
+            }
+            let mut bytes = [0; 255];
+            copy(self.data, &mut bytes[..length]);
+            match storage::caching_write_through(&header, &bytes[..length]) {
+                Some(true) => Ok(()),
+                Some(false) => Err("CACHE WCE ENABLED"),
+                None => Err("CACHE MODE UNKNOWN"),
+            }
+        })();
+        match result {
+            Ok(()) => {
+                crate::bootlog::device("bluetooth",format_args!("SETTINGS cache WCE=0 confirmed; synchronization omitted (device-reported write-through)"));
+                crate::debug(b"MUSHA: SETTINGS_CACHE_WRITE_THROUGH\n");
+            }
+            Err(reason) => {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!("SETTINGS write refused before WRITE: {}", reason),
+                );
+                crate::debug(b"MUSHA: SETTINGS_CACHE_REFUSED\n");
+            }
+        }
+        result
     }
     fn read(
         &mut self,
@@ -555,7 +598,11 @@ pub(super) fn probe(
         check_at: 0,
         write_protected: false,
         write_checked: false,
+        write_through: false,
+        pending_sync_noop: storage::WriteThroughBarrier::new(),
         write_sense: false,
+        write_command: None,
+        write_failure: None,
         pairing_checked: false,
     })
 }
@@ -575,7 +622,11 @@ pub(super) struct Device {
     check_at: u64,
     write_protected: bool,
     write_checked: bool,
+    write_through: bool,
+    pending_sync_noop: storage::WriteThroughBarrier,
     write_sense: bool,
+    write_command: Option<Command>,
+    write_failure: Option<storage::WriteFailure>,
     pairing_checked: bool,
 }
 impl Device {
@@ -587,6 +638,9 @@ impl Device {
         self.bot.slot
     }
     pub(super) fn begin_read(&mut self, host: &mut Host<'_>, lba: u64) -> Result<(), &'static str> {
+        self.pending_sync_noop.clear();
+        self.write_command = None;
+        self.write_failure = None;
         storage::read(
             self.bot.tag.checked_add(1).ok_or("BOT TAG")?,
             lba,
@@ -627,6 +681,9 @@ impl Device {
         lba: u64,
         bytes: &[u8],
     ) -> Result<(), &'static str> {
+        self.pending_sync_noop.clear();
+        self.write_command = None;
+        self.write_failure = None;
         if lba >= self.blocks || lba > u32::MAX as u64 || bytes.len() != self.size as usize {
             return Err("LBA RANGE");
         }
@@ -644,6 +701,10 @@ impl Device {
             return Err("MEDIA READ ONLY");
         }
         self.check_connected(host)?;
+        if !self.write_through {
+            self.bot.require_write_through(host)?;
+            self.write_through = true;
+        }
         self.bot.begin(
             host,
             Command::Write {
@@ -651,6 +712,10 @@ impl Device {
                 sector_bytes: self.size,
             },
         )?;
+        self.write_command = Some(Command::Write {
+            lba: lba as u32,
+            sector_bytes: self.size,
+        });
         // begin clears the DMA buffer before the OUT payload is published.
         for (i, byte) in bytes.iter().enumerate() {
             unsafe {
@@ -660,13 +725,32 @@ impl Device {
         Ok(())
     }
     pub(super) fn begin_sync(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        self.pending_sync_noop.clear();
+        self.write_command = None;
+        self.write_failure = None;
         self.check_connected(host)?;
         if self.write_protected {
             return Err("MEDIA READ ONLY");
         }
-        self.bot.begin(host, Command::SynchronizeCache)
+        self.write_failure = None;
+        if !self.write_through {
+            return Err("CACHE MODE UNKNOWN");
+        }
+        if self.bot.pending.is_some() {
+            return Err("BOT BUSY");
+        }
+        if !self
+            .pending_sync_noop
+            .arm(self.write_through, self.bot.pending.is_some())
+        {
+            return Err("CACHE BARRIER REFUSED");
+        }
+        Ok(())
     }
     pub(super) fn poll_write(&mut self, host: &mut Host<'_>) -> Result<Option<bool>, &'static str> {
+        if self.pending_sync_noop.take() {
+            return Ok(Some(true));
+        }
         match self.bot.poll(host)? {
             None => Ok(None),
             Some(ok) if self.write_sense => {
@@ -677,6 +761,9 @@ impl Device {
                 let mut bytes = [0; 18];
                 copy(self.bot.data, &mut bytes);
                 let sense = storage::sense(&bytes).ok_or("SCSI SENSE FORMAT")?;
+                if let Some(failure) = self.write_failure.as_mut() {
+                    failure.sense = Some(sense);
+                }
                 if sense.write_protected() {
                     self.write_protected = true;
                     Err("MEDIA READ ONLY")
@@ -685,6 +772,11 @@ impl Device {
                 }
             }
             Some(false) => {
+                let mut status = [0; 13];
+                copy(self.bot.csw, &mut status);
+                self.write_failure = self
+                    .write_command
+                    .and_then(|command| storage::write_failure(command, &status, self.bot.tag));
                 self.bot.begin(host, Command::Sense)?;
                 self.write_sense = true;
                 Ok(None)
@@ -700,6 +792,9 @@ impl Device {
     }
     pub(super) fn stopped(&mut self, host: &mut Host<'_>) {
         self.bot.pending = None;
+        self.pending_sync_noop.clear();
+        self.write_command = None;
+        self.write_failure = None;
         self.write_sense = false;
         host.bulk_pending = None;
         host.bulk_saved = None;
@@ -817,16 +912,10 @@ fn settings_probe(
             }
             Err(musha_fs::Error::Io)
         }
+        // Image is constructed only after require_write_through succeeds (or
+        // protected media, whose writer refuses before invoking this method).
         fn sync(&mut self) -> Result<(), musha_fs::Error> {
-            if self
-                .bot
-                .command(self.host, Command::SynchronizeCache)
-                .map_err(|_| musha_fs::Error::Io)?
-            {
-                Ok(())
-            } else {
-                Err(musha_fs::Error::Io)
-            }
+            Ok(())
         }
         fn protected(&self) -> bool {
             self.protected
@@ -849,6 +938,9 @@ fn settings_probe(
     let protected = storage::mode_write_protected(&mode).ok_or("SETTINGS MODE HEADER")?;
     if protected {
         crate::debug(b"MUSHA: SETTINGS_WRITE_PROTECTED\n");
+    }
+    if !protected {
+        bot.require_write_through(host)?;
     }
     let mut image = Image {
         host,
