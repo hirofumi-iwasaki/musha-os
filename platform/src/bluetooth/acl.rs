@@ -3,6 +3,16 @@
 //! One bounded LE connection reassembly/credit domain. Caller never reuses a
 //! generation until old transport DMA has been confirmed stopped.
 use super::{Acl, Error, word};
+/// Build a Host-to-Controller LE-U ACL header (Core Vol 4, Part E, 5.4.2).
+/// LE first fragments use PB=00; continuation fragments use PB=01. The
+/// Controller-to-Host PB=10 first-fragment encoding remains valid on receive.
+pub fn le_tx_header(handle: u16, continuation: bool, bytes: u16) -> [u8; 4] {
+    let bits = (handle & 0x0fff) | if continuation { 0x1000 } else { 0 };
+    let h = bits.to_le_bytes();
+    let n = bytes.to_le_bytes();
+    [h[0], h[1], n[0], n[1]]
+}
+
 pub const MAX_SDU: usize = 1024;
 pub struct Reassembly {
     generation: u64,

@@ -5,9 +5,12 @@
 //! complete HCI packet across USB transactions before passing a borrowed slice.
 #![forbid(unsafe_code)]
 pub mod acl;
+pub mod adapter;
+pub mod advertising_diagnostic;
 pub mod att;
 #[cfg(feature = "bluetooth-legacy")]
 pub mod bonding;
+pub mod connection_diagnostic;
 #[cfg(feature = "bluetooth-security")]
 pub mod drbg;
 #[cfg(feature = "bluetooth-security")]
@@ -15,12 +18,16 @@ pub mod entropy;
 #[cfg(feature = "bluetooth-legacy")]
 pub mod hogp;
 #[cfg(feature = "bluetooth-legacy")]
+pub mod input_diagnostic;
+#[cfg(feature = "bluetooth-legacy")]
 pub mod legacy;
 pub mod lifecycle;
 pub mod probe;
 #[cfg(feature = "bluetooth-security")]
 pub mod reconnect;
+pub mod repair;
 pub mod retry;
+pub mod rx_diagnostic;
 #[cfg(feature = "bluetooth-security")]
 pub mod sc;
 #[cfg(feature = "bluetooth-security")]

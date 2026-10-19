@@ -470,3 +470,14 @@ fn discovery_map_limit_diagnostic_uses_actual_rejecting_executor() {
     ));
     assert_eq!(d.diagnostic(&[]).stage, "failed");
 }
+
+#[test]
+fn pending_metadata_exposes_only_existing_deadline_and_identity_tail() {
+    let mut b = bond();
+    b.address = [0x73, 0xdf, 3, 4, 5, 6];
+    let mut store = Store::new();
+    store.load(&record(b)).unwrap();
+    let p = store.begin(9, 5, 123, 0, [0x73, 0xdf, 3, 4, 5, 6]).unwrap();
+    assert_eq!(p.deadline_ms(), 10123);
+    assert_eq!(p.identity_tail(), (0, [0xdf, 0x73]));
+}

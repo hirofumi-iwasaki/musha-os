@@ -4,6 +4,40 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 static REQUEST: AtomicBool = AtomicBool::new(false);
 static ACTIVE: AtomicBool = AtomicBool::new(false);
+static ADAPTER_VALIDATION: Shared<musha_platform::bluetooth::adapter::Validation> = Shared(
+    UnsafeCell::new(musha_platform::bluetooth::adapter::Validation::new()),
+);
+pub const EXPECTATION_REFUSAL: &str =
+    "Bluetooth pairing blocked: expected adapter is not selected.";
+fn adapter_blocked() -> bool {
+    unsafe { (&*ADAPTER_VALIDATION.0.get()).blocked() }
+}
+pub fn reset_adapter_expectation() {
+    unsafe {
+        *ADAPTER_VALIDATION.0.get() = musha_platform::bluetooth::adapter::Validation::new();
+        *INPUT_DIAGNOSTIC.0.get() = musha_platform::bluetooth::input_diagnostic::Diagnostic::new();
+    }
+    set_peer(None);
+}
+pub fn expected_adapter_missing() {
+    unsafe {
+        (&mut *ADAPTER_VALIDATION.0.get()).missing();
+    }
+    if adapter_blocked() {
+        status(EXPECTATION_REFUSAL);
+    }
+}
+pub fn adapter_selected() -> bool {
+    unsafe { (&*ADAPTER_VALIDATION.0.get()).selected() }
+}
+pub fn expected_adapter_matches(matches: bool) {
+    unsafe {
+        (&mut *ADAPTER_VALIDATION.0.get()).observe(matches);
+    }
+    if !matches {
+        status(EXPECTATION_REFUSAL);
+    }
+}
 pub fn present() -> bool {
     ACTIVE.load(Ordering::Relaxed)
 }
@@ -11,8 +45,15 @@ pub fn active(yes: bool) {
     ACTIVE.store(yes, Ordering::Relaxed);
 }
 pub fn request() -> Result<(), &'static str> {
+    if adapter_blocked() {
+        return Err(EXPECTATION_REFUSAL);
+    }
     if !ACTIVE.load(Ordering::Relaxed) {
-        return Err("Bluetooth pairing unavailable: no live USB HCI adapter.");
+        return Err(if adapter_selected() {
+            "Bluetooth adapter stopped; restart Musha-OS, then press P to register again."
+        } else {
+            "Bluetooth pairing unavailable: no live USB HCI adapter."
+        });
     }
     if !crate::entropy::available() {
         return Err(crate::entropy::reason());
@@ -22,6 +63,10 @@ pub fn request() -> Result<(), &'static str> {
     Ok(())
 }
 pub fn take_request() -> bool {
+    if adapter_blocked() {
+        REQUEST.store(false, Ordering::Relaxed);
+        return false;
+    }
     if !RECORD_READY.load(Ordering::Relaxed) {
         return false;
     }
@@ -35,7 +80,7 @@ pub fn take_request() -> bool {
     REQUEST.swap(false, Ordering::Relaxed)
 }
 pub fn defer_boot_request() {
-    if FORCE_NEXT.swap(false, Ordering::Relaxed) {
+    if RESTART_STATE.take_force() {
         CONFIG_REQUEST.store(false, Ordering::Relaxed);
         REQUEST.store(true, Ordering::Relaxed);
         return;
@@ -147,6 +192,8 @@ pub fn take_entry(generation: u64) -> Option<Option<musha_input::passkey::Secret
     }
 }
 pub fn service(viewer: &mut musha_viewer::Viewer, now: u64) {
+    input_log_service(now);
+    viewer.set_log_source(crate::bootlog::bluetooth_row);
     #[cfg(feature = "bluetooth-restart-probe")]
     {
         static DONE: AtomicBool = AtomicBool::new(false);
@@ -230,6 +277,9 @@ pub fn service(viewer: &mut musha_viewer::Viewer, now: u64) {
             *ENTRY.0.get() = Some((generation, value));
         }
     }
+    if adapter_blocked() {
+        viewer.pairing_status(EXPECTATION_REFUSAL);
+    }
 }
 static PENDING_SAVE: Shared<Option<(u64, musha_platform::bluetooth::legacy::VerifiedBond)>> =
     Shared(UnsafeCell::new(None));
@@ -282,6 +332,12 @@ pub fn save_result(
 /// two address octets and the address class). None clears the row.
 static PEER: Shared<([u8; 80], usize, bool)> = Shared(UnsafeCell::new(([0; 80], 0, false)));
 pub fn set_peer(line: Option<core::fmt::Arguments<'_>>) {
+    if line.is_some() {
+        unsafe {
+            *INPUT_DIAGNOSTIC.0.get() =
+                musha_platform::bluetooth::input_diagnostic::Diagnostic::new();
+        }
+    }
     struct Line<'a>(&'a mut [u8; 80], usize);
     impl core::fmt::Write for Line<'_> {
         fn write_str(&mut self, s: &str) -> core::fmt::Result {
@@ -468,6 +524,33 @@ static PAD: Shared<([musha_platform::user_io::Event; 64], usize, bool)> =
         false,
     )));
 static GAMEPAD_HELD: Shared<(u32, [i32; 6])> = Shared(UnsafeCell::new((0, [0; 6])));
+static INPUT_DIAGNOSTIC: Shared<musha_platform::bluetooth::input_diagnostic::Diagnostic> = Shared(
+    UnsafeCell::new(musha_platform::bluetooth::input_diagnostic::Diagnostic::new()),
+);
+pub fn input_accepted(info: musha_platform::bluetooth::hogp::Notification) {
+    if info.gamepad {
+        unsafe {
+            (&mut *INPUT_DIAGNOSTIC.0.get()).accepted(info.id, info.bytes);
+        }
+    }
+}
+fn input_log_service(now: u64) {
+    let snapshot = unsafe { (&mut *INPUT_DIAGNOSTIC.0.get()).poll(now) };
+    if let Some(snapshot) = snapshot {
+        struct Row<'a>(
+            &'a musha_platform::bluetooth::input_diagnostic::Snapshot,
+            usize,
+        );
+        impl core::fmt::Display for Row<'_> {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                self.0.line(self.1, f)
+            }
+        }
+        for row in 0..3 {
+            crate::bootlog::device("bluetooth", format_args!("{}", Row(&snapshot, row)));
+        }
+    }
+}
 pub fn gamepad(change: musha_input::gamepad::Change) {
     use musha_platform::user_io::{Event, GAMEPAD_AXIS, GAMEPAD_BUTTON};
     let mut event = Event {
@@ -502,12 +585,14 @@ pub fn gamepad(change: musha_input::gamepad::Change) {
     }
     unsafe {
         let s = &mut *PAD.0.get();
-        if s.1 == s.0.len() {
+        let queued = s.1 < s.0.len();
+        if !queued {
             s.2 = true;
         } else {
             s.0[s.1] = event;
             s.1 += 1;
         }
+        (&mut *INPUT_DIAGNOSTIC.0.get()).change(change, queued);
     }
 }
 pub fn drain_gamepad(
@@ -552,55 +637,35 @@ pub fn gamepad_probe() {
     crate::debug(b"MUSHA: BT_GAMEPAD_SOFTWARE_FIXTURE_OK\n");
 }
 
-static RESTART: AtomicBool = AtomicBool::new(false);
-static RESTART_SAFE: AtomicBool = AtomicBool::new(false);
-static FORCE_NEXT: AtomicBool = AtomicBool::new(false);
-static RESTARTS: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+static RESTART_STATE: musha_platform::bluetooth::repair::Restart =
+    musha_platform::bluetooth::repair::Restart::new();
 pub fn restart_after_stop(force_pair: bool) -> bool {
-    if RESTART.load(Ordering::Relaxed) {
-        return true;
-    }
-    if RESTARTS
-        .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-            (n < 8).then_some(n + 1)
-        })
-        .is_err()
-    {
-        return false;
-    }
-    FORCE_NEXT.store(force_pair, Ordering::Relaxed);
-    RESTART_SAFE.store(false, Ordering::Relaxed);
-    RESTART.store(true, Ordering::Relaxed);
-    true
+    RESTART_STATE.request(force_pair)
 }
 /// A successfully isolated optional adapter must not request a whole USB restart.
 pub fn isolated() {
-    RESTART.store(false, Ordering::Relaxed);
-    RESTART_SAFE.store(false, Ordering::Relaxed);
-    FORCE_NEXT.store(false, Ordering::Relaxed);
+    RESTART_STATE.isolated();
     REQUEST.store(false, Ordering::Relaxed);
     CONFIG_REQUEST.store(false, Ordering::Relaxed);
     ACTIVE.store(false, Ordering::Relaxed);
 }
 pub fn wants_restart() -> bool {
-    RESTART.load(Ordering::Relaxed)
+    RESTART_STATE.wants()
 }
 /// Does not release references. Only caller's normal return through every Host,
 /// file session and Ring3 loan scope can authorize take_restart in external::finish.
 pub fn confirm_restart(stopped: bool) {
     if wants_restart() {
-        RESTART_SAFE.store(stopped, Ordering::Relaxed);
+        RESTART_STATE.confirm(stopped);
         if stopped {
             crate::debug(b"MUSHA: BT_RESTART_STOP_CONFIRMED\n");
         }
     }
 }
 pub fn take_restart() -> bool {
-    if !RESTART_SAFE.load(Ordering::Relaxed) {
-        return false;
-    }
-    RESTART.swap(false, Ordering::Relaxed)
+    RESTART_STATE.take()
 }
+
 #[cfg(feature = "bluetooth-loan-restart-probe")]
 pub fn loan_probe() -> bool {
     static DONE: AtomicBool = AtomicBool::new(false);

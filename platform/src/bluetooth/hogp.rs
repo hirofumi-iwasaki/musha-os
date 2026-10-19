@@ -105,6 +105,12 @@ pub enum Change {
     Key(u8, bool),
     Gamepad(musha_input::gamepad::Change),
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Notification {
+    pub id: u8,
+    pub bytes: u16,
+    pub gamepad: bool,
+}
 impl Reports {
     pub fn bind(bond: &VerifiedBond, map: &[u8], specs: &[ReportSpec]) -> Result<Self, Error> {
         if specs.is_empty() || specs.len() > MAX_REPORTS {
@@ -210,8 +216,19 @@ impl Reports {
         generation: u64,
         handle: u16,
         p: &[u8],
-        mut emit: impl FnMut(Change),
+        emit: impl FnMut(Change),
     ) -> Result<(), Error> {
+        self.notification_observed(generation, handle, p, emit)
+            .map(|_| ())
+    }
+    /// Metadata is returned only after the actual bound decoder validates input.
+    pub fn notification_observed(
+        &mut self,
+        generation: u64,
+        handle: u16,
+        p: &[u8],
+        mut emit: impl FnMut(Change),
+    ) -> Result<Option<Notification>, Error> {
         if !self.active {
             return Err(Error::Stale);
         }
@@ -220,7 +237,7 @@ impl Reports {
         }
         let value = u16::from_le_bytes([p[1], p[2]]);
         if p[0] == 0x1b && self.unmapped[..self.unmapped_count].contains(&value) {
-            return Ok(());
+            return Ok(None);
         }
         let b = self.bindings[..self.count]
             .iter()
@@ -237,7 +254,7 @@ impl Reports {
                 .as_mut()
                 .ok_or(Error::Invalid)?
                 .update(&report[..offset + data.len()], |c| emit(Change::Gamepad(c)))
-                .map_err(|_| Error::Invalid)
+                .map_err(|_| Error::Invalid)?;
         } else {
             self.keyboard
                 .as_mut()
@@ -245,8 +262,13 @@ impl Reports {
                 .update(&report[..offset + data.len()], |k, d| {
                     emit(Change::Key(k, d))
                 })
-                .map_err(|_| Error::Invalid)
+                .map_err(|_| Error::Invalid)?;
         }
+        Ok(Some(Notification {
+            id: b.id,
+            bytes: data.len() as u16,
+            gamepad: b.gamepad,
+        }))
     }
     pub fn disconnect(&mut self, mut emit: impl FnMut(Change)) {
         self.active = false;

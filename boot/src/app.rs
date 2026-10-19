@@ -120,7 +120,8 @@ impl Application for Diagnostic {
         if VIEWER {
             self.viewer.closed(false);
             if let Some(reason) = crate::xhci::session_end_reason() {
-                self.viewer.session_reason(reason);
+                self.viewer
+                    .session_outcome(reason, crate::xhci::session_end_failed());
             }
         }
     }

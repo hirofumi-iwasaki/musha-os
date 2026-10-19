@@ -280,6 +280,48 @@ mod legacy {
         ));
     }
     #[test]
+    fn re_registration_replaces_only_same_identity_and_writer_failure_keeps_old_source() {
+        let fresh = *bond().bond();
+        let mut stale = fresh;
+        stale.ltk = [0xa1; 16];
+        stale.own_address = [0x11, 0, 0, 0, 0, 0xc0];
+        stale.own_address_type = 1;
+        let mut other = stale;
+        other.address[0] ^= 1;
+        other.ltk = [0xb2; 16];
+        let mut old = [0; 4096];
+        musha_platform::pairing::encode_state(&[stale, other], Some([7; 32]), &mut old).unwrap();
+        let before = old;
+        assert_eq!(
+            bond().save(Some(&old), None, |_| Err(Error::Invalid)),
+            Err(SaveError::PersistenceUnknown)
+        );
+        assert_eq!(old, before);
+        let mut saved = [0; 4096];
+        assert_eq!(
+            bond().save(Some(&old), None, |b| {
+                saved.copy_from_slice(b);
+                Ok(())
+            }),
+            Ok(Some([7; 32]))
+        );
+        let mut decoded = [fresh; 8];
+        let (n, hash) = musha_platform::pairing::decode_state(&saved, &mut decoded).unwrap();
+        assert_eq!((n, hash), (2, Some([7; 32])));
+        assert_eq!(decoded[0], fresh);
+        assert_eq!(decoded[1], other);
+        // Absence of PAIRING.DAT starts an empty record: other peers and consumed
+        // CONFIG hash are deliberately not recoverable without the backup.
+        bond()
+            .save(None, None, |b| {
+                saved.copy_from_slice(b);
+                Ok(())
+            })
+            .unwrap();
+        let (n, hash) = musha_platform::pairing::decode_state(&saved, &mut decoded).unwrap();
+        assert_eq!((n, hash), (1, None));
+    }
+    #[test]
     fn authenticated_record_cannot_be_replaced_by_jw_and_key_debug_is_redacted() {
         let b = *bond().bond();
         let mut old = [0; 4096];

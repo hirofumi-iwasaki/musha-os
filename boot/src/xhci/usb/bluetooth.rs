@@ -188,6 +188,9 @@ struct Pipe {
     bytes: u32,
     // Per-TD records are bounded; scanning repeats them many times per second.
     logged: u8,
+    completions: u32,
+    last_cc: u8,
+    last_bytes: u32,
 }
 const PIPE_LOG_LIMIT: u8 = 6;
 impl Pipe {
@@ -293,6 +296,9 @@ impl Pipe {
             }
         };
         let bytes = host.bt_mailbox.complete(self.index, words)?;
+        self.completions = self.completions.saturating_add(1);
+        self.last_cc = (words[2] >> 24) as u8;
+        self.last_bytes = bytes as u32;
         if self.logged < PIPE_LOG_LIMIT {
             self.logged += 1;
             crate::bootlog::device(
@@ -356,6 +362,8 @@ pub(in crate::xhci) struct Device {
     initialize_deadline: u64,
     scan_command: Option<(u16, u64)>,
     slot: u8,
+    adapter_id: (u16, u16),
+    adapter_route: u32,
     port: usize,
     pub(super) ancestors: [Option<(super::hub::Hub, u8)>; 5],
     check_at: u64,
@@ -370,9 +378,12 @@ pub(in crate::xhci) struct Device {
     acl_stream: musha_platform::bluetooth::stream::Stream<1028>,
     scan: musha_platform::bluetooth::scan::Scan,
     generation: u64,
+    connection_number: u32,
+    host_sample: u64,
     started: Option<u64>,
     advertisements: usize,
     advertising: musha_platform::bluetooth::stage::Advertising,
+    advertising_budget: musha_platform::bluetooth::advertising_diagnostic::Budget,
     scan_logged: bool,
     unsupported_logged: bool,
     acl_logged: [bool; 2],
@@ -381,6 +392,10 @@ pub(in crate::xhci) struct Device {
     // Pairing Request time, and whether the no-reply guidance was shown.
     smp_started: u64,
     smp_hinted: bool,
+    encryption_observation: musha_platform::bluetooth::connection_diagnostic::Wait,
+    rx_observation: musha_platform::bluetooth::rx_diagnostic::Once,
+    completion_baseline: [u32; 3],
+    acl_in_context: usize,
     // Per connection: packets the controller reported done for our handle
     // (Number of Completed Packets) and HCI events this driver ignores.
     completed_packets: u16,
@@ -472,6 +487,8 @@ pub(super) fn prepare(
     configuration: u8,
     composite: bool,
     port: usize,
+    route: u32,
+    adapter_id: (u16, u16),
 ) -> Result<DeviceRef, &'static str> {
     let interval = match speed {
         musha_xhci::Speed::Full
@@ -503,6 +520,9 @@ pub(super) fn prepare(
         pending: false,
         bytes: if i == 0 { event_bytes } else { 2048 },
         logged: 0,
+        completions: 0,
+        last_cc: 0,
+        last_bytes: 0,
     });
     unsafe {
         core::ptr::write_bytes(input as *mut u8, 0, 4096);
@@ -594,6 +614,8 @@ pub(super) fn prepare(
             initialize_deadline: host.bt_deadline.ok_or("BT INITIALIZATION DEADLINE")?,
             scan_command: None,
             slot,
+            adapter_id,
+            adapter_route: route,
             port,
             ancestors: [None; 5],
             check_at: 0,
@@ -608,9 +630,12 @@ pub(super) fn prepare(
             acl_stream: musha_platform::bluetooth::stream::Stream::new(generation, true),
             scan: musha_platform::bluetooth::scan::Scan::new(generation),
             generation,
+            connection_number: 0,
+            host_sample: 0,
             started: None,
             advertisements: 0,
             advertising: musha_platform::bluetooth::stage::Advertising::new(),
+            advertising_budget: musha_platform::bluetooth::advertising_diagnostic::Budget::new(),
             scan_logged: false,
             unsupported_logged: false,
             acl_logged: [false; 2],
@@ -618,6 +643,10 @@ pub(super) fn prepare(
             att_skipped: 0,
             smp_started: 0,
             smp_hinted: false,
+            encryption_observation: musha_platform::bluetooth::connection_diagnostic::Wait::new(),
+            rx_observation: musha_platform::bluetooth::rx_diagnostic::Once::new(),
+            completion_baseline: [0; 3],
+            acl_in_context: output + ((transport.acl_in.address & 15) * 2 + 1) as usize * stride,
             completed_packets: 0,
             ignored_events: 0,
             directed_logged: false,
@@ -758,6 +787,19 @@ impl Device {
                         u16::from_le_bytes([result[5], result[6]])
                     ),
                 );
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "LIVE adapter bdf={:04x} root={} route={:05x} slot={} {:04x}:{:04x} manufacturer={:04x}",
+                        host.bdf,
+                        self.port,
+                        self.adapter_route,
+                        self.slot,
+                        self.adapter_id.0,
+                        self.adapter_id.1,
+                        u16::from_le_bytes([result[5], result[6]])
+                    ),
+                );
                 self.command = None;
                 self.command_credits = credits;
                 self.entropy_version = true;
@@ -824,6 +866,20 @@ impl Device {
             musha_platform::bluetooth::advertisements(event, |advert| {
                 self.advertisements = self.advertisements.saturating_add(1);
                 self.advertising.report(&advert.address);
+                let classification = musha_platform::bluetooth::advertising_diagnostic::classify(advert.event_type, advert.data);
+                let admitted = !self.pairing || self.phase != 0 || classification.candidate.is_none()
+                    || self.retry.admits(&advert.address, now);
+                if self.pairing && self.advertising_budget.admits(classification) {
+                    let reason = if self.phase != 0 { "already-selected" }
+                        else if classification.candidate.is_some() && !admitted { "deferred" }
+                        else { classification.reason };
+                    let tail = musha_platform::bluetooth::stage::address_tail(&advert.address);
+                    crate::bootlog::device("bluetooth", format_args!(
+                        "ADV ..:{:02x}:{:02x} type={} hid={} app={:04x} valid={} reason={} flags={} L={} G={}",
+                        tail[0], tail[1], advert.event_type, classification.hid,
+                        classification.appearance.unwrap_or(0),
+                        classification.ad_valid, reason,classification.flags,classification.flags.limited().map_or("?",|v|if v {"1"}else{"0"}),classification.flags.general().map_or("?",|v|if v {"1"}else{"0"})));
+                }
                 // A controller that still holds a bond reconnects with directed
                 // advertising and no HID data; new pairing needs pairing mode.
                 if self.pairing && advert.event_type == 1 {
@@ -851,29 +907,17 @@ impl Device {
                         }
                         return;
                     }
-                    let mut appearance = None;
-                    let mut hid = false;
-                    if musha_platform::bluetooth::ad_fields(advert.data, |field| {
-                        if field.kind == 0x19 && field.value.len() == 2 {
-                            appearance = Some(u16::from_le_bytes(field.value.try_into().unwrap()));
-                        }
-                        if matches!(field.kind, 2 | 3) && field.value.len() % 2 == 0 {
-                            hid = field.value.chunks_exact(2).any(|b| b == [0x12, 0x18]);
-                        }
-                    })
-                    .is_ok()
-                        && hid
-                    {
-                        self.method = match appearance {
-                            Some(0x3c1) => musha_platform::bluetooth::sc::Method::DisplayPasskey,
-                            Some(0x3c4) => musha_platform::bluetooth::sc::Method::JustWorks,
-                            _ => {
+                    if classification.ad_valid && classification.hid {
+                        self.method = match classification.candidate {
+                            Some(musha_platform::bluetooth::advertising_diagnostic::Candidate::Keyboard) => musha_platform::bluetooth::sc::Method::DisplayPasskey,
+                            Some(musha_platform::bluetooth::advertising_diagnostic::Candidate::Gamepad) => musha_platform::bluetooth::sc::Method::JustWorks,
+                            None => {
                                 self.advertising.unsupported();
-                                unsupported.get_or_insert((appearance, advert.address));
+                                unsupported.get_or_insert((classification.appearance, advert.address));
                                 return;
                             }
                         };
-                        if !self.retry.admits(&advert.address, now) {
+                        if !admitted {
                             self.advertising.deferred();
                             return;
                         }
@@ -1000,8 +1044,15 @@ impl Device {
             crate::bootlog::device(
                 "bluetooth",
                 format_args!(
-                    "advertising window events={} reports={} hid-candidates={} hid-unsupported={} deferred={} last=..:{:02x}:{:02x}",
-                    a.events, a.reports, a.hid, a.unsupported, a.deferred, high, low
+                    "advertising window events={} reports={} hid-candidates={} hid-unsupported={} deferred={} last=..:{:02x}:{:02x} adv-suppressed={}",
+                    a.events,
+                    a.reports,
+                    a.hid,
+                    a.unsupported,
+                    a.deferred,
+                    high,
+                    low,
+                    self.advertising_budget.suppressed()
                 ),
             );
         }
@@ -1012,6 +1063,20 @@ impl Device {
             return Err("BT TRANSFER FAULT");
         }
         let now = host.clock.now()?;
+        self.host_sample = now;
+        if let Some(wait) = self.encryption_observation.due(
+            now,
+            [
+                self.event.completions,
+                self.acl_in.completions,
+                self.acl_out.completions,
+            ],
+        ) {
+            self.log_encryption_wait(wait, "still waiting for Encryption Change");
+            if self.rx_observation.due(true, wait.elapsed) {
+                self.observe_acl_receive(host, wait.elapsed, "enc-5s");
+            }
+        }
         self.event_stream
             .check(self.generation, now)
             .map_err(|_| "BT EVENT STREAM TIMEOUT")?;
@@ -1068,9 +1133,21 @@ impl Device {
         if crate::bluetooth::take_input_overflow() {
             return Err("BT INPUT OVERFLOW");
         }
-        if self.subscribed && crate::bluetooth::take_request() {
-            crate::bluetooth::restart_after_stop(true);
-            return Err("BT REPAIR REQUEST");
+        if self.started.is_some() && crate::bluetooth::take_request() {
+            match musha_platform::bluetooth::repair::action(true, self.pairing, self.subscribed) {
+                musha_platform::bluetooth::repair::Action::RestartFresh => {
+                    if crate::bluetooth::restart_after_stop(true) {
+                        super::super::request_session_stop(
+                            "fresh pairing requested during stored reconnect",
+                        );
+                        return Err("BT REPAIR REQUEST");
+                    }
+                    crate::bluetooth::status(
+                        "Bluetooth restart budget exhausted; restart Musha-OS.",
+                    );
+                }
+                _ => crate::bluetooth::status("Bluetooth fresh pairing already in progress."),
+            }
         }
         if self.started.is_none() {
             self.pairing = crate::bluetooth::take_request();
@@ -1361,6 +1438,21 @@ pub(super) fn poll(
     let result = device.poll(host);
     host.bt_deadline = None;
     if let Err(reason) = result {
+        let counts = [
+            device.event.completions,
+            device.acl_in.completions,
+            device.acl_out.completions,
+        ];
+        if let Some(wait) = device.encryption_observation.finish_observed(counts) {
+            device.log_encryption_wait(wait, reason);
+        }
+        if device.handle != 0 && device.rx_observation.terminal() {
+            device.observe_acl_receive(
+                host,
+                device.host_sample.saturating_sub(device.smp_started),
+                "end-last-sample",
+            );
+        }
         if matches!(reason, "TRANSFER TIMEOUT" | "BT INITIALIZATION TIMEOUT") {
             if let Some((opcode, deadline)) = device.command {
                 timeout(

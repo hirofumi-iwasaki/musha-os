@@ -53,6 +53,15 @@ impl Mailbox {
         self.faults = self.faults.saturating_add(1);
         true
     }
+    /// Read-only ownership metadata; never consumes a completion or releases DMA.
+    pub fn observation(&self, index: usize, trb: usize, slot: u8, dci: u8) -> (bool, bool) {
+        let matches = self
+            .pending
+            .get(index)
+            .and_then(|p| *p)
+            .is_some_and(|p| p.trb == trb && p.slot == slot && p.dci == dci && p.incoming);
+        (matches, self.saved.get(index).is_some_and(Option::is_some))
+    }
     pub fn faulted(&self) -> bool {
         self.fault.is_some()
     }
@@ -287,5 +296,33 @@ mod fault_tests {
         assert!(!m.capture_fault(event(0x5000, 2, 3, 3, 0)));
         assert!(m.own(3).is_ok());
         assert_eq!(m.own(0), Err("BT TRANSFER OWNER"));
+    }
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::Mailbox;
+    #[test]
+    fn observation_checks_exact_in_ownership_without_consuming_saved_event() {
+        let mut m = Mailbox::new();
+        assert_eq!(m.observation(1, 0x1000, 2, 5), (false, false));
+        m.arm(1, 0x1000, 2, 5, 2048, true).unwrap();
+        assert_eq!(m.observation(1, 0x1000, 2, 5), (true, false));
+        assert_eq!(m.observation(1, 0x1010, 2, 5), (false, false));
+        assert_eq!(m.observation(1, 0x1000, 3, 5), (false, false));
+        assert_eq!(m.observation(1, 0x1000, 2, 7), (false, false));
+        assert_eq!(m.observation(3, 0x1000, 2, 5), (false, false));
+        let event = [
+            0x1000,
+            0,
+            (13 << 24) | (2048 - 15),
+            (2 << 24) | (5 << 16) | (32 << 10),
+        ];
+        assert!(m.save(event));
+        assert_eq!(m.observation(1, 0x1000, 2, 5), (true, true));
+        assert_eq!(m.observation(1, 0x1000, 2, 5), (true, true));
+        assert_eq!(m.take(1), Some(event));
+        assert_eq!(m.complete(1, event), Ok(15));
+        assert_eq!(m.observation(1, 0x1000, 2, 5), (false, false));
     }
 }

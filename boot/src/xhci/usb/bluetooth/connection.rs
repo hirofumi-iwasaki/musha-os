@@ -5,6 +5,36 @@
 use super::*;
 use musha_platform::bluetooth::{self as bt, sc::Action};
 impl Device {
+    pub(super) fn log_encryption_wait(
+        &self,
+        w: bt::connection_diagnostic::WaitSnapshot,
+        why: &str,
+    ) {
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "ENC wait mode={} handle={:04x} elapsed={}ms accepted={}",
+                w.mode.name(),
+                w.handle,
+                w.elapsed,
+                w.accepted
+            ),
+        );
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "ENC local={} deadline={} reason={}",
+                w.sampled_at, w.deadline, why
+            ),
+        );
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "ENC completions event={} in={} out={} (since request)",
+                w.completions[0], w.completions[1], w.completions[2]
+            ),
+        );
+    }
     pub(super) fn send_command(
         &mut self,
         host: &mut Host<'_>,
@@ -103,6 +133,9 @@ impl Device {
                 .is_some_and(|s| s.awaiting_response())
         {
             let waited = now.saturating_sub(self.smp_started);
+            if self.rx_observation.due(true, waited) {
+                self.observe_acl_receive(host, waited, "smp-5s");
+            }
             match self.retry.decide(waited, self.security_request) {
                 bt::retry::Decision::Wait => {}
                 bt::retry::Decision::Disconnect => return self.give_up_connection(host, now),
@@ -170,6 +203,34 @@ impl Device {
                 let mut p = [0; 28];
                 p[..2].copy_from_slice(&self.handle.to_le_bytes());
                 p[12..].copy_from_slice(&key);
+                let deadline = self
+                    .reconnect
+                    .as_ref()
+                    .map(|r| r.deadline_ms())
+                    .or_else(|| self.security.as_ref().map(|s| s.deadline_ms()))
+                    .unwrap_or(now);
+                let mode = bt::connection_diagnostic::Mode::from_pairing(self.pairing);
+                self.encryption_observation.begin(
+                    mode,
+                    self.handle,
+                    now,
+                    deadline,
+                    [
+                        self.event.completions,
+                        self.acl_in.completions,
+                        self.acl_out.completions,
+                    ],
+                );
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "ENC request mode={} stored-key={} handle={:04x} deadline={} (existing)",
+                        mode.name(),
+                        mode.stored_key(),
+                        self.handle,
+                        deadline
+                    ),
+                );
                 let result = self.send_command(host, now, 0x2019, &p);
                 for b in p.iter_mut().chain(key.iter_mut()) {
                     unsafe {
@@ -187,6 +248,148 @@ impl Device {
             10 => self.send_command(host, now, 0x200c, &[1, 1]),
             _ => Ok(()),
         }
+    }
+    /// Observe only allocated endpoint context and CPU-owned completion metadata.
+    /// No endpoint commands, ring consumption, payload reads or DMA reclamation.
+    pub(super) fn observe_acl_receive(&self, host: &Host<'_>, waited: u64, boundary: &str) {
+        let endpoint = bt::rx_diagnostic::Endpoint::decode(unsafe {
+            [
+                read_word(self.acl_in_context),
+                read_word(self.acl_in_context + 4),
+            ]
+        });
+        let trb = self.acl_in.ring + self.acl_in.cursor.index * 16;
+        // Both reads remain within this allocated output endpoint context.
+        // DMA can advance between samples, so report equality rather than assume a snapshot.
+        let first = unsafe {
+            [
+                read_word(self.acl_in_context + 8),
+                read_word(self.acl_in_context + 12),
+            ]
+        };
+        let second = unsafe {
+            [
+                read_word(self.acl_in_context + 8),
+                read_word(self.acl_in_context + 12),
+            ]
+        };
+        // Only the owned ring's TRB control word is read, never its buffer contents.
+        let control = unsafe { read_word(trb + 12) };
+        let position = bt::rx_diagnostic::Position::decode(
+            first,
+            second,
+            self.acl_in.ring as u64,
+            TRBS,
+            trb as u64,
+            self.acl_in.cursor.cycle as u8,
+            control,
+        );
+        let event_trb = self.event.ring + self.event.cursor.index * 16;
+        let (event_owned, event_saved) =
+            host.bt_mailbox
+                .observation(self.event.index, event_trb, self.slot, self.event.dci);
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "RX pos gen={} conn={} bdf={:04x} root={} slot={} h={:04x} at={}",
+                self.generation,
+                self.connection_number,
+                host.bdf,
+                self.port,
+                self.slot,
+                self.handle,
+                boundary
+            ),
+        );
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "RX local={} waited={}ms (last poll sample)",
+                self.host_sample, waited
+            ),
+        );
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "ACL IN observed deq={:016x} DCS={} idx={:?} relation={} stable={} (position only)",
+                position.dequeue,
+                position.dcs,
+                position.ring_index,
+                position.relation(),
+                position.stable
+            ),
+        );
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "ACL IN expected td={:016x} ring={:016x} idx={} cycle={} ctrl={:08x}",
+                position.expected,
+                self.acl_in.ring,
+                self.acl_in.cursor.index,
+                position.cycle,
+                position.control
+            ),
+        );
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "EV IN slot={} dci={} pending={} owned={} saved={} td={:016x} idx={} cycle={} ER idx={} cycle={}",
+                self.slot,
+                self.event.dci,
+                self.event.pending,
+                event_owned,
+                event_saved,
+                event_trb,
+                self.event.cursor.index,
+                self.event.cursor.cycle,
+                host.consumer.index,
+                host.consumer.cycle
+            ),
+        );
+        let (owned, saved) =
+            host.bt_mailbox
+                .observation(self.acl_in.index, trb, self.slot, self.acl_in.dci);
+        let counts = bt::rx_diagnostic::counts(
+            [
+                self.event.completions,
+                self.acl_in.completions,
+                self.acl_out.completions,
+            ],
+            self.completion_baseline,
+        );
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "ACL RX wait={}ms slot={} handle={:04x} ep={:02x} dci={} state={} type={} maxpacket={}",
+                waited,
+                self.slot,
+                self.handle,
+                self.transport.acl_in.address,
+                self.acl_in.dci,
+                endpoint.state,
+                endpoint.kind,
+                endpoint.max_packet
+            ),
+        );
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "ACL RX pending={} owned={} saved={} td={} cycle={} bytes={}",
+                self.acl_in.pending,
+                owned,
+                saved,
+                self.acl_in.cursor.index,
+                self.acl_in.cursor.cycle,
+                self.acl_in.bytes
+            ),
+        );
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "ACL RX completions event={} in={} out={} last-in-cc={} last-in-bytes={}",
+                counts[0], counts[1], counts[2], self.acl_in.last_cc, self.acl_in.last_bytes
+            ),
+        );
     }
     /// HCI Disconnect (reason 0x13, remote user terminated) of a connection
     /// whose peer does not answer pairing; its address is deferred for 10 s.
@@ -244,6 +447,7 @@ impl Device {
         self.reassembly = None;
         self.acl_stream = bt::stream::Stream::new(self.generation, true);
         self.security = None;
+        self.encryption_observation.clear();
         self.security_request = false;
         self.update = None;
         self.signaling = bt::signaling::Signaling::new();
@@ -366,6 +570,17 @@ impl Device {
                                     "disconnect accepted (CS 00); awaiting Disconnection Complete"
                                 ),
                             ),
+                            0x2019 => {
+                                self.encryption_started = true;
+                                self.encryption_observation.accepted();
+                                crate::bootlog::device(
+                                    "bluetooth",
+                                    format_args!(
+                                        "ENC command accepted handle={:04x}; awaiting Encryption Change",
+                                        self.handle
+                                    ),
+                                );
+                            }
                             _ => self.encryption_started = true,
                         }
                         return Ok(());
@@ -480,6 +695,24 @@ impl Device {
                         .map_err(|_| "BT ACL HANDLE")?,
                 );
                 self.phase = 8;
+                self.connection_number = self.connection_number.saturating_add(1);
+                self.rx_observation = bt::rx_diagnostic::Once::new();
+                // Origin for the final position sample in either fresh or stored mode.
+                self.smp_started = now;
+                let tail = bt::stage::address_tail(&self.peer);
+                let mode = bt::connection_diagnostic::Mode::from_pairing(self.pairing);
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "BT mode={} stored-key={} peer=..:{:02x}:{:02x} type={} slot={}",
+                        mode.name(),
+                        mode.stored_key(),
+                        tail[0],
+                        tail[1],
+                        self.peer_type,
+                        self.slot
+                    ),
+                );
                 if self.pairing {
                     let security = bt::sc::Central::new(
                         self.generation,
@@ -500,6 +733,14 @@ impl Device {
                     let request = security.request();
                     self.security = Some(security);
                     self.smp_started = now;
+                    self.rx_observation = bt::rx_diagnostic::Once::new();
+                    self.completion_baseline = [
+                        self.event.completions,
+                        self.acl_in.completions,
+                        self.acl_out.completions,
+                    ];
+                    self.acl_in.last_cc = 0;
+                    self.acl_in.last_bytes = 0;
                     self.smp_hinted = false;
                     self.security_request = false;
                     self.phase = 8;
@@ -513,6 +754,14 @@ impl Device {
                         self.peer,
                     )
                     .map_err(|_| "BT STORED IDENTITY REJECTED")?;
+                    let (kind, tail) = pending.identity_tail();
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "stored identity type={} ..:{:02x}:{:02x}; key selected (value hidden)",
+                            kind, tail[0], tail[1]
+                        ),
+                    );
                     let key = pending
                         .command_key(self.generation, now)
                         .map_err(|_| "BT STORED KEY")?;
@@ -538,7 +787,7 @@ impl Device {
                     crate::bootlog::device(
                         "bluetooth",
                         format_args!(
-                            "ACL sent and acknowledged: Number of Completed Packets handle={:04x} count={}",
+                            "ACL controller buffer completion: Number of Completed Packets handle={:04x} count={}",
                             self.handle, done
                         ),
                     );
@@ -546,17 +795,24 @@ impl Device {
                 self.completed_packets = self.completed_packets.saturating_add(done);
             }
             8 => {
-                let p = event.parameters;
-                if p.len() == 4 {
+                if let Some(meta) = bt::connection_diagnostic::event_metadata(event) {
                     crate::bootlog::device(
                         "bluetooth",
                         format_args!(
                             "Encryption Change status={:02x} handle={:04x} enabled={:02x}",
-                            p[0],
-                            u16::from_le_bytes([p[1], p[2]]),
-                            p[3]
+                            meta.status, meta.handle, meta.detail
                         ),
                     );
+                    if let Some(wait) = self.encryption_observation.finish(
+                        now,
+                        [
+                            self.event.completions,
+                            self.acl_in.completions,
+                            self.acl_out.completions,
+                        ],
+                    ) {
+                        self.log_encryption_wait(wait, "Encryption Change received");
+                    }
                 }
                 if !self.encryption_started {
                     return Err("BT ENCRYPTION BEFORE COMMAND ACCEPT");
@@ -899,9 +1155,8 @@ impl Device {
                 Err(_) => return Err("BT CREDIT RESERVE"),
             }
             let mut p = [0; 1028];
-            let bits = self.handle | if self.tx_at == 0 { 0x2000 } else { 0x1000 };
-            p[..2].copy_from_slice(&bits.to_le_bytes());
-            p[2..4].copy_from_slice(&(n as u16).to_le_bytes());
+            let header = bt::acl::le_tx_header(self.handle, self.tx_at != 0, n as u16);
+            p[..4].copy_from_slice(&header);
             p[4..4 + n].copy_from_slice(&self.tx[self.tx_at..self.tx_at + n]);
             self.acl_out.arm(host, self.slot, Some(&p[..4 + n]))?;
             if !self.acl_logged[0] {
@@ -912,7 +1167,7 @@ impl Device {
                         "ACL first TX dci={} handle={:04x} PB={:02x} length={}",
                         self.acl_out.dci,
                         self.handle,
-                        bits >> 12,
+                        header[1] >> 4,
                         4 + n
                     ),
                 );
@@ -1127,10 +1382,11 @@ impl Device {
             return self.queue(4, &[0x1e], now);
         }
         if self.subscribed {
-            self.keyboard
+            let observed = self
+                .keyboard
                 .as_mut()
                 .ok_or("BT INPUT STATE")?
-                .notification(self.generation, self.handle, p, |change| match change {
+                .notification_observed(self.generation, self.handle, p, |change| match change {
                     bt::hogp::Change::Key(key, down)
                         if self.method != bt::sc::Method::JustWorks =>
                     {
@@ -1143,7 +1399,21 @@ impl Device {
                     }
                     _ => {}
                 })
-                .map_err(|_| "BT INPUT REJECTED")?;
+                .map_err(|error| {
+                    crate::bootlog::device(
+                        "bluetooth",
+                        format_args!(
+                            "HID input rejected reason={:?} ATT-op={:02x} len={}",
+                            error,
+                            p.first().copied().unwrap_or(0),
+                            p.len()
+                        ),
+                    );
+                    "BT INPUT REJECTED"
+                })?;
+            if let Some(info) = observed {
+                crate::bluetooth::input_accepted(info);
+            }
             return Ok(());
         }
         // Notifications before discovery (SMP/encryption) or while CCCDs are

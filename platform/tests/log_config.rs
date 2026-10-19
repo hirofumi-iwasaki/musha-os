@@ -132,6 +132,7 @@ fn echo_setting_preserves_display_trace_pair_unknown_keys_and_size_limits() {
             log: LogLevel::Trace,
             display: Display::Exact(1600, 1200),
             pair: true,
+            bt_expect: None,
             lan_echo: true
         })
     );

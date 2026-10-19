@@ -393,20 +393,30 @@ fn live_probe(
     };
     probe(info, info.xhcis.entries[index], index, false, &mut bridge)
 }
-struct SessionEnd(core::cell::UnsafeCell<Option<&'static str>>);
-unsafe impl Sync for SessionEnd {} // BSP only; written after the session, read by its owner.
-static SESSION_END: SessionEnd = SessionEnd(core::cell::UnsafeCell::new(None));
-/// The reason the most recent USB device session ended, if it failed.
+struct SessionEnd(core::cell::UnsafeCell<musha_platform::session_end::Trace>);
+unsafe impl Sync for SessionEnd {} // BSP-only; no references escape.
+static SESSION_END: SessionEnd = SessionEnd(core::cell::UnsafeCell::new(
+    musha_platform::session_end::Trace::new(),
+));
+pub(crate) fn request_session_stop(reason: &'static str) {
+    unsafe {
+        (&mut *SESSION_END.0.get()).request(reason);
+    }
+}
 pub(crate) fn session_end_reason() -> Option<&'static str> {
-    unsafe { *SESSION_END.0.get() }
+    unsafe { (&*SESSION_END.0.get()).end().map(|end| end.reason) }
+}
+pub(crate) fn session_end_failed() -> bool {
+    unsafe { (&*SESSION_END.0.get()).end().is_some_and(|end| end.failed) }
 }
 pub(crate) fn run_session(
     info: &BootInfo,
     tick: &mut dyn FnMut(AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<(), &'static str> {
     unsafe {
-        *SESSION_END.0.get() = None;
+        *SESSION_END.0.get() = musha_platform::session_end::Trace::new();
     }
+    crate::bluetooth::reset_adapter_expectation();
     crate::timing::begin_session();
     let controllers = &info.xhcis.entries[..info.xhcis.count];
     crate::diagnostics::controller_limit(info.xhcis.truncated);
@@ -569,9 +579,19 @@ pub(crate) fn run_session(
         "RUN SESSION RESULT {}",
         result.err().unwrap_or("OK")
     ));
-    unsafe {
-        *SESSION_END.0.get() = result.err();
-    }
+    let ended = unsafe { (&mut *SESSION_END.0.get()).finish(result) };
+    crate::bootlog::device(
+        "bluetooth",
+        format_args!(
+            "Device session end result={} trigger={}",
+            if ended.failed { "error" } else { "ok" },
+            ended.trigger
+        ),
+    );
+    crate::bootlog::device(
+        "bluetooth",
+        format_args!("Device session reason={}", ended.reason),
+    );
     if let Err(reason) = result {
         crate::bootlog::event(
             musha_platform::boot_log::Level::Ready,

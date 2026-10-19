@@ -101,7 +101,10 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                                     .map_err(|_| "APP INPUT ERROR")?;
                             }
                             musha_api::bootfile::State::Ready(_)
-                            | musha_api::bootfile::State::Rejected(_) => return Ok(true),
+                            | musha_api::bootfile::State::Rejected(_) => {
+                                crate::xhci::request_session_stop("external application handoff");
+                                return Ok(true);
+                            }
                             _ => return Ok(false),
                         }
                     }
@@ -119,6 +122,9 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         if crate::external::select(files, id, now) {
                             app.viewer.launch_consumed();
                         }
+                    }
+                    if app.exit_requested {
+                        crate::xhci::request_session_stop("application quit requested");
                     }
                     return Ok(app.exit_requested);
                 }
@@ -261,9 +267,15 @@ pub(crate) fn run(arena: &mut [u8], info: &crate::BootInfo) -> Result<(), Error>
                         crate::debug(b"MUSHA: APP_STEP_BUDGET_EXCEEDED\n");
                     }
                 }
-                Ok(app.exit_requested
-                    || state == Step::Complete
-                    || crate::bluetooth::wants_restart())
+                let stop = musha_platform::session_end::stop_request(
+                    app.exit_requested,
+                    state == Step::Complete,
+                    crate::bluetooth::wants_restart(),
+                );
+                if let Some(reason) = stop {
+                    crate::xhci::request_session_stop(reason);
+                }
+                Ok(stop.is_some())
             })();
             match step {
                 Ok(stop) => Ok(stop),

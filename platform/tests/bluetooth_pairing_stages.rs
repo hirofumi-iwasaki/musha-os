@@ -5,7 +5,7 @@
 //! no physical controller timing or firmware behaviour is claimed.
 use musha_platform::bluetooth::{
     Event,
-    acl::{Credits, Reassembly},
+    acl::{Credits, Reassembly, le_tx_header},
     advertisements,
     stage::{self, Advertising},
     stream::Stream,
@@ -204,6 +204,11 @@ fn first_acl_exchange_carries_smp_pairing_pdus_with_credit_return() {
     tx.extend_from_slice(&(request.len() as u16).to_le_bytes());
     tx.extend_from_slice(&6u16.to_le_bytes());
     tx.extend_from_slice(&request);
+    let header = le_tx_header(handle, false, tx.len() as u16);
+    assert_eq!(header, [0x40, 0x00, 11, 0]);
+    let mut packet = header.to_vec();
+    packet.extend_from_slice(&tx);
+    assert_eq!(&packet[4..], &tx);
     credits.reserve(generation, tx.len()).unwrap();
     credits.reserve(generation, tx.len()).unwrap();
     assert_eq!(
@@ -326,4 +331,28 @@ fn completed_packets_counts_only_our_handle_and_rejects_malformed_blocks() {
     assert_eq!(completed_packets(&[1, 0x48, 0x20, 2, 0], 0x0048), 2);
     assert_eq!(completed_packets(&[], 0x0048), 0);
     assert_eq!(completed_packets(&[2, 0x48, 0x00, 1, 0], 0x0048), 0);
+}
+
+#[test]
+fn le_tx_header_preserves_handle_length_and_fragment_direction() {
+    for handle in [0, 0x40, 0x048, 0x0eff] {
+        for bytes in [1, 27, 0x0102, 1024] {
+            for continuation in [false, true] {
+                let h = le_tx_header(handle, continuation, bytes);
+                assert_eq!(u16::from_le_bytes([h[0], h[1]]) & 0x0fff, handle);
+                assert_eq!(h[1] >> 4, if continuation { 1 } else { 0 });
+                assert_eq!(u16::from_le_bytes([h[2], h[3]]), bytes);
+            }
+        }
+    }
+    // A 69-byte Public Key L2CAP frame needs three 27-byte ACL fragments.
+    let headers: Vec<_> = [27, 27, 15]
+        .into_iter()
+        .enumerate()
+        .map(|(i, n)| le_tx_header(0x48, i != 0, n))
+        .collect();
+    assert_eq!(
+        headers,
+        [[0x48, 0, 27, 0], [0x48, 0x10, 27, 0], [0x48, 0x10, 15, 0]]
+    );
 }

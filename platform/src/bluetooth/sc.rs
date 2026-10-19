@@ -72,6 +72,11 @@ impl Drop for Central {
     }
 }
 impl Central {
+    /// Existing state-machine deadline; metadata only, no extension.
+    pub fn deadline_ms(&self) -> u64 {
+        self.deadline
+    }
+
     pub fn new(
         generation: u64,
         handle: u16,

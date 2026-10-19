@@ -44,6 +44,7 @@ static STATE: Shared = Shared(UnsafeCell::new(State {
         log: LogLevel::Ready,
         display: Display::Max,
         pair: false,
+        bt_expect: None,
         lan_echo: false,
     },
     ready: false,
@@ -133,15 +134,15 @@ fn event_inner(level: Level, tag: &str, args: fmt::Arguments<'_>, summary: bool)
 /// Newest Bluetooth Devices lines for the viewer. These records are the same
 /// metadata-only lines already logged; nothing else is retained here.
 struct Tail {
-    lines: [[u8; 156]; 6],
-    lengths: [usize; 6],
+    lines: [[u8; 156]; 64],
+    lengths: [usize; 64],
     count: u64,
 }
 struct TailCell(UnsafeCell<Tail>);
 unsafe impl Sync for TailCell {} // BSP only; accessed under the log lease.
 static TAIL: TailCell = TailCell(UnsafeCell::new(Tail {
-    lines: [[0; 156]; 6],
-    lengths: [0; 6],
+    lines: [[0; 156]; 64],
+    lengths: [0; 64],
     count: 0,
 }));
 fn retain_bluetooth(ms: u64, args: fmt::Arguments<'_>) {
@@ -151,9 +152,17 @@ fn retain_bluetooth(ms: u64, args: fmt::Arguments<'_>) {
     }
     impl Write for Line {
         fn write_str(&mut self, value: &str) -> fmt::Result {
-            let n = value.len().min(self.bytes.len() - self.used);
-            self.bytes[self.used..self.used + n].copy_from_slice(&value.as_bytes()[..n]);
-            self.used += n;
+            for c in value.chars() {
+                if self.used == self.bytes.len() {
+                    break;
+                }
+                self.bytes[self.used] = if c.is_ascii_graphic() || c == ' ' {
+                    c as u8
+                } else {
+                    b'?'
+                };
+                self.used += 1;
+            }
             Ok(())
         }
     }
@@ -167,7 +176,7 @@ fn retain_bluetooth(ms: u64, args: fmt::Arguments<'_>) {
     };
     unsafe {
         let t = &mut *TAIL.0.get();
-        let slot = (t.count % 6) as usize;
+        let slot = (t.count % 64) as usize;
         t.lines[slot] = line.bytes;
         t.lengths[slot] = line.used;
         t.count = t.count.saturating_add(1);
@@ -180,11 +189,33 @@ pub fn bluetooth_tail(seen: u64, mut f: impl FnMut(&str)) -> u64 {
         return seen;
     };
     let t = unsafe { &*TAIL.0.get() };
-    for n in seen.max(t.count.saturating_sub(6))..t.count {
-        let slot = (n % 6) as usize;
+    for n in seen.max(t.count.saturating_sub(64))..t.count {
+        let slot = (n % 64) as usize;
         f(core::str::from_utf8(&t.lines[slot][..t.lengths[slot]]).unwrap_or("?"));
     }
     t.count
+}
+/// Copy one wrapped row while holding the log lease only for the copy. The
+/// lease is gone before Viewer issues any framebuffer operation.
+pub fn bluetooth_row(mut below: usize, out: &mut dyn core::fmt::Write) {
+    let Some(_lease) = lease() else {
+        return;
+    };
+    let t = unsafe { &*TAIL.0.get() };
+    for k in 0..t.count.min(64) {
+        let slot = ((t.count - 1 - k) % 64) as usize;
+        let text = core::str::from_utf8(&t.lines[slot][..t.lengths[slot]]).unwrap_or("?");
+        let rows = text.len().div_ceil(78).max(1);
+        if below < rows {
+            let segment = rows - 1 - below;
+            let start = segment * 78;
+            let end = (start + 78).min(text.len());
+            let _ = out.write_str(if segment == 0 { "" } else { "  " });
+            let _ = out.write_str(&text[start..end]);
+            return;
+        }
+        below -= rows;
+    }
 }
 fn emit(level: Level, ms: u64, bytes: &[u8], summary: bool) {
     if level == Level::Error {
@@ -264,6 +295,9 @@ pub fn configure(config: Config) {
         (*STATE.0.get()).config = config;
     }
     musha_framebuffer::set_output_enabled(true);
+}
+pub fn bt_expected() -> Option<(u16, u16)> {
+    unsafe { (*STATE.0.get()).config.bt_expect }
 }
 pub fn pair_requested() -> bool {
     unsafe { (*STATE.0.get()).config.pair }

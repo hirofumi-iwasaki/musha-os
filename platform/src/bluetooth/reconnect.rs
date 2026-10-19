@@ -152,6 +152,17 @@ impl Drop for Pending {
     }
 }
 impl Pending {
+    /// Existing state-machine deadline; metadata only, no extension.
+    pub fn deadline_ms(&self) -> u64 {
+        self.deadline
+    }
+    pub fn identity_tail(&self) -> (u8, [u8; 2]) {
+        (
+            self.bond.address_type,
+            super::stage::address_tail(&self.bond.address),
+        )
+    }
+
     pub fn check(&mut self, generation: u64, now: u64) -> Result<(), Error> {
         if generation != self.generation {
             return Err(Error::Stale);

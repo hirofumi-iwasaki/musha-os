@@ -22,6 +22,8 @@ pub struct Config {
     pub log: LogLevel,
     pub display: Display,
     pub pair: bool,
+    /// Validation only; never changes first-available adapter selection.
+    pub bt_expect: Option<(u16, u16)>,
     /// Explicit startup opt-in; absence or atomic parse fallback disables echo.
     pub lan_echo: bool,
 }
@@ -91,6 +93,22 @@ pub fn parse(bytes: &[u8]) -> Result<Config, ParseError> {
                     _ => return Err(ParseError::Value),
                 }
             }
+            "bt.expect" => {
+                let (vendor, product) = value.split_once(':').ok_or(ParseError::Value)?;
+                if vendor.len() != 4
+                    || product.len() != 4
+                    || !vendor
+                        .bytes()
+                        .chain(product.bytes())
+                        .all(|b| b.is_ascii_hexdigit())
+                {
+                    return Err(ParseError::Value);
+                }
+                config.bt_expect = Some((
+                    u16::from_str_radix(vendor, 16).map_err(|_| ParseError::Value)?,
+                    u16::from_str_radix(product, 16).map_err(|_| ParseError::Value)?,
+                ));
+            }
             "pair" => {
                 config.pair = match value {
                     "on" => true,
@@ -155,6 +173,7 @@ mod tests {
                 log: LogLevel::Devices,
                 display: Display::Exact(1024, 768),
                 pair: true,
+                bt_expect: None,
                 lan_echo: false
             })
         );

@@ -10,6 +10,7 @@ pub mod diagnostics;
 pub mod pairing;
 pub mod pci_resources;
 pub mod readiness;
+pub mod session_end;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct Timer {

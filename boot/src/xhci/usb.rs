@@ -598,6 +598,21 @@ pub(super) fn enumerate(
     let mut hub_count = 0;
     for port in 1..=host.ports as usize {
         let status = host.regs.read(op + 0x400 + (port - 1) * 16)?;
+        if !discovery && crate::bootlog::bt_expected().is_some() && port <= 32 {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "LIVE root={} usb={} PORTSC={:08x} connected={} queued={}",
+                    port,
+                    protocols[port].major,
+                    status,
+                    status & 1 != 0,
+                    protocols[port].major != 0
+                        && status & 1 != 0
+                        && (protocols[port].major != 3 || musha_xhci::superspeed::ready(status))
+                ),
+            );
+        }
         crate::diagnostics::observation(format_args!(
             "ROOT {} USB{} PORTSC {:08X}",
             port, protocols[port].major, status
@@ -839,7 +854,8 @@ pub(super) fn enumerate(
             continue;
         }
         let configured = configure(
-            host, pool, slot, input, output, stride, ring, buffer, speed, port, descriptor, tick,
+            host, pool, slot, input, output, stride, ring, buffer, speed, port, path.route,
+            descriptor, tick,
         )?;
         if matches!(configured, Configured::Disabled) {
             count += 1;
@@ -945,6 +961,19 @@ pub(super) fn enumerate(
     crate::debug(b"\nMUSHA: USB_DISCOVERY_DONE\n");
     let found_keyboard = active_keyboard.is_some();
     let found_mouse = active_mouse.is_some();
+    if !discovery && host.bluetooth.is_none() && !crate::bluetooth::adapter_selected() {
+        if let Some(expected) = crate::bootlog::bt_expected() {
+            crate::bootlog::event(
+                musha_platform::boot_log::Level::Ready,
+                "bluetooth",
+                format_args!(
+                    "LIVE expected {:04x}:{:04x} unavailable; no HCI selected",
+                    expected.0, expected.1
+                ),
+            );
+            crate::bluetooth::expected_adapter_missing();
+        }
+    }
     if !discovery && !found_keyboard && active_storage.is_none() {
         tick(super::AppEvent::Ready(found_keyboard))?;
     }
@@ -1069,6 +1098,7 @@ fn configure(
     buffer: usize,
     speed: musha_xhci::Speed,
     port: usize,
+    route: u32,
     descriptor: [u8; 18],
     tick: &mut dyn FnMut(super::AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<Configured, &'static str> {
@@ -1163,9 +1193,59 @@ fn configure(
         )?;
         return Ok(Configured::Other);
     }
+    let adapter_id = (
+        u16::from_le_bytes([descriptor[8], descriptor[9]]),
+        u16::from_le_bytes([descriptor[10], descriptor[11]]),
+    );
+    if !host.discovery && crate::bootlog::bt_expected().is_some() {
+        let reason = if host.bluetooth.is_some() {
+            "already-selected"
+        } else if host.bt_disabled {
+            "disabled"
+        } else if musha_platform::bluetooth::usb::select(&bytes[..length]).is_ok() {
+            "eligible-first"
+        } else {
+            "not-supported-HCI"
+        };
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "LIVE USB root={} route={:05x} slot={} {:04x}:{:04x} reason={}",
+                port, route, slot, adapter_id.0, adapter_id.1, reason
+            ),
+        );
+    }
     if !host.discovery && host.bluetooth.is_none() && !host.bt_disabled {
         if let Ok(transport) = musha_platform::bluetooth::usb::select(&bytes[..length]) {
             let _display = crate::bootlog::defer_screen();
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "LIVE selected bdf={:04x} root={} route={:05x} slot={} {:04x}:{:04x}",
+                    host.bdf, port, route, slot, adapter_id.0, adapter_id.1
+                ),
+            );
+            let matches = musha_platform::bluetooth::adapter::matches(
+                crate::bootlog::bt_expected(),
+                adapter_id,
+            );
+            crate::bluetooth::expected_adapter_matches(matches);
+            if let Some(expected) = crate::bootlog::bt_expected() {
+                crate::bootlog::event(
+                    musha_platform::boot_log::Level::Ready,
+                    "bluetooth",
+                    format_args!(
+                        "LIVE expectation {:04x}:{:04x} actual {:04x}:{:04x} match={}; selection remains first-available",
+                        expected.0, expected.1, adapter_id.0, adapter_id.1, matches
+                    ),
+                );
+                if !matches {
+                    crate::bluetooth::set_peer(Some(format_args!(
+                        "BT expected {:04x}:{:04x}; selected {:04x}:{:04x}",
+                        expected.0, expected.1, adapter_id.0, adapter_id.1
+                    )));
+                }
+            }
             host.bt_deadline = Some(host.clock.now()?.checked_add(2000).ok_or("BT CLOCK")?);
             let prepared = bluetooth::prepare(
                 host,
@@ -1181,6 +1261,8 @@ fn configure(
                 bytes[5],
                 descriptor[4] != 0xe0,
                 port,
+                route,
+                adapter_id,
             );
             // Finish the bounded warm-up here; do not charge unrelated USB
             // enumeration or console painting between preparation and first poll.

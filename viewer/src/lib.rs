@@ -104,8 +104,11 @@ pub struct Viewer {
     error: Option<Error>,
     ended: bool,
     ended_reason: Option<&'static str>,
+    ended_failed: bool,
     keyboard_missing: bool,
     bootfile_absent: bool,
+    log_last: usize,
+    log_source: Option<fn(usize, &mut dyn core::fmt::Write)>,
     pairing_blocked: bool,
     pairing_request: bool,
     pairing_message: Option<&'static str>,
@@ -157,8 +160,11 @@ impl Viewer {
             error: None,
             ended: false,
             ended_reason: None,
+            ended_failed: false,
             keyboard_missing: false,
             bootfile_absent: false,
+            log_last: LOG_LAST,
+            log_source: None,
             pairing_blocked: false,
             pairing_request: false,
             pairing_message: None,
@@ -226,8 +232,15 @@ impl Viewer {
         self.peer = text;
         self.repaint();
     }
+    /// Optional metadata-only row source. The callback copies text and must not
+    /// retain the output or draw; no borrowed log storage enters Viewer.
+    pub fn set_log_source(&mut self, source: fn(usize, &mut dyn core::fmt::Write)) {
+        if self.log_source.is_none() {
+            self.log_source = Some(source);
+        }
+    }
     fn log_shown(&self) -> bool {
-        self.log_count != 0 && self.view != View::Page
+        self.log_count != 0 && self.view != View::Page && self.log_last > LOG_FIRST
     }
     fn log_line(&self, row: usize, out: &mut Text<80>) {
         if row == LOG_FIRST {
@@ -235,7 +248,11 @@ impl Viewer {
             return;
         }
         // Fill rows upward from the bottom with the newest lines first.
-        let mut below = LOG_LAST - row;
+        let mut below = self.log_last - row;
+        if let Some(source) = self.log_source {
+            source(below, out);
+            return;
+        }
         for k in 0..self.log_count.min(LOG_LINES) {
             let text = self.log[(self.log_count - 1 - k) % LOG_LINES].as_str();
             let rows = text.len().div_ceil(LOG_WIDTH).max(1);
@@ -294,6 +311,14 @@ impl Viewer {
         core::mem::replace(&mut self.pairing_request, false)
     }
     pub fn pairing_status(&mut self, message: &'static str) {
+        if self.pairing_message == Some(message)
+            && self.pairing_blocked
+            && self.passkey.is_none()
+            && self.passkey_outcome.is_none()
+            && self.display_passkey.is_none()
+        {
+            return;
+        }
         self.passkey = None;
         self.passkey_outcome = None;
         self.display_passkey = None;
@@ -475,7 +500,11 @@ impl Viewer {
     }
     /// Shown with the ended-session line; the reason is a fixed diagnostic string.
     pub fn session_reason(&mut self, reason: &'static str) {
+        self.session_outcome(reason, true);
+    }
+    pub fn session_outcome(&mut self, reason: &'static str, failed: bool) {
         self.ended_reason = Some(reason);
+        self.ended_failed = failed;
         self.repaint();
     }
     /// At most one catalog entry or one bounded read attempt per call, except the
@@ -687,7 +716,8 @@ impl Viewer {
                         } else if let (true, Some(reason)) = (self.ended, self.ended_reason) {
                             write!(
                                 out,
-                                "Device session ended: {}. Restart to try again.",
+                                "Device session ended ({}): {}. Restart to try again.",
+                                if self.ended_failed { "error" } else { "ok" },
                                 reason
                             )
                         } else if self.ended {
@@ -787,8 +817,16 @@ impl Viewer {
             8 => {
                 let _ = out.write_str(self.peer.as_str());
             }
-            LOG_FIRST..=LOG_LAST if self.log_shown() => self.log_line(row, &mut out),
-            27 => {
+            r if r >= LOG_FIRST && r <= self.log_last && self.log_shown() => {
+                self.log_line(row, &mut out)
+            }
+            r if r
+                == if self.log_shown() {
+                    self.log_last + 1
+                } else {
+                    27
+                } =>
+            {
                 let _ =
                     out.write_str("256 bytes/page. Home: first page. Non-ASCII names use \\uXXXX.");
             }
@@ -796,7 +834,23 @@ impl Viewer {
         }
         out
     }
+    pub fn log_layout_rows(rows: usize) -> Option<(usize, usize)> {
+        let last = rows.checked_sub(musha_framebuffer::metrics::MARGIN + 2)?;
+        (last > LOG_FIRST).then_some((LOG_FIRST, last))
+    }
+    fn fit_log(&mut self, w: usize, h: usize) {
+        let m = musha_framebuffer::metrics::Metrics::viewer(w, h);
+        let last = Self::log_layout_rows(m.rows).map_or(LOG_FIRST - 1, |(_, last)| last);
+        if self.log_last != last {
+            self.log_last = last;
+            if self.log_count != 0 {
+                self.repaint();
+            }
+        }
+    }
     pub fn render_step(&mut self, ctx: &mut Context<'_>) -> Result<bool, musha_api::Error> {
+        let (screen_w, screen_h) = ctx.screen_size();
+        self.fit_log(screen_w, screen_h);
         self.passkey_tick(ctx.now_ms());
         if !self.dirty {
             if self.log_dirty && self.log_shown() {
@@ -816,6 +870,13 @@ impl Viewer {
         }
         let m = musha_framebuffer::metrics::Metrics::viewer(w, h);
         let scale = m.scale;
+        // The full repaint draws this band too. Only lines arriving after its
+        // first row should schedule an additional incremental log repaint.
+        if self.line == 0 {
+            self.log_dirty = false;
+            self.log_clear = 0;
+            self.log_row = LOG_FIRST;
+        }
         let text = self.line(self.line);
         let color = if self.line == 7 && matches!(self.view, View::Error | View::Unavailable) {
             [255, 180, 110]
@@ -832,7 +893,13 @@ impl Viewer {
             ctx.text_at(text.as_str(), x, y, color, scale)?;
         }
         self.line += 1;
-        if self.line == 28 {
+        if self.line
+            == if self.log_shown() {
+                self.log_last + 2
+            } else {
+                28
+            }
+        {
             self.dirty = false;
             return Ok(true);
         }
@@ -847,7 +914,7 @@ impl Viewer {
         let m = musha_framebuffer::metrics::Metrics::viewer(w, h);
         let top = m.y(musha_framebuffer::metrics::MARGIN + LOG_FIRST).min(h);
         let bottom = m
-            .y(musha_framebuffer::metrics::MARGIN + LOG_LAST + 1)
+            .y(musha_framebuffer::metrics::MARGIN + self.log_last + 1)
             .min(h);
         let band = w * (bottom - top);
         if self.log_clear < band {
@@ -865,7 +932,7 @@ impl Viewer {
             ctx.text_at(text.as_str(), x, y, FG, m.scale)?;
         }
         self.log_row += 1;
-        if self.log_row > LOG_LAST {
+        if self.log_row > self.log_last {
             self.log_dirty = false;
         }
         Ok(())
@@ -1148,7 +1215,14 @@ mod tests {
         v.session_reason("BAD TRANSFER");
         assert_eq!(
             v.line(7).as_str(),
-            "Device session ended: BAD TRANSFER. Restart to try again."
+            "Device session ended (error): BAD TRANSFER. Restart to try again."
+        );
+        v.session_outcome("application quit requested", false);
+        v.pairing_status("Bluetooth session stopped; input and pairing disabled.");
+        assert!(
+            v.line(7)
+                .as_str()
+                .contains("(ok): application quit requested")
         );
     }
     #[test]
@@ -1188,6 +1262,49 @@ mod tests {
             }
             assert_eq!(&pixels[stride * h..], &[0xdeadbeef; 4]);
         }
+    }
+    #[test]
+    fn external_log_uses_all_remaining_rows_and_keeps_one_bottom_footer() {
+        fn source(below: usize, out: &mut dyn core::fmt::Write) {
+            let _ = write!(out, "row from bottom {}", below);
+        }
+        for (w, h) in [(1024, 768), (1600, 1200), (3840, 2160), (320, 356)] {
+            let mut v = Viewer::new();
+            v.set_log_source(source);
+            v.push_log("begin");
+            v.fit_log(w, h);
+            let m = musha_framebuffer::metrics::Metrics::viewer(w, h);
+            assert_eq!(
+                v.log_last + 1,
+                m.rows - musha_framebuffer::metrics::MARGIN - 1
+            );
+            assert!(v.log_last - LOG_FIRST > 16 || w == 320);
+            assert_eq!(v.line(v.log_last).as_str(), "row from bottom 0");
+            assert!(
+                v.line(LOG_FIRST + 1)
+                    .as_str()
+                    .starts_with("row from bottom ")
+            );
+            assert!(
+                v.line(v.log_last + 1)
+                    .as_str()
+                    .starts_with("256 bytes/page")
+            );
+            assert_eq!(v.line(v.log_last + 2).as_str(), "");
+            assert!(m.y(musha_framebuffer::metrics::MARGIN + v.log_last + 1) + 8 * m.scale <= h);
+            let mut plain = Viewer::new();
+            plain.fit_log(w, h);
+            assert!(plain.line(27).as_str().starts_with("256 bytes/page"));
+        }
+        assert_eq!(Viewer::log_layout_rows(23), None);
+    }
+    #[test]
+    fn repeated_status_does_not_restart_painting() {
+        let mut v = Viewer::new();
+        v.pairing_status("expected mismatch");
+        v.dirty = false;
+        v.pairing_status("expected mismatch");
+        assert!(!v.dirty);
     }
     #[test]
     fn bluetooth_log_tail_fills_rows_upward_and_wraps_long_lines() {
@@ -1252,7 +1369,7 @@ mod tests {
         }
         let m = musha_framebuffer::metrics::Metrics::viewer(w, h);
         let top = m.y(musha_framebuffer::metrics::MARGIN + LOG_FIRST);
-        let bottom = m.y(musha_framebuffer::metrics::MARGIN + LOG_LAST + 1);
+        let bottom = m.y(musha_framebuffer::metrics::MARGIN + v.log_last + 1);
         let before = pixels.clone();
         v.push_log("2.000 connect stage=LE create connection phase=6");
         assert!(v.painted() && v.log_dirty);

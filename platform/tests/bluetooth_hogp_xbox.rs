@@ -190,9 +190,12 @@ fn xbox_shaped_map_is_read_by_blob_and_binds_only_the_gamepad_report() {
     reports.notification(9, 5, &p, |c| seen.push(c)).unwrap();
     assert!(seen.contains(&Change::Gamepad(Pad::Button(0, true))));
     seen.clear();
-    reports
-        .notification(9, 5, &[0x1b, 15, 0, 80], |c| seen.push(c))
-        .unwrap();
+    assert!(
+        reports
+            .notification_observed(9, 5, &[0x1b, 15, 0, 80], |c| seen.push(c))
+            .unwrap()
+            .is_none()
+    );
     assert!(seen.is_empty());
     assert!(
         reports
@@ -289,6 +292,48 @@ fn observed_xbox_sequence_reaches_the_report_reference_and_binds() {
     assert_eq!(&log[log.len() - 2..], &[(0x04, 0x1f), (0x0a, 0x20)]);
     let reports = slot.expect("reports bound in place");
     assert_eq!((reports.count(), reports.cccd(0)), (1, Some(0x1f)));
+    let mut reports = reports;
+    let mut diagnostic = musha_platform::bluetooth::input_diagnostic::Diagnostic::new();
+    let mut p = vec![0x1b, 0x1e, 0];
+    p.extend([0; 16]);
+    p[3 + 13] = 1;
+    p[3..5].copy_from_slice(&65535u16.to_le_bytes());
+    p[3 + 8..3 + 10].copy_from_slice(&1023u16.to_le_bytes());
+    p[3 + 10..3 + 12].copy_from_slice(&512u16.to_le_bytes());
+    p[3 + 12] = 1;
+    let info = reports
+        .notification_observed(9, 5, &p, |c| {
+            if let Change::Gamepad(c) = c {
+                diagnostic.change(c, true)
+            }
+        })
+        .unwrap()
+        .unwrap();
+    assert!(info.gamepad);
+    assert_eq!((info.id, info.bytes), (1, 16));
+    diagnostic.accepted(info.id, info.bytes);
+    let state = diagnostic.poll(0).unwrap();
+    assert_eq!(state.buttons & 1, 1);
+    assert_eq!(state.axes[0], 65535);
+    assert_eq!(state.axes[11], 1023);
+    assert_eq!(state.axes[10], 512);
+    assert_eq!(state.axes[9], 1);
+    p[3 + 13] = 0;
+    let info = reports
+        .notification_observed(9, 5, &p, |c| {
+            if let Change::Gamepad(c) = c {
+                diagnostic.change(c, true)
+            }
+        })
+        .unwrap()
+        .unwrap();
+    diagnostic.accepted(info.id, info.bytes);
+    assert_eq!(diagnostic.poll(250).unwrap().released & 1, 1);
+    assert!(
+        reports
+            .notification_observed(9, 5, &p[..5], |_| panic!("invalid data emitted an event"))
+            .is_err()
+    );
 }
 
 /// Desk check of a reboot reconnect: the saved record supplies LTK, IRK and

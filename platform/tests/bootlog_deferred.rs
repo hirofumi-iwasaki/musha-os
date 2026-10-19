@@ -107,4 +107,19 @@ fn deferred_screen_retains_ring_and_restores_original_visibility_on_nested_early
     assert!(pixels == hidden);
     bootlog::viewer(false);
     assert!(pixels != hidden);
+    for n in 0..100 {
+        bootlog::device("bluetooth", format_args!("history {}", n));
+    }
+    let mut lines = Vec::new();
+    bootlog::bluetooth_tail(0, |s| lines.push(s.to_owned()));
+    assert_eq!(lines.len(), 64);
+    assert!(lines[0].contains("history 36"));
+    assert!(lines[63].contains("history 99"));
+    let mut row = String::new();
+    bootlog::bluetooth_row(63, &mut row);
+    assert!(row.contains("history 36"));
+    bootlog::device("bluetooth", format_args!("non ASCII é🙂"));
+    let mut row = String::new();
+    bootlog::bluetooth_row(0, &mut row);
+    assert!(row.contains("non ASCII ??"));
 }
