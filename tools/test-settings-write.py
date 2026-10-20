@@ -2,7 +2,7 @@
 # Copyright 2026 Hirofumi Iwasaki
 # SPDX-License-Identifier: Apache-2.0
 """Stage3 development tests on NEW disposable regular images; never devices."""
-import argparse, importlib.util, json, pathlib, shutil, socket, struct, subprocess, time, hashlib
+import argparse, importlib.util, json, pathlib, re, shutil, socket, struct, subprocess, time, hashlib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 spec = importlib.util.spec_from_file_location('usb', ROOT / 'tools/make-usb-image.py')
 usb = importlib.util.module_from_spec(spec)
@@ -90,10 +90,10 @@ def geometry(image):
     cluster = struct.unpack_from('<H', image, at + 26)[0] | struct.unpack_from('<H', image, at + 20)[0] << 16
     return (start, fz, start + reserved * ss, data, cb, at, data + (cluster - 2) * cb)
 
-def checker(path, out):
+def checker(path, out, log_name='fsck.log', require_clean=True):
     image = path.read_bytes()
     if image[3:11] == b'EXFAT   ':
-        return 'not applicable (exFAT byte-identical refusal)'
+        return ('not applicable (exFAT byte-identical refusal)', None)
     start = volume_start(image)
     ss = sector_size(image)
     total = struct.unpack_from('<I', image, start + 32)[0]
@@ -101,10 +101,47 @@ def checker(path, out):
     part.write_bytes(image[start:start + total * ss])
     command = [str(shutil.which('fsck.fat') or '/sbin/fsck_msdos'), '-n', str(part)]
     p = subprocess.run(command, capture_output=True, text=True)
-    (out / 'fsck.log').write_text(p.stdout + p.stderr)
+    (out / log_name).write_text(p.stdout + p.stderr)
     part.unlink()
-    assert p.returncode == 0, (command, p.returncode, p.stdout, p.stderr)
-    return command[0]
+    if require_clean:
+        assert p.returncode == 0, (command, p.returncode, p.stdout, p.stderr)
+    return (command[0], p.returncode)
+
+def verify_partial_metadata(before, after, out):
+    """One full packet entered FSInfo WRITE(10); earlier FAT writes stay visible."""
+    assert len(before) == len(after)
+    (start, fz, fat, data, cb, _, settings) = geometry(before)
+    ss = sector_size(before)
+    assert ss == 4096
+    cluster = next(c for c in range(2, (len(before) - data) // cb)
+                   if struct.unpack_from('<I', before, fat + c * 4)[0] & 268435455 == 0)
+    primary = (fat + cluster * 4) // ss
+    backup = (fat + fz * ss + cluster * 4) // ss
+    payload = (data + (cluster - 2) * cb) // ss
+    fsinfo = (start + ss) // ss
+    directory = settings // ss
+    changed = {i // ss for i in range(0, len(before), ss)
+               if before[i:i + ss] != after[i:i + ss]}
+    assert {primary, backup, payload} <= changed, sorted(changed)
+    assert changed <= {primary, backup, payload, fsinfo}, sorted(changed)
+    assert before[directory * ss:(directory + 1) * ss] == after[directory * ss:(directory + 1) * ss]
+    assert before[(fsinfo + 6) * ss:(fsinfo + 7) * ss] == after[(fsinfo + 6) * ss:(fsinfo + 7) * ss]
+    assert after[fat:fat + fz * ss] == after[fat + fz * ss:fat + 2 * fz * ss]
+    snapshots = {}
+    for name, lba in [('primary_fat', primary), ('backup_fat', backup),
+                      ('primary_fsinfo', fsinfo), ('backup_fsinfo', fsinfo + 6),
+                      ('directory', directory)]:
+        snapshots[name] = {'lba': lba}
+        for phase, image in [('before', before), ('after', after)]:
+            sector = image[lba * ss:(lba + 1) * ss]
+            assert len(sector) == ss
+            filename = f'{name}-{phase}.bin'
+            (out / filename).write_bytes(sector)
+            snapshots[name][phase] = {'file': filename, 'sha256': hashlib.sha256(sector).hexdigest()}
+    return {'changed_sectors': sorted(changed), 'primary_fat_sector': primary,
+            'backup_fat_sector': backup, 'payload_sector': payload,
+            'target_fsinfo_sector': fsinfo, 'directory_sector': directory,
+            'metadata_snapshots': snapshots}
 
 def verify_changes(before, after, allow_write):
     assert len(before) == len(after)
@@ -140,9 +177,11 @@ def qemu(a, out, boot, data, readonly=False):
     shutil.copyfile(fw / 'edk2-i386-vars.fd', out / 'vars.fd')
     log = out / 'debug.log'
     log.write_text('')
-    sock = ROOT / 'out' / ('sw-' + hashlib.sha256(str(out).encode()).hexdigest()[:12] + '.sock')
+    sock = pathlib.Path('/tmp') / ('sw-' + hashlib.sha256(str(out).encode()).hexdigest()[:12] + '.sock')
     sock.unlink(missing_ok=True)
-    cmd = [a.qemu, '-machine', 'q35,accel=tcg', '-m', '256M', '-drive', f'if=pflash,format=raw,readonly=on,file={fw}/edk2-x86_64-code.fd', '-drive', f'if=pflash,format=raw,file={out}/vars.fd', '-drive', f'if=ide,format=raw,snapshot=on,file={boot}', '-drive', f"if=none,id=data,format=raw,readonly={('on' if readonly else 'off')},cache={('writeback' if a.case == 'cache-enabled' else 'writethrough')},file={data}", '-device', 'qemu-xhci,id=x', '-device', f'usb-storage,id=storage,drive=data,bus=x.0,port=1,logical_block_size={a.sector_size},physical_block_size={a.sector_size}', '-device', 'usb-kbd,bus=x.0', '-display', 'none', '-debugcon', f'file:{log}', '-global', 'isa-debugcon.iobase=0xe9', '-qmp', f'unix:{sock},server=on,wait=off', '-no-reboot']
+    cmd = [a.qemu, '-machine', 'q35,accel=tcg', '-m', '256M', '-drive', f'if=pflash,format=raw,readonly=on,file={fw}/edk2-x86_64-code.fd', '-drive', f'if=pflash,format=raw,file={out}/vars.fd', '-drive', f'if=ide,format=raw,snapshot=on,file={boot}', '-drive', f"if=none,id=data,format=raw,readonly={('on' if readonly else 'off')},cache={('writeback' if a.case == 'cache-enabled' else 'writethrough')},file={data}", '-device', 'qemu-xhci,id=x', '-device', f'usb-storage,id=storage,drive=data,bus=x.0,port=1,logical_block_size={a.sector_size},physical_block_size={a.sector_size}', '-device', 'usb-kbd,bus=x.0', '-display', 'none', '-debugcon', f'file:{log}', '-global', 'isa-debugcon.iobase=0xe9', '-no-reboot']
+    if a.case == 'removal':
+        cmd += ['-qmp', f'unix:{sock},server=on,wait=off']
     (out / 'command.json').write_text(json.dumps(cmd, indent=2))
     with (out / 'qemu.log').open('w') as err:
         p = subprocess.Popen(cmd, stdout=err, stderr=err)
@@ -181,6 +220,17 @@ def qemu(a, out, boot, data, readonly=False):
                 assert 'SETTINGS_WRITE_PROTECTED' in text and 'SETTINGS_WRITE_RESULT Err(Refused(Protected))' in text, text
             elif a.case in ('timeout', 'removal', 'cancel'):
                 assert 'SETTINGS_WRITE_RESULT Err(Io(Io))' in text, text
+            elif a.case == 'partial-metadata':
+                target = re.search(r'SETTINGS_METADATA_TARGET LBA=([0-9a-fA-F]+) FAT_PATCHES=2', text)
+                sent = re.search(r'SETTINGS_METADATA_PARTIAL_DATA_SENT LBA=([0-9a-fA-F]+) BYTES=([0-9a-fA-F]+)/([0-9a-fA-F]+)', text)
+                assert target and sent, text
+                assert int(target[1], 16) == int(sent[1], 16) == 1, text
+                assert int(sent[2], 16) == 1024 and int(sent[3], 16) == 4096, text
+                assert text.count('SETTINGS_METADATA_PARTIAL_DATA_SENT') == 1, text
+                assert text.find('SETTINGS_WRITE_BEGIN') < target.start() < sent.start(), text
+                result_at = text.find('SETTINGS_WRITE_RESULT Err(RecoveryRequired)', sent.end())
+                assert result_at >= 0 and text.find('XHCI_QUIESCED DMA_DISABLED', result_at) > result_at, text
+                assert 'SETTINGS_WRITE_DATA_PENDING' not in text[sent.end():result_at], text
             else:
                 assert 'SETTINGS_WRITE_RESULT Err(' in text, text
         finally:
@@ -196,7 +246,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--efi', type=pathlib.Path, required=True)
     p.add_argument('--output', type=pathlib.Path, required=True)
-    p.add_argument('--case', choices=['create', 'protected', 'missing', 'unowned', 'full', 'no-space', 'fragmented', 'timeout', 'removal', 'exfat', 'cancel', 'config', 'cache-enabled'], default='create')
+    p.add_argument('--case', choices=['create', 'protected', 'missing', 'unowned', 'full', 'no-space', 'fragmented', 'timeout', 'removal', 'exfat', 'cancel', 'config', 'cache-enabled', 'partial-metadata'], default='create')
     p.add_argument('--sector-size', type=int, choices=[512, 4096], default=512)
     p.add_argument('--sectors-per-cluster', type=int, choices=[1, 2, 4, 8, 16, 32, 64, 128], default=1)
     p.add_argument('--bounds', action='store_true', help='Require zero/maximum/overflow probe evidence')
@@ -204,11 +254,13 @@ def main():
     p.add_argument('--firmware-dir', default='/opt/homebrew/share/qemu')
     p.add_argument('--harness', type=pathlib.Path, default=ROOT / 'target/debug/examples/settings-write')
     a = p.parse_args()
+    if a.case == 'partial-metadata':
+        assert a.qemu and a.sector_size == 4096 and a.sectors_per_cluster == 1, 'Partial metadata requires QEMU and 4096-byte sectors'
     out = a.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
     image = out / 'data.img'
     if a.sector_size != 512 or a.sectors_per_cluster != 1:
-        assert a.qemu and a.case == 'create', 'Geometry variants use QEMU create only'
+        assert a.qemu and a.case in ('create', 'partial-metadata'), 'Geometry variants require QEMU'
         variant_fixture(image, a.sector_size, a.sectors_per_cluster)
     else:
         usb.create(image, a.efi.resolve())
@@ -280,7 +332,7 @@ def main():
         exfat = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(exfat)
         exfat.create(image)
-    baseline = checker(image, out)
+    baseline, baseline_status = checker(image, out, 'fsck-before.log')
     before = image.read_bytes()
     if a.qemu:
         boot = out / 'boot.img'
@@ -292,12 +344,25 @@ def main():
         (out / 'host.log').write_text(r.stdout + r.stderr)
         assert (r.returncode == 0) == (a.case in ('create', 'fragmented', 'config')), (r.returncode, r.stdout, r.stderr)
     after = image.read_bytes()
-    changes = verify_changes(before, after, a.case in ('create', 'fragmented', 'config'))
+    partial = verify_partial_metadata(before, after, out) if a.case == 'partial-metadata' else None
+    changes = len(partial['changed_sectors']) if partial else verify_changes(before, after, a.case in ('create', 'fragmented', 'config'))
     if a.case == 'fragmented':
         for (off, n) in [(fat, 2 * fz * 512), (settings, cb), (start + 512, 512), (start + 7 * 512, 512)]:
             assert before[off:off + n] == after[off:off + n]
-    checker(image, out)
-    result = {'sector_size': a.sector_size, 'sectors_per_cluster': a.sectors_per_cluster, 'bounds': a.bounds, 'case': a.case, 'transport': 'qemu' if a.qemu else 'host', 'passed': True, 'changed_sectors': changes, 'checker': baseline, 'sha256': hashlib.sha256(image.read_bytes()).hexdigest()}
+    after_log = 'fsck-after.log' if partial else 'fsck.log'
+    _, after_status = checker(image, out, after_log, require_clean=a.case != 'partial-metadata')
+    if partial:
+        fsck = (out / 'fsck-after.log').read_text().lower()
+        assert after_status != 0, fsck
+        if pathlib.Path(baseline).name == 'fsck_msdos':
+            assert 'orphan' in fsck and 'fsinfo' in fsck and 'free' in fsck, fsck
+            partial['fsck_classification'] = 'orphan_cluster_and_stale_fsinfo_hint'
+        elif pathlib.Path(baseline).name == 'fsck.fat':
+            assert any(term in fsck for term in ('free cluster', 'unused cluster', 'lost cluster')), fsck
+            partial['fsck_classification'] = 'nonzero_fat_consistency_findings'
+        else:
+            partial['fsck_classification'] = 'nonzero_checker_result'
+    result = {'sector_size': a.sector_size, 'sectors_per_cluster': a.sectors_per_cluster, 'bounds': a.bounds, 'case': a.case, 'transport': 'qemu' if a.qemu else 'host', 'passed': True, 'changed_sectors': changes, 'checker': baseline, 'fsck_before_status': baseline_status, 'fsck_after_status': after_status, 'partial_metadata': partial, 'sha256': hashlib.sha256(after).hexdigest()}
     (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result))
 if __name__ == '__main__':

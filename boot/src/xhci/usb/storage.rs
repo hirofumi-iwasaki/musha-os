@@ -107,6 +107,10 @@ struct Bot {
     csw: usize,
     tag: u32,
     pending: Option<Active>,
+    #[cfg(feature = "settings-write-partial-metadata")]
+    partial_metadata_lba: Option<u32>,
+    #[cfg(feature = "settings-write-partial-metadata")]
+    output_packet: usize,
 }
 struct Active {
     transaction: Transaction,
@@ -114,6 +118,8 @@ struct Active {
     hold_data: bool,
     data_out: bool,
     delayed_until: Option<u64>,
+    #[cfg(feature = "settings-write-partial-metadata")]
+    partial_metadata_lba: Option<u32>,
 }
 impl Bot {
     fn begin(&mut self, host: &mut Host<'_>, command: Command) -> Result<(), &'static str> {
@@ -150,6 +156,12 @@ impl Bot {
             hold_data,
             data_out: command.data_out(),
             delayed_until: None,
+            #[cfg(feature = "settings-write-partial-metadata")]
+            partial_metadata_lba: match command {
+                Command::Write { lba, sector_bytes: 4096 }
+                    if self.partial_metadata_lba == Some(lba) => Some(lba),
+                _ => None,
+            },
         });
         Ok(())
     }
@@ -167,6 +179,17 @@ impl Bot {
                 Ok(Some(ok))
             }
             Progress::Submit(phase, bytes) => {
+                #[cfg(feature = "settings-write-partial-metadata")]
+                let bytes = if phase == Phase::Data && active.partial_metadata_lba.is_some() {
+                    // One full USB packet is a genuine partial DATA phase of a
+                    // 4096-byte metadata WRITE(10). Never post the remainder.
+                    if self.output_packet == 0 || self.output_packet >= bytes {
+                        return Err("METADATA PACKET SIZE");
+                    }
+                    self.output_packet
+                } else {
+                    bytes
+                };
                 let (pipe, buffer) = match phase {
                     Phase::Command => (&mut self.output, self.cbw),
                     Phase::Data if active.data_out => (&mut self.output, self.data),
@@ -228,6 +251,22 @@ impl Bot {
                 match pipe.poll(host, self.slot, address) {
                     Ok(false) => {}
                     Ok(true) => {
+                        #[cfg(feature = "settings-write-partial-metadata")]
+                        if phase == Phase::Data {
+                            if let Some(lba) = active.partial_metadata_lba {
+                                // The first full packet completed at the USB
+                                // endpoint. BOT has no CSW and cannot be reused;
+                                // reserve its buffers until controller quiescence.
+                                crate::debug(b"MUSHA: SETTINGS_METADATA_PARTIAL_DATA_SENT LBA=");
+                                crate::debug(&crate::cpu::hex(lba as u64));
+                                crate::debug(b" BYTES=");
+                                crate::debug(&crate::cpu::hex(bytes as u64));
+                                crate::debug(b"/1000\n");
+                                active.transaction.cancel();
+                                active.transfer = None;
+                                return Err("METADATA PARTIAL TRANSFER");
+                            }
+                        }
                         let mut status = [0; 13];
                         if phase == Phase::Status {
                             copy(self.csw, &mut status);
@@ -422,6 +461,10 @@ pub(super) fn probe(
         csw,
         tag: 0,
         pending: None,
+        #[cfg(feature = "settings-write-partial-metadata")]
+        partial_metadata_lba: None,
+        #[cfg(feature = "settings-write-partial-metadata")]
+        output_packet: disk.output.packet as usize,
     };
     let mut ready = false;
     for _ in 0..3 {
@@ -860,6 +903,10 @@ fn settings_probe(
         blocks: u64,
         size: u32,
         protected: bool,
+        #[cfg(feature = "settings-write-partial-metadata")]
+        fat_lbas: Option<[u64; 2]>,
+        #[cfg(feature = "settings-write-partial-metadata")]
+        fat_completed: [bool; 2],
     }
     impl musha_fs::settings::Disk for Image<'_, '_> {
         fn read(&mut self, lba: u64, b: &mut [u8]) -> Result<(), musha_fs::Error> {
@@ -876,6 +923,16 @@ fn settings_probe(
                 || b.len() != self.size as usize
             {
                 return Err(musha_fs::Error::Io);
+            }
+            #[cfg(feature = "settings-write-partial-metadata")]
+            if self.bot.partial_metadata_lba == Some(lba as u32) {
+                if self.fat_completed != [true, true] {
+                    crate::debug(b"MUSHA: SETTINGS_METADATA_PRIOR_FAT_MISSING\n");
+                    return Err(musha_fs::Error::Io);
+                }
+                crate::debug(b"MUSHA: SETTINGS_METADATA_TARGET LBA=");
+                crate::debug(&crate::cpu::hex(lba));
+                crate::debug(b" FAT_PATCHES=2\n");
             }
             self.bot
                 .begin(
@@ -894,7 +951,17 @@ fn settings_probe(
             loop {
                 match self.bot.poll(self.host).map_err(|_| musha_fs::Error::Io)? {
                     None => core::hint::spin_loop(),
-                    Some(true) => return Ok(()),
+                    Some(true) => {
+                        #[cfg(feature = "settings-write-partial-metadata")]
+                        if let Some(fat) = self.fat_lbas {
+                            for (index, sector) in fat.into_iter().enumerate() {
+                                if sector == lba {
+                                    self.fat_completed[index] = true;
+                                }
+                            }
+                        }
+                        return Ok(());
+                    }
                     Some(false) => break,
                 }
             }
@@ -948,6 +1015,10 @@ fn settings_probe(
         blocks,
         size,
         protected,
+        #[cfg(feature = "settings-write-partial-metadata")]
+        fat_lbas: None,
+        #[cfg(feature = "settings-write-partial-metadata")]
+        fat_completed: [false; 2],
     };
     let mut record = [0; 4096];
     musha_platform::pairing::encode_state(
@@ -973,6 +1044,27 @@ fn settings_probe(
         return Err("CONFIG WRITE ALLOWED");
     }
     crate::debug(b"MUSHA: CONFIG_WRITE_REFUSED\n");
+    #[cfg(feature = "settings-write-partial-metadata")]
+    {
+        if size != 4096 {
+            return Err("SETTINGS PARTIAL SECTOR SIZE");
+        }
+        let plan = musha_fs::settings::preflight(
+            blocks,
+            size as usize,
+            musha_fs::settings::OWNED_NAME,
+            4096,
+            false,
+            &mut |lba, bytes| musha_fs::settings::Disk::read(&mut image, lba, bytes),
+        )
+        .map_err(|_| "SETTINGS PARTIAL PLAN")?;
+        if !plan.created || plan.clusters().len() != 1 {
+            return Err("SETTINGS PARTIAL LAYOUT");
+        }
+        let target = *plan.fsinfo_sectors().first().ok_or("SETTINGS PARTIAL FSINFO")?;
+        image.fat_lbas = Some(plan.fat_sectors(plan.clusters()[0]));
+        image.bot.partial_metadata_lba = Some(target.try_into().map_err(|_| "SETTINGS PARTIAL LBA")?);
+    }
     crate::debug(b"MUSHA: SETTINGS_WRITE_BEGIN\n");
     let first = musha_fs::settings::write_owned(
         &mut image,
