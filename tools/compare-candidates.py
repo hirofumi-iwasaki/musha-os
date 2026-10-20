@@ -81,11 +81,22 @@ def compare(left, right, mode):
     allowed = True
     changed = []
     if mode == 'docs-only':
-        changed = subprocess.check_output(
-            ['git', 'diff', '--name-only', a['source_commit'], b['source_commit']],
+        # A documentation successor must be downstream of the runtime commit.
+        # A reversed comparison or a different documentation branch is not a
+        # successor even when the changed paths and runtime bytes happen to match.
+        ancestry = subprocess.run(
+            ['git', 'merge-base', '--is-ancestor', a['source_commit'], b['source_commit']],
             cwd=ROOT,
-            text=True,
-        ).splitlines()
+            check=False,
+        )
+        if ancestry.returncode not in (0, 1):
+            raise ValueError('Unable to verify docs-only source ancestry')
+        if ancestry.returncode == 0 and a['source_commit'] != b['source_commit']:
+            changed = subprocess.check_output(
+                ['git', 'diff', '--name-only', a['source_commit'], b['source_commit']],
+                cwd=ROOT,
+                text=True,
+            ).splitlines()
         allowed = bool(changed) and all(((n == 'README.md' or n.startswith('docs/')) and n not in {'docs/' + name for name in USER_DOCS} for n in changed))
     passed = efi if mode == 'efi' else same and all_assets and all_runtime if mode == 'same-source' else bool(complete and all_runtime and allowed)
     return {
