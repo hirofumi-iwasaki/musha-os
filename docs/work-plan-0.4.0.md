@@ -4,6 +4,10 @@
 
 Status: owner-approved plan aligned to scope decisions, 2026-10-15. The [17-goal scope](release-scope-0.4.0.md) is authoritative; ✔ decisions are not proposals. Stage1 is committed as `35545a6`; stage2 CONFIG/log/display/normal timing is committed as `f2d3f30`, with [full local regression](stage2-full-regression-0.4.0.md) and [earlier checks](stage2-0.4.0-results.md). Stage3 local implementation and [full regression evidence](stage3-0.4.0-progress.md) accompany this owner-authorized implementation commit. Physical and formal release gates remain open. See [code review](scope-review-0.4.0.md) and [formatted-media procedure](formatted-media-boot-verification.md). Published assets/tags and historical hardware records stay unchanged. Reference devices and approved keys are the scope's reference-device table.
 
+Current-status note (2026-10-20): the stage order and owner scope below remain authoritative; some stage6 pending statements predate later implementation and IMG7762/7763/7764/7768/7772 observations. Use the [dated offline audit](offline-execution-0.4.0-20261020.md) for the implemented/local/physical split. Bluetooth is paused and release acceptance remains open.
+
+現状注記（2026-10-20）：以下の工程順と所有者scopeは維持します。一部の工程6未実装記述は後続実装・実機観測より古いため、[日付付き監査](offline-execution-0.4.0-20261020.md)で実装・local・実機の区別を確認してください。Bluetoothは保留、公開受入は未完です。
+
 Owner addition2026-10-15 below supersedes the old CONFIG-clearing wording. The owner supplied the matching scope edit and approved recording it separately from documentation and diagnostic code. Stage3 is committed/pushed as `b745e47`; the following scope/documentation/diagnostic commits are approved locally, with no further push authorized. See [SETTINGS](settings.md), [device matrix](device-support.md) and [LAN plan](lan-plan-0.4.0.md).
 
 Stage4 has a [first Rust checkpoint](stage4-0.4.0-progress.md) and [implemented local r2 I/O/mouse checkpoint](stage4-r2-0.4.0-progress.md). [Full local regression](stage4-local-verification-0.4.0.md) passes; separate third-controller input collection and hardware acceptance remain open.

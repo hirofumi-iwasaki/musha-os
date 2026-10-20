@@ -4,6 +4,10 @@
 
 Status: **owner decisions complete (2026-10-15); implementation not started.** Revised from the 2026-10-14 draft after the owner answered every open point and the code review in [scope-review-0.4.0.md](scope-review-0.4.0.md). Items marked ✔ are owner decisions. The [work plan](work-plan-0.4.0.md) orders the work. Branch: `release/0.4.0`; `VERSION` is raised to `0.4.0` in the first implementation commit (crate versions unchanged).
 
+Current-status note (2026-10-20): the line above records the October 15 decision checkpoint. Implementation and local tests have since progressed; see the dated [offline status audit](offline-execution-0.4.0-20261020.md). Required goals and acceptance conditions below remain the owner's decisions, and local evidence is not final acceptance.
+
+現状注記（2026-10-20）：上の「実装未着手」は10月15日の決定時点の記録です。その後の実装・ローカル試験は[日付付き監査](offline-execution-0.4.0-20261020.md)を参照。以下の必須目標と受入条件は所有者判断のままで、ローカル結果を最終受入へ読み替えません。
+
 ### Direction
 
 v0.3.0 proved that a user-built C program runs at Ring 3 from a USB drive. v0.4.0 turns the drive and the session into a **small, configurable application environment**:

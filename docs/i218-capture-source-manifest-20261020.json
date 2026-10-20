@@ -1,0 +1,73 @@
+{
+  "head": "1c40279cdba3d19f1a5c4c1e00a320b39e5fab0b",
+  "branch": "release/0.4.0",
+  "stage": "unstaged only",
+  "scope_source": {
+    "boot/Cargo.toml": {
+      "current_sha256": "33bdba3eea829053bd6e67386d6c1c7d571c81706d76c2bc1ef7eff7152b3550",
+      "saved_20261017_sha256": "f26351cd952f27cda922b0c468e03abf5a8481691795847a65cbe04ed597e9b0",
+      "matches_saved": false
+    },
+    "boot/src/net.rs": {
+      "current_sha256": "0c51945711e9af1bc938ecb9c42b6644a9c16144b5f73431e389140867cbe2da",
+      "saved_20261017_sha256": "0c51945711e9af1bc938ecb9c42b6644a9c16144b5f73431e389140867cbe2da",
+      "matches_saved": true
+    },
+    "boot/src/net/i218.rs": {
+      "current_sha256": "b396067f3dab69106bbd3fe28e888d229d71f42dc5ad503491679de7a8299329",
+      "saved_20261017_sha256": "b396067f3dab69106bbd3fe28e888d229d71f42dc5ad503491679de7a8299329",
+      "matches_saved": true
+    },
+    "boot/src/net/i218_capture.rs": {
+      "current_sha256": "f0930b27d74412174d58ce2d816a526e6aa4131c63ecdcfc01931c6768fd6017",
+      "saved_20261017_sha256": "f0930b27d74412174d58ce2d816a526e6aa4131c63ecdcfc01931c6768fd6017",
+      "matches_saved": true
+    },
+    "boot/src/runtime.rs": {
+      "current_sha256": "f07b284530d7c025deb29ec40426ebd98965026a2baf42d3f94c296361f962d3",
+      "saved_20261017_sha256": "78d8d4a031854811f35ecb13cbedcfbeb157578c4e06e4209f3d09f1bb6e3e40",
+      "matches_saved": false
+    },
+    "net/src/i218.rs": {
+      "current_sha256": "754ff5e5ad136c532c26785a14df549696efdc3e6bf93e193a62b9a737c498c0",
+      "saved_20261017_sha256": "754ff5e5ad136c532c26785a14df549696efdc3e6bf93e193a62b9a737c498c0",
+      "matches_saved": true
+    },
+    "net/src/i218/capture.rs": {
+      "current_sha256": "457ceec94544572f4aa2a9494daf8714634c4742ee29a594be4065c7fcb56c64",
+      "saved_20261017_sha256": "457ceec94544572f4aa2a9494daf8714634c4742ee29a594be4065c7fcb56c64",
+      "matches_saved": true
+    },
+    "net/src/i218/capture_policy.rs": {
+      "current_sha256": "8d7ee6efe972b8efec6f52f881037d8bef6579eb0d59c62c98b41615c86c11de",
+      "saved_20261017_sha256": "8d7ee6efe972b8efec6f52f881037d8bef6579eb0d59c62c98b41615c86c11de",
+      "matches_saved": true
+    },
+    "net/tests/i218_capture.rs": {
+      "current_sha256": "bdf4f139ad73c8017e5119dc5dc768de64bce10b8a79eef43ebdcf3d6cdfa0d6",
+      "saved_20261017_sha256": "bdf4f139ad73c8017e5119dc5dc768de64bce10b8a79eef43ebdcf3d6cdfa0d6",
+      "matches_saved": true
+    },
+    "platform/tests/i218_capture_display.rs": {
+      "current_sha256": "a8123b8cdc29de4a7cc1ffcdba85da861e8476849e614b0c51d736b6d7312a44",
+      "saved_20261017_sha256": "a8123b8cdc29de4a7cc1ffcdba85da861e8476849e614b0c51d736b6d7312a44",
+      "matches_saved": true
+    }
+  },
+  "tests": {
+    "capture_core_integration": 13,
+    "capture_policy": 3,
+    "display": 1,
+    "capture_qemu_current": true,
+    "normal_82574_qemu_current": true
+  },
+  "artifacts": {
+    "capture_qemu_efi_sha256": "2491a3a031d8a53bd25b86d4b38f263b6e61b11f920c43573ef1b660f7e060be",
+    "normal_qemu_efi_sha256": "a49d3415bd4db72120ad198a4cda44bb6950456bab702e3da6d01385870c0778"
+  },
+  "limits": [
+    "QEMU has no I218 NVM/PHY",
+    "LCD NVM data/address pairs are not a complete per-target PHY readback",
+    "physical software LCD/OEM stage2 pending"
+  ]
+}

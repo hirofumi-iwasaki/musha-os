@@ -2,6 +2,10 @@
 
 Status: current（2026-10-15、第3回ローカル監査。実Bluetooth未検証）。
 
+Current-status note (2026-10-20): later commits `515975d` and `1c40279` add verified SETTINGS write-through policy, LE PB framing, bounded diagnostics, viewer/input and re-registration/session behavior; physical IMG7762/7763/7764 reached pairing/save, stored reconnect and 301 input reports respectively, while IMG7768/7772 had no fresh Pairing Response. This is a dated correction to older pending wording below, not Bluetooth acceptance. Work is paused by the owner; see the [offline audit](offline-execution-0.4.0-20261020.md).
+
+現状注記（2026-10-20）：後続commit `515975d`/`1c40279`でSETTINGS保存、LE PB、診断、viewer/input、再登録/session処理が進みました。実機7762/7763/7764の到達と7768/7772の無応答は別に保持します。以下の旧pending表記を当時の記録として残し、Bluetoothの受入完了とはしません。所有者指示で作業を保留中です。
+
 ## Current v0.4.0 scope and limitations
 
 Earlier checkpoints retain their original evidence and pending lists. USB stream framing, shared ACL buffers and stored SC reconnect listed there have since been implemented locally; this section and the later continuation describe the current state. Earlier counts are not added to this run.

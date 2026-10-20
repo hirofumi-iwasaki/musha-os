@@ -2,6 +2,10 @@
 
 Status: current
 
+Current-status note (2026-10-20): this is a historical preparation plan from before NUC5 delivery, not today's work queue. The [v0.4 work plan](work-plan-0.4.0.md) and [offline audit](offline-execution-0.4.0-20261020.md) describe current evidence and remaining gates.
+
+現状注記（2026-10-20）：本書はNUC5到着前の歴史的準備記録です。現在の作業順と残る実機条件は[0.4作業計画](work-plan-0.4.0.md)と[オフライン監査](offline-execution-0.4.0-20261020.md)を参照してください。
+
 Historical filename note (2026-10-14): recorded screens used `MUSHA.TXT`; new candidates use `DIAGNOSE.TXT`. Historical observations below are unchanged.
 
 当時のファイル名は `MUSHA.TXT`。2026-10-14以降の候補は `DIAGNOSE.TXT` を使用します。過去の実機・検証記録は変更していません。
