@@ -61,6 +61,39 @@ class DistributionTests(unittest.TestCase):
             with self.assertRaises(OSError):update.update(z,v,self.root/'backup',True)
         self.assertEqual((v/'EFI/BOOT/BOOTX64.EFI').read_bytes(),b'old');self.assertEqual(list(v.rglob('.musha-update-*')),[])
         self.assertIn('error',json.loads((self.root/'backup/update-result.json').read_text()))
+    def test_later_replacement_failure_records_partial_progress_and_safe_rerun(self):
+        old=b'old EFI'; z=self.zip(previous={'EFI/BOOT/BOOTX64.EFI':[hashlib.sha256(old).hexdigest()]})
+        v=self.volume(old); (v/'SETTINGS').mkdir(); secret=v/'SETTINGS/SECRET.BIN';secret.write_bytes(b'private')
+        old_secret=secret.read_bytes(); old_secret_mtime=secret.stat().st_mtime_ns
+        manifest,payload=read_zip(z)
+        original_replace=update.os.replace; calls=[]
+        def fail_second(source,destination):
+            calls.append(Path(destination).relative_to(v).as_posix())
+            if len(calls)==2:raise OSError('injected second replacement')
+            return original_replace(source,destination)
+        backup=self.root/'backup'
+        with patch.object(update.os,'replace',side_effect=fail_second):
+            with self.assertRaisesRegex(OSError,'second replacement'):update.update(z,v,backup,True)
+        self.assertEqual(len(calls),2)
+        first,second=calls
+        report=json.loads((backup/'update-result.json').read_text())
+        self.assertFalse(report['applied']);self.assertEqual(report['completed'],[first])
+        self.assertEqual(report['error'],'injected second replacement')
+        self.assertEqual((v/first).read_bytes(),payload[first])
+        if second=='EFI/BOOT/BOOTX64.EFI':
+            self.assertEqual((v/second).read_bytes(),old)
+        else:
+            self.assertFalse((v/second).exists())
+        self.assertEqual((backup/'EFI/BOOT/BOOTX64.EFI').read_bytes(),old)
+        self.assertEqual(report['backups']['EFI/BOOT/BOOTX64.EFI']['sha256'],hashlib.sha256(old).hexdigest())
+        self.assertEqual(secret.read_bytes(),old_secret);self.assertEqual(secret.stat().st_mtime_ns,old_secret_mtime)
+        self.assertEqual(list(v.rglob('.musha-update-*')),[])
+        rerun=update.update(z,v,self.root/'retry-backup',True)
+        self.assertTrue(rerun['applied']);self.assertNotIn(first,rerun['changed'])
+        self.assertEqual(set(rerun['changed']),set(payload)-{first})
+        self.assertEqual(set(rerun['verified-files']),set(payload))
+        for name,data in payload.items():self.assertEqual((v/name).read_bytes(),data)
+        self.assertEqual(secret.read_bytes(),old_secret);self.assertEqual(secret.stat().st_mtime_ns,old_secret_mtime)
     def rewrite(self,name,entries,comment):
         path=self.root/name
         with zipfile.ZipFile(path,'w') as z:
