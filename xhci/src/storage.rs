@@ -377,14 +377,16 @@ mod tests {
             assert_eq!(&b[17..21], &0x12345678u32.to_be_bytes());
             assert_eq!(&b[22..24], &[0, 1]);
         }
-        assert!(cbw(
-            2,
-            Command::Write {
-                lba: 0,
-                sector_bytes: 1024
-            }
-        )
-        .is_none());
+        assert!(
+            cbw(
+                2,
+                Command::Write {
+                    lba: 0,
+                    sector_bytes: 1024
+                }
+            )
+            .is_none()
+        );
         let (b, n) = cbw(3, Command::SynchronizeCache).unwrap();
         assert_eq!((n, b[12], b[14], b[15]), (0, 0, 10, 0x35));
     }

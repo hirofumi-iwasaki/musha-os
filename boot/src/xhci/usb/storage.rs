@@ -1,6 +1,6 @@
 // Copyright 2026 Hirofumi Iwasaki
 // SPDX-License-Identifier: Apache-2.0
-use super::{control, dma_word, publish, read_word, Host, TRBS};
+use super::{Host, TRBS, control, dma_word, publish, read_word};
 use musha_xhci::storage::transaction::{Phase, Progress, Transaction};
 use musha_xhci::storage::{self, Command, Endpoint, Storage};
 struct Pipe {
@@ -158,8 +158,10 @@ impl Bot {
             delayed_until: None,
             #[cfg(feature = "settings-write-partial-metadata")]
             partial_metadata_lba: match command {
-                Command::Write { lba, sector_bytes: 4096 }
-                    if self.partial_metadata_lba == Some(lba) => Some(lba),
+                Command::Write {
+                    lba,
+                    sector_bytes: 4096,
+                } if self.partial_metadata_lba == Some(lba) => Some(lba),
                 _ => None,
             },
         });
@@ -331,7 +333,12 @@ impl Bot {
         })();
         match result {
             Ok(()) => {
-                crate::bootlog::device("bluetooth",format_args!("SETTINGS cache WCE=0 confirmed; synchronization omitted (device-reported write-through)"));
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "SETTINGS cache WCE=0 confirmed; synchronization omitted (device-reported write-through)"
+                    ),
+                );
                 crate::debug(b"MUSHA: SETTINGS_CACHE_WRITE_THROUGH\n");
             }
             Err(reason) => {
@@ -1061,9 +1068,13 @@ fn settings_probe(
         if !plan.created || plan.clusters().len() != 1 {
             return Err("SETTINGS PARTIAL LAYOUT");
         }
-        let target = *plan.fsinfo_sectors().first().ok_or("SETTINGS PARTIAL FSINFO")?;
+        let target = *plan
+            .fsinfo_sectors()
+            .first()
+            .ok_or("SETTINGS PARTIAL FSINFO")?;
         image.fat_lbas = Some(plan.fat_sectors(plan.clusters()[0]));
-        image.bot.partial_metadata_lba = Some(target.try_into().map_err(|_| "SETTINGS PARTIAL LBA")?);
+        image.bot.partial_metadata_lba =
+            Some(target.try_into().map_err(|_| "SETTINGS PARTIAL LBA")?);
     }
     crate::debug(b"MUSHA: SETTINGS_WRITE_BEGIN\n");
     let first = musha_fs::settings::write_owned(
