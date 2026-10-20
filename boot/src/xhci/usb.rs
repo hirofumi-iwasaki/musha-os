@@ -977,17 +977,24 @@ pub(super) fn enumerate(
     if !discovery && !found_keyboard && active_storage.is_none() {
         tick(super::AppEvent::Ready(found_keyboard))?;
     }
-    if !discovery && !found_keyboard && active_mouse.is_none() {
+    let mut retained_mouse = false;
+    if !discovery && !found_keyboard {
         if let Some(device) = active_storage.as_mut() {
             let mut session = device.prepared.take().map(file::Session::new).transpose()?;
+            let mut mouse_state = PointerState::default();
+            retained_mouse = active_mouse.is_some();
             let mut poll = |tick: &mut super::Tick<'_>| {
                 bluetooth::poll(host, tick)?;
                 device.pairing_step(host)?;
                 if let Some(session) = session.as_mut() {
-                    session.step(host, device, tick)
-                } else {
-                    Ok(false)
+                    if session.step(host, device, tick)? {
+                        return Ok(true);
+                    }
                 }
+                if let Some(mouse) = active_mouse.as_ref() {
+                    poll_mouse(host, mouse, &mut mouse_state, tick)?;
+                }
+                Ok(false)
             };
             tick(super::AppEvent::Retained(&mut poll))?;
         }
@@ -1039,7 +1046,7 @@ pub(super) fn enumerate(
         }
     }
     if let Some(mouse) = active_mouse {
-        if !discovery && !found_keyboard {
+        if !discovery && !found_keyboard && !retained_mouse {
             run_pointer(host, &mouse, active_storage.as_mut(), tick)?;
         }
         host.command(0, (10 << 10) | ((mouse.slot as u32) << 24), mouse.slot)?;

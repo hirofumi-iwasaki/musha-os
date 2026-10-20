@@ -20,7 +20,10 @@ p.add_argument('--expect', choices=['normal', 'denied', 'fault', 'overflow', 're
 p.add_argument('--mouse-only', action='store_true')
 p.add_argument('--mouse', action='store_true')
 p.add_argument('--tablet', action='store_true')
+p.add_argument('--input-topology', choices=['same', 'split', 'mouse-storage', 'keyboard-storage'], default='same')
 a = p.parse_args()
+if a.input_topology != 'same' and (not a.mouse or a.mouse_only or a.tablet):
+    p.error('separate input topologies require --mouse and a keyboard, without --tablet')
 out = a.output.resolve()
 out.mkdir(parents=True, exist_ok=False)
 report = {'scope': 'QEMU r2 real syscalls, no physical USB acceptance', 'passed': False}
@@ -37,15 +40,22 @@ try:
     esp.mkdir(parents=True)
     shutil.copyfile(efi, esp / 'BOOTX64.EFI')
     shutil.copyfile(a.firmware_dir / 'edk2-i386-vars.fd', out / 'vars.fd')
-    sock = ROOT / 'out' / ('r2-' + hashlib.sha256(str(out).encode()).hexdigest()[:10] + '.sock')
+    sock = Path('/tmp') / ('r2-' + hashlib.sha256(str(out).encode()).hexdigest()[:10] + '.sock')
     sock.unlink(missing_ok=True)
     debug = out / 'debug.log'
     cmd = [a.qemu, '-machine', 'q35,accel=tcg', '-cpu', 'qemu64,+syscall,+nx', '-m', '256M', '-drive', f'if=pflash,format=raw,readonly=on,file={a.firmware_dir}/edk2-x86_64-code.fd', '-drive', f'if=pflash,format=raw,file={out}/vars.fd', '-drive', f'if=ide,format=raw,file=fat:rw:{out}/esp', '-device', 'qemu-xhci,id=x', '-device', 'usb-kbd,id=k,bus=x.0', '-drive', f'if=none,id=data,format=raw,readonly=on,file={out}/data.img', '-device', 'usb-storage,drive=data,bus=x.0', '-display', 'none', '-vga', 'std', '-debugcon', f'file:{debug}', '-qmp', f'unix:{sock},server=on,wait=off', '-no-reboot']
     if a.mouse_only:
         i = cmd.index('usb-kbd,id=k,bus=x.0')
         del cmd[i - 1:i + 1]
+    if a.input_topology in ('split', 'mouse-storage'):
+        i = cmd.index('usb-kbd,id=k,bus=x.0')
+        cmd[i] = 'usb-kbd,id=k,bus=kx.0'
+        cmd[i - 1:i - 1] = ['-device', 'qemu-xhci,id=kx']
+    if a.input_topology in ('split', 'keyboard-storage'):
+        i = cmd.index('-display')
+        cmd[i:i] = ['-device', 'qemu-xhci,id=mx']
     if a.mouse:
-        cmd += ['-device', 'usb-mouse,bus=x.0']
+        cmd += ['-device', 'usb-mouse,bus=' + ('mx.0' if a.input_topology in ('split', 'keyboard-storage') else 'x.0')]
     if a.tablet:
         cmd += ['-device', 'usb-tablet,bus=x.0']
     (out / 'command.json').write_text(json.dumps(cmd, indent=2) + '\n')
@@ -162,12 +172,22 @@ try:
                         break
                     time.sleep(.05)
                 assert 'APP_ARENA_SCRUBBED VIEWER_RESTART' in text, text
-                assert 'VIEWER_FRAME ' in text.split('APP_ARENA_SCRUBBED VIEWER_RESTART')[-1], text
+                returned = text.split('APP_ARENA_SCRUBBED VIEWER_RESTART')[-1]
+                assert 'VIEWER_FRAME ' in returned, text
+                assert 'FILE README.TXT BYTES ' in returned and 'FAT32_FILE_OK BYTES=' in returned, text
+                assert 'LIVE_FILE_API_READY' in returned, text
+                if a.input_topology != 'same':
+                    live = text.rsplit('MUSHA: APP_INPUT_LIVE', 1)[-1].split('APP_ARENA_SCRUBBED VIEWER_RESTART')[0]
+                    assert 'APP_INPUT_STOPPED DMA_DISABLED' in live, text
+                    stopped = re.findall(r'MUSHA: XHCI_QUIESCED BDF=([0-9A-F]+) DMA_DISABLED', live)
+                    expected = 3 if a.input_topology == 'split' else 2
+                    assert len(stopped) == expected and len(set(stopped)) == expected, text
+                    assert 'QUIESCE FAILED' not in text, text
                 if a.expect == 'fault':
                     assert 'APP_RECOVERED KIND=0000000000000001 DETAIL=0000000000000006' in text,text
                 if a.expect != 'fault':
                     assert 'RING3_ELF_EXIT_STATUS=0000000000000000' in text, text
-            report.update(passed=True, elf_sha256=hashlib.sha256(a.elf.read_bytes()).hexdigest(), efi_sha256=hashlib.sha256(efi.read_bytes()).hexdigest(), mouse=a.mouse, tablet=a.tablet, expected=a.expect)
+            report.update(passed=True, elf_sha256=hashlib.sha256(a.elf.read_bytes()).hexdigest(), efi_sha256=hashlib.sha256(efi.read_bytes()).hexdigest(), mouse=a.mouse, tablet=a.tablet, input_topology=a.input_topology, expected=a.expect)
             print('PASS r2 real TIME/WAIT/INPUT ' + a.elf.name, flush=True)
         finally:
             proc.terminate()

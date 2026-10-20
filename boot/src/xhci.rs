@@ -346,32 +346,92 @@ fn probe(
     );
     result
 }
-// Keep the storage Host and its exclusive DMA slice alive on the outer frame.
-// A nested input Host has a disjoint controller/DMA slice. Every keyboard cycle
-// advances the outer file transport once; errors unwind and quiesce both Hosts.
+// An input Host can be nested under the keyboard poll while the storage Host
+// remains on the outer frame. Each Host owns a disjoint controller/DMA slice;
+// errors unwind through every probe and its confirmed stop.
+fn live_mouse_probe(
+    info: &BootInfo,
+    index: usize,
+    keyboard_poll: &mut dyn FnMut(&mut Tick<'_>) -> Result<bool, &'static str>,
+    tick: &mut Tick<'_>,
+) -> Result<(), &'static str> {
+    let mut bridge = |event: AppEvent<'_>| match event {
+        // The keyboard already published input readiness to the application.
+        AppEvent::Ready(false) => Ok(false),
+        AppEvent::InputPoll(mouse_poll) => {
+            let mut combined_poll = |collector: &mut Tick<'_>| {
+                let mut combined = |event: AppEvent<'_>| match event {
+                    // run_pointer emits one idle tick per mouse poll. Advance
+                    // the keyboard exactly once while forwarding both devices
+                    // to the same guest input collector.
+                    AppEvent::Keys(_) => keyboard_poll(collector),
+                    AppEvent::Retained(_) | AppEvent::InputPoll(_) => Err("NESTED INPUT LOOP"),
+                    other => collector(other),
+                };
+                mouse_poll(&mut combined)
+            };
+            if !tick(AppEvent::InputPoll(&mut combined_poll))? {
+                while !combined_poll(tick)? {}
+            }
+            Ok(true)
+        }
+        AppEvent::Retained(_) => Err("NESTED STORAGE LOOP"),
+        other => tick(other),
+    };
+    let saved = crate::diagnostics::suspend_controller();
+    let result = probe(info, info.xhcis.entries[index], index, false, &mut bridge);
+    crate::diagnostics::resume_controller(saved);
+    if !result?.pointer {
+        return Err("MOUSE DISCONNECTED");
+    }
+    Ok(())
+}
 fn live_probe(
     info: &BootInfo,
     index: usize,
     keyboard: Option<usize>,
+    pointer: Option<usize>,
     tick: &mut Tick<'_>,
 ) -> Result<Probe, &'static str> {
     let mut bridge = |event: AppEvent<'_>| {
         if let AppEvent::Retained(poll) = event {
             if let Some(k) = keyboard.filter(|&k| k != index) {
                 crate::debug(b"MUSHA: CROSS_CONTROLLER_LIVE\n");
-                let mut input = |event: AppEvent<'_>| {
-                    if matches!(event, AppEvent::Keys(_)) && poll(tick)? {
-                        return Ok(true);
+                let mut input = |event: AppEvent<'_>| match event {
+                    AppEvent::Retained(_) => Err("NESTED STORAGE LOOP"),
+                    AppEvent::InputPoll(keyboard_poll) => {
+                        let mut with_storage = |collector: &mut Tick<'_>| {
+                            if poll(collector)? {
+                                Ok(true)
+                            } else {
+                                keyboard_poll(collector)
+                            }
+                        };
+                        if let Some(m) = pointer.filter(|&m| m != index && m != k) {
+                            live_mouse_probe(info, m, &mut with_storage, tick)?;
+                            return Ok(true);
+                        }
+                        if !tick(AppEvent::InputPoll(&mut with_storage))? {
+                            while !with_storage(tick)? {}
+                        }
+                        Ok(true)
                     }
-                    if matches!(event, AppEvent::Retained(_)) {
-                        return Err("NESTED STORAGE LOOP");
-                    }
-                    tick(event)
+                    other => tick(other),
                 };
                 let saved = crate::diagnostics::suspend_controller();
                 let result = probe(info, info.xhcis.entries[k], k, false, &mut input);
                 crate::diagnostics::resume_controller(saved);
                 result?;
+            } else if let Some(m) = pointer.filter(|&m| m != index) {
+                tick(AppEvent::Ready(false))?;
+                let mut with_idle = |collector: &mut Tick<'_>| {
+                    if poll(collector)? {
+                        Ok(true)
+                    } else {
+                        collector(AppEvent::Keys(&[]))
+                    }
+                };
+                live_mouse_probe(info, m, &mut with_idle, tick)?;
             } else {
                 tick(AppEvent::Ready(false))?;
                 let mut clock = acpi::Time::new(info.timer)?;
@@ -380,15 +440,30 @@ fn live_probe(
                 } else {
                     u64::MAX
                 };
-                while clock.now()? < end {
-                    if poll(tick)? || tick(AppEvent::Keys(&[]))? {
-                        break;
+                let mut with_idle = |collector: &mut Tick<'_>| {
+                    if poll(collector)? {
+                        Ok(true)
+                    } else {
+                        collector(AppEvent::Keys(&[]))
                     }
+                };
+                if !tick(AppEvent::InputPoll(&mut with_idle))? {
+                    while clock.now()? < end && !with_idle(tick)? {}
                 }
             }
             Ok(true)
         } else {
-            tick(event)
+            match event {
+                AppEvent::InputPoll(keyboard_poll) => {
+                    if let Some(m) = pointer.filter(|&m| m != index) {
+                        live_mouse_probe(info, m, keyboard_poll, tick)?;
+                        Ok(true)
+                    } else {
+                        tick(AppEvent::InputPoll(keyboard_poll))
+                    }
+                }
+                other => tick(other),
+            }
         }
     };
     probe(info, info.xhcis.entries[index], index, false, &mut bridge)
@@ -568,7 +643,7 @@ pub(crate) fn run_session(
             crate::debug(b"\n");
         }
         if let Some(index) = readable_storage.or(keyboard).or(pointer).or(storage) {
-            live_probe(info, index, keyboard.or(pointer), tick).map(|_| ())
+            live_probe(info, index, keyboard, pointer, tick).map(|_| ())
         } else {
             tick(AppEvent::Ready(false))?;
             if success { Ok(()) } else { Err(last_error) }
@@ -1065,6 +1140,9 @@ fn command_probe(
     }
     crate::diagnostics::usb_stage("STOPPED DMA DISABLED");
     crate::debug(b"MUSHA: XHCI_QUIESCED DMA_DISABLED\n");
+    crate::debug(b"MUSHA: XHCI_QUIESCED BDF=");
+    crate::debug(&crate::cpu::hex(controller.bdf() as u64));
+    crate::debug(b" DMA_DISABLED\n");
     if !unsafe { usb::bluetooth::release_stopped(controller.bdf()) } {
         return Err("BT LEASE QUARANTINED");
     }
