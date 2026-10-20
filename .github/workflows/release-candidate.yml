@@ -122,6 +122,9 @@ jobs:
           python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --keyboard-wrap --fat-fixture gpt --extra-xhci --devices-second
           python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --fat-fixture gpt --hub-depth 5 --keyboard-usb-version 1
           python3 tools/smoke-qemu.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --keyboard-exit --extra-xhci --keyboard-second
+      - name: QEMU offline boundary regression
+        run: |
+          python3 tools/offline-ci-regression.py --firmware-dir "$MUSHA_FIRMWARE_DIR" --output out/ci/offline-boundaries
       - name: QEMU live storage with input and network
         run: |
           cargo build --locked --release --target x86_64-unknown-uefi -p musha-boot --features live-storage-probe,input-persistent
@@ -251,6 +254,9 @@ jobs:
           name: test-records
           path: |
             out/ci/*.txt
+            out/ci/offline-boundaries/timings.json
+            out/ci/offline-boundaries/*/*.json
+            out/ci/offline-boundaries/*/*.log
             out/hid-memory/report.json
             out/hid-memory/*.s
             out/qemu-*/debug.log
