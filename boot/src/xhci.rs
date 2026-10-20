@@ -1288,7 +1288,15 @@ pub(crate) fn quiesce_app(info: &BootInfo) -> bool {
         unsafe {
             pci::disable_dma(*c);
         }
-        ok &= halted.is_ok() && unsafe { pci::read(c.bus, c.device, c.function, 4) } & 4 == 0;
+        let stopped = halted.is_ok() && unsafe { pci::read(c.bus, c.device, c.function, 4) } & 4 == 0;
+        crate::debug(if stopped {
+            b"MUSHA: APP_INPUT_QUIESCED BDF="
+        } else {
+            b"MUSHA: APP_INPUT_QUIESCE_FAILED BDF="
+        });
+        crate::debug(&crate::cpu::hex(c.bdf() as u64));
+        crate::debug(b"\n");
+        ok &= stopped;
     }
     ok
 }

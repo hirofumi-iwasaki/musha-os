@@ -16,7 +16,7 @@ p.add_argument('--elf', type=Path, required=True)
 p.add_argument('--output', type=Path, required=True)
 p.add_argument('--firmware-dir', type=Path, required=True)
 p.add_argument('--qemu', default='qemu-system-x86_64')
-p.add_argument('--expect', choices=['normal', 'denied', 'fault', 'overflow', 'removed', 'gamepad', 'bt-removed', 'live-input'], default='normal')
+p.add_argument('--expect', choices=['normal', 'denied', 'fault', 'overflow', 'removed', 'gamepad', 'bt-removed', 'live-input', 'stop-failure'], default='normal')
 p.add_argument('--mouse-only', action='store_true')
 p.add_argument('--mouse', action='store_true')
 p.add_argument('--tablet', action='store_true')
@@ -30,7 +30,7 @@ report = {'scope': 'QEMU r2 real syscalls, no physical USB acceptance', 'passed'
 try:
     env = dict(os.environ, CARGO_TARGET_DIR=str(out / 'target'), MUSHA_RING3_CASE='normal')
     with (out / 'build.log').open('w') as log:
-        subprocess.run(['cargo', 'build', '--locked', '--release', '--target', 'x86_64-unknown-uefi', '-p', 'musha-boot', '--features', 'bluetooth-gamepad-probe' if a.expect in ('gamepad','live-input') else 'bluetooth-loan-restart-probe' if a.expect=='bt-removed' else 'external-elf-probe'], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(['cargo', 'build', '--locked', '--release', '--target', 'x86_64-unknown-uefi', '-p', 'musha-boot', '--features', 'bluetooth-gamepad-probe' if a.expect in ('gamepad','live-input') else 'bluetooth-loan-restart-probe' if a.expect=='bt-removed' else 'app-recovery-stop-failure' if a.expect=='stop-failure' else 'external-elf-probe'], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
     efi = out / 'target/x86_64-unknown-uefi/release/musha-boot.efi'
     spec = importlib.util.spec_from_file_location('external', ROOT / 'tools/smoke-external-elf.py')
     external = importlib.util.module_from_spec(spec)
@@ -85,7 +85,7 @@ try:
                 call('qmp_capabilities')
                 while time.monotonic() < end:
                     text = debug.read_text() if debug.exists() else ''
-                    if {'live-input':'LIVE INPUT READY','bt-removed':'R2 INPUT READY','gamepad':'R2 GAMEPAD READY','normal': 'R2 INPUT READY', 'removed': 'R2 INPUT READY', 'overflow': 'R2 OVERFLOW READY', 'denied': 'R2 PERMISSIONS OK', 'fault': 'R2 FAULT READY'}[a.expect] in text:
+                    if {'live-input':'LIVE INPUT READY','bt-removed':'R2 INPUT READY','gamepad':'R2 GAMEPAD READY','normal': 'R2 INPUT READY', 'stop-failure': 'R2 INPUT READY', 'removed': 'R2 INPUT READY', 'overflow': 'R2 OVERFLOW READY', 'denied': 'R2 PERMISSIONS OK', 'fault': 'R2 FAULT READY'}[a.expect] in text:
                         break
                     if 'EXTERNAL_APP_EXIT' in text or 'EXCEPTION VECTOR=' in text:
                         raise RuntimeError(text)
@@ -111,7 +111,7 @@ try:
                         if 'APP_INPUT_STOPPED DMA_DISABLED' in text:break
                         time.sleep(.05)
                     assert 'R2 GAMEPAD OK' in text and 'BT_GAMEPAD_SOFTWARE_FIXTURE_OK' in text and 'APP_INPUT_STOPPED DMA_DISABLED' in text,text
-                elif a.expect == 'normal':
+                elif a.expect in ('normal', 'stop-failure'):
                     if a.tablet:
                         call('input-send-event', {'events': [{'type': 'abs', 'data': {'axis': 'x', 'value': 10000}}, {'type': 'abs', 'data': {'axis': 'y', 'value': 20000}}]})
                     if a.mouse:
@@ -125,12 +125,16 @@ try:
                     end = time.monotonic() + 10
                     while time.monotonic() < end:
                         text = debug.read_text()
-                        if 'APP_INPUT_STOPPED DMA_DISABLED' in text:
+                        if ('APP_RECOVERY_STOP_UNCONFIRMED QUARANTINED' if a.expect == 'stop-failure' else 'APP_INPUT_STOPPED DMA_DISABLED') in text:
                             break
                         time.sleep(0.05)
                     app_text = raw_application_channel(text)
                     report['application_channel'] = 'legacy raw bytes after removing primary LOG mirror records'
-                    assert ('R2 MOUSE EXIT' if a.mouse_only else 'R2 Q EXIT') in app_text and 'EXTERNAL_APP_EXIT' in text and ('APP_INPUT_STOPPED DMA_DISABLED' in text), text
+                    assert ('R2 MOUSE EXIT' if a.mouse_only else 'R2 Q EXIT') in app_text and 'APP_INPUT_STOPPED DMA_DISABLED' in text, text
+                    if a.expect == 'stop-failure':
+                        assert 'APP_RECOVERY_STOP_UNCONFIRMED QUARANTINED' in text, text
+                    else:
+                        assert 'EXTERNAL_APP_EXIT' in text, text
                     assert 'EXTERNAL_APP_EXIT_STATUS' not in text and 'EXCEPTION VECTOR=' not in text, text
                     if not a.mouse_only:
                         assert app_text.count('R2 KEY DOWN') >= 2 and app_text.count('R2 KEY UP') >= 2, text
@@ -165,30 +169,44 @@ try:
                     elif a.expect in ('removed','bt-removed'):
                         assert 'R2 DISCONNECTED OK' in text, text
                         if a.expect=='bt-removed':assert 'BT_RESTART_RING3_SOFTWARE_FIXTURE' in text,text
-                end = time.monotonic()+60
-                while time.monotonic()<end:
+                if a.expect == 'stop-failure':
+                    time.sleep(1)
                     text = debug.read_text()
-                    if 'APP_ARENA_SCRUBBED VIEWER_RESTART' in text and 'VIEWER_FRAME ' in text.split('APP_ARENA_SCRUBBED VIEWER_RESTART')[-1]:
-                        break
-                    time.sleep(.05)
-                assert 'APP_ARENA_SCRUBBED VIEWER_RESTART' in text, text
-                returned = text.split('APP_ARENA_SCRUBBED VIEWER_RESTART')[-1]
-                assert 'VIEWER_FRAME ' in returned, text
-                assert 'FILE README.TXT BYTES ' in returned and 'FAT32_FILE_OK BYTES=' in returned, text
-                assert 'LIVE_FILE_API_READY' in returned, text
-                if a.input_topology != 'same':
-                    live = text.rsplit('MUSHA: APP_INPUT_LIVE', 1)[-1].split('APP_ARENA_SCRUBBED VIEWER_RESTART')[0]
-                    assert 'APP_INPUT_STOPPED DMA_DISABLED' in live, text
-                    stopped = re.findall(r'MUSHA: XHCI_QUIESCED BDF=([0-9A-F]+) DMA_DISABLED', live)
-                    expected = 3 if a.input_topology == 'split' else 2
+                    live = text.rsplit('MUSHA: APP_INPUT_LIVE', 1)[-1]
+                    stopped = re.findall(r'MUSHA: APP_INPUT_QUIESCED BDF=([0-9A-F]+)', live)
+                    expected = {'same': 1, 'split': 3, 'mouse-storage': 2, 'keyboard-storage': 2}[a.input_topology]
                     assert len(stopped) == expected and len(set(stopped)) == expected, text
-                    assert 'QUIESCE FAILED' not in text, text
-                if a.expect == 'fault':
-                    assert 'APP_RECOVERED KIND=0000000000000001 DETAIL=0000000000000006' in text,text
-                if a.expect != 'fault':
-                    assert 'RING3_ELF_EXIT_STATUS=0000000000000000' in text, text
-            report.update(passed=True, elf_sha256=hashlib.sha256(a.elf.read_bytes()).hexdigest(), efi_sha256=hashlib.sha256(efi.read_bytes()).hexdigest(), mouse=a.mouse, tablet=a.tablet, input_topology=a.input_topology, expected=a.expect)
-            print('PASS r2 real TIME/WAIT/INPUT ' + a.elf.name, flush=True)
+                    assert 'APP_INPUT_QUIESCE_FAILED' not in live and 'APP_INPUT_STOPPED DMA_DISABLED' in live, text
+                    assert 'APP_RECOVERY_STOP_UNCONFIRMED QUARANTINED' in live, text
+                    assert live.rfind('APP_INPUT_QUIESCED BDF=') < live.index('APP_INPUT_STOPPED DMA_DISABLED') < live.index('APP_RECOVERY_STOP_UNCONFIRMED QUARANTINED'), text
+                    assert 'APP_ARENA_SCRUBBED' not in live and 'APP_RECOVERED' not in live, text
+                    report.update(passed=True, quarantine_without_reuse=True, stopped_bdfs=stopped, elf_sha256=hashlib.sha256(a.elf.read_bytes()).hexdigest(), efi_sha256=hashlib.sha256(efi.read_bytes()).hexdigest(), mouse=a.mouse, input_topology=a.input_topology, expected=a.expect)
+                    print('PASS r2 split input stop-failure quarantine ' + a.elf.name, flush=True)
+                else:
+                    end = time.monotonic()+60
+                    while time.monotonic()<end:
+                        text = debug.read_text()
+                        if 'APP_ARENA_SCRUBBED VIEWER_RESTART' in text and 'VIEWER_FRAME ' in text.split('APP_ARENA_SCRUBBED VIEWER_RESTART')[-1]:
+                            break
+                        time.sleep(.05)
+                    assert 'APP_ARENA_SCRUBBED VIEWER_RESTART' in text, text
+                    returned = text.split('APP_ARENA_SCRUBBED VIEWER_RESTART')[-1]
+                    assert 'VIEWER_FRAME ' in returned, text
+                    assert 'FILE README.TXT BYTES ' in returned and 'FAT32_FILE_OK BYTES=' in returned, text
+                    assert 'LIVE_FILE_API_READY' in returned, text
+                    if a.input_topology != 'same':
+                        live = text.rsplit('MUSHA: APP_INPUT_LIVE', 1)[-1].split('APP_ARENA_SCRUBBED VIEWER_RESTART')[0]
+                        assert 'APP_INPUT_STOPPED DMA_DISABLED' in live, text
+                        stopped = re.findall(r'MUSHA: XHCI_QUIESCED BDF=([0-9A-F]+) DMA_DISABLED', live)
+                        expected = 3 if a.input_topology == 'split' else 2
+                        assert len(stopped) == expected and len(set(stopped)) == expected, text
+                        assert 'QUIESCE FAILED' not in text, text
+                    if a.expect == 'fault':
+                        assert 'APP_RECOVERED KIND=0000000000000001 DETAIL=0000000000000006' in text,text
+                    if a.expect != 'fault':
+                        assert 'RING3_ELF_EXIT_STATUS=0000000000000000' in text, text
+                    report.update(passed=True, elf_sha256=hashlib.sha256(a.elf.read_bytes()).hexdigest(), efi_sha256=hashlib.sha256(efi.read_bytes()).hexdigest(), mouse=a.mouse, tablet=a.tablet, input_topology=a.input_topology, expected=a.expect)
+                    print('PASS r2 real TIME/WAIT/INPUT ' + a.elf.name, flush=True)
         finally:
             proc.terminate()
             proc.wait(timeout=10)
