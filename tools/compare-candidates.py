@@ -31,7 +31,8 @@ def inventory(root):
 
     def record(data):
         return {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
-    runtime = {'BOOTX64.EFI': record(payload['EFI/BOOT/BOOTX64.EFI']), 'QEMU image': record(gzip.decompress((root / (prefix + '-x64-qemu.img.gz')).read_bytes()))}
+    image = gzip.decompress((root / (prefix + '-x64-qemu.img.gz')).read_bytes())
+    runtime = {'BOOTX64.EFI': record(payload['EFI/BOOT/BOOTX64.EFI']), 'QEMU image': record(image)}
     for language in ('c', 'rust'):
         with zipfile.ZipFile(root / (prefix + '-' + language + '-sdk.zip')) as archive:
             sm = json.loads(archive.read('sdk-manifest.json'))
@@ -49,9 +50,13 @@ def inventory(root):
     spec = importlib.util.spec_from_file_location('deploy', ROOT / 'tools/deploy-image.py')
     deploy = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(deploy)
-    image = gzip.decompress((root / (prefix + '-x64-qemu.img.gz')).read_bytes())
     if deploy.inspect(io.BytesIO(image), len(image))['efi'] != payload['EFI/BOOT/BOOTX64.EFI']:
         raise ValueError('Image and drive EFI differ')
+    spec = importlib.util.spec_from_file_location('candidate_image', ROOT / 'tools/candidate-image.py')
+    candidate_image = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(candidate_image)
+    if candidate_image.managed_files(image) != payload:
+        raise ValueError('Image and drive managed files differ')
     return {
         'source_commit': m['commit'],
         'files': checks,
