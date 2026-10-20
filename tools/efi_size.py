@@ -72,14 +72,14 @@ def measure(path):
 
 
 def minimal_unavailable():
-    """Do not relabel the existing no-default build as optional-driver-free."""
+    """LAN can be excluded, but Bluetooth still blocks a minimal image."""
     return {
         'status': 'unavailable',
-        'reason': 'optional-driver-feature-separation-missing',
-        'blocking_drivers': ['lan', 'bluetooth'],
+        'reason': 'bluetooth-feature-separation-missing',
+        'blocking_drivers': ['bluetooth'],
         'details': [
-            'boot depends unconditionally on musha-net and its LAN runtime; no LAN-disable feature exists',
+            'boot network is default-on; --no-default-features excludes musha-net, but this is only a LAN-off build',
             'boot enables musha-platform/bluetooth-security and the Bluetooth runtime unconditionally',
-            'T2 diagnostics and I218 opt-in features are already absent from normal builds; no-default-features does not remove LAN/Bluetooth',
+            'T2 diagnostics and I218 opt-in features are absent from normal builds; Bluetooth still remains in no-default-features builds',
         ],
     }

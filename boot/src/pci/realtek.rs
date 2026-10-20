@@ -4,6 +4,7 @@
 use super::Controller;
 use core::sync::atomic::{AtomicBool, Ordering};
 static MAPPED: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "network")]
 static READ: AtomicBool = AtomicBool::new(false);
 #[derive(Clone, Copy)]
 pub(crate) struct Snapshot {
@@ -161,87 +162,95 @@ pub(crate) fn display(s: Snapshot) {
             bar, s.bytes[i], s.raw[i]
         ));
     }
-    let stable = unsafe {
-        super::read(
-            s.controller.bus,
-            s.controller.device,
-            s.controller.function,
-            0,
-        ) == s.id
-            && super::read(
+    #[cfg(not(feature = "network"))]
+    crate::bootlog::device(
+        "lan",
+        format_args!("Realtek 10ec:8168 TxConfig40 skipped: network feature disabled"),
+    );
+    #[cfg(feature = "network")]
+    {
+        let stable = unsafe {
+            super::read(
                 s.controller.bus,
                 s.controller.device,
                 s.controller.function,
-                8,
-            ) as u8
-                == s.revision
-            && [0u8, 2].into_iter().enumerate().all(|(i, bar)| {
-                let raw = super::read(
+                0,
+            ) == s.id
+                && super::read(
                     s.controller.bus,
                     s.controller.device,
                     s.controller.function,
-                    0x10 + bar * 4,
-                );
-                let high = if raw & 1 == 0 && raw & 6 == 4 {
-                    super::read(
+                    8,
+                ) as u8
+                    == s.revision
+                && [0u8, 2].into_iter().enumerate().all(|(i, bar)| {
+                    let raw = super::read(
                         s.controller.bus,
                         s.controller.device,
                         s.controller.function,
-                        0x14 + bar * 4,
-                    ) as u64
-                } else {
-                    0
-                };
-                let base = if raw & 1 != 0 {
-                    (raw & !3) as u64
-                } else {
-                    (raw & !15) as u64 | high << 32
-                };
-                raw == s.raw[i] && base == s.base[i]
-            })
-    };
-    let command = unsafe {
-        super::read(
-            s.controller.bus,
-            s.controller.device,
-            s.controller.function,
-            4,
-        )
-    };
-    let address = musha_net::realtek::tx_config_address(
-        s.id,
-        command,
-        MAPPED.load(Ordering::Relaxed),
-        s.controller.base,
-        s.controller.bytes,
-    );
-    if !stable || address.is_none() {
+                        0x10 + bar * 4,
+                    );
+                    let high = if raw & 1 == 0 && raw & 6 == 4 {
+                        super::read(
+                            s.controller.bus,
+                            s.controller.device,
+                            s.controller.function,
+                            0x14 + bar * 4,
+                        ) as u64
+                    } else {
+                        0
+                    };
+                    let base = if raw & 1 != 0 {
+                        (raw & !3) as u64
+                    } else {
+                        (raw & !15) as u64 | high << 32
+                    };
+                    raw == s.raw[i] && base == s.base[i]
+                })
+        };
+        let command = unsafe {
+            super::read(
+                s.controller.bus,
+                s.controller.device,
+                s.controller.function,
+                4,
+            )
+        };
+        let address = musha_net::realtek::tx_config_address(
+            s.id,
+            command,
+            MAPPED.load(Ordering::Relaxed),
+            s.controller.base,
+            s.controller.bytes,
+        );
+        if !stable || address.is_none() {
+            crate::bootlog::device(
+                "lan",
+                format_args!(
+                    "Realtek 10ec:8168 revision={:02x} bdf={:04x} TxConfig40 skipped: resource/UC/decode",
+                    s.revision,
+                    s.controller.bdf()
+                ),
+            );
+            return;
+        }
+        if READ.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        // Sole volatile read; memory::initialize validated and mapped this exact
+        // firmware range UC, excluding RAM/reserved/other MMIO. Never enables BME.
+        let value = unsafe { (address.unwrap() as *const u32).read_volatile() };
         crate::bootlog::device(
             "lan",
             format_args!(
-                "Realtek 10ec:8168 revision={:02x} bdf={:04x} TxConfig40 skipped: resource/UC/decode",
+                "Realtek 10ec:8168 revision={:02x} bdf={:04x} TxConfig40=0x{:08x} read-only",
                 s.revision,
-                s.controller.bdf()
+                s.controller.bdf(),
+                value
             ),
         );
-        return;
+        crate::debug(b"MUSHA: RTL_TXCONFIG40=");
+        crate::debug(&crate::cpu::hex(value as u64));
+        crate::debug(b" READONLY\n");
     }
-    if READ.swap(true, Ordering::Relaxed) {
-        return;
-    }
-    // Sole volatile read; memory::initialize validated and mapped this exact
-    // firmware range UC, excluding RAM/reserved/other MMIO. Never enables BME.
-    let value = unsafe { (address.unwrap() as *const u32).read_volatile() };
-    crate::bootlog::device(
-        "lan",
-        format_args!(
-            "Realtek 10ec:8168 revision={:02x} bdf={:04x} TxConfig40=0x{:08x} read-only",
-            s.revision,
-            s.controller.bdf(),
-            value
-        ),
-    );
-    crate::debug(b"MUSHA: RTL_TXCONFIG40=");
-    crate::debug(&crate::cpu::hex(value as u64));
-    crate::debug(b" READONLY\n");
 }

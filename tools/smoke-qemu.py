@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Boot the staged EFI on QEMU USB storage; verify the post-exit marker."""
 import sys
-import argparse, hashlib, importlib.util, json, os, pathlib, shutil, socket, subprocess, time
+import argparse, hashlib, importlib.util, json, os, pathlib, shutil, socket, subprocess, tempfile, time
 from smoke_qemu_checks import check_hub_enumerations
 parser=argparse.ArgumentParser()
 parser.add_argument('--efi',type=pathlib.Path,help='Stage this EFI in the private output ESP; avoids shared-root build races')
@@ -13,6 +13,7 @@ parser.add_argument('--keyboard-usb-version',type=int,choices=[1,2],default=2)
 parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','overflow','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'],default='normal')
 parser.add_argument('--no-keyboard-input',action='store_true')
 parser.add_argument('--expect-t2-diagnostics',action='store_true',help='Require current read-only T2-D1 and phase markers on QEMU (no BCE device)')
+parser.add_argument('--expect-network-disabled',action='store_true',help='Require a LAN-off build while preserving USB, storage and input checks')
 parser.add_argument('--keyboard-exit',action='store_true')
 parser.add_argument('--keyboard-wrap',action='store_true')
 parser.add_argument('--storage-fixture',type=int,choices=[512,4096])
@@ -29,6 +30,7 @@ parser.add_argument('--keyboard-second',action='store_true',help='Connect keyboa
 parser.add_argument('--devices-second',action='store_true',help='Leave the first controller empty; requires --extra-xhci')
 args=parser.parse_args()
 if args.expect_t2_diagnostics and args.case != 'normal':parser.error('T2 evidence checks require the normal case')
+if args.expect_network_disabled and args.case != 'normal':parser.error('LAN-off evidence checks require the normal case')
 if (args.keyboard_second or args.devices_second) and not args.extra_xhci:parser.error('Second-controller device placement requires --extra-xhci')
 if args.hub_disconnect and (not args.hub_depth or args.keyboard_exit or args.keyboard_wrap):parser.error('Hub disconnect requires a hub topology without key injection')
 if args.hub_depth and (args.keyboard_usb_version!=1 or args.extra_xhci or args.usb_hub or args.storage_high_speed):parser.error('Hub topology requires USB1 keyboard and no conflicting placement options')
@@ -44,7 +46,7 @@ esp=root/'out/esp'
 if args.efi:
  esp=out/'esp';(esp/'EFI/BOOT').mkdir(parents=True,exist_ok=True);shutil.copyfile(args.efi,esp/'EFI/BOOT/BOOTX64.EFI')
 log=out/'debug.log';log.write_text('')
-qmp_path=root/'out'/('sq-'+hashlib.sha256(str(out).encode()).hexdigest()[:12]+'.sock')
+qmp_path=pathlib.Path(tempfile.gettempdir())/('musha-sq-'+hashlib.sha256(str(out).encode()).hexdigest()[:12]+'.sock')
 if qmp_path.exists(): qmp_path.unlink()
 cmd=[args.qemu,'-machine','q35,accel=tcg','-m','256M','-netdev','user,id=net0','-device',args.nic+',netdev=net0',
  '-drive',f'if=pflash,format=raw,readonly=on,file={firmware / "edk2-x86_64-code.fd"}',
@@ -165,7 +167,9 @@ with (out/'qemu.log').open('w') as err:
     command('device_del',{'id':'testkbd'})
     injected=True
    if args.hub_disconnect and marker in text:
-    for expected in ['MUSHA: XHCI_FAILED KEYBOARD DISCONNECTED','MUSHA: XHCI_QUIESCED DMA_DISABLED','MUSHA: NET_QUIESCED DMA_DISABLED']:
+    required_cleanup=['MUSHA: XHCI_FAILED KEYBOARD DISCONNECTED','MUSHA: XHCI_QUIESCED DMA_DISABLED']
+    if not args.expect_network_disabled: required_cleanup+=['MUSHA: NET_QUIESCED DMA_DISABLED']
+    for expected in required_cleanup:
      if expected not in text:raise RuntimeError('Hub disconnect check failed: '+text)
     break
    if args.case=='normal' and not args.hub_disconnect and not args.no_keyboard_input and not injected and 'MUSHA: HID_READY\n' in text:
@@ -257,9 +261,12 @@ with (out/'qemu.log').open('w') as err:
      events = '\n'.join(re.sub(r'^MUSHA: LOG (?:\[[^]]+\] )?', '', line) for line in text.splitlines() if line.startswith('MUSHA: LOG '))
      required=['device: state session complete', '1b36:000d'] if args.case=='normal' else ['1b36:000d', 'ERROR: storage: no readable boot media found', 'Musha-OS halted']
      if args.case=='normal':
+      if args.expect_network_disabled:
+       if any(marker in text for marker in ('MUSHA: NET_', 'lan: stage RESOURCE / INITIALIZE', 'lan: stage POLLING', 'lan: link ready')):
+        raise RuntimeError('LAN driver ran in a LAN-off image: '+text)
       required+=['usb: stage stopped dma disabled', 'usb: root=', '0627:0001',
        '8086:'+('10d3' if args.nic=='e1000e' else '100e'),
-       'lan: stage '+('stopped dma disabled' if args.nic=='e1000e' else 'driver unsupported / absent'),
+       ('lan: disabled by build feature' if args.expect_network_disabled else 'lan: stage '+('stopped dma disabled' if args.nic=='e1000e' else 'driver unsupported / absent')),
        'usb: kind boot keyboard match / check input', 'input=true']
       if not args.keyboard_second or args.devices_second: required+=['46f4:0001', 'usb: kind bot storage match / check read']
       if not args.extra_xhci: required+=['storage='+str(2 if args.fat_fixture or args.storage_fixture else 1)]

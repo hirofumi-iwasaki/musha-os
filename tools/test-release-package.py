@@ -47,7 +47,7 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(manifest['efi_size']['sections']['.data'],{'raw_bytes':512,'virtual_bytes':0x1234})
         self.assertIsNone(manifest['efi_size_minimal'])
         self.assertEqual(manifest['efi_size_minimal_status']['status'],'unavailable')
-        self.assertEqual(manifest['efi_size_minimal_status']['blocking_drivers'],['lan','bluetooth'])
+        self.assertEqual(manifest['efi_size_minimal_status']['blocking_drivers'],['bluetooth'])
 
     def test_cli_version_mismatch_precedes_build(self):
         r=subprocess.run([sys.executable,'-B',str(d.release.ROOT/'tools/prepare-release.py'),'--version','0.3.0'],capture_output=True,text=True)

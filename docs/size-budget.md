@@ -43,7 +43,7 @@ No other individually declared static reservation above1 MiB was found in this s
 
 ### Manifest configuration boundary
 
-Normal-build measurements use `efi_size`. Minimal measurements use `efi_size_minimal` only when optional-driver exclusion is real. At this checkpoint minimal is unavailable: LAN and Bluetooth remain unconditional dependencies; `--no-default-features` alone does not establish a minimal build. T2 is opt-in already. The manifest records `efi_size_minimal: null` with `efi_size_minimal_status` naming the blocking drivers/reason; this is neither zero bytes nor a measured equal-size minimal build. The owner’s full/minimal rule above remains in force.
+Normal-build measurements use `efi_size`. Minimal measurements use `efi_size_minimal` only when all optional drivers are excluded. LAN is now default-on and can be compiled out with `--no-default-features`; Bluetooth remains unconditional, so this is a LAN-off build rather than a minimal build. T2 is opt-in already. The manifest records `efi_size_minimal: null` with `efi_size_minimal_status` naming Bluetooth as the remaining blocker; this is neither zero bytes nor a measured minimal build. The owner’s full/minimal rule above remains in force.
 
 <!-- /static-ram-inventory-en -->
 
@@ -94,7 +94,7 @@ v0.4.0 published with LAN and Bluetooth in the normal build: about 700 KiB. v0.5
 
 ### manifest構成の境界
 
-通常構成は`efi_size`、最小構成は任意driverを実際に除外できた場合だけ`efi_size_minimal`へ記録します。現段階はLAN/BTが無条件依存で最小構成は利用不可、`--no-default-features`だけでは最小版を証明しません。T2は既にopt-inです。manifestは`efi_size_minimal: null`と`efi_size_minimal_status`へ阻害driver/理由を記し、0 Bや同サイズの計測済minimalとは扱いません。上記所有者のfull/minimal規則は維持します。
+通常構成は`efi_size`、最小構成は全任意driverを実際に除外できた場合だけ`efi_size_minimal`へ記録します。LANはdefault-onとなり`--no-default-features`で除外できますが、Bluetoothは常時含まれるため、これはLAN無効版であり最小版ではありません。T2は既にopt-inです。manifestは`efi_size_minimal: null`と`efi_size_minimal_status`へ残る阻害driverであるBluetoothを記し、0 Bや計測済み最小版とは扱いません。上記所有者のfull/minimal規則は維持します。
 
 <!-- /static-ram-inventory-ja -->
 

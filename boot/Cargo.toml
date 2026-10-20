@@ -20,11 +20,14 @@ musha-xhci = { path = "../xhci" }
 
 musha-fs = { path = "../fs" }
 
-musha-net = { path = "../net" }
+musha-net = { path = "../net", optional = true }
 
 musha-viewer = { path = "../viewer" }
 
 [features]
+default = ["network"]
+# Normal images retain LAN; --no-default-features excludes its driver.
+network = ["dep:musha-net"]
 qemu-debug = []
 # Test-only halt after the real app exit line, before viewer repaint.
 app-log-screen-probe = []
@@ -63,12 +66,12 @@ input-persistent = ["qemu-debug"]
 
 storage-timeout = ["qemu-debug"]
 
-net-tx-timeout = ["qemu-debug"]
+net-tx-timeout = ["network", "qemu-debug"]
 
 app-step-error = ["qemu-debug"]
 
 # Experimental PHY identity probe only; does not enable I218 networking.
-i218-phy-probe = []
+i218-phy-probe = ["network"]
 # Managed-ME ULP exit then PHY identity only; no reset/link/DMA.
 i218-power-probe = ["i218-phy-probe"]
 # Experimental complete I218 backend; physical acceptance remains required.

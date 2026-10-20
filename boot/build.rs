@@ -92,6 +92,9 @@ fn main() {
     if env::var("TARGET").unwrap() != "x86_64-unknown-uefi" {
         return;
     }
+    if env::var_os("CARGO_FEATURE_NETWORK").is_none() {
+        return;
+    }
     let root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
         .parent()
         .unwrap()

@@ -316,7 +316,7 @@ def main():
     provenance['firmware'] = {name: digest(firmware / name) if (firmware / name).is_file() else 'NOT AVAILABLE' for name in ['edk2-x86_64-code.fd', 'edk2-i386-vars.fd']}
     with tempfile.TemporaryDirectory(prefix='musha-normal-build-') as tmp:
         subprocess.run(
-            ['cargo', 'build', '--locked', '--release', '--target', 'x86_64-unknown-uefi', '-p', 'musha-boot', '--no-default-features', '--target-dir', tmp],
+            ['cargo', 'build', '--locked', '--release', '--target', 'x86_64-unknown-uefi', '-p', 'musha-boot', '--target-dir', tmp],
             cwd=ROOT,
             check=True,
         )

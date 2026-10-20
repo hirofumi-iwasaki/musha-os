@@ -30,6 +30,10 @@ mod marker {
 mod external;
 mod graphics;
 mod memory;
+#[cfg(feature = "network")]
+mod net;
+#[cfg(not(feature = "network"))]
+#[path = "net_disabled.rs"]
 mod net;
 mod pci;
 mod ring3;
@@ -468,7 +472,10 @@ pub extern "efiapi" fn efi_main(
         let boot_owner = pci::boot_owner(bs, &xhcis, &boot_path);
         let pci_resource_safe = pci::resource_safety(bs, &xhcis);
         let xhci = xhcis.entries[0];
+        #[cfg(feature = "network")]
         let nic = pci::discover(bs, true);
+        #[cfg(not(feature = "network"))]
+        let nic = pci::Controller::NONE;
         let realtek_diag = pci::realtek::discover(bs);
         #[cfg(feature = "i218-network")]
         let nic_flash = pci::nic_flash(bs, nic);
