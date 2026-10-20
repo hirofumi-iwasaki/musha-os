@@ -3,6 +3,29 @@
 //! Read-only evidence parsers. No result authorizes MMIO or DMA access.
 pub const BCE_ID: u32 = 0x1801_106b;
 
+/// Tracks completed phase reads independently of the config DWORD values.
+/// A zero-initialized snapshot must never be presented as a captured one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PhaseCoverage(u8);
+
+impl PhaseCoverage {
+    pub const fn new() -> Self {
+        Self(0)
+    }
+
+    pub fn mark_captured(&mut self, phase: usize) -> bool {
+        if phase >= 3 {
+            return false;
+        }
+        self.0 |= 1 << phase;
+        true
+    }
+
+    pub fn captured(self, phase: usize) -> bool {
+        phase < 3 && self.0 & (1 << phase) != 0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Capabilities {
     pub pm: Option<(u8, u16)>,
@@ -146,6 +169,20 @@ pub fn smbios_product(table: &[u8]) -> Result<&str, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn phase_coverage_distinguishes_missing_reads_from_zero_values() {
+        let mut coverage = PhaseCoverage::new();
+        assert!((0..3).all(|phase| !coverage.captured(phase)));
+        assert!(!coverage.mark_captured(3));
+        assert!(!coverage.captured(3));
+        assert!(coverage.mark_captured(1));
+        assert!(!coverage.captured(0));
+        assert!(coverage.captured(1));
+        assert!(!coverage.captured(2));
+        assert!(coverage.mark_captured(0));
+        assert!(coverage.mark_captured(2));
+        assert!((0..3).all(|phase| coverage.captured(phase)));
+    }
     #[test]
     fn capabilities_valid_and_absent() {
         let mut c = [0; 64];

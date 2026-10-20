@@ -12,7 +12,7 @@ parser.add_argument('--firmware-dir',required=True)
 parser.add_argument('--keyboard-usb-version',type=int,choices=[1,2],default=2)
 parser.add_argument('--case',choices=['normal','ud','gp','df','pf','ro','nx','guard','overflow','xhci-timeout','xhci-command-timeout','usb-descriptor-timeout','control-out-timeout','control-out-stall','storage-timeout','fat-corrupt'],default='normal')
 parser.add_argument('--no-keyboard-input',action='store_true')
-parser.add_argument('--expect-t2-diagnostics',action='store_true',help='Require read-only T2-D1 evidence on the QEMU machine (no BCE device)')
+parser.add_argument('--expect-t2-diagnostics',action='store_true',help='Require current read-only T2-D1 and phase markers on QEMU (no BCE device)')
 parser.add_argument('--keyboard-exit',action='store_true')
 parser.add_argument('--keyboard-wrap',action='store_true')
 parser.add_argument('--storage-fixture',type=int,choices=[512,4096])
@@ -188,7 +188,9 @@ with (out/'qemu.log').open('w') as err:
     if args.case=='normal':
      if args.control_ring_probe and ('MUSHA: EP0_SHORT_OK BYTES=18 STATUS_COMPLETE' not in text or 'MUSHA: EP0_RING_WRAP_OK' not in text or 'MUSHA: EP0_OUT_DATA_STATUS_OK' not in text):raise RuntimeError('EP0 ring/short probe missing: '+text)
      if args.expect_t2_diagnostics:
-      for expected in ['MUSHA: T2-D1 READ ONLY / NO MMIO / NO DMA', 'MUSHA: T2 SMBIOS OK', 'MUSHA: T2 BCE COUNT 0 OMIT 0', 'MUSHA: T2_DIAGNOSTICS_COMPLETE']:
+      for expected in ['MUSHA: T2-D1 READ ONLY / NO MMIO / NO DMA', 'MUSHA: T2 SMBIOS OK', 'MUSHA: T2 BCE COUNT 0 OMIT 0',
+                       'MUSHA: T2 PHASE EARLY CAPTURED', 'MUSHA: T2 PHASE PRE EBS CAPTURED', 'MUSHA: T2 PHASE POST EBS CAPTURED',
+                       'MUSHA: T2 BAR RANGES UNVALIDATED / DRIVER NOT STARTED', 'MUSHA: T2_DIAGNOSTICS_COMPLETE']:
        if expected+'\n' not in text:raise RuntimeError('T2 diagnostic missing: '+expected+'\n'+text)
      if args.keyboard_wrap and 'MUSHA: HID_RING_WRAP_OK' not in text:raise RuntimeError('HID ring wrap missing: '+text)
      if args.keyboard_exit and 'MUSHA: APP_KEY_DOWN=0000000000000029' not in text:raise RuntimeError('App Escape exit missing: '+text)

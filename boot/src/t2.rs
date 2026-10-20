@@ -3,7 +3,9 @@
 //! T2-D1: read-only segment-zero PCI and pre-EBS SMBIOS evidence.
 //! No PCI config writes, BAR sizing, MMIO, DMA allocations or firmware commands.
 use musha_memory::MemoryMap;
-use musha_platform::t2_diagnostics::{BCE_ID, capabilities, smbios_entry, smbios_product};
+use musha_platform::t2_diagnostics::{
+    BCE_ID, PhaseCoverage, capabilities, smbios_entry, smbios_product,
+};
 use r_efi::efi;
 
 #[derive(Clone, Copy)]
@@ -23,6 +25,7 @@ struct Evidence {
     bce_count: usize,
     bce_omitted: usize,
     phases: [[[u32; 64]; 2]; 3],
+    phase_coverage: PhaseCoverage,
     model: [u8; 48],
     model_len: usize,
     model_status: &'static str,
@@ -36,6 +39,7 @@ static mut EVIDENCE: Evidence = Evidence {
     bce_count: 0,
     bce_omitted: 0,
     phases: [[[0; 64]; 2]; 3],
+    phase_coverage: PhaseCoverage::new(),
     model: [0; 48],
     model_len: 0,
     model_status: "NOT CAPTURED",
@@ -105,6 +109,8 @@ pub fn capture(phase: usize) {
             *w = read(e.bce[i], (j * 4) as u8);
         }
     }
+    // Mark only after all reads finish; zero BCEs still records that this phase ran.
+    e.phase_coverage.mark_captured(phase);
 }
 // Firmware mappings are still active; require one readable RAM descriptor.
 unsafe fn bytes<'a>(map: &MemoryMap<'_>, address: usize, size: usize) -> Option<&'a [u8]> {
@@ -219,8 +225,26 @@ pub fn report() {
         "T2 BCE COUNT {} OMIT {}",
         e.bce_count, e.bce_omitted
     ));
+    for (phase, name) in ["EARLY", "PRE EBS", "POST EBS"].iter().enumerate() {
+        emit(format_args!(
+            "T2 PHASE {} {}",
+            name,
+            if e.phase_coverage.captured(phase) {
+                "CAPTURED"
+            } else {
+                "NOT CAPTURED"
+            }
+        ));
+    }
     for i in 0..e.bce_count {
         for (phase, name) in ["EARLY", "PRE EBS", "POST EBS"].iter().enumerate() {
+            if !e.phase_coverage.captured(phase) {
+                emit(format_args!(
+                    "T2 {} BDF {:04X} NOT CAPTURED",
+                    name, e.bce[i]
+                ));
+                continue;
+            }
             let c = &e.phases[phase][i];
             emit(format_args!(
                 "T2 {} BDF {:04X} ID {:08X}",
