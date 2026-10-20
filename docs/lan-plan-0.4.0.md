@@ -2,6 +2,10 @@
 
 Status: current
 
+Current-status note (2026-10-20): [IMG7653](../out/ryzen-7653/observation.json) later measured `10EC:8168`, revision `0x26`, BDF `07:00.0`; subsystem, BAR, PCI Command and TxConfig are still **NOT CAPTURED**. The original host core is committed but admission remains closed. See the [identity matrix](realtek-identity-admission-20261020.md); the dated design steps below retain their historical wording.
+
+現状注記（2026-10-20）：後続IMG7653で`10EC:8168`・rev`0x26`・BDF`07:00.0`のみ実測しました。subsystem/BAR/PCI Command/TxConfigは未採取。元のhost coreはcommit済みですが実機入場は拒否します。以下の旧計画文はその時点の表現として保持します。
+
 ## English
 
 Design reference only,2026-10-15. No Realtek driver or third-party source is copied, ported, vendored or compiled by this change. [Scope goal13](release-scope-0.4.0.md), [device matrix](device-support.md), [owner configuration](hardware-verification-status.md) and [identification procedure](ryzen-realtek-identification.md) govern acceptance.

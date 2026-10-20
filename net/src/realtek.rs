@@ -19,13 +19,36 @@ pub struct Identity {
     pub revision: Option<u8>,
     pub tx_config: u32,
 }
+/// Parse a host capture of PCI config bytes 0..8 and a separate read-only
+/// TxConfig(0x40) value. This grants no register-write or DMA permission.
+pub fn identity_from_raw(pci_config: &[u8], tx_config: Option<&[u8]>) -> Result<Identity, Error> {
+    if pci_config.len() < 9 {
+        return Err(Error::Identity);
+    }
+    let Some(tx_config) = tx_config else {
+        return Err(Error::Identity);
+    };
+    let Ok(tx_config): Result<[u8; 4], _> = tx_config.try_into() else {
+        return Err(Error::Identity);
+    };
+    let pci = u32::from_le_bytes(pci_config[..4].try_into().map_err(|_| Error::Identity)?);
+    Ok(Identity {
+        pci,
+        revision: Some(pci_config[8]),
+        tx_config: u32::from_le_bytes(tx_config),
+    })
+}
 pub struct Permit {
     _private: (),
 }
 /// PCI ID/revision alone do not authorize revision-dependent PHY/OCP writes.
 /// Future admission requires a measured profile and its reviewed stop sequence.
 pub fn admit(id: Identity) -> Result<Permit, Error> {
-    if id.pci != 0x816810ec || id.tx_config == u32::MAX {
+    if id.pci != 0x816810ec
+        || !matches!(id.revision, Some(0..=0xfe))
+        || id.tx_config == 0
+        || id.tx_config == u32::MAX
+    {
         return Err(Error::Identity);
     }
     Err(Error::UnverifiedSilicon)
@@ -180,7 +203,7 @@ mod tests {
     }
     #[test]
     fn unmeasured_identity_never_authorizes_writes() {
-        for revision in [None, Some(0), Some(0x15), Some(0xff)] {
+        for revision in [Some(0), Some(0x15), Some(0x26)] {
             assert!(matches!(
                 admit(Identity {
                     pci: 0x816810ec,
@@ -190,6 +213,28 @@ mod tests {
                 Err(Error::UnverifiedSilicon)
             ));
         }
+        for revision in [None, Some(0xff)] {
+            assert_eq!(
+                admit(Identity {
+                    pci: 0x816810ec,
+                    revision,
+                    tx_config: 0x54100000
+                })
+                .err(),
+                Some(Error::Identity)
+            );
+        }
+        for tx_config in [0, u32::MAX] {
+            assert_eq!(
+                admit(Identity {
+                    pci: 0x816810ec,
+                    revision: Some(0x26),
+                    tx_config
+                })
+                .err(),
+                Some(Error::Identity)
+            );
+        }
         assert!(matches!(
             admit(Identity {
                 pci: 0x10d38086,
@@ -198,6 +243,36 @@ mod tests {
             }),
             Err(Error::Identity)
         ));
+    }
+    #[test]
+    fn raw_identity_requires_present_complete_values() {
+        let mut pci = [0u8; 9];
+        pci[..4].copy_from_slice(&0x816810ecu32.to_le_bytes());
+        pci[8] = 0x26;
+        let tx = 0x54100000u32.to_le_bytes();
+        let parsed = identity_from_raw(&pci, Some(&tx)).unwrap();
+        assert_eq!(parsed.revision, Some(0x26));
+        assert_eq!(admit(parsed).err(), Some(Error::UnverifiedSilicon));
+        assert_eq!(
+            identity_from_raw(&pci[..8], Some(&tx)),
+            Err(Error::Identity)
+        );
+        assert_eq!(identity_from_raw(&pci, None), Err(Error::Identity));
+        assert_eq!(
+            identity_from_raw(&pci, Some(&tx[..3])),
+            Err(Error::Identity)
+        );
+        assert_eq!(
+            identity_from_raw(&pci, Some(&[0xff; 4]))
+                .and_then(admit)
+                .err(),
+            Some(Error::Identity)
+        );
+        pci[..4].copy_from_slice(&0x813910ecu32.to_le_bytes());
+        assert_eq!(
+            identity_from_raw(&pci, Some(&tx)).and_then(admit).err(),
+            Some(Error::Identity)
+        );
     }
     #[test]
     fn bounded_reset_and_active_dma_rejection() {

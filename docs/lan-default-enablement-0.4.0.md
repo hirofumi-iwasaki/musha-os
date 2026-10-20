@@ -2,6 +2,10 @@
 
 Status: current
 
+Current evidence note (2026-10-20): [IMG7653](../out/ryzen-7653/observation.json) measured `10EC:8168`, revision `0x26`, BDF `07:00.0`; TxConfig, subsystem, BAR and PCI Command remain **NOT CAPTURED**. This narrows PCI identity only and does not open the hardware gate; see the [admission matrix](realtek-identity-admission-20261020.md).
+
+現状注記（2026-10-20）：IMG7653でPCI ID/revision/BDFのみ実測しました。TxConfig・subsystem・BAR・PCI Commandは未採取で、実機入場は許可されません。上記の識別表を参照してください。
+
 ## English
 
 **Owner-adopted direction; normal defaults remain gated on physical acceptance.** Keep the normal82574 path and shared DHCP/UDP implementation. Recommend enabling I218-V in normal builds only after the NUC5 optional-feature trial demonstrates reset/link/lease/echo and safe restart/stop. Its current software LCD/OEM refusal stays explicit; an unsupported firmware configuration must not be bypassed to obtain a ready label. The release's physical LAN gate remains open.

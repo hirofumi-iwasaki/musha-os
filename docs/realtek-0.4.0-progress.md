@@ -2,6 +2,10 @@
 
 Status: current
 
+Current-status note (2026-10-20): the original host core in `net/src/realtek.rs` is now committed. [IMG7653](../out/ryzen-7653/observation.json) visually confirms PCI `10EC:8168`, revision `0x26`, BDF `07:00.0`; TxConfig, subsystem, BAR and PCI Command were **not captured**. The [identity/admission record](realtek-identity-admission-20261020.md) keeps unknown silicon refused. The older text below is preserved as the original checkpoint.
+
+現状注記（2026-10-20）：元のhost coreはcommit済みです。IMG7653でPCI ID/revision/BDFの一部のみ実測、TxConfig・subsystem・BAR・PCI Commandは未採取です。[識別・入場記録](realtek-identity-admission-20261020.md)を参照。以下の「未commit」は当時の記録として保持し、silicon未確認の実機許可は閉じたままです。
+
 ## English
 
 Implemented locally, not committed: original Apache-2.0 `net/src/realtek.rs` provides a bounded reset/register interface, explicit hardware-admission denial, 16-byte no-offload TX/RX descriptors, ownership/length/address-overflow/FCS checks and conservative stop. Reset requires BME already off and polls at most1,000 times. Stop attempts BME-off even when register writes fail; without a reviewed silicon-specific drain sequence it returns `DrainUnverified`, never permission to reuse DMA memory. A private permission constructor is exercised only by host fixtures; runtime cannot obtain a permit. No normal-build selection or hardware writes are enabled.
