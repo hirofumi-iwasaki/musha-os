@@ -994,6 +994,18 @@ fn rollback(
     if disk.sync().is_err() {
         failed = true;
     }
+    // A successful WRITE/flush status is not proof that a previously partial
+    // metadata sector was restored. Check every snapshot before calling the
+    // volume structurally recovered; an unreadable or different sector leaves
+    // recovery to a later, independently verified media session.
+    for patch in &w.patches[..count] {
+        let mut current = [0; 4096];
+        if disk.read(patch.lba, &mut current[..size]).is_err()
+            || current[..size] != patch.old[..size]
+        {
+            failed = true;
+        }
+    }
     if failed {
         Err(WriteError::RecoveryRequired)
     } else {
@@ -1014,6 +1026,9 @@ mod writer_tests {
         persistent: bool,
         protected: bool,
         sync_fail: bool,
+        partial_fail: bool,
+        lie_after_failure: bool,
+        unreadable_after_failure: bool,
     }
     impl Memory {
         fn new() -> Self {
@@ -1025,6 +1040,9 @@ mod writer_tests {
                 persistent: false,
                 protected: false,
                 sync_fail: false,
+                partial_fail: false,
+                lie_after_failure: false,
+                unreadable_after_failure: false,
             }
         }
         fn record(seed: u8) -> [u8; 4096] {
@@ -1051,6 +1069,12 @@ mod writer_tests {
     }
     impl Disk for Memory {
         fn read(&mut self, l: u64, b: &mut [u8]) -> Result<(), Error> {
+            if self.unreadable_after_failure
+                && l == 544
+                && self.fail.is_some_and(|n| self.writes > n)
+            {
+                return Err(Error::Io);
+            }
             if let Some(s) = self.sectors.get(&l) {
                 b.copy_from_slice(s);
                 Ok(())
@@ -1060,6 +1084,12 @@ mod writer_tests {
         }
         fn write(&mut self, l: u64, b: &[u8]) -> Result<(), Error> {
             self.writes += 1;
+            if self.partial_fail && self.fail == Some(self.writes) {
+                let mut sector = self.sector(l);
+                sector[..128].copy_from_slice(&b[..128]);
+                self.sectors.insert(l, sector);
+                return Err(Error::Io);
+            }
             if self.protected
                 || self
                     .fail
@@ -1067,7 +1097,11 @@ mod writer_tests {
             {
                 return Err(Error::Io);
             }
-            self.sectors.insert(l, b.try_into().unwrap());
+            let mut sector: [u8; 512] = b.try_into().unwrap();
+            if self.lie_after_failure && self.fail.is_some_and(|n| self.writes > n) {
+                sector[16] ^= 1;
+            }
+            self.sectors.insert(l, sector);
             Ok(())
         }
         fn sync(&mut self) -> Result<(), Error> {
@@ -1184,6 +1218,30 @@ mod writer_tests {
         d.sync_fail = true;
         assert_eq!(d.run(&Memory::record(1)), Err(WriteError::Io(Error::Io)));
         assert_eq!(d.sector(32), d.sector(544));
+    }
+    #[test]
+    fn partial_metadata_sector_is_restored_and_read_back() {
+        let mut d = Memory::new();
+        d.fail = Some(10); // Data sectors, then primary FAT, then backup FAT.
+        d.partial_fail = true;
+        let before = [d.sector(32), d.sector(544)];
+        assert_eq!(d.run(&Memory::record(1)), Err(WriteError::Io(Error::Io)));
+        assert_eq!([d.sector(32), d.sector(544)], before);
+    }
+    #[test]
+    fn false_success_on_rollback_requires_recovery() {
+        let mut d = Memory::new();
+        d.fail = Some(10);
+        d.partial_fail = true;
+        d.lie_after_failure = true;
+        assert_eq!(d.run(&Memory::record(1)), Err(WriteError::RecoveryRequired));
+    }
+    #[test]
+    fn unreadable_rollback_sector_requires_recovery() {
+        let mut d = Memory::new();
+        d.fail = Some(10);
+        d.unreadable_after_failure = true;
+        assert_eq!(d.run(&Memory::record(1)), Err(WriteError::RecoveryRequired));
     }
     #[test]
     fn end_marker_garbage_is_never_revived() {
