@@ -107,8 +107,8 @@ def checker(path, out, log_name='fsck.log', require_clean=True):
         assert p.returncode == 0, (command, p.returncode, p.stdout, p.stderr)
     return (command[0], p.returncode)
 
-def verify_partial_metadata(before, after, out):
-    """One full packet entered FSInfo WRITE(10); earlier FAT writes stay visible."""
+def verify_partial_metadata(before, after, out, recovered=True):
+    """Classify the one-packet FSInfo fault and its recovery outcome."""
     assert len(before) == len(after)
     (start, fz, fat, data, cb, _, settings) = geometry(before)
     ss = sector_size(before)
@@ -122,8 +122,12 @@ def verify_partial_metadata(before, after, out):
     directory = settings // ss
     changed = {i // ss for i in range(0, len(before), ss)
                if before[i:i + ss] != after[i:i + ss]}
-    assert {primary, backup, payload} <= changed, sorted(changed)
-    assert changed <= {primary, backup, payload, fsinfo}, sorted(changed)
+    if recovered:
+        assert changed == {payload}, sorted(changed)
+        for lba in (primary, backup, fsinfo, fsinfo + 6, directory):
+            assert before[lba * ss:(lba + 1) * ss] == after[lba * ss:(lba + 1) * ss]
+    else:
+        assert {primary, backup, payload} <= changed <= {primary, backup, payload, fsinfo}, sorted(changed)
     assert before[directory * ss:(directory + 1) * ss] == after[directory * ss:(directory + 1) * ss]
     assert before[(fsinfo + 6) * ss:(fsinfo + 7) * ss] == after[(fsinfo + 6) * ss:(fsinfo + 7) * ss]
     assert after[fat:fat + fz * ss] == after[fat + fz * ss:fat + 2 * fz * ss]
@@ -220,7 +224,7 @@ def qemu(a, out, boot, data, readonly=False):
                 assert 'SETTINGS_WRITE_PROTECTED' in text and 'SETTINGS_WRITE_RESULT Err(Refused(Protected))' in text, text
             elif a.case in ('timeout', 'removal', 'cancel'):
                 assert 'SETTINGS_WRITE_RESULT Err(Io(Io))' in text, text
-            elif a.case == 'partial-metadata':
+            elif a.case.startswith('partial-metadata'):
                 target = re.search(r'SETTINGS_METADATA_TARGET LBA=([0-9a-fA-F]+) FAT_PATCHES=2', text)
                 sent = re.search(r'SETTINGS_METADATA_PARTIAL_DATA_SENT LBA=([0-9a-fA-F]+) BYTES=([0-9a-fA-F]+)/([0-9a-fA-F]+)', text)
                 assert target and sent, text
@@ -228,9 +232,21 @@ def qemu(a, out, boot, data, readonly=False):
                 assert int(sent[2], 16) == 1024 and int(sent[3], 16) == 4096, text
                 assert text.count('SETTINGS_METADATA_PARTIAL_DATA_SENT') == 1, text
                 assert text.find('SETTINGS_WRITE_BEGIN') < target.start() < sent.start(), text
-                result_at = text.find('SETTINGS_WRITE_RESULT Err(RecoveryRequired)', sent.end())
+                recovered = a.case == 'partial-metadata'
+                if recovered:
+                    assert text.count('SETTINGS_METADATA_BOT_RECOVERED') == 1, text
+                else:
+                    reason = {'partial-metadata-stop-fail': 'STOP FAILURE',
+                              'partial-metadata-reset-fail': 'BOT RESET FAILURE',
+                              'partial-metadata-identity-fail': 'MEDIA IDENTITY MISMATCH'}[a.case]
+                    assert 'SETTINGS_METADATA_BOT_RECOVERY_FAILED INJECTED ' + reason in text, text
+                    assert 'SETTINGS_METADATA_BOT_RECOVERED' not in text, text
+                result_at = text.find('SETTINGS_WRITE_RESULT Err(Io(Io))' if recovered else 'SETTINGS_WRITE_RESULT Err(RecoveryRequired)', sent.end())
                 assert result_at >= 0 and text.find('XHCI_QUIESCED DMA_DISABLED', result_at) > result_at, text
-                assert 'SETTINGS_WRITE_DATA_PENDING' not in text[sent.end():result_at], text
+                if recovered:
+                    assert text.count('SETTINGS_WRITE_DATA_PENDING') > 4, text
+                else:
+                    assert 'SETTINGS_WRITE_DATA_PENDING' not in text[sent.end():result_at], text
             else:
                 assert 'SETTINGS_WRITE_RESULT Err(' in text, text
         finally:
@@ -246,7 +262,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--efi', type=pathlib.Path, required=True)
     p.add_argument('--output', type=pathlib.Path, required=True)
-    p.add_argument('--case', choices=['create', 'protected', 'missing', 'unowned', 'full', 'no-space', 'fragmented', 'timeout', 'removal', 'exfat', 'cancel', 'config', 'cache-enabled', 'partial-metadata'], default='create')
+    p.add_argument('--case', choices=['create', 'protected', 'missing', 'unowned', 'full', 'no-space', 'fragmented', 'timeout', 'removal', 'exfat', 'cancel', 'config', 'cache-enabled', 'partial-metadata', 'partial-metadata-stop-fail', 'partial-metadata-reset-fail', 'partial-metadata-identity-fail'], default='create')
     p.add_argument('--sector-size', type=int, choices=[512, 4096], default=512)
     p.add_argument('--sectors-per-cluster', type=int, choices=[1, 2, 4, 8, 16, 32, 64, 128], default=1)
     p.add_argument('--bounds', action='store_true', help='Require zero/maximum/overflow probe evidence')
@@ -254,13 +270,13 @@ def main():
     p.add_argument('--firmware-dir', default='/opt/homebrew/share/qemu')
     p.add_argument('--harness', type=pathlib.Path, default=ROOT / 'target/debug/examples/settings-write')
     a = p.parse_args()
-    if a.case == 'partial-metadata':
+    if a.case.startswith('partial-metadata'):
         assert a.qemu and a.sector_size == 4096 and a.sectors_per_cluster == 1, 'Partial metadata requires QEMU and 4096-byte sectors'
     out = a.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
     image = out / 'data.img'
     if a.sector_size != 512 or a.sectors_per_cluster != 1:
-        assert a.qemu and a.case in ('create', 'partial-metadata'), 'Geometry variants require QEMU'
+        assert a.qemu and (a.case == 'create' or a.case.startswith('partial-metadata')), 'Geometry variants require QEMU'
         variant_fixture(image, a.sector_size, a.sectors_per_cluster)
     else:
         usb.create(image, a.efi.resolve())
@@ -344,24 +360,17 @@ def main():
         (out / 'host.log').write_text(r.stdout + r.stderr)
         assert (r.returncode == 0) == (a.case in ('create', 'fragmented', 'config')), (r.returncode, r.stdout, r.stderr)
     after = image.read_bytes()
-    partial = verify_partial_metadata(before, after, out) if a.case == 'partial-metadata' else None
+    partial = verify_partial_metadata(before, after, out, a.case == 'partial-metadata') if a.case.startswith('partial-metadata') else None
     changes = len(partial['changed_sectors']) if partial else verify_changes(before, after, a.case in ('create', 'fragmented', 'config'))
     if a.case == 'fragmented':
         for (off, n) in [(fat, 2 * fz * 512), (settings, cb), (start + 512, 512), (start + 7 * 512, 512)]:
             assert before[off:off + n] == after[off:off + n]
     after_log = 'fsck-after.log' if partial else 'fsck.log'
-    _, after_status = checker(image, out, after_log, require_clean=a.case != 'partial-metadata')
+    recovered = a.case == 'partial-metadata'
+    _, after_status = checker(image, out, after_log, require_clean=not a.case.startswith('partial-metadata') or recovered)
     if partial:
-        fsck = (out / 'fsck-after.log').read_text().lower()
-        assert after_status != 0, fsck
-        if pathlib.Path(baseline).name == 'fsck_msdos':
-            assert 'orphan' in fsck and 'fsinfo' in fsck and 'free' in fsck, fsck
-            partial['fsck_classification'] = 'orphan_cluster_and_stale_fsinfo_hint'
-        elif pathlib.Path(baseline).name == 'fsck.fat':
-            assert any(term in fsck for term in ('free cluster', 'unused cluster', 'lost cluster')), fsck
-            partial['fsck_classification'] = 'nonzero_fat_consistency_findings'
-        else:
-            partial['fsck_classification'] = 'nonzero_checker_result'
+        assert (after_status == 0) == recovered, after_status
+        partial['fsck_classification'] = 'clean_after_verified_rollback' if recovered else 'recovery_required_after_injected_failure'
     result = {'sector_size': a.sector_size, 'sectors_per_cluster': a.sectors_per_cluster, 'bounds': a.bounds, 'case': a.case, 'transport': 'qemu' if a.qemu else 'host', 'passed': True, 'changed_sectors': changes, 'checker': baseline, 'fsck_before_status': baseline_status, 'fsck_after_status': after_status, 'partial_metadata': partial, 'sha256': hashlib.sha256(after).hexdigest()}
     (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result))

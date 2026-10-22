@@ -117,6 +117,8 @@ pub(super) fn probe(
             Some((trb, 257)),
             Some(&mut residual),
             Some(&mut host.bt_mailbox),
+            None,
+            None,
         )?;
         let actual = 257usize
             .checked_sub(residual.ok_or("BT EVENT RESIDUAL")? as usize)
@@ -289,6 +291,8 @@ impl Pipe {
                 Some((trb, self.bytes)),
                 Some(&mut residual),
                 Some(&mut host.bt_mailbox),
+                None,
+                None,
             ) {
                 Ok(w) => w,
                 Err("EVENT PENDING") => return Ok(None),

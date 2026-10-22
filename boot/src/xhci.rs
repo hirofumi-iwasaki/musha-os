@@ -744,6 +744,8 @@ fn event(
         None,
         None,
         None,
+        None,
+        None,
     )
 }
 fn event_dispatch(
@@ -767,6 +769,8 @@ fn event_dispatch(
     short: Option<(usize, u32)>,
     mut residual: Option<&mut Option<u32>>,
     mut extra: Option<&mut musha_xhci::mailbox::Mailbox>,
+    stop_event: Option<(usize, u8, u8)>,
+    mut stop_event_seen: Option<&mut bool>,
 ) -> Result<[u32; 4], &'static str> {
     let limit = if cfg!(feature = "xhci-command-timeout")
         || (transfer != 0 && cfg!(feature = "usb-descriptor-timeout"))
@@ -847,7 +851,12 @@ fn event_dispatch(
                     true
                 }
                 32 => {
-                    if let (Some((data, requested)), Some(residual)) =
+                    if let (Some((pointer, slot, dci)), Some(seen)) =
+                        (stop_event, stop_event_seen.as_deref_mut())
+                        && musha_xhci::claim_stopped_event(words, pointer, slot, dci, seen)?
+                    {
+                        false
+                    } else if let (Some((data, requested)), Some(residual)) =
                         (short, residual.as_deref_mut())
                         && let Some(remaining) = musha_xhci::control::endpoint_residual(
                             words,
@@ -1099,6 +1108,8 @@ fn command_probe(
             mouse_saved: None,
             bulk_pending: None,
             bulk_saved: None,
+            stop_event: None,
+            stop_event_seen: false,
             bt_disabled: false,
             bt_deadline: None,
             bt_control_pending: None,
@@ -1175,6 +1186,8 @@ struct Host<'a> {
     mouse_saved: Option<[u32; 4]>,
     bulk_pending: Option<(usize, u8, u8)>,
     bulk_saved: Option<[u32; 4]>,
+    stop_event: Option<(usize, u8, u8)>,
+    stop_event_seen: bool,
     bt_disabled: bool,
     bt_deadline: Option<u64>,
     bt_control_pending: Option<(u8, [usize; 3], usize)>,
@@ -1246,6 +1259,8 @@ impl Host<'_> {
             None,
             None,
             Some(&mut self.bt_mailbox),
+            self.stop_event,
+            Some(&mut self.stop_event_seen),
         );
         if result.is_ok() || result == Err("COMMAND REJECTED") {
             self.producer.advance();

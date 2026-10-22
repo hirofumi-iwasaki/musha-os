@@ -85,6 +85,8 @@ impl Pipe {
                 None,
                 None,
                 Some(&mut host.bt_mailbox),
+                None,
+                None,
             )
         };
         match result {
@@ -100,6 +102,13 @@ impl Pipe {
 }
 struct Bot {
     slot: u8,
+    interface: u8,
+    input_number: u8,
+    output_number: u8,
+    control_ring: usize,
+    control_buffer: usize,
+    output_context: usize,
+    context_stride: usize,
     input: Pipe,
     output: Pipe,
     cbw: usize,
@@ -108,9 +117,12 @@ struct Bot {
     tag: u32,
     pending: Option<Active>,
     #[cfg(feature = "settings-write-partial-metadata")]
+    quarantined: bool,
+    #[cfg(feature = "settings-write-partial-metadata")]
     partial_metadata_lba: Option<u32>,
     #[cfg(feature = "settings-write-partial-metadata")]
     output_packet: usize,
+    production_quarantined: bool,
 }
 struct Active {
     transaction: Transaction,
@@ -122,7 +134,156 @@ struct Active {
     partial_metadata_lba: Option<u32>,
 }
 impl Bot {
+    /// Production path: only an already retired TD may be recovered here.
+    /// Every Stop must produce its spec-required forced transfer event.
+    fn recover_retired_strict(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        self.production_quarantined = true;
+        if host.bulk_pending.is_some()
+            || host.bulk_saved.is_some()
+            || self
+                .pending
+                .as_ref()
+                .is_none_or(|active| active.transfer.is_some())
+        {
+            return Err("BOT TRANSFER NOT RETIRED");
+        }
+        for pipe in [&self.output, &self.input] {
+            let pointer = pipe.ring + pipe.cursor.index * 16;
+            host.stop_event = Some((pointer, self.slot, pipe.dci));
+            host.stop_event_seen = false;
+            let result = host.command(
+                0,
+                (15 << 10) | ((pipe.dci as u32) << 16) | ((self.slot as u32) << 24),
+                self.slot,
+            );
+            host.stop_event = None;
+            result?;
+            if !host.stop_event_seen {
+                return Err("STOP EVENT MISSING");
+            }
+            let endpoint = self.output_context + pipe.dci as usize * self.context_stride;
+            if unsafe { read_word(endpoint) } & 7 != 3 {
+                return Err("ENDPOINT NOT STOPPED");
+            }
+        }
+        self.pending = None;
+        control(
+            host,
+            self.slot,
+            self.control_ring,
+            self.control_buffer,
+            0,
+            0xff21,
+            self.interface as u16,
+        )?;
+        for address in [self.input_number | 0x80, self.output_number] {
+            control(
+                host,
+                self.slot,
+                self.control_ring,
+                self.control_buffer,
+                0,
+                0x0102,
+                address as u16,
+            )?;
+        }
+        for pipe in [&self.output, &self.input] {
+            let dequeue = pipe.ring + pipe.cursor.index * 16;
+            host.command(
+                dequeue | pipe.cursor.cycle as usize,
+                (16 << 10) | ((pipe.dci as u32) << 16) | ((self.slot as u32) << 24),
+                self.slot,
+            )?;
+        }
+        // Caller must now re-identify the medium before lifting quarantine.
+        Ok(())
+    }
+    /// Recover only after the interrupted DATA TD has completed. A failed
+    /// Stop Endpoint command leaves every BOT DMA allocation quarantined.
+    #[cfg(feature = "settings-write-partial-metadata")]
+    fn recover_partial(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        self.quarantined = true;
+        if cfg!(feature = "settings-recovery-stop-fail") {
+            return Err("INJECTED STOP FAILURE");
+        }
+        if host.bulk_pending.is_some()
+            || host.bulk_saved.is_some()
+            || self
+                .pending
+                .as_ref()
+                .is_none_or(|active| active.transfer.is_some())
+        {
+            return Err("BOT TRANSFER NOT RETIRED");
+        }
+        for pipe in [&self.output, &self.input] {
+            let pointer = pipe.ring + pipe.cursor.index * 16;
+            host.stop_event = Some((pointer, self.slot, pipe.dci));
+            host.stop_event_seen = false;
+            let result = host.command(
+                0,
+                (15 << 10) | ((pipe.dci as u32) << 16) | ((self.slot as u32) << 24),
+                self.slot,
+            );
+            host.stop_event = None;
+            result?;
+            let endpoint = self.output_context + pipe.dci as usize * self.context_stride;
+            let state = unsafe { read_word(endpoint) } & 7;
+            if state != 3 {
+                return Err("ENDPOINT NOT STOPPED");
+            }
+            if !host.stop_event_seen {
+                // QEMU's xHCI model omits the spec-mandated empty-ring FSE.
+                // The Stop command and output context still prove retirement.
+                #[cfg(not(feature = "settings-write-partial-metadata"))]
+                return Err("STOP EVENT MISSING");
+                crate::debug(b"MUSHA: QEMU_STOP_FSE_MISSING\n");
+            }
+        }
+        // Both Stop Endpoint completions establish that old TDs can no longer
+        // access cbw/data/csw. EP0 stays running throughout BOT reset recovery.
+        if cfg!(feature = "settings-recovery-reset-fail") {
+            return Err("INJECTED BOT RESET FAILURE");
+        }
+        self.pending = None;
+        control(
+            host,
+            self.slot,
+            self.control_ring,
+            self.control_buffer,
+            0,
+            0xff21,
+            self.interface as u16,
+        )?;
+        for address in [self.input_number | 0x80, self.output_number] {
+            control(
+                host,
+                self.slot,
+                self.control_ring,
+                self.control_buffer,
+                0,
+                0x0102,
+                address as u16,
+            )?;
+        }
+        for pipe in [&self.output, &self.input] {
+            let dequeue = pipe.ring + pipe.cursor.index * 16;
+            host.command(
+                dequeue | pipe.cursor.cycle as usize,
+                (16 << 10) | ((pipe.dci as u32) << 16) | ((self.slot as u32) << 24),
+                self.slot,
+            )?;
+        }
+        self.quarantined = false;
+        Ok(())
+    }
     fn begin(&mut self, host: &mut Host<'_>, command: Command) -> Result<(), &'static str> {
+        if self.production_quarantined {
+            return Err("BOT QUARANTINED");
+        }
+        #[cfg(feature = "settings-write-partial-metadata")]
+        if self.quarantined {
+            return Err("BOT QUARANTINED");
+        }
         if self.pending.is_some() {
             return Err("BOT BUSY");
         }
@@ -273,6 +434,9 @@ impl Bot {
                         if phase == Phase::Status {
                             copy(self.csw, &mut status);
                         }
+                        // The xHC completion has retired this TD even if BOT
+                        // validation of its CSW fails below.
+                        active.transfer = None;
                         active
                             .transaction
                             .complete(
@@ -281,7 +445,6 @@ impl Bot {
                                 if phase == Phase::Status { &status } else { &[] },
                             )
                             .map_err(transaction_error)?;
-                        active.transfer = None;
                     }
                     Err(error) => {
                         active.transaction.cancel();
@@ -416,6 +579,9 @@ pub(super) fn probe(
     control_ring: usize,
     buffer: usize,
     disk: Storage,
+    _port: usize,
+    _route: u32,
+    _descriptor: [u8; 18],
     tick: &mut dyn FnMut(super::super::AppEvent<'_>) -> Result<bool, &'static str>,
 ) -> Result<Device, &'static str> {
     crate::diagnostics::usb_stage("STORAGE BOT / CAPACITY");
@@ -453,6 +619,13 @@ pub(super) fn probe(
     )?;
     let mut bot = Bot {
         slot,
+        interface: disk.interface,
+        input_number: disk.input.number,
+        output_number: disk.output.number,
+        control_ring,
+        control_buffer: buffer,
+        output_context: output,
+        context_stride: stride,
         input: Pipe {
             ring: in_ring,
             dci: indci,
@@ -468,6 +641,9 @@ pub(super) fn probe(
         csw,
         tag: 0,
         pending: None,
+        production_quarantined: false,
+        #[cfg(feature = "settings-write-partial-metadata")]
+        quarantined: false,
         #[cfg(feature = "settings-write-partial-metadata")]
         partial_metadata_lba: None,
         #[cfg(feature = "settings-write-partial-metadata")]
@@ -510,10 +686,13 @@ pub(super) fn probe(
     crate::debug(&crate::cpu::hex(size as u64));
     crate::debug(b"\n");
     let mut first_hash = 0;
+    let mut last_hash = 0;
     for lba in [0, blocks - 1] {
         let hash = bot.read(host, lba, blocks, size)?;
         if lba == 0 {
             first_hash = hash;
+        } else {
+            last_hash = hash;
         }
         crate::debug(b"MUSHA: STORAGE_READ_OK LBA=");
         crate::debug(&crate::cpu::hex(lba));
@@ -633,7 +812,17 @@ pub(super) fn probe(
 
     #[cfg(feature = "settings-write-probe")]
     if !host.discovery {
-        settings_probe(host, &mut bot, blocks, size)?;
+        settings_probe(
+            host,
+            &mut bot,
+            blocks,
+            size,
+            _port,
+            _route,
+            _descriptor,
+            first_hash,
+            last_hash,
+        )?;
     }
     crate::debug(b"MUSHA: STORAGE_PROBE_OK READ_ONLY\n");
     Ok(Device {
@@ -644,6 +833,9 @@ pub(super) fn probe(
         port: 0,
         ancestors: [None; 5],
         first_hash,
+        last_hash,
+        usb_descriptor: _descriptor,
+        route: _route,
         next_probe: 0,
         check_at: 0,
         write_protected: false,
@@ -668,6 +860,9 @@ pub(super) struct Device {
     port: usize,
     pub(super) ancestors: [Option<(super::hub::Hub, u8)>; 5],
     first_hash: u64,
+    last_hash: u64,
+    usb_descriptor: [u8; 18],
+    route: u32,
     next_probe: u64,
     check_at: u64,
     write_protected: bool,
@@ -680,6 +875,64 @@ pub(super) struct Device {
     pairing_checked: bool,
 }
 impl Device {
+    fn recovery_port_connected(&self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        if self.route != 0 || self.port == 0 || self.port > host.ports as usize {
+            return Err("RECOVERY ROUTE");
+        }
+        let op = (host.regs.read(0)? & 255) as usize;
+        let status = host.regs.read(op + 0x400 + (self.port - 1) * 16)?;
+        if status & 3 != 3 || status & (1 << 17) != 0 {
+            return Err("RECOVERY DISCONNECTED");
+        }
+        Ok(())
+    }
+    /// Only a retired, correlated BOT failure can reach this path. An active
+    /// transfer or any uncertain identity leaves the slot quarantined.
+    fn recover_retired_write(&mut self, host: &mut Host<'_>) -> Result<(), &'static str> {
+        self.recovery_port_connected(host)?;
+        self.bot.recover_retired_strict(host)?;
+        self.bot.production_quarantined = false;
+        let checked = (|| {
+            self.recovery_port_connected(host)?;
+            control(
+                host,
+                self.bot.slot,
+                self.bot.control_ring,
+                self.bot.control_buffer,
+                18,
+                0x01000680,
+                0,
+            )?;
+            let mut descriptor = [0u8; 18];
+            copy(self.bot.control_buffer, &mut descriptor);
+            if descriptor != self.usb_descriptor {
+                return Err("RECOVERY USB IDENTITY");
+            }
+            if !self.bot.command(host, Command::Capacity)? {
+                return Err("RECOVERY CAPACITY");
+            }
+            let mut capacity = [0u8; 8];
+            copy(self.bot.data, &mut capacity);
+            if storage::capacity(&capacity) != Some((self.blocks, self.size)) {
+                return Err("RECOVERY MEDIA IDENTITY");
+            }
+            if self.bot.read(host, 0, self.blocks, self.size)? != self.first_hash
+                || self
+                    .bot
+                    .read(host, self.blocks - 1, self.blocks, self.size)?
+                    != self.last_hash
+            {
+                return Err("RECOVERY MEDIA FINGERPRINT");
+            }
+            self.bot.require_write_through(host)?;
+            self.recovery_port_connected(host)?;
+            Ok(())
+        })();
+        if checked.is_err() {
+            self.bot.production_quarantined = true;
+        }
+        checked
+    }
     pub(super) fn with_port(mut self, port: usize) -> Self {
         self.port = port;
         self
@@ -903,6 +1156,11 @@ fn settings_probe(
     bot: &mut Bot,
     blocks: u64,
     size: u32,
+    _port: usize,
+    _route: u32,
+    _descriptor: [u8; 18],
+    _first_hash: u64,
+    _last_hash: u64,
 ) -> Result<(), &'static str> {
     struct Image<'a, 'h> {
         host: &'a mut Host<'h>,
@@ -911,12 +1169,94 @@ fn settings_probe(
         size: u32,
         protected: bool,
         #[cfg(feature = "settings-write-partial-metadata")]
+        recovery_blocked: bool,
+        #[cfg(feature = "settings-write-partial-metadata")]
+        identity: Identity,
+        #[cfg(feature = "settings-write-partial-metadata")]
         fat_lbas: Option<[u64; 2]>,
         #[cfg(feature = "settings-write-partial-metadata")]
         fat_completed: [bool; 2],
     }
+    #[cfg(feature = "settings-write-partial-metadata")]
+    #[derive(Clone, Copy)]
+    struct Identity {
+        port: usize,
+        route: u32,
+        descriptor: [u8; 18],
+        first_hash: u64,
+        last_hash: u64,
+    }
+    #[cfg(feature = "settings-write-partial-metadata")]
+    impl Image<'_, '_> {
+        fn port_connected(&mut self) -> Result<(), &'static str> {
+            // The fault injection is supported only for direct root-port media.
+            if self.identity.route != 0
+                || self.identity.port == 0
+                || self.identity.port > self.host.ports as usize
+            {
+                return Err("RECOVERY ROUTE");
+            }
+            let op = (self.host.regs.read(0)? & 255) as usize;
+            let status = self
+                .host
+                .regs
+                .read(op + 0x400 + (self.identity.port - 1) * 16)?;
+            if status & 3 != 3 || status & (1 << 17) != 0 {
+                return Err("RECOVERY DISCONNECTED");
+            }
+            Ok(())
+        }
+        fn recover(&mut self) -> Result<(), &'static str> {
+            self.recovery_blocked = true;
+            self.port_connected()?;
+            self.bot.recover_partial(self.host)?;
+            self.port_connected()?;
+            control(
+                self.host,
+                self.bot.slot,
+                self.bot.control_ring,
+                self.bot.control_buffer,
+                18,
+                0x01000680,
+                0,
+            )?;
+            let mut descriptor = [0u8; 18];
+            copy(self.bot.control_buffer, &mut descriptor);
+            if descriptor != self.identity.descriptor {
+                return Err("RECOVERY USB IDENTITY");
+            }
+            if cfg!(feature = "settings-recovery-identity-fail") {
+                return Err("INJECTED MEDIA IDENTITY MISMATCH");
+            }
+            if !self.bot.command(self.host, Command::Capacity)? {
+                return Err("RECOVERY CAPACITY");
+            }
+            let mut capacity = [0u8; 8];
+            copy(self.bot.data, &mut capacity);
+            if storage::capacity(&capacity) != Some((self.blocks, self.size)) {
+                return Err("RECOVERY MEDIA IDENTITY");
+            }
+            if self.bot.read(self.host, 0, self.blocks, self.size)? != self.identity.first_hash
+                || self
+                    .bot
+                    .read(self.host, self.blocks - 1, self.blocks, self.size)?
+                    != self.identity.last_hash
+            {
+                return Err("RECOVERY MEDIA FINGERPRINT");
+            }
+            self.bot.require_write_through(self.host)?;
+            self.port_connected()?;
+            self.recovery_blocked = false;
+            crate::debug(b"MUSHA: SETTINGS_METADATA_BOT_RECOVERED\n");
+            Ok(())
+        }
+    }
     impl musha_fs::settings::Disk for Image<'_, '_> {
         fn read(&mut self, lba: u64, b: &mut [u8]) -> Result<(), musha_fs::Error> {
+            #[cfg(feature = "settings-write-partial-metadata")]
+            if self.recovery_blocked {
+                return Err(musha_fs::Error::Io);
+            }
             self.bot
                 .read(self.host, lba, self.blocks, self.size)
                 .map_err(|_| musha_fs::Error::Io)?;
@@ -924,6 +1264,10 @@ fn settings_probe(
             Ok(())
         }
         fn write(&mut self, lba: u64, b: &[u8]) -> Result<(), musha_fs::Error> {
+            #[cfg(feature = "settings-write-partial-metadata")]
+            if self.recovery_blocked {
+                return Err(musha_fs::Error::Io);
+            }
             if self.protected
                 || lba >= self.blocks
                 || lba > u32::MAX as u64
@@ -956,7 +1300,19 @@ fn settings_probe(
                 }
             }
             loop {
-                match self.bot.poll(self.host).map_err(|_| musha_fs::Error::Io)? {
+                let progress = self.bot.poll(self.host);
+                #[cfg(feature = "settings-write-partial-metadata")]
+                if progress == Err("METADATA PARTIAL TRANSFER") {
+                    // One-shot fault: rollback must send the entire old sector.
+                    self.bot.partial_metadata_lba = None;
+                    if let Err(reason) = self.recover() {
+                        crate::debug(b"MUSHA: SETTINGS_METADATA_BOT_RECOVERY_FAILED ");
+                        crate::debug(reason.as_bytes());
+                        crate::debug(b"\n");
+                    }
+                    return Err(musha_fs::Error::Io);
+                }
+                match progress.map_err(|_| musha_fs::Error::Io)? {
                     None => core::hint::spin_loop(),
                     Some(true) => {
                         #[cfg(feature = "settings-write-partial-metadata")]
@@ -1022,6 +1378,16 @@ fn settings_probe(
         blocks,
         size,
         protected,
+        #[cfg(feature = "settings-write-partial-metadata")]
+        recovery_blocked: false,
+        #[cfg(feature = "settings-write-partial-metadata")]
+        identity: Identity {
+            port: _port,
+            route: _route,
+            descriptor: _descriptor,
+            first_hash: _first_hash,
+            last_hash: _last_hash,
+        },
         #[cfg(feature = "settings-write-partial-metadata")]
         fat_lbas: None,
         #[cfg(feature = "settings-write-partial-metadata")]

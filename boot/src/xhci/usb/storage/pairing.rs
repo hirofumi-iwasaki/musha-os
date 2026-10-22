@@ -11,8 +11,29 @@ struct Image<'a, 'h> {
     transport: Option<&'static str>,
     writes_completed: u32,
     logical_barriers_completed: u32,
+    recovery_blocked: bool,
+    recovery_attempted: bool,
 }
 impl Image<'_, '_> {
+    fn failed_write(&mut self, reason: &'static str) -> musha_fs::Error {
+        self.recovery_blocked = true;
+        if !self.recovery_attempted && self.device.bot.pending.is_some() {
+            self.recovery_attempted = true;
+            match self.device.recover_retired_write(self.host) {
+                Ok(()) => {
+                    self.recovery_blocked = false;
+                    crate::debug(b"MUSHA: PAIRING_BOT_RECOVERED\n");
+                }
+                Err(cause) => {
+                    crate::bootlog::device(
+                        "storage",
+                        format_args!("BOT recovery refused: {}", cause),
+                    );
+                }
+            }
+        }
+        self.io::<()>(Err(reason)).unwrap_err()
+    }
     fn io<T>(&mut self, result: Result<T, &'static str>) -> Result<T, musha_fs::Error> {
         result.map_err(|reason| {
             let first = self.transport.is_none();
@@ -33,6 +54,9 @@ impl Image<'_, '_> {
 }
 impl Disk for Image<'_, '_> {
     fn read(&mut self, lba: u64, out: &mut [u8]) -> Result<(), musha_fs::Error> {
+        if self.recovery_blocked {
+            return Err(musha_fs::Error::Io);
+        }
         let connected = self.device.check_connected(self.host);
         self.io(connected)?;
         let begun = self.device.begin_read(self.host, lba);
@@ -46,11 +70,19 @@ impl Disk for Image<'_, '_> {
         }
     }
     fn write(&mut self, lba: u64, b: &[u8]) -> Result<(), musha_fs::Error> {
+        if self.recovery_blocked {
+            return Err(musha_fs::Error::Io);
+        }
         let begun = self.device.begin_write(self.host, lba, b);
-        self.io(begun)?;
+        if let Err(reason) = begun {
+            return Err(self.failed_write(reason));
+        }
         loop {
-            let done = self.device.poll_write(self.host);
-            match self.io(done)? {
+            let done = match self.device.poll_write(self.host) {
+                Ok(done) => done,
+                Err(reason) => return Err(self.failed_write(reason)),
+            };
+            match done {
                 Some(true) => {
                     self.writes_completed = self.writes_completed.saturating_add(1);
                     return Ok(());
@@ -64,6 +96,9 @@ impl Disk for Image<'_, '_> {
         }
     }
     fn sync(&mut self) -> Result<(), musha_fs::Error> {
+        if self.recovery_blocked {
+            return Err(musha_fs::Error::Io);
+        }
         let begun = self.device.begin_sync(self.host);
         self.io(begun)?;
         loop {
@@ -181,6 +216,8 @@ impl Device {
             transport: None,
             writes_completed: 0,
             logical_barriers_completed: 0,
+            recovery_blocked: false,
+            recovery_attempted: false,
         };
         let mut record = [0; 4096];
         if !image.device.pairing_checked {

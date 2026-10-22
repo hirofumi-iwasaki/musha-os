@@ -339,6 +339,75 @@ mod event_tests {
 pub mod keyboard;
 pub mod storage;
 
+/// Claim only the forced empty-ring event for one Stop Endpoint command.
+/// Other endpoint events remain with the shared event dispatcher.
+pub fn claim_stopped_event(
+    words: [u32; 4],
+    pointer: usize,
+    slot: u8,
+    dci: u8,
+    seen: &mut bool,
+) -> Result<bool, &'static str> {
+    let control = words[3];
+    let exact = words[0] as usize == pointer
+        && words[1] == 0
+        && words[2] & 0x00ff_ffff == 0
+        && words[2] >> 24 == 27
+        && control & (1 << 2) == 0
+        && (control >> 10) & 63 == 32
+        && (control >> 24) as u8 == slot
+        && ((control >> 16) & 31) as u8 == dci;
+    if !exact {
+        return Ok(false);
+    }
+    if *seen {
+        return Err("DUPLICATE STOP EVENT");
+    }
+    *seen = true;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod stop_event_tests {
+    use super::claim_stopped_event;
+    const PTR: usize = 0x1000;
+    fn event(pointer: usize, slot: u8, dci: u8, code: u32, length: u32) -> [u32; 4] {
+        [
+            pointer as u32,
+            0,
+            (code << 24) | length,
+            (32 << 10) | ((dci as u32) << 16) | ((slot as u32) << 24),
+        ]
+    }
+    #[test]
+    fn exact_forced_stop_is_claimed_once() {
+        let mut seen = false;
+        let e = event(PTR, 2, 4, 27, 0);
+        assert_eq!(claim_stopped_event(e, PTR, 2, 4, &mut seen), Ok(true));
+        assert!(seen);
+        assert_eq!(
+            claim_stopped_event(e, PTR, 2, 4, &mut seen),
+            Err("DUPLICATE STOP EVENT")
+        );
+    }
+    #[test]
+    fn malformed_and_unrelated_events_remain_unclaimed() {
+        let mut seen = false;
+        for e in [
+            event(PTR, 2, 4, 27, 1),
+            event(PTR, 2, 4, 26, 0),
+            event(PTR + 16, 2, 4, 27, 0),
+            event(PTR, 3, 4, 27, 0),
+            event(PTR, 2, 5, 27, 0),
+            event(PTR, 1, 1, 1, 0),
+            event(PTR, 8, 3, 1, 0),
+        ] {
+            assert_eq!(claim_stopped_event(e, PTR, 2, 4, &mut seen), Ok(false));
+        }
+        assert!(!seen);
+    }
+}
+
 pub mod hub;
 
 pub mod control;

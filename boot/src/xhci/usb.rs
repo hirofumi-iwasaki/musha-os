@@ -377,6 +377,8 @@ fn control_transfer(
         },
         Some(&mut residual),
         Some(&mut host.bt_mailbox),
+        None,
+        None,
     );
     if hci {
         match &completion {
@@ -1165,6 +1167,9 @@ fn configure(
             control_ring,
             buffer,
             disk,
+            port,
+            route,
+            descriptor,
             tick,
         )
         .map(|device| Configured::Storage(device.with_port(port)));
@@ -1559,6 +1564,8 @@ fn run_keyboard(
                 None,
                 None,
                 Some(&mut host.bt_mailbox),
+                None,
+                None,
             )
         };
         let mut transitions = [(0u8, false); 20];
@@ -1731,6 +1738,8 @@ fn poll_mouse(
             None,
             None,
             Some(&mut host.bt_mailbox),
+            None,
+            None,
         )
     };
     match result {
