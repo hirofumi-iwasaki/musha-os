@@ -30,12 +30,16 @@ pub struct WaitSnapshot {
     pub deadline: u64,
     pub accepted: bool,
     pub completions: [u32; 3],
+    pub received_events: u32,
+    pub last_event: Option<(u8, u8, u64)>,
 }
 pub struct Wait {
     state: Option<(Mode, u16, u64, u64, [u32; 3])>,
     accepted: bool,
     reported: bool,
     sampled_at: u64,
+    received_events: u32,
+    last_event: Option<(u8, u8, u64)>,
 }
 impl Wait {
     pub const fn new() -> Self {
@@ -44,6 +48,8 @@ impl Wait {
             accepted: false,
             reported: false,
             sampled_at: 0,
+            received_events: 0,
+            last_event: None,
         }
     }
     pub fn begin(&mut self, mode: Mode, handle: u16, now: u64, deadline: u64, baseline: [u32; 3]) {
@@ -51,6 +57,16 @@ impl Wait {
         self.sampled_at = now;
         self.accepted = false;
         self.reported = false;
+        self.received_events = 0;
+        self.last_event = None;
+    }
+    /// Record only the public HCI event header while encryption is outstanding.
+    /// The event payload can contain private controller or peer data.
+    pub fn received(&mut self, now: u64, event: super::Event<'_>) {
+        if self.state.is_some() {
+            self.received_events = self.received_events.saturating_add(1);
+            self.last_event = Some((event.code, event.parameters.len() as u8, now));
+        }
     }
     pub fn accepted(&mut self) {
         if self.state.is_some() {
@@ -67,6 +83,8 @@ impl Wait {
             deadline,
             accepted: self.accepted,
             completions: core::array::from_fn(|i| counts[i].saturating_sub(base[i])),
+            received_events: self.received_events,
+            last_event: self.last_event,
         })
     }
     pub fn due(&mut self, now: u64, counts: [u32; 3]) -> Option<WaitSnapshot> {

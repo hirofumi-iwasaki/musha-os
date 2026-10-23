@@ -34,6 +34,43 @@ impl Device {
                 w.completions[0], w.completions[1], w.completions[2]
             ),
         );
+        if let Some((code, length, received_at)) = w.last_event {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "ENC Event-IN pending={} last-cc={} last-bytes={} framed={} last-event={:02x}/{} at={}ms",
+                    self.event.pending,
+                    self.event.last_cc,
+                    self.event.last_bytes,
+                    w.received_events,
+                    code,
+                    length,
+                    received_at
+                ),
+            );
+        } else {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "ENC Event-IN pending={} last-cc={} last-bytes={} framed=0 last-event=none",
+                    self.event.pending, self.event.last_cc, self.event.last_bytes
+                ),
+            );
+        }
+        let (framed_bytes, expected_bytes) = self.event_stream.progress();
+        crate::bootlog::device(
+            "bluetooth",
+            format_args!(
+                "ENC HCI frame partial={}/{} Event-IN arms-since-request={} unarmed={} ignored={} mask-v1=on",
+                framed_bytes,
+                expected_bytes,
+                self.event
+                    .arms
+                    .saturating_sub(self.event_arms_at_encryption),
+                !self.event.pending,
+                self.ignored_events
+            ),
+        );
     }
     pub(super) fn send_command(
         &mut self,
@@ -177,10 +214,26 @@ impl Device {
             );
         }
         match self.phase {
-            1 => self.send_command(host, now, 0x0c01, &[0x90, 0xe0, 4, 0, 0, 0, 0, 0x20]),
+            1 => {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "HCI mask Encryption Change v1=on Disconnection Complete=on Key Refresh Complete=off"
+                    ),
+                );
+                self.send_command(host, now, 0x0c01, &[0x90, 0xe0, 4, 0, 0, 0, 0, 0x20])
+            }
             // Connection Complete, Advertising Report, Connection Update
             // Complete and Long Term Key Request.
-            2 => self.send_command(host, now, 0x2001, &[0x17, 0, 0, 0, 0, 0, 0, 0]),
+            2 => {
+                crate::bootlog::device(
+                    "bluetooth",
+                    format_args!(
+                        "LE mask Connection Complete=on Advertising Report=on Connection Update Complete=on LTK Request=on"
+                    ),
+                );
+                self.send_command(host, now, 0x2001, &[0x17, 0, 0, 0, 0, 0, 0, 0])
+            }
             3 => self.send_command(host, now, 0x1009, &[]),
             4 => self.send_command(
                 host,
@@ -221,6 +274,7 @@ impl Device {
                         self.acl_out.completions,
                     ],
                 );
+                self.event_arms_at_encryption = self.event.arms;
                 crate::bootlog::device(
                     "bluetooth",
                     format_args!(

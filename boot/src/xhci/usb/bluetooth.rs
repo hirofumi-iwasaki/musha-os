@@ -190,6 +190,7 @@ struct Pipe {
     bytes: u32,
     // Per-TD records are bounded; scanning repeats them many times per second.
     logged: u8,
+    arms: u32,
     completions: u32,
     last_cc: u8,
     last_bytes: u32,
@@ -247,6 +248,7 @@ impl Pipe {
         self.pending = true;
         host.regs
             .write(host.doorbell + slot as usize * 4, self.dci as u32)?;
+        self.arms = self.arms.saturating_add(1);
         if self.logged < PIPE_LOG_LIMIT {
             crate::bootlog::device(
                 "bluetooth",
@@ -397,6 +399,7 @@ pub(in crate::xhci) struct Device {
     smp_started: u64,
     smp_hinted: bool,
     encryption_observation: musha_platform::bluetooth::connection_diagnostic::Wait,
+    event_arms_at_encryption: u32,
     rx_observation: musha_platform::bluetooth::rx_diagnostic::Once,
     completion_baseline: [u32; 3],
     acl_in_context: usize,
@@ -524,6 +527,7 @@ pub(super) fn prepare(
         pending: false,
         bytes: if i == 0 { event_bytes } else { 2048 },
         logged: 0,
+        arms: 0,
         completions: 0,
         last_cc: 0,
         last_bytes: 0,
@@ -648,6 +652,7 @@ pub(super) fn prepare(
             smp_started: 0,
             smp_hinted: false,
             encryption_observation: musha_platform::bluetooth::connection_diagnostic::Wait::new(),
+            event_arms_at_encryption: 0,
             rx_observation: musha_platform::bluetooth::rx_diagnostic::Once::new(),
             completion_baseline: [0; 3],
             acl_in_context: output + ((transport.acl_in.address & 15) * 2 + 1) as usize * stride,
@@ -861,8 +866,19 @@ impl Device {
                 );
             }
         }
-        let event =
-            musha_platform::bluetooth::Event::parse(bytes).map_err(|_| "BT EVENT FORMAT")?;
+        let event = musha_platform::bluetooth::Event::parse(bytes).map_err(|_| {
+            crate::bootlog::device(
+                "bluetooth",
+                format_args!(
+                    "HCI frame rejected: length actual={} declared={} code={:02x}",
+                    bytes.len(),
+                    bytes.get(1).copied().unwrap_or(0),
+                    bytes.first().copied().unwrap_or(0)
+                ),
+            );
+            "BT EVENT FORMAT"
+        })?;
+        self.encryption_observation.received(now, event);
         if self.phase == 0 && event.code == 0x3e && event.parameters.first() == Some(&2) {
             self.advertising.event(now);
             let mut unsupported = None;
@@ -1246,7 +1262,13 @@ impl Device {
                 let Some(frame) = self
                     .event_stream
                     .next(self.generation, now, &mut input)
-                    .map_err(|_| "BT EVENT STREAM")?
+                    .map_err(|error| {
+                        crate::bootlog::device(
+                            "bluetooth",
+                            format_args!("HCI Event-IN frame rejected: {:?}", error),
+                        );
+                        "BT EVENT STREAM"
+                    })?
                 else {
                     break;
                 };

@@ -46,6 +46,10 @@ impl<const N: usize> Stream<N> {
             self.erase();
         }
     }
+    /// Header/payload progress only; never expose buffered event bytes.
+    pub fn progress(&self) -> (usize, usize) {
+        (self.used, self.expected)
+    }
     fn reject(&mut self, error: Error) -> Error {
         self.erase();
         self.failed = true;
